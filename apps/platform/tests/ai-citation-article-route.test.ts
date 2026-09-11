@@ -14,13 +14,11 @@ test("citation endpoint is private, ownership-scoped and revalidates Lex or priv
   assert.match(route, /searchParams\.get\("article"\)/);
   assert.match(route, /normalizedArticle\(candidate\.articleReference\) === requestedArticle/);
   assert.match(route, /hostname === "lex\.uz" \|\| url\.hostname === "www\.lex\.uz"/);
-  assert.match(route, /legal_corpus_variants/);
-  assert.match(route, /document\.document_number AS documentNumber/);
-  assert.match(route, /document\.adopting_authority AS adoptingAuthority/);
+  assert.doesNotMatch(route, /legal_corpus_variants/);
+  assert.match(route, /assertCitationEvidenceIdentity/);
+  assert.match(route, /fetchCitationEvidence/);
   assert.match(route, /availableLanguages/);
   assert.match(route, /versionHistory/);
-  assert.match(route, /document\.scope='global'/);
-  assert.match(route, /document\.availability_status='ready'/);
   assert.match(route, /parsePrivateDocumentLocator\(sourceUrl\)/);
   assert.match(route, /user_document_vector_chunks/);
   assert.match(route, /job\.workspace_id=\?/);
@@ -29,8 +27,7 @@ test("citation endpoint is private, ownership-scoped and revalidates Lex or priv
   assert.match(route, /checksumHex\(object\.checksums\.sha256\) !== privateDocument\.sourceHash/);
   assert.match(route, /await sha256\(bytes\) !== privateDocument\.sourceHash/);
   assert.match(route, /privateSource: true/);
-  assert.match(route, /MAX_ARTICLE_CHARACTERS = 200_000/);
-  assert.match(route, /MAX_ARTICLE_PARTS = 64/);
+  assert.match(route, /text: citation\.excerpt, fullArticle: false, truncated: false, evidenceUnavailable: true/);
   assert.match(route, /cache-control": "private, no-store/);
   assert.doesNotMatch(route, /fetch\(/);
   assert.doesNotMatch(route, /dangerouslySetInnerHTML/);

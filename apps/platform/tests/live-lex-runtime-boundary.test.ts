@@ -19,7 +19,7 @@ test("user AI uses R2-native retrieval before direct Lex while other paths stay 
   assert.match(platformAi, /targetEnvironment: legalRetrievalEnvironment\(bindings\)/);
   assert.match(platformAi, /timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS/);
   assert.match(platformAi, /budgetMs: LEGAL_RETRIEVAL_BUDGET_MS/);
-  assert.match(platformAi, /retrieveCorpusAwareLegalSources\(\{\s*query: rewrite\.query,/);
+  assert.doesNotMatch(platformAi, /gateway\.rewriteFollowUp/, "The shared planner owns follow-up interpretation without legacy query truncation");
   assert.doesNotMatch(platformAi, /contextualQuestion: retrievalUnderstanding/);
   assert.match(platformAi, /const retrievalUnderstandingPromise = \(async/);
   assert.match(platformAi, /const retrievalQuestion = retrievalUnderstanding\.standaloneQuestion;/);
@@ -34,7 +34,8 @@ test("user AI uses R2-native retrieval before direct Lex while other paths stay 
   assert.match(guestAi, /retrieveCorpusAwareLegalSources\(\{\s*query: effectiveQuestion,/);
   assert.doesNotMatch(guestAi, /contextualQuestion: retrievalUnderstanding/);
   assert.match(corpusAware, /retrieveLiveLexSources/);
-  assert.match(corpusAware, /if \(input\.applicableAt\)[\s\S]*unavailableHistoricalCoverage/);
+  // Historical fallback behavior is exercised with explicit and shared-plan
+  // endpoints in legal-corpus-chat-retrieval.test.ts.
   assert.doesNotMatch(corpusAware, /LEGAL_CORPUS_ENABLED/);
   assert.doesNotMatch(corpusAware, /LEGAL_CORPUS_LIVE_LEXUZ_ENABLED/);
   assert.doesNotMatch(corpusAware, /enqueueOfficialLexCorpusDocument|QDRANT|legal_corpus_chunks/);

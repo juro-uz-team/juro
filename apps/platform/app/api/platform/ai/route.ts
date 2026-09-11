@@ -2,13 +2,16 @@ import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../lib/
 import { isoNow, parseJson } from "../../../../lib/document-builder/storage/db";
 import { getPublishedDocuments } from "../../../../lib/document-builder/registry";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
-import { AiUnavailableError } from "../../../../lib/document-builder/ai/openai";
-import { aiProviderStatus, legalAiProvider, type LegalAiProgress } from "../../../../lib/ai/provider";
+import { AiUnavailableError, type AiProviderAttemptObservation } from "../../../../lib/document-builder/ai/openai";
+import {createRuntimeExecutionObserver} from "../../../../lib/ai/runtime-execution-observation";
+import {legalResearchFailureReason} from "../../../../lib/ai/legal-answer-failure";
+import {citationPreview} from "../../../../lib/legal/citation-preview";
+import { aiProviderStatus, legalAiProvider, type LegalAiProgress, type LegalAiRunOptions } from "../../../../lib/ai/provider";
 import {
   createLegalAiGateway,
   type GroundedLegalPreliminary,
 } from "../../../../lib/ai/legal-ai-gateway";
-import { classifyLegalIntent } from "../../../../lib/ai/legal-query-planner";
+import { classifyLegalIntent, redactLegalQuerySensitiveData } from "../../../../lib/ai/legal-query-planner";
 import {
   AiRunConflictError,
   beginAiRunFinalization,
@@ -39,6 +42,9 @@ import {
   type TrustedUserDocumentRetrieval,
 } from "../../../../lib/document-analysis/user-document-chat-sources";
 import { discoverOfficialLexUrls } from "../../../../lib/legal/openai-lex-discovery";
+import { validateFinalSourceObservations } from "../../../../lib/legal/final-source-observation";
+import { createSourceObservationClient } from "../../../../lib/legal-corpus/source-observation-service";
+import { observeCurrentLexDocument } from "../../../../lib/legal/lex-document-status";
 import {
   fallbackLegalRetrievalUnderstanding,
   targetQuestionPlanningHints,
@@ -260,6 +266,8 @@ type AiRouteProgress = LegalAiProgress
   stage: "preliminary";
   preliminary: GroundedLegalPreliminary;
 };
+
+const observeApplicationExecution = createRuntimeExecutionObserver();
 
 async function executePost(
   request: Request,
@@ -493,12 +501,14 @@ async function executePostWithinBudget(
       return response({ code: error.code, error: localizedVoiceError(locale, error.code) }, error.status);
     }
   }
-  const rewrite = gateway.rewriteFollowUp({ question, locale, conversationHistory });
+  const legalQuestion = redactLegalQuerySensitiveData(question);
   const bindings = runtimeEnv();
+  const applicationExecution = observeApplicationExecution(idempotencyKey, bindings.WORKER_VERSION?.id ?? bindings.LEGAL_RUNTIME_BUILD_ID);
   const understandingStage = budget.beginStage("query_understanding", {
     timeoutMs: 9_400,
   });
   let queryUnderstandingFallback = false;
+  const planningAttemptObservations: AiProviderAttemptObservation[] = [];
   const retrievalUnderstandingPromise = (async () => {
     try {
       const usage = await usageSummary(db, workspace.id, user.id, answerCycleLimit);
@@ -506,17 +516,20 @@ async function executePostWithinBudget(
       await assertProviderCallAllowed({ db, environment: providerEnvironment, provider: "openai" });
       const startedAt = isoNow();
       const understood = await understandLegalRetrievalQuery({
-        query: rewrite.query,
+        query: legalQuestion,
         locale,
         priorUserQuestions: conversationHistory.map((turn) => turn.user),
         requestId: `${idempotencyKey}:understanding`,
         safetyIdentifier,
         signal: understandingStage.signal,
         timeoutMs: Math.min(9_000, budget.remainingMs),
-        // Retry one fast provider/network failure inside the existing stage
-        // deadline. The planner remains fail-closed if neither attempt can
-        // produce the bounded semantic plan.
+        // Retrieval and final coverage use this single compatible plan.
+        // An unavailable plan cannot trigger a different interpretation downstream.
         maxAttempts: 1,
+        onAttemptFinished: observation => {
+          planningAttemptObservations.push(observation);
+          console.info(JSON.stringify({event: "ai.legal_planner_attempt_finished", requestId: idempotencyKey, ...observation}));
+        },
         onTelemetry: async (event) => {
           try {
             const completedAt = isoNow();
@@ -538,7 +551,7 @@ async function executePostWithinBudget(
               providerRequestId: event.providerResponseId,
               inputTokens: event.inputTokens,
               outputTokens: event.outputTokens,
-              cachedInputTokens: 0,
+              cachedInputTokens: event.cachedInputTokens,
               status: "succeeded",
               startedAt,
               completedAt,
@@ -562,12 +575,11 @@ async function executePostWithinBudget(
         providerStatus: error instanceof AiUnavailableError ? error.providerStatus : null,
         providerErrorType: error instanceof AiUnavailableError ? error.providerErrorType : null,
       }));
-      return fallbackLegalRetrievalUnderstanding(rewrite.query);
+      return fallbackLegalRetrievalUnderstanding(legalQuestion);
     }
   })();
-  // The original-query corpus search begins below while this model-produced,
-  // bounded research plan is still resolving. Model output can discover and
-  // rank candidates but never becomes evidence.
+  // Legal retrieval consumes the same interpretation as final coverage.
+  // Model output can discover and rank candidates but never becomes evidence.
   // Memory and tenant-document lookup provide conversational/case-fact context
   // and may run alongside the legal-source ladder. Official authority retrieval
   // remains sequential inside its own ladder: JURO indexed legal corpus -> live Lex.uz.
@@ -717,13 +729,13 @@ async function executePostWithinBudget(
   // the next Source Ladder rung.
   await emitProgress({ stage: "document_search_started" });
   const retrievalStartedAtMs = budget.elapsedMs;
-  const retrievalStage = budget.beginStage("live_lex_retrieval", {
+  const retrievalStage = budget.beginStage("legal_source_retrieval", {
     timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS,
   });
   const retrievalResult: LegalChatSourceRetrieval | Response = await (async () => {
     try {
       const result = await waitForStage(retrieveCorpusAwareLegalSources({
-        query: rewrite.query,
+        query: legalQuestion,
         locale: discoveryLocale,
         targetService: bindings.LEGAL_RETRIEVAL_SERVICE,
         targetEnvironment: legalRetrievalEnvironment(bindings),
@@ -731,6 +743,7 @@ async function executePostWithinBudget(
         priorUserQuestions: conversationHistory.map((turn) => turn.user),
         targetPlanningHints: retrievalUnderstandingPromise.then((understanding) =>
           targetQuestionPlanningHints(understanding, locale)),
+        requirePlanningHints: true,
         applicableAt: applicableAt?.toISOString(),
         lexSearchQueries: retrievalUnderstandingPromise.then((understanding) => understanding.lexSearchQueries),
         signal: retrievalStage.signal,
@@ -809,9 +822,9 @@ async function executePostWithinBudget(
     await emitProgress({
       stage: "retrieval_trace",
       trace: {
-        indexVersion: "direct-lex",
-        rerankerVersion: "not-configured",
-        retrievalPolicyVersion: "direct-lex-v1",
+        indexVersion: retrieval.retrievalTelemetry?.indexVersion ?? "unavailable",
+        rerankerVersion: retrieval.retrievalTelemetry?.rerankerVersion ?? "not-configured",
+        retrievalPolicyVersion: "legal-source-retrieval",
         cacheOutcome: "disabled",
         planningAvailable: !queryUnderstandingFallback,
         coverageStatus: retrieval.coverageStatus,
@@ -852,7 +865,11 @@ async function executePostWithinBudget(
 
   const retrievalUnderstanding = await retrievalUnderstandingPromise;
   const retrievalQuestion = retrievalUnderstanding.standaloneQuestion;
+  const synthesisApplicableAt = applicableAt?.toISOString()
+    ?? (retrievalUnderstanding.temporalEndpoint?.kind === "timestamp" ? retrievalUnderstanding.temporalEndpoint.instant : undefined);
+  const temporalComparison = applicableAt ? undefined : retrievalUnderstanding.comparison;
   const secondaryInternet: SecondaryInternetRetrieval = !applicableAt
+    && !synthesisApplicableAt && !temporalComparison
     && shouldRetrieveSecondaryInternet(retrieval)
     ? await startSecondaryResearch()
     : secondaryResearch ? await secondaryResearch : { sources: [], evidence: [], errors: [] };
@@ -955,6 +972,7 @@ async function executePostWithinBudget(
     }, 409);
   }
 
+  const providerAttemptObservations: Array<Parameters<NonNullable<LegalAiRunOptions["onProviderAttemptFinished"]>>[0]> = [];
   const providerCalls: Array<{
     provider: "openai" | "anthropic";
     model: string;
@@ -988,21 +1006,26 @@ async function executePostWithinBudget(
   };
 
   let aiResult;
+  let coverageDiagnostics: Awaited<ReturnType<typeof gateway.generateGroundedAnswer>>["coverageDiagnostics"] | null = null;
   // Provider-level deadlines are derived from the same absolute request
   // budget. A separate short stage signal would abort a viable fallback, so
   // this stage is telemetry-only and the provider receives budget.signal.
   const providerStage = budget.beginStage("provider_execution");
   try {
     const gatewayResult = await gateway.generateGroundedAnswer({
-      question: rewrite.query, locale, answerMode, reasoningMode, sources, legalDatabaseAsOf,
+      question: legalQuestion, locale, answerMode, reasoningMode, sources, legalDatabaseAsOf,
       retrievalQuery: retrievalQuestion,
       coverageRequirements: retrieval.coverageRequirements?.length ? retrieval.coverageRequirements
         : retrievalUnderstanding.requiredConcepts.map((requirement, index) => ({
           id: `requirement-${index + 1}`, statement: requirement.statement,
           priority: requirement.priority ?? "core", sourceIds: [],
           ...(requirement.scopeKind ? {scopeKind: requirement.scopeKind} : {}),
+          ...(requirement.origin ? {origin: requirement.origin} : {}),
+          ...(requirement.questionContext ? {questionContext: requirement.questionContext} : {}),
+          ...(requirement.unresolvedDimensions ? {unresolvedDimensions: requirement.unresolvedDimensions} : {}),
         })),
-      applicableAt: applicableAt?.toISOString(),
+      applicableAt: synthesisApplicableAt,
+      temporalComparison,
       requestId: reservation.correlationId, safetyIdentifier,
       conversationHistory,
       memories: memories.map((memory) => ({
@@ -1013,7 +1036,7 @@ async function executePostWithinBudget(
       runtimeSettings,
       intent: intent.intent,
       availableDocumentTemplates: intent.intent === "document"
-        ? matchingDocumentTemplates(rewrite.query, locale)
+        ? matchingDocumentTemplates(legalQuestion, locale)
         : [],
     }, {
       signal,
@@ -1032,8 +1055,20 @@ async function executePostWithinBudget(
       },
       beforeProviderCall,
       onProviderFailure: async (failure) => { providerFailures.push(failure); },
+      onProviderAttemptFinished: observation => {
+        providerAttemptObservations.push(observation);
+        console.info(JSON.stringify({event: "ai.legal_writer_attempt_finished",
+          correlationId: reservation.correlationId, ...observation}));
+      },
     });
     aiResult = gatewayResult.run;
+    coverageDiagnostics = gatewayResult.coverageDiagnostics;
+    console.info(JSON.stringify({
+      event: "ai.legal_answer_coverage_validated",
+      correlationId: reservation.correlationId,
+      responseKind: aiResult.data.responseKind,
+      ...coverageDiagnostics,
+    }));
     providerStage.complete();
   } catch (error) {
     providerStage.fail();
@@ -1128,24 +1163,28 @@ async function executePostWithinBudget(
   }
 
   let result;
+  let finalizedSources = new Map(sources.map((source) => [source.id, source]));
   const validationStage = budget.beginStage("validation");
   try {
     const boundedResult = parseLegalChatResponse(aiResult.data);
-    const sourceById = new Map(sources.map((source) => [source.id, source]));
     const returnedSources = boundedResult.sources;
+    finalizedSources = await validateFinalSourceObservations({
+      sources,
+      sourceIds: returnedSources.map((source) => source.sourceId),
+      observe: bindings.LEGAL_RETRIEVAL_SERVICE ? createSourceObservationClient({
+        service: bindings.LEGAL_RETRIEVAL_SERVICE,
+        environment: legalRetrievalEnvironment(bindings),
+      }) : observeCurrentLexDocument,
+    });
     const canonicalResult = {
       ...boundedResult,
       sources: returnedSources.map((reference) => {
-        const source = sourceById.get(reference.sourceId)!;
+        const source = finalizedSources.get(reference.sourceId)!;
         return {
           sourceId: source.id,
           actTitle: source.actTitle,
           actIdentifier: source.actIdentifier,
-          article: source.article ?? null,
-          excerpt: (source.spans?.find((span) => span.article === (reference.article ?? source.article))
-            ?? source.spans?.[0])?.text.slice(0, 1_200)
-            ?? source.excerpt?.slice(0, 1_200)
-            ?? null,
+          ...citationPreview(source, reference.article),
           originalUrl: source.officialUrl,
           status: source.sourceClass === "SECONDARY_REFERENCE" ? "unconfirmed" as const : source.applicabilityStatus ?? "current" as const,
           effectiveDate: source.effectiveDate ?? null,
@@ -1165,6 +1204,8 @@ async function executePostWithinBudget(
       sourceAccessMode: retrieval.sourceAccessMode,
       sourcesRetrievedAt: retrieval.sourcesRetrievedAt,
       sourceValidationStatus: retrieval.sourceValidationStatus,
+      ...(boundedResult.responseKind === "clarification_required"
+        ? {failureReason: legalResearchFailureReason(retrieval.errors)} : {}),
       coverageStatus: boundedResult.coverageGaps?.length && coverageStatus === "good_coverage"
         ? "partial_coverage" as const : coverageStatus,
     };
@@ -1174,12 +1215,14 @@ async function executePostWithinBudget(
       { locale, answerMode, reasoningMode },
     );
     validationStage.complete();
-  } catch {
+  } catch (error) {
     validationStage.fail();
+    const code = error instanceof Error && error.message === "FINAL_SOURCE_OBSERVATION_UNAVAILABLE"
+      ? "SOURCE_OBSERVATION_UNAVAILABLE" : "INVALID_AI_OUTPUT";
     await failAiRun({
       db, runId: reservation.runId, ledgerId: reservation.ledgerId,
       workspaceId: workspace.id, userId: user.id, idempotencyKey,
-      errorCode: "INVALID_AI_OUTPUT",
+      errorCode: code,
     });
     await recordLegalChatSlo({
       db,
@@ -1192,13 +1235,13 @@ async function executePostWithinBudget(
       fallbackFromProvider: aiResult.fallbackFromProvider ?? fallbackFromProgress,
       preliminaryAtMs,
       providerFirstDeltaAtMs,
-      outcome: aiSloFailureOutcome("INVALID_AI_OUTPUT", budget),
+      outcome: aiSloFailureOutcome(code, budget),
     });
     return response({
-      code: "INVALID_AI_OUTPUT",
+      code,
       correlationId: reservation.correlationId,
-      error: localizedProviderError(locale, "INVALID_AI_OUTPUT"),
-    }, 422);
+      error: localizedProviderError(locale, code),
+    }, code === "SOURCE_OBSERVATION_UNAVAILABLE" ? 503 : 422);
   }
   // A disconnected caller cancels downstream work and must never be charged.
   // Provider and retrieval timeouts are handled at their own boundaries.
@@ -1491,8 +1534,50 @@ async function executePostWithinBudget(
     sourceFreshness: freshness,
     technicalDetails: {
       provider: aiResult.provider,
+      executionIdentity: {
+        requestMessageId: userMessageId,
+        application: applicationExecution,
+        corpus: retrieval.retrievalTelemetry?.targetExecution ?? null,
+        privateAnswerReused: false,
+      },
       model: aiResult.model,
       fallbackFromProvider: aiResult.fallbackFromProvider,
+      ...(developmentTraceEnabled ? {
+        execution: budget.snapshot(),
+        providerAttempts: providerCalls.length,
+        providerAttemptObservations,
+        planningAttemptObservations,
+        providerFailures: providerFailures.map(({ provider, code }) => ({ provider, code })),
+        synthesisUsage: aiResult.usage,
+        coverageDiagnostics,
+        coverageTrace: {
+          relationship: retrievalUnderstanding.relationship ?? null,
+          questionAccounting: retrievalUnderstanding.questionAccounting ?? null,
+          applicableAt: synthesisApplicableAt ?? null,
+          comparison: temporalComparison ?? null,
+          interpretedRequirements: retrievalUnderstanding.requiredConcepts,
+          retrievedRequirements: retrieval.coverageRequirements ?? [],
+          requirementSupport: retrieval.retrievalTelemetry?.coverageRequirements ?? [],
+        },
+        sourceObservations: [...finalizedSources.values()].map((source) => ({
+          sourceId: source.id,
+          officialUrl: source.officialUrl,
+          observationVersion: source.currentSourceStatus?.observation?.version ?? null,
+          current: source.currentSourceStatus?.observation?.current ?? null,
+          observedAt: source.currentSourceStatus?.observation?.observedAt ?? null,
+          ageMs: source.currentSourceStatus?.observation
+            ? Date.now() - Date.parse(source.currentSourceStatus.observation.observedAt) : null,
+          matchesPinnedRevision: source.currentSourceStatus?.observation
+            ? source.currentSourceStatus.observation.normalizedTextSha256 === source.currentSourceStatus.pinnedTextSha256 : null,
+        })),
+        sourceOutcome: {
+          targetContractVersion: retrieval.retrievalTelemetry?.targetContractVersion ?? null,
+          fusionOutcome: retrieval.retrievalTelemetry?.fusionOutcome ?? "none",
+          validationStatus: retrieval.sourceValidationStatus,
+          coverageStatus: retrieval.coverageStatus,
+          errorCodes: retrieval.errors.map(({ code }) => code),
+        },
+      } : {}),
     },
     usage: await usageSummary(db, workspace.id, user.id, answerCycleLimit),
   }, 201);
@@ -1849,6 +1934,7 @@ async function usageSummary(db: D1Database, workspaceId: string, userId: string,
 
 function localizedProviderError(locale: AiOutputLocale, code: string) {
   const ru: Record<string, string> = {
+    SOURCE_OBSERVATION_UNAVAILABLE: "Не удалось подтвердить актуальность источников перед завершением ответа. Лимит не списан.",
     PROVIDER_TIMEOUT: "AI не успел завершить ответ. Лимит не списан; попробуйте ещё раз.",
     INVALID_AI_OUTPUT: "AI вернул результат, который не прошёл проверку структуры. Лимит не списан.",
     AI_REFUSED: "Запрос не был обработан AI. Лимит не списан.",
@@ -1857,6 +1943,7 @@ function localizedProviderError(locale: AiOutputLocale, code: string) {
     AI_CANCELLED: "Генерация остановлена. Лимит не списан.",
   };
   const uz: Record<string, string> = {
+    SOURCE_OBSERVATION_UNAVAILABLE: "Javobni yakunlashdan oldin manbalarning dolzarbligini tasdiqlab bo‘lmadi. Limit yechilmadi.",
     PROVIDER_TIMEOUT: "AI javobni vaqtida yakunlamadi. Limit yechilmadi; qayta urinib ko‘ring.",
     INVALID_AI_OUTPUT: "AI natijasi tuzilma tekshiruvidan o‘tmadi. Limit yechilmadi.",
     AI_REFUSED: "So‘rov AI tomonidan qayta ishlanmadi. Limit yechilmadi.",
@@ -1865,6 +1952,7 @@ function localizedProviderError(locale: AiOutputLocale, code: string) {
     AI_CANCELLED: "Javob yaratish to‘xtatildi. Limit yechilmadi.",
   };
   const en: Record<string, string> = {
+    SOURCE_OBSERVATION_UNAVAILABLE: "The sources could not be verified as current before completing the answer. Your allowance was not used.",
     PROVIDER_TIMEOUT: "The AI did not finish the answer in time. Your allowance was not used; try again.",
     INVALID_AI_OUTPUT: "The AI response did not pass the required structure checks. Your allowance was not used.",
     AI_REFUSED: "The AI could not process this request. Your allowance was not used.",
@@ -1996,7 +2084,7 @@ async function recordLegalChatSlo(input: {
     const stage = (name: string) => snapshot.stages.find((timing) => timing.stage === name);
     const auth = stage("auth");
     const context = stage("memory_context");
-    const retrieval = stage("live_lex_retrieval");
+    const retrieval = stage("legal_source_retrieval");
     const provider = stage("provider_execution");
     const validation = stage("validation");
     const persistence = stage("persistence");

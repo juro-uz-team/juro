@@ -44,7 +44,7 @@ Updated: 2026-08-03
 
 OpenAI is the primary provider for `POST /api/platform/ai`. Calls are made only from the Worker through the Responses API. The browser never receives a provider key.
 
-- staging model variables: `OPENAI_CHAT_MODEL=gpt-5.6-sol` and `OPENAI_DEEP_MODEL=gpt-5.6-sol`;
+- staging model variables: `OPENAI_CHAT_MODEL=gpt-5.6-luna` and `OPENAI_DEEP_MODEL=gpt-5.6-terra`;
 - secret name: `OPENAI_API_KEY`;
 - transport: the Worker requests Responses API SSE and parses semantic `response.output_text.delta` and terminal events across arbitrary network-chunk boundaries;
 - browser stream: JURO sends only bounded status metadata while generation is in progress; unvalidated legal text is never rendered as a partial answer;

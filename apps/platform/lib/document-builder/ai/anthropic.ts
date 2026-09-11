@@ -9,6 +9,7 @@ import {
   AiUnavailableError,
   type AiProviderUsage,
   type AiStructuredResult,
+  type AiProviderAttemptObservation,
 } from "./openai";
 
 interface AnthropicMessagesPayload {
@@ -20,6 +21,7 @@ interface AnthropicMessagesPayload {
     input_tokens?: number;
     output_tokens?: number;
     cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
   };
   error?: {
     type?: string;
@@ -307,6 +309,7 @@ export async function callAnthropicStructured<T>(options: {
   strictOutput?: boolean;
   /** Keep interactive structured results bounded without affecting document analysis. */
   maxTokens?: number;
+  onAttemptFinished?: (observation: AiProviderAttemptObservation) => void | Promise<void>;
 }): Promise<AiStructuredResult<T>> {
   const configuration = runtimeEnv();
   const apiKey = configuration.ANTHROPIC_API_KEY;
@@ -332,6 +335,11 @@ export async function callAnthropicStructured<T>(options: {
     if (options.signal?.aborted) {
       throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
     }
+    const attemptStartedAt = Date.now();
+    let attemptUsage: AiProviderUsage | null = null;
+    let attemptOutcome: AiProviderAttemptObservation["outcome"] = "failed";
+    let attemptErrorCode: AiProviderAttemptObservation["errorCode"] = "PROVIDER_UNAVAILABLE";
+    let attemptHttpStatus: number | null = null;
     try {
       const { response, payload } = await runProviderRequestWithTimeouts({
         firstByteTimeoutMs,
@@ -374,7 +382,14 @@ export async function callAnthropicStructured<T>(options: {
           payload: await response.json().catch(() => ({})) as AnthropicMessagesPayload,
         }),
       });
-      totalUsage.inputTokens += payload.usage?.input_tokens ?? 0;
+      attemptHttpStatus = response.status;
+      if (payload.usage) attemptUsage = {
+        inputTokens: (payload.usage.input_tokens ?? 0) + (payload.usage.cache_read_input_tokens ?? 0)
+          + (payload.usage.cache_creation_input_tokens ?? 0),
+        outputTokens: payload.usage.output_tokens ?? 0,
+        cachedInputTokens: payload.usage.cache_read_input_tokens ?? 0,
+      };
+      totalUsage.inputTokens += attemptUsage?.inputTokens ?? 0;
       totalUsage.outputTokens += payload.usage?.output_tokens ?? 0;
       totalUsage.cachedInputTokens += payload.usage?.cache_read_input_tokens ?? 0;
 
@@ -394,6 +409,7 @@ export async function callAnthropicStructured<T>(options: {
         throw new AiUnavailableError("AI-провайдер отказался обрабатывать запрос.", "AI_REFUSED", false);
       }
       if (payload.stop_reason === "max_tokens") {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "Резервный AI-ответ превысил допустимый размер.",
@@ -412,6 +428,7 @@ export async function callAnthropicStructured<T>(options: {
         : undefined;
       const text = payload.content?.find((item) => item.type === "text" && item.text)?.text;
       if (options.strictOutput === false ? toolInput === undefined : !text) {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "Резервная AI-проверка не вернула структурированный результат.",
@@ -425,6 +442,7 @@ export async function callAnthropicStructured<T>(options: {
       try {
         structuredPayload = options.strictOutput === false ? parseAnthropicJsonEnvelope(toolInput) : JSON.parse(text!);
       } catch {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "Резервная AI-проверка вернула некорректный структурированный JSON.",
@@ -435,8 +453,11 @@ export async function callAnthropicStructured<T>(options: {
         );
       }
       try {
+        const data = options.parse(structuredPayload);
+        attemptOutcome = "completed";
+        attemptErrorCode = null;
         return {
-          data: options.parse(structuredPayload),
+          data,
           provider: "anthropic",
           model: payload.model || model,
           providerResponseId: payload.id || response.headers.get("request-id"),
@@ -446,6 +467,7 @@ export async function callAnthropicStructured<T>(options: {
           fallbackFromProvider: null,
         };
       } catch {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "Резервная AI-проверка вернула результат вне структурированного контракта.",
@@ -456,6 +478,9 @@ export async function callAnthropicStructured<T>(options: {
         );
       }
     } catch (error) {
+      attemptErrorCode = error instanceof AiUnavailableError ? error.code
+        : error instanceof ProviderRequestAbortError ? error.reason === "caller" ? "AI_CANCELLED" : "PROVIDER_TIMEOUT"
+          : "PROVIDER_UNAVAILABLE";
       if (error instanceof AiUnavailableError) {
         if (error.retryable && attempt < maxAttempts) continue;
         throw error;
@@ -477,6 +502,13 @@ export async function callAnthropicStructured<T>(options: {
       }
       if (attempt >= maxAttempts) {
         throw new AiUnavailableError("Резервная AI-проверка временно недоступна.", "PROVIDER_UNAVAILABLE", true);
+      }
+    } finally {
+      try {
+        await options.onAttemptFinished?.({attempt: attempt as 1 | 2, model, elapsedMs: Date.now() - attemptStartedAt,
+          outcome: attemptOutcome, errorCode: attemptErrorCode, httpStatus: attemptHttpStatus, usage: attemptUsage});
+      } catch {
+        console.warn(JSON.stringify({event: "ai.provider_attempt_observation_unavailable"}));
       }
     }
   }

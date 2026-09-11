@@ -10,6 +10,7 @@ import type {
   AiRuntimeSettings,
 } from "../../lib/ai/runtime-settings";
 import { platformIntlLocale } from "../../lib/platform/date-time";
+import { OPENAI_FAST_CHAT_MODEL, OPENAI_DEEP_CHAT_MODEL } from "../../lib/ai/provider-models";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 type Locale = PlatformLocale;
@@ -88,8 +89,8 @@ export function AiSettingsConsole({ locale, staffName }: { locale: Locale; staff
         <section className="ai-settings-protected"><ShieldCheck aria-hidden="true"/><div><h2>{t.protected}</h2><p>{t.protectedText}</p></div></section>
         <form className="staff-decision ai-settings-form" onSubmit={(event) => void update(event)}>
           <div className="ai-settings-grid">
-            {select("openaiChatModel", dashboard.allowlist.openai, t.chat)}
-            {select("openaiDeepModel", dashboard.allowlist.openai, t.deep)}
+            {select("openaiChatModel", [OPENAI_FAST_CHAT_MODEL], t.chat)}
+            {select("openaiDeepModel", [OPENAI_DEEP_CHAT_MODEL], t.deep)}
             {select("anthropicChatFallbackModel", dashboard.allowlist.anthropic, t.anthropicChat)}
             {select("anthropicDocumentModel", dashboard.allowlist.anthropic, t.document)}
             {select("openaiDocumentFallbackModel", dashboard.allowlist.openai, t.openaiDocument)}

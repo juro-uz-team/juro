@@ -10,6 +10,25 @@ import {
 
 type Call = { url: string; init: RequestInit | undefined };
 
+test("failed official discovery drains the still-running Lex search before returning", async () => {
+  let releaseSearch!: () => void;
+  const search = new Promise<void>(resolve => {releaseSearch = resolve;});
+  let discoveryFailed!: () => void;
+  const failed = new Promise<void>(resolve => {discoveryFailed = resolve;});
+  let settled = false;
+  const pending = retrieveDirectLegalSources("unrelated question", "ru", {
+    searchQueries: ["unrelated question"], wait: async () => undefined,
+    fetchImpl: async () => {await search; return responseHtml("<html><body>No results</body></html>");},
+    discoverOfficialUrls: async () => {discoveryFailed(); throw new Error("discovery unavailable");},
+  }).finally(() => {settled = true;});
+  await failed;
+  await new Promise(resolve => setImmediate(resolve));
+  const returnedBeforeSearchFinished = settled;
+  releaseSearch();
+  await pending;
+  assert.equal(returnedBeforeSearchFinished, false);
+});
+
 test("known official candidates are fetched and validated without repeating title discovery", async () => {
   const result = await retrieveDirectLegalSourcesActual("трудовой договор", "ru", {
     knownOfficialUrls: ["https://lex.uz/ru/docs/777", "https://evil.example/docs/777"],

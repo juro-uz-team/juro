@@ -3,6 +3,7 @@
 import { ExternalLink } from "lucide-react";
 import { lazy, Suspense, useId, type ReactNode } from "react";
 import { deriveLegalEvidenceMode } from "../../lib/ai/legal-evidence-mode";
+import { questionInterpretationFailureText, officialResearchFailureText, type LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 const SafeMarkdown = lazy(() => import("./SafeMarkdown").then((module) => ({ default: module.SafeMarkdown })));
@@ -41,6 +42,7 @@ export type LegalAnswerViewResult = {
   referenceNotes?: Array<{ title: string; note: string; sourceIds: string[] }>;
   conditionalBranches?: Array<{ condition: string; outcome: string; sourceIds: string[] }>;
   coverageGaps?: string[];
+  failureReason?: LegalAnswerFailureReason;
 };
 
 type AnswerCopy = {
@@ -78,7 +80,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     clarify: "Что нужно уточнить",
     insufficient: "Пока нельзя подтвердить ответ",
     checked: "Что удалось проверить",
-    checkedBody: "JURO проверил доступный индекс официальных источников и предусмотренные уровни поиска, но не получил достаточного подтверждения для правового вывода.",
+    checkedBody: "Доступных подтверждений недостаточно для полного правового вывода.",
     missing: "Нужны дополнительные факты или подтверждённая применимая норма. JURO не заменяет их предположением из общих знаний модели.",
     authority: {
       official: "Подтверждено официальными источниками",
@@ -105,7 +107,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     clarify: "Nimani aniqlashtirish kerak",
     insufficient: "Javobni hozircha tasdiqlab bo‘lmaydi",
     checked: "Nimalar tekshirildi",
-    checkedBody: "JURO rasmiy manbalarning mavjud indeksini va nazarda tutilgan qidiruv bosqichlarini tekshirdi, ammo huquqiy xulosa uchun yetarli tasdiq topmadi.",
+    checkedBody: "Mavjud tasdiqlar to‘liq huquqiy xulosa uchun yetarli emas.",
     missing: "Qo‘shimcha faktlar yoki tasdiqlangan amaldagi norma kerak. JURO ularning o‘rniga modelning umumiy bilimiga asoslangan taxmin bermaydi.",
     authority: {
       official: "Rasmiy manbalar bilan tasdiqlangan",
@@ -132,7 +134,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     clarify: "What needs clarification",
     insufficient: "The answer cannot yet be verified",
     checked: "What was checked",
-    checkedBody: "JURO checked the available index of official sources and the configured search tiers, but found insufficient support for a legal conclusion.",
+    checkedBody: "The available evidence is insufficient for a complete legal conclusion.",
     missing: "Additional facts or a verified applicable rule are required. JURO will not replace them with an assumption based on a model's general knowledge.",
     authority: {
       official: "Verified by official sources",
@@ -241,18 +243,21 @@ export function LegalAnswerView({
   </Section>;
 
   if (result.responseKind === "clarification_required") {
+    const interpretationFailed = result.failureReason === "question_interpretation_unavailable";
+    const researchFailed = result.failureReason === "official_research_unavailable";
     return <article className={`${rootClass} legal-answer--insufficient`} data-answer-kind="insufficient-evidence">
       {internetNotice}
       <p className="legal-answer__authority">{copy.authority.none}</p>
       <header className="legal-answer__insufficient-heading">
         <span>{copy.checked}</span>
         <h2>{copy.insufficient}</h2>
-        <Markdown result={result} locale={locale}>{result.answer}</Markdown>
+        <Markdown result={result} locale={locale}>{interpretationFailed ? questionInterpretationFailureText(locale)
+          : researchFailed ? officialResearchFailureText(locale) : result.answer}</Markdown>
       </header>
       <section className="legal-answer__checked" aria-labelledby={`${id}-checked`}>
         <h3 id={`${id}-checked`}>{copy.checked}</h3>
         <p>{copy.checkedBody}</p>
-        <p>{copy.missing}</p>
+        {!interpretationFailed && !researchFailed && <p>{copy.missing}</p>}
       </section>
       {result.confirmedFindings.length > 0 && <Section id={`${id}-found`} title={copy.law}>
         {result.confirmedFindings.map((finding, index) => <div className="legal-answer__finding" key={index}>

@@ -6,3 +6,11 @@
  * capability review plus the contract/evaluation suite.
  */
 export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+
+/** Legal chat routing policy, independent of legacy environment or saved overrides. */
+export const OPENAI_FAST_CHAT_MODEL = "gpt-5.6-luna";
+export const OPENAI_DEEP_CHAT_MODEL = "gpt-5.6-terra";
+
+export function openAiChatModel(mode: "fast" | "deep"): string {
+  return mode === "deep" ? OPENAI_DEEP_CHAT_MODEL : OPENAI_FAST_CHAT_MODEL;
+}

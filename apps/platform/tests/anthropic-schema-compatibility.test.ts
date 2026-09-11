@@ -1,8 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { anthropicCompatibleJsonSchema } from "../lib/ai/anthropic-schema";
-import { normalizeAnthropicLegalChatResponse } from "../lib/ai/anthropic-provider";
+import { normalizeAnthropicLegalChatResponse, runAnthropicLegalChat } from "../lib/ai/anthropic-provider";
+import {env} from "cloudflare:workers";
 import type { LegalChatRequest } from "../lib/ai/provider";
+
+test("Anthropic receives resolved comparison endpoints instead of reconstructing relative dates", async context => {
+  const previous = env.ANTHROPIC_API_KEY;
+  env.ANTHROPIC_API_KEY = "test-only-key";
+  context.after(() => {env.ANTHROPIC_API_KEY = previous;});
+  const comparison: NonNullable<LegalChatRequest["temporalComparison"]> = {
+    left: {kind: "timestamp", instant: "2024-09-12T00:00:00Z"}, right: {kind: "current"},
+  };
+  let payload: Record<string, unknown> | undefined;
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    payload = JSON.parse(body.messages[0].content);
+    return Response.json({id: "comparison", model: "test-model", content: [{type: "tool_use", name: "emit_result", input: {payload_json: JSON.stringify({
+      responseKind: "clarification_required", summary: "Нужны официальные редакции.", confirmedFindings: [],
+      summarySourceIds: [], clarificationQuestions: [], actionPlan: [], risks: [], deadlines: [],
+      urgency: "normal", suggestedDocument: null, suggestLawyer: false,
+    })}}], usage: {input_tokens: 10, output_tokens: 10}});
+  });
+  await runAnthropicLegalChat({question: "Что изменилось за два года?", locale: "ru", answerMode: "detailed",
+    reasoningMode: "deep", sources: [], temporalComparison: comparison, legalDatabaseAsOf: "2026-09-12",
+    requestId: "comparison", safetyIdentifier: "comparison"});
+  assert.deepEqual(payload?.temporalComparison, comparison);
+});
 
 test("Anthropic schema adapter removes only provider-incompatible annotations", () => {
   const source = {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import {assessedGuidanceActions, assessedGuidanceCoverage} from "./legal-guidance-assessment";
+import {assessedFindingSources} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 
 /**
@@ -71,7 +73,8 @@ export const legalGatewayProviderMetadataSchema = z.object({
   provider: z.enum(["openai", "anthropic"]),
   model: z.string().trim().min(1).max(160),
   providerResponseId: z.string().trim().max(240).nullable(),
-  attempts: z.number().int().min(1).max(3),
+  // Two writer attempts per part, plus each independent assessment.
+  attempts: z.number().int().min(1).max(10),
   latencyMs: z.number().int().nonnegative(),
   fallbackFromProvider: z.enum(["openai", "anthropic"]).nullable(),
   inputTokens: z.number().int().nonnegative(),
@@ -105,9 +108,32 @@ export type LegalAiGatewayRunOptions = LegalAiRunOptions & {
 };
 
 export type ValidatedLegalGatewayResult = {
+  contentRepair?: {
+    outcome: "repaired" | "incomplete" | "unavailable" | "rejected";
+    requirementIndexes: number[];
+    safeErrorCode: string | null;
+  };
   run: LegalAiRunResult;
   answer: LegalGatewayAnswer;
   removedClaimCount: number;
+  coverageDiagnostics: {
+    mainPointIncomplete?: true;
+    requirementCount: number;
+    writerOmissionCount: number;
+    validatorRejectionCount: number;
+    validatedRequirementCount: number;
+    proposedFindingCount: number;
+    /** Surviving provider findings; excludes server-authored source-only fallback findings. */
+    validatedFindingCount: number;
+    proposedActionCount: number;
+    validatedActionCount: number;
+    validatedGuidanceRequirementCount: number;
+    missingGuidanceRequirementCount: number;
+    completeRequirementCount: number;
+    /** Request-local requirement positions avoid logging question text or IDs.
+     * Finding support and independently assessed practical coverage are distinct. */
+    unresolvedCoverage: Array<{requirementIndex: number; finding: "omitted" | "rejected" | null; guidanceMissing: boolean}>;
+  };
 };
 
 export interface LegalAiGateway {
@@ -131,6 +157,8 @@ export interface LegalAiGateway {
     run: LegalAiRunResult;
     sources: readonly LegalSourceContext[];
     question?: string;
+    applicableAt?: LegalChatRequest["applicableAt"];
+    temporalComparison?: LegalChatRequest["temporalComparison"];
     retrievalQuery?: string;
     coverageRequirements?: LegalChatRequest["coverageRequirements"];
     locale: AiOutputLocale;
@@ -288,6 +316,10 @@ function numericTokens(value: string): string[] {
   return groundingNumericTokens(value);
 }
 
+function normalizedText(value: string): string {
+  return plainGroundedText(value).toLocaleLowerCase().replace(/\s+/gu, " ").trim();
+}
+
 function spanCoverage(text: string, span: LegalSourceSpan): number {
   const terms = legalTerms(plainGroundedText(text));
   if (terms.length === 0) return 0;
@@ -300,6 +332,7 @@ function validateSpanForClaim(
   span: LegalSourceSpan,
   allowedUrls: ReadonlySet<string>,
   deferNumericCheck = false,
+  exactSpanSemanticallySupported = false,
 ): boolean {
   const tier = sourceTier(source);
   if (!tier) return false;
@@ -316,6 +349,7 @@ function validateSpanForClaim(
   if (!/^[a-f0-9]{64}$/u.test(span.textSha256)) return false;
   const spanNumbers = new Set(numericTokens(span.text));
   if (!deferNumericCheck && numericTokens(claim.text).some((token) => !spanNumbers.has(token))) return false;
+  if (exactSpanSemanticallySupported) return true;
   const coverage = spanCoverage(claim.text, span);
   if (claim.supportText && legalTerms(claim.supportText).length > 0
     && spanCoverage(claim.supportText, span) < 0.35) return false;
@@ -327,6 +361,7 @@ function bestValidatedSpan(
   claim: CandidateClaim,
   sources: ReadonlyMap<string, LegalSourceContext>,
   deferNumericCheck = false,
+  independentlySupported = false,
 ): { source: LegalSourceContext; span: LegalSourceSpan; coverage: number } | null {
   let best: { source: LegalSourceContext; span: LegalSourceSpan; coverage: number } | null = null;
   const allowedUrls = new Set([...sources.values()].map((source) => source.officialUrl));
@@ -334,7 +369,12 @@ function bestValidatedSpan(
     const source = sources.get(sourceId);
     if (!source) continue;
     for (const span of source.spans ?? []) {
-      if (!validateSpanForClaim(claim, source, span, allowedUrls, deferNumericCheck)) continue;
+      // A source-level semantic decision identifies this exact evidence span
+      // only when the source has one span. Multi-span sources still need the
+      // existing span-selection proof; never choose an arbitrary approved row.
+      const exactSpanSemanticallySupported = independentlySupported
+        && sourceTier(source) === "authoritative" && source.spans?.length === 1;
+      if (!validateSpanForClaim(claim, source, span, allowedUrls, deferNumericCheck, exactSpanSemanticallySupported)) continue;
       const coverage = spanCoverage(claim.text, span);
       if (!best || coverage > best.coverage) best = { source, span, coverage };
     }
@@ -412,38 +452,47 @@ function filteredLegacyResult(
   validClaims: readonly LegalGatewayClaim[],
   validSourceIds: ReadonlySet<string>,
   availableDocumentTemplateCodes: ReadonlySet<string>,
+  redundantCitations: ReadonlyMap<string, ReadonlySet<string>>,
+  actionOrigins: Map<LegalChatResponse["actionPlan"][number], LegalChatResponse["actionPlan"][number]>,
 ): LegalChatResponse {
+  const retainedSources = (title: string, explanation: string, sourceIds: readonly string[]) =>
+    sourceIds.filter(id => !redundantCitations.get(nonRepeatingLegalText(title, explanation))?.has(id));
   const supported = (title: string, explanation: string, sourceIds: readonly string[]) => {
     const text = nonRepeatingLegalText(title, explanation);
-    return sourceIds.length > 0 && sourceIds.every(sourceId =>
+    const retained = retainedSources(title, explanation, sourceIds);
+    return retained.length > 0 && retained.every(sourceId => validSourceIds.has(sourceId) &&
       validClaims.some(claim => claim.text === text && claim.sourceId === sourceId));
   };
   return {
     ...result,
     confirmedFindings: result.confirmedFindings.filter((finding) =>
-      supported(finding.title, finding.explanation, finding.sourceIds)
-        && finding.sourceIds.every((sourceId) => validSourceIds.has(sourceId)),
+      supported(finding.title, finding.explanation, finding.sourceIds),
     ).map((finding) => ({
       ...finding,
+      sourceIds: retainedSources(finding.title, finding.explanation, finding.sourceIds),
       title: plainGroundedText(finding.title),
       explanation: plainGroundedText(finding.explanation),
     })),
     conditionalBranches: (result.conditionalBranches ?? []).filter((branch) =>
-      supported(branch.condition, branch.outcome, branch.sourceIds)
-        && branch.sourceIds.every((sourceId) => validSourceIds.has(sourceId)),
+      supported(branch.condition, branch.outcome, branch.sourceIds),
     ).map((branch) => ({
       ...branch,
+      sourceIds: retainedSources(branch.condition, branch.outcome, branch.sourceIds),
       condition: plainGroundedText(branch.condition),
       outcome: plainGroundedText(branch.outcome),
     })),
     risks: result.risks.filter((risk) =>
-      risk.sourceIds.length > 0 && (supported(risk.title, risk.explanation, risk.sourceIds)
-        && risk.sourceIds.every((sourceId) => validSourceIds.has(sourceId))),
-    ).map((risk) => ({ ...risk, title: plainGroundedText(risk.title), explanation: plainGroundedText(risk.explanation) })),
+      supported(risk.title, risk.explanation, risk.sourceIds),
+    ).map((risk) => ({ ...risk, sourceIds: retainedSources(risk.title, risk.explanation, risk.sourceIds),
+      title: plainGroundedText(risk.title), explanation: plainGroundedText(risk.explanation) })),
     actionPlan: result.actionPlan.filter((step) =>
-      step.sourceIds.length > 0 && (supported(step.title, step.description, step.sourceIds)
-        && step.sourceIds.every((sourceId) => validSourceIds.has(sourceId))),
-    ).map((step) => ({ ...step, title: plainGroundedText(step.title), description: plainGroundedText(step.description) })),
+      supported(step.title, step.description, step.sourceIds),
+    ).map((step) => {
+      const retained = {...step, sourceIds: retainedSources(step.title, step.description, step.sourceIds),
+        title: plainGroundedText(step.title), description: plainGroundedText(step.description)};
+      actionOrigins.set(retained, step);
+      return retained;
+    }),
     deadlines: result.deadlines.filter((deadline) =>
       validClaims.some((claim) => claim.type === "deadline"
         && claim.text.startsWith(`${plainGroundedText(deadline.title)}.`)),
@@ -486,7 +535,7 @@ function groundedVisibleAnswer(
 }
 
 function groundedMainPoint(result: LegalChatResponse, claims: readonly LegalGatewayClaim[],
-  requirements: LegalChatRequest["coverageRequirements"] = []): string {
+  requirements: LegalChatRequest["coverageRequirements"] = []): {text: string | null; acceptedSummary: boolean} {
   const summary = plainGroundedText(result.summary);
   const supportedFindings = result.confirmedFindings.filter((item) => claims.some((claim) =>
     claim.text === nonRepeatingLegalText(item.title, item.explanation)));
@@ -514,24 +563,36 @@ function groundedMainPoint(result: LegalChatResponse, claims: readonly LegalGate
   console.info(JSON.stringify({event: "legal.main_point_validated", acceptedSummary,
     characters: summary.length, termCoverage: terms.length ? covered / terms.length : 0,
     numbersSupported: numericTokens(summary).every(token => numericTokens(evidenceText).includes(token))}));
-  if (acceptedSummary) return summary;
+  if (acceptedSummary) return {text: summary, acceptedSummary: true};
   // Synthesis orders findings with the ordinary governing rule first. Keep
   // that validated conclusion ahead of branches that may contain only exceptions.
   const finding = governingFindings[0] ?? supportedFindings[0];
+  const coreIds = new Set(requirements.filter(requirement => requirement.priority === "core").map(requirement => requirement.id));
+  const coreFindings = supportedFindings.filter(item => item.requirementIds?.some(id => coreIds.has(id)));
+  if (governingFindings.length && coreFindings.length > 1) {
+    // A fallback has no independently validated compression. Preserve the
+    // complete core explanations, including qualifications and procedures,
+    // rather than guessing which clauses can be omitted from the first rule.
+    const ordered = [...new Set([...governingFindings.filter(item => coreFindings.includes(item)), ...coreFindings])];
+    const text = ordered.map(item => plainGroundedText(item.explanation)).join(" ");
+    if (text.length <= 1_500) return {text, acceptedSummary: false};
+    console.info(JSON.stringify({event: "legal.main_point_incomplete", findingCount: ordered.length, characters: text.length}));
+    return {text: null, acceptedSummary: false};
+  }
   // Keep independent forum rules together when their complete validated prose
   // fits a concise summary. Never cut a sentence or its legal conditions.
   const ordinaryRules = [...new Set([finding, ...forumFindings].filter(
     (item): item is NonNullable<typeof item> => Boolean(item)))];
   const ordinaryText = ordinaryRules.map(item => plainGroundedText(item.explanation)).join(" ");
-  if (ordinaryRules.length > 1 && ordinaryText.length <= 650) return ordinaryText;
-  if (finding) return plainGroundedText(finding.explanation);
+  if (ordinaryRules.length > 1 && ordinaryText.length <= 650) return {text: ordinaryText, acceptedSummary: false};
+  if (finding) return {text: plainGroundedText(finding.explanation), acceptedSummary: false};
   const branches = (result.conditionalBranches ?? []).filter((branch) => claims.some((claim) =>
     claim.text === nonRepeatingLegalText(branch.condition, branch.outcome))).slice(0, 3);
-  if (branches.length > 0) return branches.map((branch) =>
-    `${branches.length > 1 ? "- " : ""}${plainGroundedText(branch.condition)}: ${plainGroundedText(branch.outcome)}`).join("\n\n");
+  if (branches.length > 0) return {text: branches.map((branch) =>
+    `${branches.length > 1 ? "- " : ""}${plainGroundedText(branch.condition)}: ${plainGroundedText(branch.outcome)}`).join("\n\n"), acceptedSummary: false};
   // The finding explanation is already validated. Its title is presentation
   // metadata and must not be pasted in front of the conclusion a second time.
-  return plainGroundedText(claims[0]?.text || result.summary);
+  return {text: plainGroundedText(claims[0]?.text || result.summary), acceptedSummary: false};
 }
 
 export function validateGroundedPreliminaryFinding(input: {
@@ -789,6 +850,8 @@ export function validateLegalGatewayAnswer(input: {
   run: LegalAiRunResult;
   sources: readonly LegalSourceContext[];
   question?: string;
+  applicableAt?: LegalChatRequest["applicableAt"];
+  temporalComparison?: LegalChatRequest["temporalComparison"];
   retrievalQuery?: string;
   coverageRequirements?: LegalChatRequest["coverageRequirements"];
   locale: AiOutputLocale;
@@ -798,10 +861,30 @@ export function validateLegalGatewayAnswer(input: {
   availableDocumentTemplateCodes?: readonly string[];
 }): ValidatedLegalGatewayResult {
   const sourceById = new Map(input.sources.map((source) => [source.id, source]));
-  const candidates = candidateClaims(input.result);
+  const proposedCandidates = candidateClaims(input.result);
+  const actionDecisions = assessedGuidanceActions({...input, actions: input.result.actionPlan,
+    assessments: input.run.guidanceAssessments ?? []});
+  const findingDecisions = assessedFindingSources(input, input.result.confirmedFindings, input.run.findingAssessments ?? []);
+  const assessedResult = {...input.result, confirmedFindings: input.result.confirmedFindings.flatMap(finding => {
+    const sourceIds = findingDecisions.get(finding);
+    return sourceIds ? sourceIds.length ? [{...finding, sourceIds}] : [] : [finding];
+  }), actionPlan: input.result.actionPlan.filter(action => actionDecisions.get(action) !== false)};
+  const independentlySupportedFindings = new Set(input.result.confirmedFindings.flatMap(finding => {
+    const sourceIds = findingDecisions.get(finding);
+    return sourceIds?.length ? [JSON.stringify([`${finding.title}. ${finding.explanation}`, [...sourceIds].sort()])] : [];
+  }));
+  const candidates = candidateClaims(assessedResult);
+  const redundantCitations = new Map<string, Set<string>>();
+  const assessedActionClaims = new Set([...actionDecisions].filter(([, supported]) => supported)
+    .map(([action]) => JSON.stringify([`${action.title}. ${action.description}`, [...action.sourceIds].sort()])));
+  const independentlySupportedAction = (claim: CandidateClaim) => claim.type === "action"
+    && assessedActionClaims.has(JSON.stringify([claim.rawText, [...claim.sourceIds].sort()]));
+  const independentlySupportedFinding = (claim: CandidateClaim) => claim.type === "legal_basis"
+    && independentlySupportedFindings.has(JSON.stringify([claim.rawText, [...claim.sourceIds].sort()]));
   const providerValidated = candidates.flatMap((claim): LegalGatewayClaim[] => {
     let matches = [...new Set(claim.sourceIds)].flatMap(sourceId => {
-      const match = bestValidatedSpan({ ...claim, supportText: undefined, sourceIds: [sourceId] }, sourceById, true);
+      const match = bestValidatedSpan({ ...claim, supportText: undefined, sourceIds: [sourceId] }, sourceById, true,
+        independentlySupportedFinding(claim) || independentlySupportedAction(claim));
       return match ? [match] : [];
     }).sort((left, right) => right.coverage - left.coverage);
     if (matches.some(match => sourceTier(match.source) !== "authoritative")) {
@@ -821,13 +904,34 @@ export function validateLegalGatewayAnswer(input: {
       && !matches.some(match => spanCoverage(claim.supportText!, match.span) >= 0.35)) return [];
     const terms = legalTerms(plainGroundedText(claim.text), Infinity);
     const covered = new Set<string>();
+    const coveredNumbers = new Set<string>();
+    const retainedEvidence: string[] = [];
     // Keep equally supporting citations and complementary evidence. A weaker
     // overlap that adds no claim support must not acquire a citation merely
     // because another provision supports the complete statement.
     return matches.flatMap(match => {
       const supported = terms.filter(evidenceTermMatcher(match.span.text));
-      if (match.coverage < matches[0]!.coverage && supported.every(term => covered.has(term))) return [];
+      const numbers = numericTokens(match.span.text).filter(token => numericTokens(claim.text).includes(token));
+      if (match.coverage < matches[0]!.coverage && supported.every(term => covered.has(term))
+        && numbers.every(token => coveredNumbers.has(token))) {
+        // Lexical overlap cannot prove that a removed citation contributes no
+        // qualification. Salvage only explanations directly present in the
+        // retained evidence; paraphrases keep the existing fail-closed gate.
+        if (claim.supportText && retainedEvidence.some(text =>
+          normalizedText(text).includes(normalizedText(claim.supportText!)))) {
+          const redundant = redundantCitations.get(claim.text) ?? new Set<string>();
+          redundant.add(match.source.id);
+          redundantCitations.set(claim.text, redundant);
+          return [];
+        }
+        // A request-bound independent assessment has checked the action's own
+        // cited texts and cumulative restrictions. Token overlap alone cannot
+        // discard a complementary citation from that approved evidence set.
+        if (!independentlySupportedAction(claim) && !independentlySupportedFinding(claim)) return [];
+      }
+      retainedEvidence.push(match.span.text);
       supported.forEach(term => covered.add(term));
+      numbers.forEach(token => coveredNumbers.add(token));
       return [{ text: claim.text, type: claimTypeForSource(claim, match.source),
         sourceId: match.source.id, sourceSpanId: match.span.id,
         confidence: Math.min(1, Math.max(0.5, match.coverage)) }];
@@ -838,7 +942,7 @@ export function validateLegalGatewayAnswer(input: {
     .join(" ");
   console.info(JSON.stringify({event: "legal.answer_evidence_usage", sources: input.sources.map((source, index) => ({
     index, spanCharacters: (source.spans ?? []).reduce((total, span) => total + span.text.length, 0),
-    proposedClaims: candidates.filter(claim => claim.sourceIds.includes(source.id)).length,
+    proposedClaims: proposedCandidates.filter(claim => claim.sourceIds.includes(source.id)).length,
     validatedClaims: providerValidated.filter(claim => claim.sourceId === source.id).length,
   }))}));
   const fallback = providerValidated.length === 0
@@ -900,11 +1004,14 @@ export function validateLegalGatewayAnswer(input: {
     const span = source?.spans?.find((candidate) => candidate.id === claim.sourceSpanId);
     if (source && span && !firstSpanBySource.has(source.id)) firstSpanBySource.set(source.id, span);
   }
+  const actionOrigins = new Map<LegalChatResponse["actionPlan"][number], LegalChatResponse["actionPlan"][number]>();
   const filtered = filteredLegacyResult(
-    input.result,
+    assessedResult,
     publishable,
     validSourceIds,
     new Set(input.availableDocumentTemplateCodes ?? []),
+    redundantCitations,
+    actionOrigins,
   );
   const visibleProviderSourceIds = new Set([
     ...filtered.confirmedFindings.flatMap((finding) => finding.sourceIds),
@@ -950,11 +1057,12 @@ export function validateLegalGatewayAnswer(input: {
     : retainedTiers.size > 1 ? "mixed" as const
       : retainedTiers.has("official") ? "official" as const
         : "private_only" as const;
+  const mainPoint = groundedMainPoint(grounded, publishable, input.coverageRequirements);
   const groundedResult: LegalChatResponse = {
     ...grounded,
-    responseKind: fallback || input.run.sourceFallback || input.result.responseKind === "clarification_required"
+    responseKind: fallback || input.run.sourceFallback || input.result.responseKind === "clarification_required" || mainPoint.text === null
       ? "clarification_required" : "answer",
-    summary: groundedMainPoint(grounded, publishable, input.coverageRequirements),
+    summary: mainPoint.text ?? grounded.summary,
     answer: groundedVisibleAnswer(publishable, input.locale, false, input.answerMode === "detailed" ? 8 : 3),
     referenceNotes: [],
     clarificationQuestions: sanitizeClarificationQuestions(grounded.clarificationQuestions, input.locale),
@@ -971,18 +1079,33 @@ export function validateLegalGatewayAnswer(input: {
     || groundedTextComparisonKey(nonRepeatingLegalText(finding.title, finding.explanation))
       === groundedTextComparisonKey(groundedResult.summary)
     || groundedResult.summary.includes(plainGroundedText(finding.explanation)));
-  const keptSummary = groundedTextComparisonKey(grounded.summary) === groundedTextComparisonKey(groundedResult.summary);
+  const keptSummary = mainPoint.acceptedSummary;
   groundedResult.summarySourceIds = (keptSummary ? grounded.summarySourceIds : undefined)
     ?? (mainFindings.length ? [...new Set(mainFindings.flatMap(finding => finding.sourceIds))] : undefined)
     ?? [...new Set(publishable.flatMap(claim => claim.sourceId ? [claim.sourceId] : []))];
   // Only findings that survived exact claim/span validation may account for a
   // requirement. Retrieval provenance or a dropped finding cannot cover it.
-  const uncovered = (input.coverageRequirements ?? []).filter(requirement =>
-    !filtered.confirmedFindings.some(finding => finding.requirementIds?.includes(requirement.id)
+  const requirements = input.coverageRequirements ?? [];
+  const guidanceCoverage = assessedGuidanceCoverage({question: input.question, applicableAt: input.applicableAt,
+    temporalComparison: input.temporalComparison, coverageRequirements: requirements, sources: input.sources,
+    actions: [...actionOrigins.values()], assessments: input.run.guidanceAssessments ?? []});
+  groundedResult.actionPlan = filtered.actionPlan.map(action => ({...action,
+    requirementIds: guidanceCoverage.get(actionOrigins.get(action)!) ?? []}));
+  const covers = (findings: LegalChatResponse["confirmedFindings"], requirement: typeof requirements[number]) =>
+    findings.some(finding => finding.requirementIds?.includes(requirement.id)
       && (requiredCoverageAnswerRole(requirement) === null
         || finding.answerRole === requiredCoverageAnswerRole(requirement))
       && (requirement.sourceIds.length === 0
-        || finding.sourceIds.some(id => requirement.sourceIds.includes(id)))));
+        || finding.sourceIds.some(id => requirement.sourceIds.includes(id))));
+  const guidanceCovers = (requirement: typeof requirements[number]) => groundedResult.actionPlan.some(action =>
+    action.requirementIds?.includes(requirement.id)
+      // Scope membership above comes only from the independent assessment of
+      // the complete, citation-validated action set. An absent discovery hint
+      // cannot invalidate that proof, just as it cannot invalidate a finding.
+      && (requirement.sourceIds.length === 0
+        || action.sourceIds.some(id => requirement.sourceIds.includes(id))));
+  const uncovered = requirements.filter(requirement => !covers(filtered.confirmedFindings, requirement)
+    || (requirement.priority === "core" && !guidanceCovers(requirement)));
   if (uncovered.length > 0) {
     groundedResult.coverageGaps = uncovered.map(requirement => requirement.statement);
     if (uncovered.some(requirement => requirement.priority === "core")) {
@@ -1061,10 +1184,35 @@ export function validateLegalGatewayAnswer(input: {
     );
   }
   const answer = parsedAnswer.data;
+  const writerOmissions = requirements.filter(requirement => !covers(input.result.confirmedFindings, requirement));
+  const rejectedRequirements = requirements.filter(requirement =>
+    covers(input.result.confirmedFindings, requirement) && !covers(filtered.confirmedFindings, requirement));
+  const {guidanceAssessments: _consumedAssessments, findingAssessments: _consumedFindingAssessments, ...completedRun} = input.run;
   return {
-    run: { ...input.run, data: safeResult },
+    run: { ...completedRun, data: safeResult },
     answer,
-    removedClaimCount: candidates.length - providerValidated.length,
+    removedClaimCount: proposedCandidates.filter(claim => !candidateClaims(safeResult)
+      .some(visible => visible.text === claim.text && visible.type === claim.type)).length,
+    coverageDiagnostics: {
+      ...(mainPoint.text === null ? {mainPointIncomplete: true as const} : {}),
+      requirementCount: requirements.length,
+      writerOmissionCount: writerOmissions.length,
+      validatorRejectionCount: rejectedRequirements.length,
+      validatedRequirementCount: requirements.filter(requirement => covers(filtered.confirmedFindings, requirement)).length,
+      proposedFindingCount: input.result.confirmedFindings.length,
+      validatedFindingCount: filtered.confirmedFindings.length,
+      proposedActionCount: input.result.actionPlan.length,
+      validatedActionCount: filtered.actionPlan.length,
+      validatedGuidanceRequirementCount: requirements.filter(requirement => requirement.priority === "core" && guidanceCovers(requirement)).length,
+      missingGuidanceRequirementCount: requirements.filter(requirement => requirement.priority === "core" && !guidanceCovers(requirement)).length,
+      completeRequirementCount: requirements.length - uncovered.length,
+      unresolvedCoverage: requirements.flatMap((requirement, requirementIndex) => {
+        const finding = covers(filtered.confirmedFindings, requirement) ? null
+          : covers(input.result.confirmedFindings, requirement) ? "rejected" as const : "omitted" as const;
+        const guidanceMissing = requirement.priority === "core" && !guidanceCovers(requirement);
+        return finding || guidanceMissing ? [{requirementIndex, finding, guidanceMissing}] : [];
+      }),
+    },
   };
 }
 
@@ -1143,11 +1291,13 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       if (fallback) return fallback;
       throw error;
     }
-    const validated = this.validateAnswerContract({
-      result: run.data,
-      run,
+    const validate = (candidate: LegalAiRunResult) => this.validateAnswerContract({
+      result: candidate.data,
+      run: candidate,
       sources: input.sources,
       question: input.question,
+      applicableAt: input.applicableAt,
+      temporalComparison: input.temporalComparison,
       retrievalQuery: input.retrievalQuery,
       coverageRequirements: input.coverageRequirements,
       locale: input.locale,
@@ -1156,6 +1306,64 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       legalDatabaseAsOf: input.legalDatabaseAsOf,
       availableDocumentTemplateCodes: input.availableDocumentTemplates?.map((template) => template.templateCode),
     });
+    let validated = validate(run);
+    const unresolved = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
+      const requirement = input.coverageRequirements?.[item.requirementIndex];
+      // Live official retrieval can lack a discovery-to-scope mapping. A
+      // validated governing finding supplies its own evidence relationship;
+      // raw writer citations and unrelated findings cannot authorize repair.
+      const evidenceIds = [...(requirement?.sourceIds ?? []),
+        ...validated.run.data.confirmedFindings.filter(finding => finding.answerRole === "governing_rule"
+          && requirement && finding.requirementIds?.includes(requirement.id)).flatMap(finding => finding.sourceIds)];
+      const available = evidenceIds.some(id => input.sources.some(source => source.id === id
+        && sourceTier(source) === "authoritative" && source.spans?.some(span => span.quality === "high")));
+      return requirement?.priority === "core" && available
+        ? [{requirementId: requirement.id, finding: item.finding, guidanceMissing: item.guidanceMissing}] : [];
+    });
+    if (unresolved.length && !input.contentRepair && !options.signal?.aborted
+      && (!options.budget || options.budget.remainingMs > 0)) {
+      const requirementIndexes = unresolved.map(item => input.coverageRequirements!.findIndex(requirement => requirement.id === item.requirementId));
+      let completedRepair: LegalAiRunResult | undefined;
+      try {
+        const repaired = await this.provider.runLegalChat({...input, contentRepair: {
+          unresolved, retained: structuredClone(validated.run.data),
+        }}, {...options, onPartialLegalFinding: undefined});
+        completedRepair = repaired;
+        if (repaired.provider === run.provider && repaired.model === run.model) {
+          validated = validate({...repaired, attempts: run.attempts + repaired.attempts,
+            latencyMs: Math.max(0, Date.now() - startedAt), usage: {
+              inputTokens: run.usage.inputTokens + repaired.usage.inputTokens,
+              outputTokens: run.usage.outputTokens + repaired.usage.outputTokens,
+              cachedInputTokens: run.usage.cachedInputTokens + repaired.usage.cachedInputTokens,
+            }});
+          validated.contentRepair = {outcome: validated.run.data.responseKind === "answer" ? "repaired" : "incomplete",
+            requirementIndexes, safeErrorCode: null};
+        } else {
+          validated.contentRepair = {outcome: "rejected", requirementIndexes, safeErrorCode: "CONTENT_REPAIR_MODEL_CHANGED"};
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        // Exhausted recovery preserves the already validated partial answer;
+        // neither a failed writer nor an oversized merge can erase it.
+        validated.contentRepair = {outcome: "unavailable", requirementIndexes,
+          safeErrorCode: error instanceof AiUnavailableError ? error.code : "CONTENT_REPAIR_FAILED"};
+      }
+      // A completed provider call consumed tokens even if its candidate could
+      // not be accepted. Keep aggregate accounting separate from claim adoption.
+      if (completedRepair) {
+        const usage = {
+          inputTokens: run.usage.inputTokens + completedRepair.usage.inputTokens,
+          outputTokens: run.usage.outputTokens + completedRepair.usage.outputTokens,
+          cachedInputTokens: run.usage.cachedInputTokens + completedRepair.usage.cachedInputTokens,
+        };
+        const attempts = run.attempts + completedRepair.attempts;
+        const latencyMs = Math.max(0, Date.now() - startedAt);
+        validated.run = {...validated.run, usage, attempts, latencyMs, providerResponseId: null};
+        validated.answer.providerMetadata = {...validated.answer.providerMetadata, ...usage,
+          attempts, latencyMs, providerResponseId: null};
+      }
+      console.info(JSON.stringify({event: "legal.content_repair_finished", ...validated.contentRepair}));
+    }
     await emitPreliminary(preliminaryFromValidatedResult(validated, input.locale));
     return validated;
   }

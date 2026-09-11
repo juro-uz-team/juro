@@ -1,12 +1,18 @@
 import type { LegalChatRequest, LegalSourceContext } from "../ai/provider";
-import { verifyCurrentLexDocument } from "../legal/lex-document-status";
+import type {ServiceExecutionObservation} from "../ai/runtime-execution-observation";
+import {observeCurrentLexDocument} from "../legal/lex-document-status";
+import {isCurrentSourceObservation, isFreshSourceObservation, type SourceObservation} from "../legal/source-observation";
+import {createSourceObservationClient} from "./source-observation-service";
 import { fitsLegalEvidenceBudget } from "../legal/legal-evidence-budget";
 import {
   retrieveLiveLexSources,
   type LiveLexRetrievalResult,
 } from "../legal/live-lex-retrieval";
 import { detectArticleNumbers } from "../legal/legal-language";
+import { citationArticleNumber as targetCitationArticle } from "../legal/citation-article";
+export { citationArticleNumber as targetCitationArticle } from "../legal/citation-article";
 import { fetchDirectOfficialLexDocument } from "../legal/direct-retrieval";
+import {scheduleOfficialDiscovery} from "../legal/official-research-schedule";
 import { referencedArticleContextRequests, selectReferencedArticleContext } from "../legal/referenced-article-context";
 import { readBoundedLegalSourceBytes } from "../legal/source-fetch";
 import {
@@ -15,6 +21,7 @@ import {
 } from "../legal/verified-retrieval";
 import {
   createTargetLegalAnswerClient,
+  TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
   type TargetQuestionPlanningHints,
   type TargetLegalAnswerResult,
 } from "./target-retrieval";
@@ -90,6 +97,8 @@ export type LegalChatSourceRetrieval = {
     targetFailureCode?: "TARGET_SOURCE_UNAVAILABLE" | "TARGET_RETRIEVAL_TIMEOUT" | "TARGET_RETRIEVAL_FAILED"
       | Extract<TargetLegalAnswerResult, { safeErrorCode: string }>["safeErrorCode"] | null;
     targetLatencyMs?: number;
+    targetContractVersion?: string;
+    targetExecution?: ServiceExecutionObservation | null;
     contextualPlanningLatencyMs?: number;
     targetBudgetMs?: number;
     fusionOutcome: "indexed" | "live" | "mixed" | "none";
@@ -98,12 +107,14 @@ export type LegalChatSourceRetrieval = {
 
 type TargetAttemptTelemetry = Pick<
   NonNullable<LegalChatSourceRetrieval["retrievalTelemetry"]>,
-  "targetOutcome" | "targetFailureCode" | "targetLatencyMs" | "contextualPlanningLatencyMs" | "targetBudgetMs"
+  "targetOutcome" | "targetFailureCode" | "targetLatencyMs" | "contextualPlanningLatencyMs" | "targetBudgetMs" | "targetContractVersion" | "targetExecution"
 >;
 
 export function shouldRetrieveSecondaryInternet(
-  retrieval: Pick<LegalChatSourceRetrieval, "coverageStatus"> & Partial<Pick<LegalChatSourceRetrieval, "sourceAccessMode">>,
+  retrieval: Pick<LegalChatSourceRetrieval, "coverageStatus"> & Partial<Pick<LegalChatSourceRetrieval, "sourceAccessMode" | "errors">>,
 ): boolean {
+  if (retrieval.errors?.some(error => error.code === "QUESTION_INTERPRETATION_UNAVAILABLE"
+    || error.code === "HISTORICAL_INDEXED_COVERAGE_UNAVAILABLE")) return false;
   return retrieval.coverageStatus !== "good_coverage"
     || retrieval.sourceAccessMode === "direct" || retrieval.sourceAccessMode === "mixed";
 }
@@ -120,11 +131,14 @@ function liveCoverage(
   if (requestedArticles.some((article) => !foundArticles.has(article))) {
     return foundArticles.size > 0 ? "partial_coverage" : "weak_coverage";
   }
+  // Availability and lexical relevance cannot establish semantic coverage of
+  // the whole question. The answer still needs independent scoped validation.
   return sources.some((source) =>
-    source.verificationState === "direct_validated"
+    source.sourceClass === "OFFICIAL_LEGISLATION"
+    && source.verificationState === "direct_validated"
     && source.sourceQuality?.passed
     && Boolean(source.spans?.[0]?.text.trim() || source.excerpt?.trim())
-  ) ? "good_coverage" : "partial_coverage";
+  ) ? "partial_coverage" : "weak_coverage";
 }
 
 function withLiveCoverage(
@@ -184,8 +198,9 @@ function unavailableHistoricalCoverage(
   };
 }
 
-function unavailableTargetCeilingCoverage(now: Date,
+function unavailablePlannedCoverage(now: Date,
   requirements: NonNullable<ReturnType<typeof targetAnswerDetails>>["coverageRequirements"] = [],
+  code = "TARGET_EVIDENCE_CEILING_EXCEEDED",
 ): LegalChatSourceRetrieval {
   const checkedAt = now.toISOString();
   return {
@@ -195,7 +210,7 @@ function unavailableTargetCeilingCoverage(now: Date,
     sourceAccessMode: "approved_package",
     sourcesRetrievedAt: null,
     sourceValidationStatus: "unavailable",
-    errors: [{ code: "TARGET_EVIDENCE_CEILING_EXCEEDED" }],
+    errors: [{ code }],
     evidence: [],
     coverageStatus: "no_coverage",
     coverageRequirements: requirements.map(requirement => ({...requirement, priority: requirement.priority ?? "core", sourceIds: []})),
@@ -207,22 +222,13 @@ function unavailableTargetCeilingCoverage(now: Date,
       rerankCandidateCount: 0,
       rerankedCandidateCount: 0,
       rerankingOutcome: "failed_closed",
-      rerankingFailureCode: "TARGET_EVIDENCE_CEILING_EXCEEDED",
+      rerankingFailureCode: code,
       exactWindowSuccesses: 0,
       denseUnavailable: false,
-      indexedAvailability: "available",
+      indexedAvailability: code === "QUESTION_INTERPRETATION_UNAVAILABLE" ? "unavailable" : "available",
       fusionOutcome: "none",
     },
   };
-}
-
-export function targetCitationArticle(label: string, quotation: string): string | null {
-  const article = label.match(/(?:article|статья|ст\.?|modda|модда)\s*(\d+(?:[.-]\d+)?)/iu)?.[1] ?? null;
-  // Some legacy chunks were indexed from numbered list items. Their leading
-  // item number is not evidence of an article number. Retain the document
-  // citation without inventing article precision when those numbers coincide.
-  const itemNumber = quotation.match(/^\s*(\d+(?:[.-]\d+)?)[).]\s/u)?.[1];
-  return itemNumber && itemNumber === article ? null : article;
 }
 
 function targetAnswerDetails(result: TargetLegalAnswerResult, locale: "ru" | "uz") {
@@ -318,33 +324,51 @@ async function withTargetCoverage(
   result: TargetLegalAnswerResult,
   locale: "ru" | "uz",
   now: Date,
-  verifyCurrentSource: (url: string) => Promise<boolean>,
+  verifyCurrentSource: (url: string) => Promise<SourceObservation>,
+  clock: () => number,
 ): Promise<LegalChatSourceRetrieval | null> {
   if (result.kind === "clarification_required" && result.safeErrorCode === "EVIDENCE_CEILING_EXCEEDED") {
-    return unavailableTargetCeilingCoverage(now, result.coverageRequirements);
+    return unavailablePlannedCoverage(now, result.coverageRequirements);
   }
   const answer = targetAnswerDetails(result, locale);
   if (!answer) return null;
   const checkedAt = now.toISOString();
   const candidates = uniqueTargetStatements(answer);
   if (!fitsLegalEvidenceBudget(candidates.map(entry => entry.statement.controllingQuotation))) {
-    return unavailableTargetCeilingCoverage(now, answer.coverageRequirements);
+    return unavailablePlannedCoverage(now, answer.coverageRequirements);
   }
   const urls = [...new Set(candidates.filter((entry) => entry.temporalEndpoint.kind === "current")
     .map((entry) => entry.statement.officialCitations[0]!.url))];
-  const statuses = new Map(await Promise.all(urls.map(async (url) => {
+  const observations = new Map(await Promise.all(urls.map(async (url) => {
+    const checked = candidates.map(entry => entry.statement.currentSourceStatus?.observation)
+      .filter(observation => isFreshSourceObservation(observation, url, clock()))
+      .sort((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt))[0];
+    if (checked) return [url, checked] as const;
     try { return [url, await verifyCurrentSource(url)] as const; }
     catch { return [url, null] as const; }
   })));
+  type Statement = (typeof candidates)[number]["statement"];
+  const statusKey = (statement: Statement) => JSON.stringify([statement.officialCitations[0]!.url,
+    statement.currentSourceStatus?.pinnedTextSha256 ?? null]);
+  const statuses = new Map(candidates.map(({statement}) => {
+    const url = statement.officialCitations[0]!.url;
+    const observation = observations.get(url);
+    const expected = statement.currentSourceStatus?.pinnedTextSha256;
+    const status = !expected || !isFreshSourceObservation(observation, url, clock()) ? "unavailable"
+      : !observation.current ? "repealed" : isCurrentSourceObservation(observation,
+        {officialUrl: url, normalizedTextSha256: expected, now: clock()}) ? "current" : "changed_revision";
+    return [statusKey(statement), status] as const;
+  }));
   const statements = candidates.filter((entry) => entry.temporalEndpoint.kind !== "current"
-    || statuses.get(entry.statement.officialCitations[0]!.url) === true);
+    || statuses.get(statusKey(entry.statement)) === "current");
   const droppedCurrent = statements.length !== candidates.length;
   if (droppedCurrent) console.warn(JSON.stringify({ event: "legal.current_source_status_filtered",
     candidateProvisionCount: candidates.length, retainedProvisionCount: statements.length,
-    unavailableDocuments: [...statuses.values()].filter((status) => status === null).length,
-    repealedDocuments: [...statuses.values()].filter((status) => status === false).length }));
+    unavailableDocuments: [...statuses.values()].filter((status) => status === "unavailable").length,
+    repealedDocuments: [...statuses.values()].filter((status) => status === "repealed").length,
+    changedRevisions: [...statuses.values()].filter((status) => status === "changed_revision").length }));
   if (!fitsLegalEvidenceBudget(statements.map(entry => entry.statement.controllingQuotation))) {
-    return unavailableTargetCeilingCoverage(now, answer.coverageRequirements);
+    return unavailablePlannedCoverage(now, answer.coverageRequirements);
   }
   const sources = await Promise.all(statements.map(async (
     { statement, temporalEndpoint },
@@ -353,6 +377,7 @@ async function withTargetCoverage(
       ? temporalEndpoint.instant
       : null;
     const citation = statement.officialCitations[0]!;
+    const observedAt = historicalInstant ? checkedAt : observations.get(citation.url)!.observedAt;
     const endpointKey = historicalInstant ?? "current";
     const idHash = await sha256Text(`${statement.provisionRenditionId}:${endpointKey}`);
     const id = `target:${idHash.slice(0, 48)}`;
@@ -363,14 +388,18 @@ async function withTargetCoverage(
         actIdentifier: null,
         officialUrl: citation.url,
         revisionDate: historicalInstant,
-        lastCheckedAt: checkedAt,
-        locale,
+        lastCheckedAt: observedAt,
+        locale: statement.evidenceLocator ? {ru: "ru", "uz-Latn": "uz", "uz-Cyrl": "uzc", en: "en"}[statement.evidenceLocator.languageTag] : locale,
         publishedAt: null,
         sourceType: "lex",
         status: "verified",
         verificationState: "verified",
-        verifiedAt: checkedAt,
+        verifiedAt: observedAt,
+        ...(!historicalInstant && statement.currentSourceStatus ? {currentSourceStatus: {
+          ...statement.currentSourceStatus, observation: observations.get(citation.url)!,
+        }} : {}),
         contentSha256: statement.evidenceSha256,
+        ...(statement.evidenceLocator ? {citationEvidenceReceipt: {...statement.evidenceLocator, textSha256}} : {}),
         article: targetCitationArticle(citation.label, statement.controllingQuotation),
         excerpt: statement.controllingQuotation.slice(0, 1_200),
         effectiveDate: historicalInstant,
@@ -401,7 +430,7 @@ async function withTargetCoverage(
   const provisionsByRequirement = new Map<string, Set<string>>();
   for (const { statement } of answer.statements.filter((entry) =>
     entry.temporalEndpoint.kind !== "current"
-      || statuses.get(entry.statement.officialCitations[0]!.url) === true)) {
+      || statuses.get(statusKey(entry.statement)) === "current")) {
     const provisions = provisionsByRequirement.get(statement.requirementId) ?? new Set<string>();
     provisions.add(statement.provisionRenditionId);
     provisionsByRequirement.set(statement.requirementId, provisions);
@@ -414,6 +443,9 @@ async function withTargetCoverage(
     coverageRequirements: answer.coverageRequirements.map(requirement => ({
       id: requirement.id, statement: requirement.statement, priority: requirement.priority ?? "core",
       ...(requirement.scopeKind ? {scopeKind: requirement.scopeKind} : {}),
+      ...(requirement.origin ? {origin: requirement.origin} : {}),
+      ...(requirement.unresolvedDimensions ? {unresolvedDimensions: requirement.unresolvedDimensions} : {}),
+      ...(requirement.questionContext ? {questionContext: requirement.questionContext} : {}),
       sourceIds: statements.flatMap((entry, index) => answer.statements.some(candidate =>
         candidate.statement.requirementId === requirement.id
         && candidate.statement.provisionRenditionId === entry.statement.provisionRenditionId)
@@ -421,15 +453,16 @@ async function withTargetCoverage(
     })),
     sourcesRetrievedAt: checkedAt,
     sourceValidationStatus: "validated",
-    errors: droppedCurrent ? [{ code: [...statuses.values()].includes(null)
-      ? "LEGAL_SOURCE_CURRENT_STATUS_UNAVAILABLE" : "LEGAL_SOURCE_DOCUMENT_REPEALED" }] : [],
+    errors: droppedCurrent ? [{ code: [...statuses.values()].includes("unavailable")
+      ? "LEGAL_SOURCE_CURRENT_STATUS_UNAVAILABLE" : [...statuses.values()].includes("changed_revision")
+        ? "LEGAL_SOURCE_REVISION_CHANGED" : "LEGAL_SOURCE_DOCUMENT_REPEALED" }] : [],
     evidence: sources.map((source) => ({
       sourceId: source.id,
       sourceKind: "lex",
       canonicalUrl: source.officialUrl,
       contentSha256: source.contentSha256,
       retrievedAt: checkedAt,
-      validatedAt: checkedAt,
+      validatedAt: source.verifiedAt ?? checkedAt,
       validationStatus: "validated",
     })),
     coverageStatus: answer.partial || droppedCurrent ? "partial_coverage" : "good_coverage",
@@ -534,7 +567,9 @@ export async function retrieveCorpusAwareLegalSources(input: {
   targetQuestionId?: string;
   priorUserQuestions?: readonly string[];
   targetPlanningHints?: TargetQuestionPlanningHints | Promise<TargetQuestionPlanningHints | undefined>;
-  verifyCurrentSource?: (url: string) => Promise<boolean>;
+  requirePlanningHints?: boolean;
+  verifyCurrentSource?: (url: string) => Promise<SourceObservation>;
+  clock?: () => number;
   articleContextReader?: typeof fetchDirectOfficialLexDocument;
   contextualQuestion?: string | Promise<string>;
   applicableAt?: string;
@@ -544,6 +579,8 @@ export async function retrieveCorpusAwareLegalSources(input: {
   budgetMs?: number;
   targetBudgetMs?: number;
   discoverOfficialUrls?: LiveSearchInput["discoverOfficialUrls"];
+  /** Generic indexed-latency signal; never changes either branch's deadline. */
+  officialDiscoveryDelayMs?: number;
   liveSearch?: typeof retrieveLiveLexSources;
   onLiveSearchStarted?: () => void | Promise<void>;
   now?: Date;
@@ -554,20 +591,33 @@ export async function retrieveCorpusAwareLegalSources(input: {
   let partialIndexed: LegalChatSourceRetrieval | null = null;
   let discoveredOfficialUrls: string[] = [];
   let coverageRequirements: LegalChatRequest["coverageRequirements"] = [];
-  if (input.targetService && input.targetEnvironment && input.targetQuestionId) {
-    const contextualPlanningStartedAt = performance.now();
-    const planningPromise = Promise.all([
+  const contextualPlanningStartedAt = performance.now();
+  const planningPromise = Promise.all([
       Promise.resolve(input.contextualQuestion).catch(() => undefined),
       Promise.resolve(input.targetPlanningHints).catch(() => undefined),
     ]);
-    const [contextualQuestion, planningHints] = input.signal
+  const [contextualQuestion, planningHints] = input.signal
       ? await withinSignal(planningPromise, input.signal)
       : await planningPromise;
-    input.signal?.throwIfAborted();
-    coverageRequirements = planningHints?.requirements.map((requirement, index) => ({
+  input.signal?.throwIfAborted();
+  if (input.requirePlanningHints && !planningHints) {
+    return unavailablePlannedCoverage(input.now ?? new Date(), [], "QUESTION_INTERPRETATION_UNAVAILABLE");
+  }
+  const applicableAt = input.applicableAt ?? (planningHints?.temporalEndpoint?.kind === "timestamp"
+    ? planningHints.temporalEndpoint.instant : undefined);
+  coverageRequirements = planningHints?.requirements.map((requirement, index) => ({
       id: `requirement-${index + 1}`, ...requirement, sourceIds: [],
     })) ?? [];
-    const contextualPlanningLatencyMs = Math.max(0, performance.now() - contextualPlanningStartedAt);
+  const contextualPlanningLatencyMs = Math.max(0, performance.now() - contextualPlanningStartedAt);
+  const discoverySchedule = planningHints && input.targetService && input.discoverOfficialUrls && !applicableAt && !planningHints.comparison
+    ? scheduleOfficialDiscovery({
+      query: Promise.resolve(input.lexSearchQueries ?? []).catch(() => []).then(queries => [...new Set([input.query,
+        ...queries.map(query => query.replace(/\s+/gu, " ").trim().slice(0, 240)).filter(Boolean)])].slice(0, 4).join("\n").slice(0, 500)),
+      locale: input.locale, discover: input.discoverOfficialUrls,
+      delayMs: input.officialDiscoveryDelayMs ?? 2_000, signal: input.signal, requestId: input.targetQuestionId,
+    }) : null;
+  try {
+  if (input.targetService && input.targetEnvironment && input.targetQuestionId) {
     const remainingBudgetMs = Math.max(
       1,
       Math.floor((input.budgetMs ?? 12_000) - (performance.now() - retrievalStartedAt)),
@@ -583,39 +633,55 @@ export async function retrieveCorpusAwareLegalSources(input: {
       new DOMException("Target retrieval deadline exceeded", "TimeoutError"),
     ), targetTimeoutMs);
     const targetStartedAt = performance.now();
+    let targetExecution: ServiceExecutionObservation | null = null;
     try {
       const target = await withinSignal(createTargetLegalAnswerClient({
           service: input.targetService,
           environment: input.targetEnvironment,
           signal: targetController.signal,
+          onExecutionObserved: observation => {targetExecution = observation;},
         }).answer({
           id: input.targetQuestionId,
           question: input.query,
           contextualQuestion,
           priorUserQuestions: input.priorUserQuestions?.slice(-6),
           planningHints,
-          applicableAt: input.applicableAt,
+          applicableAt,
         }), targetController.signal);
+      if (target.kind === "source_unavailability" && target.safeErrorCode === "QUESTION_INTERPRETATION_UNAVAILABLE") {
+        return unavailablePlannedCoverage(input.now ?? new Date(), target.coverageRequirements, target.safeErrorCode);
+      }
       if (target.kind === "insufficient_indexed_coverage" || target.kind === "source_unavailability") {
         discoveredOfficialUrls = target.discoveredOfficialUrls ?? [];
         if (target.coverageRequirements?.length) coverageRequirements = target.coverageRequirements.map(requirement => ({
           id: requirement.id, statement: requirement.statement, priority: requirement.priority ?? "core", sourceIds: [],
           ...(requirement.scopeKind ? {scopeKind: requirement.scopeKind} : {}),
+          ...(requirement.origin ? {origin: requirement.origin} : {}),
+          ...(requirement.unresolvedDimensions ? {unresolvedDimensions: requirement.unresolvedDimensions} : {}),
+          ...(requirement.questionContext ? {questionContext: requirement.questionContext} : {}),
         }));
       }
+      const selectedRequirements = targetAnswerDetails(target, input.locale)?.coverageRequirements;
+      if (selectedRequirements?.length) coverageRequirements = selectedRequirements.map(requirement => ({
+        ...requirement, priority: requirement.priority ?? "core", sourceIds: [],
+      }));
       const indexed = await withTargetCoverage(target, input.locale, input.now ?? new Date(),
-        input.verifyCurrentSource ?? ((url) => verifyCurrentLexDocument(url, targetController.signal)));
+        input.verifyCurrentSource ?? (input.targetService && input.targetEnvironment
+          ? createSourceObservationClient({service: input.targetService, environment: input.targetEnvironment})
+          : observeCurrentLexDocument), input.clock ?? Date.now);
       if (indexed) {
         indexed.retrievalTelemetry = {
           ...indexed.retrievalTelemetry!,
           targetOutcome: "selected",
+          targetContractVersion: TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
+          targetExecution,
           targetFailureCode: null,
           targetLatencyMs: Math.max(0, performance.now() - targetStartedAt),
           contextualPlanningLatencyMs,
           targetBudgetMs: targetTimeoutMs,
         };
         if (indexed.coverageStatus === "good_coverage") {
-          if (!input.applicableAt) await completeArticleContexts(indexed, {
+          if (!applicableAt && !planningHints?.comparison) await completeArticleContexts(indexed, {
             locale: input.locale, signal: targetController.signal,
             budgetMs: targetTimeoutMs - (performance.now() - targetStartedAt),
             reader: input.articleContextReader, onStarted: input.onLiveSearchStarted,
@@ -630,6 +696,8 @@ export async function retrieveCorpusAwareLegalSources(input: {
           partialIndexed = indexed;
           targetTelemetry = {
             targetOutcome: "selected",
+            targetContractVersion: TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
+            targetExecution,
             targetFailureCode: null,
             targetLatencyMs: Math.max(0, performance.now() - targetStartedAt),
             contextualPlanningLatencyMs,
@@ -640,6 +708,8 @@ export async function retrieveCorpusAwareLegalSources(input: {
         }
       }
       if (!indexed) targetTelemetry = {
+        targetContractVersion: TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
+        targetExecution,
         targetOutcome: "unavailable",
         targetFailureCode: "safeErrorCode" in target ? target.safeErrorCode : "TARGET_SOURCE_UNAVAILABLE",
         targetLatencyMs: Math.max(0, performance.now() - targetStartedAt),
@@ -650,6 +720,7 @@ export async function retrieveCorpusAwareLegalSources(input: {
       if (input.signal?.aborted) throw error;
       const timedOut = targetController.signal.aborted;
       targetTelemetry = {
+        targetExecution,
         targetOutcome: timedOut ? "timed_out" : "failed",
         targetFailureCode: timedOut ? "TARGET_RETRIEVAL_TIMEOUT" : "TARGET_RETRIEVAL_FAILED",
         targetLatencyMs: Math.max(0, performance.now() - targetStartedAt),
@@ -661,8 +732,11 @@ export async function retrieveCorpusAwareLegalSources(input: {
       input.signal?.removeEventListener("abort", abortFromCaller);
     }
   }
-  if (input.applicableAt) {
-    const historical = unavailableHistoricalCoverage(input.applicableAt, input.now ?? new Date());
+  if (applicableAt || planningHints?.comparison) {
+    const comparisonEndpoint = planningHints?.comparison?.left.kind === "timestamp" ? planningHints.comparison.left
+      : planningHints?.comparison?.right.kind === "timestamp" ? planningHints.comparison.right : undefined;
+    const historical = unavailableHistoricalCoverage(applicableAt ?? comparisonEndpoint?.instant ?? (input.now ?? new Date()).toISOString(), input.now ?? new Date());
+    historical.coverageRequirements = coverageRequirements;
     historical.retrievalTelemetry = {
       ...historical.retrievalTelemetry!,
       ...targetTelemetry,
@@ -681,7 +755,7 @@ export async function retrieveCorpusAwareLegalSources(input: {
       : Math.max(1, Math.floor(input.budgetMs - (performance.now() - retrievalStartedAt))),
     searchQueries: Promise.resolve(input.lexSearchQueries ?? []).catch(() => []),
     knownOfficialUrls: discoveredOfficialUrls,
-    discoverOfficialUrls: input.discoverOfficialUrls,
+    discoverOfficialUrls: discoverySchedule?.discover ?? input.discoverOfficialUrls,
   });
   const live = withLiveCoverage(result, input.query, targetTelemetry);
   live.coverageRequirements = coverageRequirements;
@@ -721,4 +795,7 @@ export async function retrieveCorpusAwareLegalSources(input: {
       fusionOutcome: live.sources.length > 0 ? "mixed" : "indexed",
     },
   });
+  } finally {
+    await discoverySchedule?.close();
+  }
 }

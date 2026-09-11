@@ -53,6 +53,7 @@ type ArticleDetails = {
   section: string | null;
   text: string | null;
   fullArticle: boolean;
+  evidenceUnavailable?: boolean;
   fullDocument?: boolean;
   privateSource?: boolean;
   truncated: boolean;
@@ -87,6 +88,7 @@ type AiPreliminary = {
   };
 };
 type LegalResult = {
+  failureReason?: "question_interpretation_unavailable";
   responseKind: "answer" | "clarification_required";
   summary: string;
   answer: string;
@@ -806,7 +808,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             <div className="ai-transcript">
               {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onCitationSelect={revealCitation} />)}
               <HumanMessage question={answer.question || answer.turns?.at(-1)?.question || ""} locale={locale} />
-              <div className="ai-current-answer" ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={(selected) => {
+              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={(selected) => {
                  setQuestion(selected);
                  requestAnimationFrame(() => composerRef.current?.focus());
               }} /></div>
@@ -1153,7 +1155,7 @@ function LegalSourceCard({
 
   const origin = source.sourceOrigin ?? (sourceAccessMode === "direct" ? "live" : "indexed");
 
-  return <article className="ai-source-card" id={sourceCardDomId(source.sourceId)} tabIndex={-1}>
+  return <article className="ai-source-card" data-message-id={messageId} id={sourceCardDomId(source.sourceId)} tabIndex={-1}>
     <div className="ai-source-card-body">
       <strong>{source.actTitle}</strong>
       {source.article && <span>{source.article}</span>}
@@ -1183,6 +1185,10 @@ function LegalSourceCard({
         </header>
         {loading ? <div className="ai-source-modal-state" role="status"><LoaderCircle className="spin" />{aiText(locale, "Загружаем проверенную редакцию…", "Tekshirilgan tahrir yuklanmoqda…", "Loading the verified version…")}</div> : <>
           {error && <p className="ai-source-modal-warning" role="status">{error}</p>}
+          {display.evidenceUnavailable && <p className="ai-source-modal-warning" role="status">{aiText(locale,
+            "Не удалось открыть полный текст цитированной редакции. Показан сохранённый проверенный фрагмент.",
+            "Keltirilgan tahrirning to‘liq matnini ochib bo‘lmadi. Saqlangan tekshirilgan parcha ko‘rsatilmoqda.",
+            "The complete cited revision could not be opened. The saved verified excerpt is shown.")}</p>}
           {display.truncated && <p className="ai-source-modal-warning" role="status">{privateSource ? aiText(locale, "Очень длинный документ показан частично.", "Juda uzun hujjat qisman ko‘rsatildi.", "This long document is shown in part.") : aiText(locale, "Очень длинная статья показана частично; полная редакция доступна по официальной ссылке.", "Juda uzun modda qisman ko‘rsatildi; to‘liq tahrir rasmiy havolada mavjud.", "This long article is shown in part; the complete version is available through the official link.")}</p>}
           <div className="ai-source-modal-heading">
             <strong>{display.documentTitle}</strong>

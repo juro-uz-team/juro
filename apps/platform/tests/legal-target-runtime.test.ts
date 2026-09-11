@@ -12,6 +12,42 @@ import { createRuntimeCustomSearchProvider, createRuntimeCandidateCatalog,
 import { buildCustomTrustedTitleInventory } from "../lib/legal-corpus/custom-search-trusted-titles";
 import { buildCustomMembershipLookup } from "../lib/legal-corpus/custom-membership-lookup";
 
+test("independent scopes cross bounded search batches without losing packet provenance", async () => {
+  const release = parsePinnedCandidateRelease({id: "scope-release", environment: "development", capability: "current",
+    instances: [{id: "scope-instance", shardId: "scope-shard"}], configuration: {identity: "scope-config",
+      embeddingModel: "openai/text-embedding-3-large", dimensions: 1536, keywordTokenizer: "porter",
+      metadataSchema: ["language", "document_type", "valid_from", "valid_to"], gatewayIdentity: "gateway",
+      providerProjectIdentity: "project", gatewayPayloadLogging: false, gatewayCaching: false, similarityCaching: false}});
+  const formulations = Array.from({length: 20}, (_, index) => ({id: `formulation-${index}`, text: `Independent scope ${index}`,
+    privateNameSpans: [], readingIds: ["reading"], requirementIds: [`requirement-${index}`]}));
+  for (const mode of ["shared", "distinct", "partial"] as const) {
+    const batchSizes: number[] = [];
+    const index = createProviderCandidateIndex({async attest() { return release.configuration; },
+      async search() { throw new Error("Expected batched search"); },
+      async searchMany(input) {
+        assert.ok(input.queries.length <= 6);
+        batchSizes.push(input.queries.length);
+        return {searchedInstanceIds: input.instanceIds, errors: [], results: input.queries.flatMap((query, queryIndex) =>
+          mode === "partial" && query === "Independent scope 19" ? [] : [{queryIndex,
+            hits: Array.from({length: mode === "distinct" ? 50 : 1}, (_, hit) => ({
+              itemKey: `search-releases/${release.id}/${mode === "shared" ? "shared" : `${query}-${hit}`}`,
+              instanceId: "scope-instance", shardId: "scope-shard", vectorRank: hit + 1, keywordRank: hit + 1,
+              vectorScore: 1, keywordScore: 1, fusionScore: 1 / (hit + 1),
+            }))}])};
+      }}, {});
+    const packet = await index.retrieve({id: "scope-plan", formulations}, {kind: "current"}, release);
+    assert.deepEqual(batchSizes, [6, 6, 6, 2]);
+    assert.equal(packet.availability, mode === "partial" ? "unavailable" : "available");
+    if (mode === "shared") {
+      assert.equal(packet.candidates.length, 1);
+      assert.equal(packet.candidates[0]!.formulationIds.length, 20);
+      assert.equal(packet.candidates[0]!.retrievalRequirementIds.length, 20);
+    }
+    if (mode === "distinct") assert.equal(packet.candidates.length, 1000);
+    if (mode === "partial") assert.equal(packet.candidates.length, 0);
+  }
+});
+
 test("named instruments remain searchable with custom-only release mappings", async () => {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`CREATE TABLE legal_search_releases (id TEXT PRIMARY KEY);
@@ -281,7 +317,8 @@ test("custom catalog rejects future and expired records even when candidate lane
   } finally { sqlite.close(); }
 });
 
-for (const useLookup of [false, true]) test(`custom catalog revalidates physical membership (fine lookup: ${useLookup})`, async () => {
+for (const useLookup of [false, true]) for (const currentProofsEnabled of [false, true])
+test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, current proofs: ${currentProofsEnabled})`, async () => {
   const release = parsePinnedCandidateRelease({ id: "release-custom-history-r2", environment: "staging",
     capability: "history", instances: [{ id: "custom-history-staging-v1", shardId: "history-base-v1" }],
     configuration: { identity: "custom-v1", embeddingModel: "openai/text-embedding-3-large",
@@ -343,7 +380,10 @@ for (const useLookup of [false, true]) test(`custom catalog revalidates physical
       instanceId: "custom-history-staging-v1", shardId: "history-base-v1", formulationIds: ["formulation"],
       readingIds: ["reading"], retrievalRequirementIds: ["requirement"], vectorRank: 1, vectorScore: 1,
       keywordRank: 1, keywordScore: 1, fusionScore: 1 }] });
-  const catalog = createRuntimeCandidateCatalog(db, bucket as never);
+  const catalog = createRuntimeCandidateCatalog(db, bucket as never, undefined,
+    {membershipProofsEnabled: currentProofsEnabled});
+  assert.equal(await catalog.prepareReferencePacket(packet, release), packet,
+    "current-only activation must preserve historical reference membership");
   const result = await catalog.revalidate(packet,
     { kind: "timestamp", instant: "2020-01-01T00:00:00.000Z" }, release,
     "2026-09-06T00:00:00.000Z");
@@ -353,6 +393,7 @@ for (const useLookup of [false, true]) test(`custom catalog revalidates physical
   assert.equal(reads.length, firstReads, "repair reuses authenticated membership within this request");
   const corruptKey = useLookup ? [...objects.keys()].find(key => key.includes("/leaf-"))! : pageKey;
   objects.set(corruptKey, {bytes: new TextEncoder().encode("corrupt"), customMetadata: {}});
-  await assert.rejects(createRuntimeCandidateCatalog(db, bucket as never).revalidate(packet,
+  await assert.rejects(createRuntimeCandidateCatalog(db, bucket as never, undefined,
+    {membershipProofsEnabled: currentProofsEnabled}).revalidate(packet,
     packet.endpoint, release, "2026-09-06T00:00:00.000Z"), /CORRUPT|MISMATCH|MISSING/u);
 });

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import {observeCurrentLexDocument} from "../legal/lex-document-status";
+import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
+import {createPinnedSourceVerifier} from "./pinned-source-observation";
 
 import {
   createProviderCandidateIndex,
@@ -19,6 +22,7 @@ import { resolveCustomBm25RuntimeMembershipEntries, type CustomRuntimeLegalIdent
   from "./custom-bm25-runtime";
 import { resolveCustomTrustedLegalTitles } from "./custom-search-trusted-titles";
 import { createCustomMembershipLookupReader } from "./custom-membership-lookup";
+import {loadCandidateMembershipProjection, readCandidateMembershipProofs, verifyProjectedCandidateMembership} from "./candidate-membership-projection";
 import { assertCompleteCorpusCurrentInterval, resolveCompleteCorpusEvidence, resolveControllingEvidence,
   resolveR2NativeCustomEvidence,
   type LegalEvidenceBucket } from "./target-evidence";
@@ -47,6 +51,10 @@ function physicalRuntimeReleaseId(descriptorKey: string, logicalReleaseId: strin
 
 export type TargetRetrievalRuntimeEnv = {
   APP_ENV: string;
+  WORKER_VERSION?: WorkerVersionMetadata;
+  LEGAL_RUNTIME_BUILD_ID?: string;
+  CANDIDATE_MEMBERSHIP_PROOFS_ENABLED?: string;
+  LEGAL_SOURCE_OBSERVATIONS_ENABLED?: string;
   LEGAL_CORPUS_SHADOW_MODE?: string;
   LEGAL_DB?: D1Database;
   LEGAL_EVIDENCE_BUCKET?: Pick<LegalEvidenceBucket, "get">;
@@ -60,7 +68,10 @@ export type TargetRetrievalRuntimeEnv = {
 };
 
 type RuntimeDependencies = {
+  onReleaseResolved?: (releaseId: string) => void;
   environment: z.infer<typeof environmentSchema>;
+  membershipProofsEnabled?: boolean;
+  sharedSourceObservationsEnabled?: boolean;
   db: D1Database;
   evidenceBucket: Pick<LegalEvidenceBucket, "get">;
   historyEvidenceBucket?: Pick<LegalEvidenceBucket, "get">;
@@ -174,21 +185,57 @@ export function createRuntimeCandidateCatalog(
   db: D1Database,
   bucket?: Pick<LegalEvidenceBucket, "get">,
   r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>(),
+  options: {membershipProofsEnabled?: boolean} = {},
 ) {
+  // Current and historical releases have independent publication histories.
+  // This rollout flag activates current proofs only; history retains its
+  // authenticated inventory lookup until a historical projection is published.
+  const usesMembershipProofs = (release: PinnedCandidateRelease) =>
+    options.membershipProofsEnabled === true && release.capability === "current";
   // The catalog belongs to one answer request. Reuse only membership facts
   // authenticated against the same pinned inventory; temporal eligibility and
   // candidate provenance are still checked for every packet and endpoint.
   type Membership = NonNullable<Awaited<ReturnType<typeof resolveCustomBm25RuntimeMembershipEntries>>>;
   const membershipByInventory = new Map<string, Membership>();
   const readMembershipLookup = bucket ? createCustomMembershipLookupReader(bucket as R2Bucket) : null;
+  const projections = new Map<string, ReturnType<typeof loadCandidateMembershipProjection>>();
+  const trustedProjection = async (releaseId: string) => {
+    if (!bucket) throw new TypeError("TARGET_MEMBERSHIP_PROOF_UNAVAILABLE");
+    let published = projections.get(releaseId);
+    if (!published) {
+      published = loadCandidateMembershipProjection({db, bucket: bucket as R2Bucket, releaseId});
+      projections.set(releaseId, published);
+    }
+    const projection = await published;
+    if (!projection) throw new TypeError("TARGET_MEMBERSHIP_PROOF_UNAVAILABLE");
+    return projection;
+  };
   return {
+    async prepareReferencePacket(packet: CandidatePacket, release: PinnedCandidateRelease): Promise<CandidatePacket> {
+      if (!usesMembershipProofs(release)) return packet;
+      if (packet.releaseId !== release.id) throw new TypeError("TARGET_CANDIDATE_PACKET_IDENTITY_MISMATCH");
+      const projection = await trustedProjection(release.id);
+      const prefix = `search-releases/${release.id}/`;
+      if (packet.candidates.some(candidate => !candidate.itemKey.startsWith(prefix))) {
+        throw new TypeError("TARGET_CANDIDATE_PACKET_IDENTITY_MISMATCH");
+      }
+      const proofs = await readCandidateMembershipProofs({bucket: bucket as R2Bucket, projection,
+        itemKeys: packet.candidates.map(candidate => candidate.itemKey.slice(prefix.length))});
+      return {...packet, candidates: packet.candidates.map(candidate => ({...candidate,
+        membershipProof: proofs.get(candidate.itemKey.slice(prefix.length))!}))};
+    },
     async revalidate(
       packet: CandidatePacket,
       endpoint: TemporalEndpoint,
       release: PinnedCandidateRelease,
       currentAt: string,
     ): Promise<RevalidatedCandidate[]> {
-      if (packet.releaseId !== release.id || packet.availability !== "available") {
+      if (packet.releaseId !== release.id || packet.availability !== "available" || packet.partialErrors.length
+        || packet.requiredInstanceIds.length !== release.instances.length
+        || new Set(packet.requiredInstanceIds).size !== release.instances.length
+        || release.instances.some(instance => !packet.requiredInstanceIds.includes(instance.id))
+        || packet.candidates.some(candidate => !release.instances.some(instance =>
+          instance.id === candidate.instanceId && instance.shardId === candidate.shardId))) {
         throw new TypeError("TARGET_CANDIDATE_PACKET_IDENTITY_MISMATCH");
       }
       const uniqueKeys = [...new Set(packet.candidates.map((candidate) => candidate.itemKey))];
@@ -213,7 +260,18 @@ export function createRuntimeCandidateCatalog(
         ? "historical_eligible" : "current_eligible";
       let compactMembership: Map<string, { ordinal: number;
         legalIdentitySha256: string | null; legalIdentity?: CustomRuntimeLegalIdentity }> | null = null;
-      if (custom && bucket) {
+      if (usesMembershipProofs(release)) {
+        if (!custom || !bucket) throw new TypeError("TARGET_MEMBERSHIP_PROOF_UNAVAILABLE");
+        const projection = await trustedProjection(release.id);
+        compactMembership = new Map();
+        for (let offset = 0; offset < packet.candidates.length; offset += 16) {
+          const members = await Promise.all(packet.candidates.slice(offset, offset + 16).map(candidate =>
+            verifyProjectedCandidateMembership({projection,
+              itemKey: candidate.itemKey.slice(`search-releases/${release.id}/`.length), proof: candidate.membershipProof})));
+          for (const member of members) compactMembership.set(member.itemKey, {ordinal: member.ordinal,
+            legalIdentitySha256: member.legalIdentity.legalIdentitySha256, legalIdentity: member.legalIdentity});
+        }
+      } else if (custom && bucket) {
         const component = await db.prepare(`SELECT root.mapping_inventory_sha256 AS mappingInventorySha256,
             root.runtime_descriptor_r2_key AS descriptorKey, lookup.lookup_r2_key AS lookupKey,
             lookup.lookup_sha256 AS lookupSha256, lookup.lookup_size_bytes AS lookupSizeBytes
@@ -545,8 +603,13 @@ function createRuntimeRetriever(
   const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket);
   const historicalArticleContext = historyEvidenceBucket
     ? createNormalizedArticleEvidenceReader(historyEvidenceBucket) : currentArticleContext;
-  const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition);
+  const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
+    {membershipProofsEnabled: dependencies.membershipProofsEnabled});
   return createTargetLegalAnswerRetriever({
+    onReleaseResolved: dependencies.onReleaseResolved,
+    verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket,
+      observe: dependencies.sharedSourceObservationsEnabled
+        ? createSharedLexDocumentObservationReader(db) : observeCurrentLexDocument}),
     environment,
     interpreter: {
       async interpret(input): Promise<QuestionInterpretationPlan> {
@@ -564,7 +627,8 @@ function createRuntimeRetriever(
     candidateIndex,
     candidateCatalog,
     referenceDiscovery: customArtifactBucket ? createRuntimeReferenceDiscovery({db, bucket: customArtifactBucket,
-      identities: r2IdentityByRendition, revalidate: candidateCatalog.revalidate}) : undefined,
+      identities: r2IdentityByRendition, revalidate: candidateCatalog.revalidate,
+      preparePacket: candidateCatalog.prepareReferencePacket}) : undefined,
     evidenceResolver: {
       async resolveControlling(provisionRenditionId, endpoint, context) {
         if (context.release.instances.some((instance) =>
@@ -615,6 +679,7 @@ function createRuntimeRetriever(
 
 export function createRuntimeTargetLegalAnswerRetriever(
   env: TargetRetrievalRuntimeEnv,
+  observation: {onReleaseResolved?: (releaseId: string) => void} = {},
 ): TargetLegalAnswerRetriever {
   const environment = environmentSchema.parse(env.APP_ENV);
   if (!env.LEGAL_DB || !env.LEGAL_EVIDENCE_BUCKET
@@ -624,7 +689,9 @@ export function createRuntimeTargetLegalAnswerRetriever(
   const db = env.LEGAL_DB;
   const evidenceBucket = env.LEGAL_EVIDENCE_BUCKET;
   const reasoningService = env.LEGAL_CORPUS_REASONING_SERVICE;
-  const dependencies = { environment, db, evidenceBucket,
+  const dependencies = { environment, db, evidenceBucket, onReleaseResolved: observation.onReleaseResolved,
+    membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
+    sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
     historyEvidenceBucket: env.LEGAL_HISTORY_EVIDENCE_BUCKET,
     customArtifactBucket: env.LEGAL_CUSTOM_ARTIFACT_BUCKET, reasoningService };
   const releaseLifecycle = createReleaseLifecycle({ db });
@@ -789,6 +856,8 @@ export async function createRuntimeTargetActivationSetEvaluation(input: {
   });
   const dependencies: RuntimeDependencies = {
     environment: "staging", db: env.LEGAL_DB, evidenceBucket: env.LEGAL_EVIDENCE_BUCKET,
+    membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
+    sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
     customArtifactBucket: env.LEGAL_CUSTOM_ARTIFACT_BUCKET,
     reasoningService: env.LEGAL_CORPUS_REASONING_SERVICE,
   };

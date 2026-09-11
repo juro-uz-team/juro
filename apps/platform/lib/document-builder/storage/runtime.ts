@@ -4,6 +4,7 @@ export interface BuilderRuntimeEnv {
   APP_ENV?: "development" | "staging" | "production";
   ASSETS?: Fetcher;
   WORKER_VERSION?: WorkerVersionMetadata;
+  LEGAL_RUNTIME_BUILD_ID?: string;
   DB?: D1Database;
   BUCKET?: R2Bucket;
   QUARANTINE_BUCKET?: R2Bucket;

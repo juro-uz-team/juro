@@ -178,8 +178,10 @@ test("AI and document processors revalidate provider citations before persistenc
   assert.match(aiRoute, /gateway\.generateGroundedAnswer\(/);
   assert.match(gateway, /validateLegalGatewayAnswer\(/);
   assert.match(gateway, /sourceSpanId/);
-  assert.match(aiRoute, /errorCode: "INVALID_AI_OUTPUT"/);
-  assert.match(aiRoute, /return response\(\{[\s\S]*code: "INVALID_AI_OUTPUT"[\s\S]*\}, 422\)/);
+  const validationFailure = aiRoute.slice(aiRoute.indexOf("validationStage.fail()"),aiRoute.indexOf("// A disconnected caller"));
+  assert.match(validationFailure, /"FINAL_SOURCE_OBSERVATION_UNAVAILABLE"\s*\? "SOURCE_OBSERVATION_UNAVAILABLE" : "INVALID_AI_OUTPUT"/);
+  assert.match(validationFailure, /await failAiRun\(\{[\s\S]*errorCode: code/);
+  assert.match(validationFailure, /return response\(\{\s*code,[\s\S]*code === "SOURCE_OBSERVATION_UNAVAILABLE" \? 503 : 422\)/);
   assert.match(aiRoute, /originalUrl: source\.officialUrl/);
   assert.match(processor, /enforceDocumentAnalysisSourceBoundary\(/);
   assert.match(processor, /enforceDocumentExcerptBoundary\(/);

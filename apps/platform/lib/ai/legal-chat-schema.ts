@@ -2,6 +2,7 @@ import { z } from "zod";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import type { LegalDatabaseFreshness } from "../legal/verified-retrieval";
 import { aiText, type AiOutputLocale } from "./localization";
+import { questionInterpretationFailureText } from "./legal-answer-failure";
 import {
   sanitizeClarificationQuestions,
 } from "./legal-output-safety";
@@ -93,6 +94,7 @@ export const actionStepSchema = z.object({
   title: z.string().min(1).max(240),
   description: z.string().min(1).max(2_000),
   sourceIds: sourceIdList,
+  requirementIds: z.array(z.string().min(1).max(240)).max(40).optional(),
 }).strict();
 
 export const legalDeadlineSchema = z.object({
@@ -147,6 +149,7 @@ export const legalChatResponseSchema = z.object({
   coverageStatus: z.enum(["good_coverage", "partial_coverage", "weak_coverage", "no_coverage"]).optional(),
   referenceNotes: z.array(legalReferenceNoteSchema).max(8).optional(),
   coverageGaps: z.array(z.string().min(1).max(1_000)).max(240).optional(),
+  failureReason: z.enum(["question_interpretation_unavailable", "official_research_unavailable"]).optional(),
 }).strict();
 
 export type LegalChatResponse = z.infer<typeof legalChatResponseSchema>;
@@ -168,6 +171,7 @@ export const legalChatModelResponseSchema = legalChatResponseSchema
     coverageStatus: true,
     referenceNotes: true,
     coverageGaps: true,
+    failureReason: true,
     conditionalBranches: true,
     sources: true,
     answer: true,
@@ -182,6 +186,7 @@ export const legalChatModelResponseSchema = legalChatResponseSchema
     summarySourceIds: true,
   })
   .extend({
+    actionPlan: z.array(actionStepSchema.omit({requirementIds: true})).max(16),
     summary: z.string().min(1).max(650),
     summarySourceIds: sourceIdList,
     confirmedFindings: z.array(legalFindingSchema.extend({
@@ -203,13 +208,28 @@ function answerCoverageSchema(requirements: readonly {id: string}[]) {
 }
 
 /** Every planned scope gets an explicit slot; an empty slot remains a visible gap. */
-export function legalChatJsonSchemaForCoverage(requirements: readonly {id: string}[] = []) {
-  if (!requirements.length) return legalChatJsonSchema;
-  return z.toJSONSchema(legalChatModelResponseSchema.extend({
+export function legalChatJsonSchemaForCoverage(requirements: readonly {id: string}[] = [], part?: "findings" | "guidance", repair = false) {
+  const base = repair ? legalChatModelResponseSchema.extend({summary: z.string().max(1_500),
+    actionPlan: z.array(actionStepSchema.omit({requirementIds: true}).extend({
+      retainedFindingIndexes: z.array(z.number().int().min(0).max(15)).max(16),
+    })).max(16),
+  }) : legalChatModelResponseSchema;
+  const schema = part === "findings" ? base.omit({actionPlan: true, risks: true,
+    deadlines: true, conditionalBranches: true})
+    : part === "guidance" ? base.omit({confirmedFindings: true,
+      summarySourceIds: true, deadlines: true, conditionalBranches: true}) : base;
+  // Guidance needs the same question inventory as findings, but finding
+  // indexes have no meaning in its separate practical-action response.
+  if (!requirements.length) return z.toJSONSchema(schema, {target: "draft-7", unrepresentable: "throw"}) as Record<string, unknown>;
+  if (part === "guidance") return z.toJSONSchema(schema.extend({
+    guidanceCoverage: answerCoverageSchema(requirements),
+  }), {target: "draft-7", unrepresentable: "throw"}) as Record<string, unknown>;
+  return z.toJSONSchema(schema.extend({
     confirmedFindings: z.array(legalFindingSchema.omit({requirementIds: true}).extend({
       answerRole: legalFindingSchema.shape.answerRole.unwrap(),
     })).max(16),
     coverage: answerCoverageSchema(requirements),
+    ...(part !== "findings" ? {guidanceCoverage: answerCoverageSchema(requirements)} : {}),
   }), {target: "draft-7", unrepresentable: "throw"}) as Record<string, unknown>;
 }
 
@@ -225,26 +245,66 @@ export function parseLegalChatResponse(value: unknown, context?: {
   legalDatabaseAsOf: string;
   sources?: readonly { id: string }[];
   coverageRequirements?: readonly {id: string}[];
+  synthesisPart?: "findings" | "guidance";
+  contentRepair?: {retained: Pick<LegalChatResponse, "summary" | "summarySourceIds"> & Partial<Pick<LegalChatResponse, "confirmedFindings">>};
 }): LegalChatResponse {
   if (!context || !value || typeof value !== "object" || Array.isArray(value)) {
     return legalChatResponseSchema.parse(value);
   }
-  const record = value as Record<string, unknown>;
+  const record = {...value} as Record<string, unknown>;
+  // A partial repair need not invent a new Main Point. The retained candidate
+  // is revalidated against the complete merged findings by the gateway.
+  const retainedSummary = Boolean(context.contentRepair && (typeof record.summary !== "string" || !record.summary.trim()));
+  if (retainedSummary && context.contentRepair) Object.assign(record, {summary: context.contentRepair.retained.summary,
+    summarySourceIds: context.contentRepair.retained.summarySourceIds ?? []});
+  if (context.synthesisPart === "findings") Object.assign(record, {actionPlan: [], risks: [], deadlines: [], conditionalBranches: []});
+  if (context.synthesisPart === "guidance") Object.assign(record, {confirmedFindings: [], summarySourceIds: [], deadlines: [], conditionalBranches: []});
   const requirements = context.coverageRequirements ?? [];
-  const coverage = requirements.length ? answerCoverageSchema(requirements).parse(record.coverage) : null;
+  const coverage = requirements.length && context.synthesisPart !== "guidance"
+    ? answerCoverageSchema(requirements).parse(record.coverage) : null;
   const findingCount = Array.isArray(record.confirmedFindings) ? record.confirmedFindings.length : 0;
+  const guidanceCoverage = requirements.length && context.synthesisPart !== "findings"
+    ? answerCoverageSchema(requirements).parse(record.guidanceCoverage) : null;
+  const actionCount = Array.isArray(record.actionPlan) ? record.actionPlan.length : 0;
+  if (guidanceCoverage && Object.values(guidanceCoverage).some(indices => indices.some(index => index >= actionCount))) {
+    throw new TypeError("ANSWER_COVERAGE_ACTION_UNAVAILABLE");
+  }
   if (coverage && Object.values(coverage).some(indices => indices.some(index => index >= findingCount))) {
     throw new TypeError("ANSWER_COVERAGE_FINDING_UNAVAILABLE");
   }
   const claims = Object.fromEntries(["confirmedFindings", "conditionalBranches", "risks", "actionPlan", "deadlines"]
     .filter(key => Array.isArray(record[key])).map(key => [key, (record[key] as unknown[]).map((item, findingIndex) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-      const claim = item as Record<string, unknown>;
-      return {...claim, ...(key === "confirmedFindings" && coverage ? {
-        requirementIds: requirements.flatMap((requirement, index) =>
-          coverage[`r${index + 1}`]!.includes(findingIndex) ? [requirement.id] : []),
-      } : {}), sourceIds: Array.isArray(claim.sourceIds)
-        ? claim.sourceIds.map(id => typeof id === "string" ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id) : claim.sourceIds};
+      const claim = {...item} as Record<string, unknown>;
+      if (Array.isArray(claim.sourceIds)) claim.sourceIds = claim.sourceIds.map(id =>
+        typeof id === "string" ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id);
+      const scopeCoverage = key === "confirmedFindings" ? coverage : key === "actionPlan" ? guidanceCoverage : null;
+      const requirementIds = scopeCoverage ? requirements.flatMap((requirement, index) =>
+        scopeCoverage[`r${index + 1}`]!.includes(findingIndex) ? [requirement.id] : []) : null;
+      if (key === "actionPlan" && context.contentRepair && "retainedFindingIndexes" in claim) {
+        const indexes = z.array(z.number().int().min(0).max(15)).max(16).parse(claim.retainedFindingIndexes);
+        const retained = context.contentRepair.retained.confirmedFindings ?? [];
+        const rules = [...new Set(indexes)].map(index => {
+          const rule = retained[index];
+          if (!rule || !rule.requirementIds?.some(id => requirementIds?.includes(id))) {
+            throw new TypeError("REPAIR_RULE_CONTEXT_UNAVAILABLE");
+          }
+          return rule;
+        });
+        // These are candidate claims, not reused approvals. Both providers
+        // independently assess the composed action before gateway validation.
+        if (rules.length) {
+          const description = z.string().min(1).parse(claim.description);
+          const sourceIds = z.array(z.string()).parse(claim.sourceIds);
+          claim.description = [description, ...rules.map(rule => rule.explanation)].join("\n\n");
+          claim.sourceIds = [...new Set([...sourceIds,
+            ...rules.flatMap(rule => rule.sourceIds)])];
+        }
+        delete claim.retainedFindingIndexes;
+      }
+      return {...claim, ...(scopeCoverage ? {
+        requirementIds,
+      } : {})};
     })]));
   // Source cards and the legacy answer copy are rebuilt after validation.
   // The concise summary can cover several independently grounded findings.
@@ -255,9 +315,11 @@ export function parseLegalChatResponse(value: unknown, context?: {
       ? main.explanation.slice(0, 1_500) : " ";
   const responseRecord = {...record};
   delete responseRecord.coverage;
+  delete responseRecord.guidanceCoverage;
+  delete responseRecord.failureReason;
   return legalChatResponseSchema.parse({ ...responseRecord, ...claims,
     ...(Array.isArray(record.summarySourceIds) ? {summarySourceIds: record.summarySourceIds.map(id =>
-      typeof id === "string" ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id)} : {}),
+      typeof id === "string" && !retainedSummary ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id)} : {}),
     summary, answer: summary, sources: [], language: context.locale, jurisdiction: "UZ",
     answerMode: context.answerMode, reasoningMode: context.reasoningMode,
     legalDatabaseAsOf: context.legalDatabaseAsOf,
@@ -274,9 +336,8 @@ export function forceClarificationWithoutVerifiedSources(
     legalDatabaseAsOf: string;
   },
 ): LegalChatResponse {
-  // No verified source survived any tier of the authority ladder: the JURO
-  // index, live Lex.uz and public-web reference material were all empty for
-  // this request. No provider-authored prose may remain in the terminal
+  // No verified source is available. This does not establish which search
+  // tiers ran, or whether research started. No provider-authored prose may remain in the terminal
   // payload, because an answer written from the model's general knowledge is
   // indistinguishable, to the reader, from one grounded in Uzbek law. Only
   // fixed refusal text and sanitized follow-up questions survive — a
@@ -330,6 +391,13 @@ export function enforceLegalDatabaseFreshness(
     reasoningMode: "fast" | "deep";
   },
 ): LegalChatResponse {
+  if (result.failureReason === "question_interpretation_unavailable") {
+    const answer = questionInterpretationFailureText(options.locale);
+    return {
+      ...forceClarificationWithoutVerifiedSources(result, { ...options, legalDatabaseAsOf: result.legalDatabaseAsOf }),
+      summary: answer, answer, clarificationQuestions: [], conditionalBranches: [], coverageGaps: [],
+    };
+  }
   if (freshness.status === "unavailable") {
     const nonLegislativeFactsOnly = result.sources.length > 0
       && result.sources.every((source) => ["private", "secondary"].includes(

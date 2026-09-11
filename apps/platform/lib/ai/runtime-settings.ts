@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { PlatformStaffAccess } from "../auth/staff-access";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
 import { runtimeEnv } from "../document-builder/storage/runtime";
-import { DEFAULT_ANTHROPIC_MODEL } from "./provider-models";
+import { DEFAULT_ANTHROPIC_MODEL, OPENAI_FAST_CHAT_MODEL, OPENAI_DEEP_CHAT_MODEL } from "./provider-models";
 import { aiText, type AiOutputLocale } from "./localization";
 
 const zeroHash = "0".repeat(64);
@@ -74,6 +74,8 @@ export class AiRuntimeSettingsError extends Error {
 
 export function aiRuntimeModelAllowlist(env: BuilderRuntimeEnv = runtimeEnv()): AiRuntimeModelAllowlist {
   const openai = uniqueModels([
+    OPENAI_FAST_CHAT_MODEL,
+    OPENAI_DEEP_CHAT_MODEL,
     env.OPENAI_CHAT_MODEL,
     env.OPENAI_DEEP_MODEL,
     env.OPENAI_FALLBACK_MODEL,
@@ -133,7 +135,7 @@ export async function listAiRuntimeSettingsHistory(input: {
   ).bind(environment).all<ConfigRow>();
   if (rows.results.length) await verifyChain(rows.results, env);
   return {
-    current: rows.results.length ? rowToSettings(rows.results.at(-1)!) : await defaultSettings(env, environment),
+    current: rows.results.length ? await rowToSettings(rows.results.at(-1)!) : await defaultSettings(env, environment),
     allowlist: aiRuntimeModelAllowlist(env),
     history: [...rows.results].reverse().slice(0, 50),
   };
@@ -148,6 +150,9 @@ export async function createAiRuntimeSettingsVersion(input: {
 }): Promise<AiRuntimeSettings> {
   const parsed = aiRuntimeConfigInputSchema.safeParse(input.settings);
   if (!parsed.success) throw new AiRuntimeSettingsError("AI_SETTINGS_INVALID", 400);
+  if (parsed.data.openaiChatModel !== OPENAI_FAST_CHAT_MODEL || parsed.data.openaiDeepModel !== OPENAI_DEEP_CHAT_MODEL) {
+    throw new AiRuntimeSettingsError("AI_SETTINGS_MODEL_NOT_ALLOWED", 400);
+  }
   const env = input.env ?? runtimeEnv();
   const environment = runtimeEnvironment(env);
   const current = await resolveAiRuntimeSettings({ db: input.db, env });
@@ -221,10 +226,8 @@ export function aiResponseToneInstruction(tone: AiResponseTone, locale: AiOutput
 
 async function defaultSettings(env: BuilderRuntimeEnv, environment: AiRuntimeSettings["environment"]): Promise<AiRuntimeSettings> {
   const allowlist = aiRuntimeModelAllowlist(env);
-  const openaiChatModel = env.OPENAI_CHAT_MODEL && allowlist.openai.includes(env.OPENAI_CHAT_MODEL)
-    ? env.OPENAI_CHAT_MODEL : allowlist.openai[0];
-  const openaiDeepModel = env.OPENAI_DEEP_MODEL && allowlist.openai.includes(env.OPENAI_DEEP_MODEL)
-    ? env.OPENAI_DEEP_MODEL : openaiChatModel;
+  const openaiChatModel = OPENAI_FAST_CHAT_MODEL;
+  const openaiDeepModel = OPENAI_DEEP_CHAT_MODEL;
   const anthropicDocumentModel = env.ANTHROPIC_DOCUMENT_MODEL && allowlist.anthropic.includes(env.ANTHROPIC_DOCUMENT_MODEL)
     ? env.ANTHROPIC_DOCUMENT_MODEL : allowlist.anthropic[0];
   const anthropicChatFallbackModel = env.ANTHROPIC_FALLBACK_MODEL && allowlist.anthropic.includes(env.ANTHROPIC_FALLBACK_MODEL)
@@ -240,6 +243,8 @@ async function defaultSettings(env: BuilderRuntimeEnv, environment: AiRuntimeSet
 
 async function verifyChain(rows: ConfigRow[], env: BuilderRuntimeEnv): Promise<void> {
   const allowlist = aiRuntimeModelAllowlist(env);
+  // Previously accepted Sol records remain authenticated history, never chat routing.
+  allowlist.openai.push("gpt-5.6-sol");
   let previousHash = zeroHash;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -275,12 +280,12 @@ function assertAllowedModels(value: {
   }
 }
 
-function rowToSettings(row: ConfigRow): AiRuntimeSettings {
-  return {
+async function rowToSettings(row: ConfigRow): Promise<AiRuntimeSettings> {
+  const settings: AiRuntimeSettings = {
     environment: row.environment,
     version: row.version,
-    openaiChatModel: row.openaiChatModel,
-    openaiDeepModel: row.openaiDeepModel,
+    openaiChatModel: OPENAI_FAST_CHAT_MODEL,
+    openaiDeepModel: OPENAI_DEEP_CHAT_MODEL,
     anthropicChatFallbackModel: row.anthropicChatFallbackModel,
     anthropicDocumentModel: row.anthropicDocumentModel,
     openaiDocumentFallbackModel: row.openaiDocumentFallbackModel,
@@ -289,6 +294,9 @@ function rowToSettings(row: ConfigRow): AiRuntimeSettings {
     source: "database",
     createdAt: row.createdAt,
   };
+  // Audit the effective configuration while preserving the immutable stored chain.
+  settings.configHash = await configDigest(settings);
+  return settings;
 }
 
 function runtimeEnvironment(env: BuilderRuntimeEnv): AiRuntimeSettings["environment"] {

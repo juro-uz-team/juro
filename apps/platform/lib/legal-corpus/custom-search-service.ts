@@ -1,4 +1,6 @@
 import { z } from "zod";
+import {candidateMembershipProofSchema} from "./candidate-membership-proof";
+import {loadCandidateMembershipProjection, readCandidateMembershipProofs} from "./candidate-membership-projection";
 
 import { queryCustomBm25RuntimeBatch, parseCustomBm25RuntimeDescriptor,
   resolveCustomBm25RuntimeItemKeys }
@@ -57,6 +59,7 @@ const batchRequestSchema = requestBaseSchema.extend({
 const requestSchema = z.union([singleRequestSchema, batchRequestSchema]);
 const hitSchema = z.object({
   itemKey: z.string().min(1).max(700),
+  membershipProof: candidateMembershipProofSchema.optional(),
   instanceId: z.string().min(1).max(64),
   shardId: z.string().min(1).max(64),
   vectorRank: z.number().int().positive(),
@@ -83,6 +86,7 @@ export const customSearchBatchResponseSchema = z.object({
 
 export type CustomSearchEnv = {
   APP_ENV: string;
+  CANDIDATE_MEMBERSHIP_PROOFS_ENABLED?: string;
   AI: Ai;
   AI_GATEWAY_ID: string;
   DENSE: CustomVectorSearchIndex;
@@ -257,7 +261,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
     ? runtimeKeys.map(key => `search-releases/${input.releaseId}/${key}`)
     : await itemKeysForOrdinals(env, input.releaseId, ordinals);
   const sparseIdentity = new Map(ordinals.map((ordinal, index) => [ordinal, keys[index]!]));
-  const results = queries.map((_, queryIndex) => {
+  let results: z.infer<typeof customSearchBatchResponseSchema>["results"] = queries.map((_, queryIndex) => {
     const sparse = sparseLane.value[queryIndex]!;
     const dense = denseLane.value.results[queryIndex]!;
     const sparseOrdinals = sparse.map((entry) => entry.ordinal);
@@ -286,6 +290,22 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
       })),
     };
   });
+  // Historical releases keep their independently authenticated legacy layout.
+  if (env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true" && capability.data === "current") {
+    results = await timed("membershipProofMs", async () => {
+      const projection = await loadCandidateMembershipProjection({db: env.CATALOG_DB,
+        bucket: env.ARTIFACTS, releaseId: input.releaseId});
+      if (!projection) throw new TypeError("CUSTOM_SEARCH_MEMBERSHIP_PROOF_UNAVAILABLE");
+      const prefix = `search-releases/${input.releaseId}/`;
+      const proofs = await readCandidateMembershipProofs({bucket: env.ARTIFACTS, projection,
+        itemKeys: results.flatMap(result => result.hits.map(hit => hit.itemKey.slice(prefix.length)))});
+      return results.map(result => ({...result, hits: result.hits.map(hit => ({...hit,
+        membershipProof: proofs.get(hit.itemKey.slice(prefix.length))!}))}));
+    });
+    console.info(JSON.stringify({event: "legal.custom_search_membership_proofs", elapsedMs: timings.membershipProofMs,
+      candidateCount: new Set(results.flatMap(result => result.hits.map(hit => hit.itemKey))).size,
+      packetBytes: new TextEncoder().encode(JSON.stringify(results)).byteLength}));
+  }
   const batch = customSearchBatchResponseSchema.parse({
     results,
     errors: [],

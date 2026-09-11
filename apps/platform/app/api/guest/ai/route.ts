@@ -24,7 +24,8 @@ import {
   enforceLegalDatabaseFreshness,
   parseLegalChatResponse,
 } from "../../../../lib/ai/legal-chat-schema";
-import { validateLegalGatewayAnswer } from "../../../../lib/ai/legal-ai-gateway";
+import { createLegalAiGateway } from "../../../../lib/ai/legal-ai-gateway";
+import { legalResearchFailureReason } from "../../../../lib/ai/legal-answer-failure";
 import {
   legalDatabaseFreshnessFromAsOf,
 } from "../../../../lib/legal/verified-retrieval";
@@ -45,6 +46,9 @@ import {
   type SecondaryInternetRetrieval,
 } from "../../../../lib/legal/secondary-internet-retrieval";
 import { legalCitationStatements } from "../../../../lib/legal/direct-citation-store";
+import { validateFinalSourceObservations } from "../../../../lib/legal/final-source-observation";
+import { createSourceObservationClient } from "../../../../lib/legal-corpus/source-observation-service";
+import { observeCurrentLexDocument } from "../../../../lib/legal/lex-document-status";
 import {
   createAiExecutionBudget,
   type AiExecutionBudget,
@@ -506,6 +510,9 @@ export async function POST(request: Request): Promise<Response> {
       rethrowGuestCancellation(error, budget.signal);
     }
 
+    const synthesisApplicableAt = applicableAt?.toISOString()
+      ?? (retrievalUnderstanding.temporalEndpoint?.kind === "timestamp" ? retrievalUnderstanding.temporalEndpoint.instant : undefined);
+    const temporalComparison = applicableAt ? undefined : retrievalUnderstanding.comparison;
     let retrieval;
     const retrievalStage = budget.beginStage("live_lex_retrieval", {
       timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS,
@@ -518,7 +525,8 @@ export async function POST(request: Request): Promise<Response> {
         targetEnvironment: legalRetrievalEnvironment(env),
         targetQuestionId: idempotencyKey,
         targetPlanningHints: targetQuestionPlanningHints(retrievalUnderstanding, locale),
-        applicableAt: applicableAt?.toISOString(),
+        requirePlanningHints: true,
+        applicableAt: synthesisApplicableAt,
         lexSearchQueries: retrievalUnderstanding.lexSearchQueries,
         signal: retrievalStage.signal,
         limit: 4,
@@ -532,7 +540,7 @@ export async function POST(request: Request): Promise<Response> {
         query: "", locale: discoveryLocale, limit: 1, budgetMs: 1,
       });
     }
-    const secondaryInternet: SecondaryInternetRetrieval = !applicableAt
+    const secondaryInternet: SecondaryInternetRetrieval = !synthesisApplicableAt && !temporalComparison
       && shouldRetrieveSecondaryInternet(retrieval)
       ? await (async () => {
         const secondaryStage = budget.beginStage("secondary_web_retrieval", { timeoutMs: 25_000 });
@@ -555,8 +563,7 @@ export async function POST(request: Request): Promise<Response> {
         }
       })()
       : { sources: [], evidence: [], errors: [] };
-    const authoritativeSources = retrieval.sources;
-    const allRetrievedSources = [...authoritativeSources, ...secondaryInternet.sources];
+    const allRetrievedSources = [...retrieval.sources, ...secondaryInternet.sources];
     const evidence = [...retrieval.evidence, ...secondaryInternet.evidence];
     const requestHash = await sha256Json({
       question: effectiveQuestion,
@@ -645,21 +652,33 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     let aiResult;
+    let gatewayResult;
     const providerStage = budget.beginStage("provider_execution");
     try {
-      aiResult = await provider.runLegalChat({
+      gatewayResult = await createLegalAiGateway(provider).generateGroundedAnswer({
         question: effectiveQuestion,
-        retrievalQuery: retrievalUnderstanding.corpusQueries.join(" "),
+        retrievalQuery: retrievalUnderstanding.standaloneQuestion,
+        coverageRequirements: retrieval.coverageRequirements?.length ? retrieval.coverageRequirements
+          : retrievalUnderstanding.requiredConcepts.map((requirement, index) => ({
+            id: `requirement-${index + 1}`, statement: requirement.statement,
+            priority: requirement.priority ?? "core", sourceIds: [],
+            ...(requirement.scopeKind ? {scopeKind: requirement.scopeKind} : {}),
+            ...(requirement.origin ? {origin: requirement.origin} : {}),
+            ...(requirement.questionContext ? {questionContext: requirement.questionContext} : {}),
+            ...(requirement.unresolvedDimensions ? {unresolvedDimensions: requirement.unresolvedDimensions} : {}),
+          })),
         locale,
         answerMode: "short",
         reasoningMode: "fast",
-        sources: authoritativeSources,
+        sources: allRetrievedSources,
         legalDatabaseAsOf: retrieval.legalDatabaseAsOf,
-        applicableAt: applicableAt?.toISOString(),
+        applicableAt: synthesisApplicableAt,
+        temporalComparison,
         requestId: reservation.run.correlationId,
         safetyIdentifier,
         runtimeSettings,
       }, { signal: budget.signal, budget, beforeProviderCall });
+      aiResult = gatewayResult.run;
       providerStage.complete();
     } catch (error) {
       providerStage.fail();
@@ -715,31 +734,37 @@ export async function POST(request: Request): Promise<Response> {
     let result;
     const validationStage = budget.beginStage("validation");
     try {
-      const validated = validateLegalGatewayAnswer({
-        result: parseLegalChatResponse(aiResult.data),
-        run: aiResult,
+      const validated = gatewayResult;
+      const finalizedSources = await validateFinalSourceObservations({
         sources: allRetrievedSources,
-        question: effectiveQuestion,
-        retrievalQuery: retrievalUnderstanding.corpusQueries.join(" "),
-        locale,
-        answerMode: "short",
-        reasoningMode: "fast",
-        legalDatabaseAsOf: retrieval.legalDatabaseAsOf,
+        sourceIds: validated.run.data.sources.map((source) => source.sourceId),
+        observe: env.LEGAL_RETRIEVAL_SERVICE ? createSourceObservationClient({
+          service: env.LEGAL_RETRIEVAL_SERVICE,
+          environment: legalRetrievalEnvironment(env),
+        }) : observeCurrentLexDocument,
       });
       result = enforceLegalDatabaseFreshness({
         ...validated.run.data,
+        sources: validated.run.data.sources.map((source) => ({
+          ...source, verifiedAt: finalizedSources.get(source.sourceId)!.verifiedAt,
+        })),
         sourceAccessMode: retrieval.sourceAccessMode,
         sourcesRetrievedAt: retrieval.sourcesRetrievedAt,
         sourceValidationStatus: retrieval.sourceValidationStatus,
-        coverageStatus: retrieval.coverageStatus,
+        ...(validated.run.data.responseKind === "clarification_required"
+          ? {failureReason: legalResearchFailureReason(retrieval.errors)} : {}),
+        coverageStatus: validated.run.data.coverageGaps?.length && retrieval.coverageStatus === "good_coverage"
+          ? "partial_coverage" as const : retrieval.coverageStatus,
       }, retrieval.freshness, {
         locale,
         answerMode: "short",
         reasoningMode: "fast",
       });
       validationStage.complete();
-    } catch {
+    } catch (error) {
       validationStage.fail();
+      const code = error instanceof Error && error.message === "FINAL_SOURCE_OBSERVATION_UNAVAILABLE"
+        ? "SOURCE_OBSERVATION_UNAVAILABLE" : "INVALID_AI_OUTPUT";
       try {
         const completedAt = new Date().toISOString();
         for (const [callIndex, call] of providerCalls.entries()) {
@@ -756,7 +781,7 @@ export async function POST(request: Request): Promise<Response> {
             outputTokens: 0,
             cachedInputTokens: 0,
             status: "failed",
-            errorCode: "INVALID_AI_OUTPUT",
+            errorCode: code,
             startedAt: call.startedAt,
             completedAt,
             eventId: `guest_provider_usage_${reservation.run.id}_${call.provider}_${call.attempt}_${callIndex}`,
@@ -771,26 +796,28 @@ export async function POST(request: Request): Promise<Response> {
       await failGuestAiRun({
         db,
         run: reservation.run,
-        errorCode: "INVALID_AI_OUTPUT",
+        errorCode: code,
       });
       await recordGuestAiSlo({
         telemetry: telemetry && { ...telemetry, provider: aiResult.provider, model: aiResult.model, fallbackFromProvider: aiResult.fallbackFromProvider },
-        outcome: guestAiSloFailureOutcome("INVALID_AI_OUTPUT", budget),
+        outcome: guestAiSloFailureOutcome(code, budget),
       });
       return json({
-        code: "INVALID_AI_OUTPUT",
+        code,
         error: aiText(
           locale,
           "AI-ответ не прошёл проверку. Гостевой ответ не использован.",
           "AI javobi tekshiruvdan o‘tmadi. Mehmon javobi ishlatilmadi.",
           "The AI answer did not pass validation. Your guest answer was not used.",
         ),
-      }, 422, sessionContext.setCookie ? { "set-cookie": sessionContext.setCookie } : undefined);
+      }, code === "SOURCE_OBSERVATION_UNAVAILABLE" ? 503 : 422,
+      sessionContext.setCookie ? { "set-cookie": sessionContext.setCookie } : undefined);
     }
 
     try {
       const completedAt = new Date().toISOString();
-      const successfulCallIndex = providerCalls.findLastIndex((call) => call.provider === aiResult.provider);
+      const successfulCallIndex = aiResult.sourceFallback ? -1
+        : providerCalls.findLastIndex((call) => call.provider === aiResult.provider);
       for (const [callIndex, call] of providerCalls.entries()) {
         if (callIndex === successfulCallIndex) continue;
         await recordProviderUsage({
@@ -806,14 +833,14 @@ export async function POST(request: Request): Promise<Response> {
           outputTokens: 0,
           cachedInputTokens: 0,
           status: "failed",
-          errorCode: call.provider === aiResult.provider ? "RETRY_USED" : "FALLBACK_USED",
+          errorCode: aiResult.sourceFallbackReason ?? (call.provider === aiResult.provider ? "RETRY_USED" : "FALLBACK_USED"),
           startedAt: call.startedAt,
           completedAt,
           eventId: `guest_provider_usage_${reservation.run.id}_${call.provider}_${call.attempt}_${callIndex}`,
         });
       }
       const successfulCall = successfulCallIndex >= 0 ? providerCalls[successfulCallIndex] : undefined;
-      await recordProviderUsage({
+      if (!aiResult.sourceFallback) await recordProviderUsage({
         db,
         environment: providerEnvironment,
         workspaceId: null,

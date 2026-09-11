@@ -60,7 +60,7 @@ test("retired dense integrations are absent while custom retrieval stays bound",
   assert.match(corpusConfig, /"binding": "LEGAL_CUSTOM_SEARCH_SERVICE"/u);
   assert.match(corpusConfig, /"binding": "LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE"/u);
   assert.match(corpusWorker, /url\.pathname === TARGET_LEGAL_ANSWER_PATH/u);
-  assert.match(corpusWorker, /createRuntimeTargetLegalAnswerRetriever\(env\)/u);
+  assert.match(corpusWorker, /createRuntimeTargetLegalAnswerRetriever\(env[,)]/u);
   assert.match(corpusWorker, /url\.pathname === TARGET_ACTIVATION_SET_EVALUATION_PATH/u);
   assert.match(corpusWorker, /env\.LEGAL_DB\.prepare\("SELECT 1 AS ready"\)/u);
 });

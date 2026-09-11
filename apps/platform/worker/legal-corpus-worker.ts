@@ -1,3 +1,5 @@
+import { CITATION_EVIDENCE_PATH, handleCitationEvidenceRequest } from "../lib/legal-corpus/citation-evidence";
+import {SOURCE_OBSERVATION_PATH, handleSourceObservationRequest} from "../lib/legal-corpus/source-observation-service";
 import {
   handleOfficialEvidenceRequest,
   OFFICIAL_EVIDENCE_RESOLVE_PATH,
@@ -57,6 +59,8 @@ const worker = {
     const url = new URL(request.url);
     const legacyWriteRejection = rejectDisabledLegacyCorpusWrite(request, env);
     if (legacyWriteRejection) return legacyWriteRejection;
+    if (url.pathname === SOURCE_OBSERVATION_PATH) return handleSourceObservationRequest(request, env);
+    if (url.pathname === CITATION_EVIDENCE_PATH) return handleCitationEvidenceRequest(request, env);
     if (url.pathname === OFFICIAL_EVIDENCE_RESOLVE_PATH) {
       return handleOfficialEvidenceRequest(request, env);
     }
@@ -65,9 +69,12 @@ const worker = {
     }
     if (url.pathname === TARGET_LEGAL_ANSWER_PATH) {
       try {
+        const releaseIds = new Set<string>();
         return handleTargetLegalAnswerRequest(request, {
           environment: env.APP_ENV,
-          retriever: createRuntimeTargetLegalAnswerRetriever(env),
+          versionId: env.WORKER_VERSION?.id ?? env.LEGAL_RUNTIME_BUILD_ID,
+          releaseIds: () => [...releaseIds],
+          retriever: createRuntimeTargetLegalAnswerRetriever(env, {onReleaseResolved: releaseId => {releaseIds.add(releaseId);}}),
         });
       } catch {
         return response({ code: "TARGET_LEGAL_ANSWER_UNAVAILABLE" }, 503);

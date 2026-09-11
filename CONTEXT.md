@@ -42,6 +42,10 @@ _Avoid_: source link, bibliography entry, model reference
 A Citation to official-source material rendered with a provision label, publisher, captured revision and validated provision-specific Lex.uz URL, falling back to the validated document URL when necessary. It does not imply controlling-text or translation status.
 _Avoid_: model-authored link, generated anchor, bare article number
 
+**Citation Evidence Receipt**:
+The retained identity of the exact official evidence used by a Citation, including its language and captured revision. It permits the cited text to be checked again without substituting a later revision.
+_Avoid_: current article, saved legal text, answer cache
+
 ### Authority and evidence
 
 **Controlling Text**:
@@ -159,8 +163,8 @@ Cited research from the wider internet included whenever live research is needed
 _Avoid_: official source, legal authority, general search
 
 **Source Ladder**:
-The escalation from Indexed Official Corpus to live research, with Live Official Search followed by Secondary Web Research whenever indexed coverage is insufficient.
-_Avoid_: parallel search, blended search
+The evidence-priority order from Indexed Official Corpus to Live Official Search, with Secondary Web Research providing context whenever live research is needed. Independent discovery may overlap while official evidence retains priority.
+_Avoid_: blended authority, interchangeable sources
 
 **Official Coverage**:
 The degree to which validated official evidence collectively supports every material legal proposition needed for a Legal Answer; coverage may be good, partial, weak, or absent.

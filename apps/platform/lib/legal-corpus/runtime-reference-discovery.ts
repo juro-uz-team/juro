@@ -12,6 +12,7 @@ const citationArticle = (label: string) => /(?:Article|Статья|Ст\.)\s+(\
 export function createRuntimeReferenceDiscovery(input: {
   db: D1Database; bucket: Pick<R2Bucket, "get">;
   identities: ReadonlyMap<string, CustomRuntimeLegalIdentity>;
+  preparePacket?: (packet: CandidatePacket, release: PinnedCandidateRelease) => Promise<CandidatePacket>;
   revalidate: (packet: CandidatePacket, endpoint: TemporalEndpoint,
     release: PinnedCandidateRelease, currentAt: string) => Promise<RevalidatedCandidate[]>;
 }) {
@@ -75,7 +76,8 @@ export function createRuntimeReferenceDiscovery(input: {
         itemKey, referenceOrigin: {itemKey: source.candidate.candidate.itemKey, article: query.article},
         formulationMatches: undefined, vectorScore: 0, keywordScore: 0, fusionScore: 0})),
     });
-    const validated = await input.revalidate(packet, endpoint, release, currentAt);
+    const validated = await input.revalidate(input.preparePacket ? await input.preparePacket(packet, release) : packet,
+      endpoint, release, currentAt);
     if (validated.length !== origins.size || new Set(validated.map(candidate => candidate.candidate.itemKey)).size !== origins.size) {
       throw new TypeError("CUSTOM_REFERENCE_MEMBERSHIP_INVALID");
     }

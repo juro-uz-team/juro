@@ -256,6 +256,7 @@ const resolvedEvidenceSchema = z.object({
     sha256: sha256Schema,
     sourceNormalizedSha256: sha256Schema,
     schemaVersion: z.literal(1),
+    sourceRevisionId: textRevisionIdSchema.optional(),
   }).strict(),
 }).strict();
 
@@ -1610,6 +1611,7 @@ export async function resolveR2NativeCustomEvidence(
       sha256: identity.evidence.sha256,
       sourceNormalizedSha256: identity.evidence.sourceNormalizedSha256,
       schemaVersion: 1,
+      ...(sourceRevisionId ? {sourceRevisionId} : {}),
     },
   });
   // Runtime identities may be remapped across releases. The parent locator

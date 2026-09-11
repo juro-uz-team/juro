@@ -1,4 +1,6 @@
 import { z } from "zod";
+import {candidateMembershipProofSchema} from "./candidate-membership-proof";
+import { LEGAL_INTERPRETATION_FORMULATION_LIMIT, LEGAL_TOTAL_FORMULATION_LIMIT } from "../legal/question-interpretation-limits";
 
 import {
   candidateConfigurationIdSchema,
@@ -25,7 +27,7 @@ const formulationSchema = z.object({
 }).strict();
 const interpretationSchema = z.object({
   id: legalIdentifierSchema,
-  formulations: z.array(formulationSchema).min(1).max(6),
+  formulations: z.array(formulationSchema).min(1).max(LEGAL_INTERPRETATION_FORMULATION_LIMIT),
 }).strict();
 export const CANDIDATE_METADATA_SCHEMA = [
   "language",
@@ -110,20 +112,20 @@ export function toPinnedCandidateConfiguration(value: unknown): PinnedCandidateC
 
 export const candidateSchema = z.object({
   itemKey: z.string().min(1).max(700),
+  membershipProof: candidateMembershipProofSchema.optional(),
   /** Reference discovery inherits the originating search's provenance; its
    * numeric ranks do not represent a separate vector or keyword match. */
   referenceOrigin: z.object({itemKey: z.string().min(1).max(700),
     article: z.string().regex(/^\d+(?:[.-]\d+)?$/u).max(40)}).strict().optional(),
   instanceId: candidateInstanceIdSchema,
   shardId: candidateShardIdSchema,
-  // One bounded repair formulation may be merged with the six initial
-  // retrieval provenance identifiers for the same provision.
-  formulationIds: z.array(legalIdentifierSchema).min(1).max(7),
+  // Initial and bounded repair searches retain all contributing formulations.
+  formulationIds: z.array(legalIdentifierSchema).min(1).max(LEGAL_TOTAL_FORMULATION_LIMIT),
   formulationMatches: z.array(z.object({
     formulationId: legalIdentifierSchema,
     rank: z.number().int().positive().max(50),
     fusionScore: z.number().finite(),
-  }).strict()).min(1).max(7).optional(),
+  }).strict()).min(1).max(LEGAL_TOTAL_FORMULATION_LIMIT).optional(),
   readingIds: z.array(legalIdentifierSchema).min(1),
   retrievalRequirementIds: z.array(legalIdentifierSchema).min(1),
   vectorRank: z.number().int().positive(),
@@ -151,7 +153,7 @@ const packetSchema = z.object({
   releaseId: searchReleaseIdSchema,
   endpoint: endpointSchema,
   requiredInstanceIds: z.array(candidateInstanceIdSchema).min(1),
-  candidates: z.array(candidateSchema).max(300),
+  candidates: z.array(candidateSchema).max(LEGAL_INTERPRETATION_FORMULATION_LIMIT * 50),
   partialErrors: z.array(packetErrorSchema),
 }).strict();
 
@@ -213,11 +215,15 @@ function normalizeCandidates(input: Array<NormalizedCandidateInput & {
       // on the per-formulation match for deterministic tie-breaking.
       fusionScore: 1 / (60 + raw.formulationRank),
       ...(raw.providerMetadata ? { providerMetadata: raw.providerMetadata } : {}),
+      ...(raw.membershipProof ? {membershipProof: raw.membershipProof} : {}),
     });
     const existing = byKey.get(candidate.itemKey);
     if (!existing) {
       byKey.set(candidate.itemKey, candidate);
     } else {
+      if (JSON.stringify(existing.membershipProof) !== JSON.stringify(candidate.membershipProof)) {
+        throw new TypeError("CANDIDATE_MEMBERSHIP_PROOF_CONFLICT");
+      }
       const existingProviderScore = existing.formulationMatches
         ? Math.max(...existing.formulationMatches.map((match) => match.fusionScore))
         : existing.fusionScore;
@@ -443,13 +449,17 @@ export function createProviderCandidateIndex(
           response: LegalCandidateSearchResponse;
         }> = [];
         if (provider.searchMany) {
-          const batches = await Promise.all(waves.map(async (instanceIds) => ({
+          // The provider transport accepts six queries, independently of how
+          // many legal scopes the request contains. Preserve every association.
+          const batches = await Promise.all(waves.flatMap(instanceIds =>
+            chunks(interpretation.formulations, 6).map(async formulations => ({
             instanceIds,
+            formulations,
             response: await provider.searchMany!({
               releaseId: release.id,
               currentAt,
               instanceIds,
-              queries: interpretation.formulations.map((formulation) => formulation.text),
+              queries: formulations.map((formulation) => formulation.text),
               endpoint,
               maxResults: 50,
               vectorThreshold: 0,
@@ -457,7 +467,7 @@ export function createProviderCandidateIndex(
               observedTokenUsage += response.tokenUsage ?? 0;
               return response;
             }),
-          })));
+          }))));
           for (const batch of batches) {
             if (batch.response.errors.length > 0) {
               emitOutcome("unavailable", "provider_unavailable");
@@ -470,16 +480,16 @@ export function createProviderCandidateIndex(
               }));
             }
             const indices = batch.response.results.map((result) => result.queryIndex);
-            if (indices.length !== interpretation.formulations.length
+            if (indices.length !== batch.formulations.length
               || new Set(indices).size !== indices.length
               || indices.some((index) => !Number.isInteger(index)
-                || index < 0 || index >= interpretation.formulations.length)) {
+                || index < 0 || index >= batch.formulations.length)) {
               emitOutcome("unavailable", "integrity_failure");
               return unavailable(release, endpoint, [{ code: "CANDIDATE_PARTIAL_RESPONSE" }]);
             }
             for (const result of batch.response.results) {
               searches.push({
-                formulation: interpretation.formulations[result.queryIndex]!,
+                formulation: batch.formulations[result.queryIndex]!,
                 instanceIds: batch.instanceIds,
                 response: {
                   hits: result.hits,
@@ -579,6 +589,7 @@ export function createProviderCandidateIndex(
                 ? 1 / (60 + hit.vectorRank) + 1 / (60 + hit.keywordRank)
                 : hit.fusionScore,
               ...(hit.providerMetadata ? { providerMetadata: hit.providerMetadata } : {}),
+              ...(hit.membershipProof ? {membershipProof: hit.membershipProof} : {}),
               formulation: search.formulation,
               formulationRank: hitIndex + 1,
             });

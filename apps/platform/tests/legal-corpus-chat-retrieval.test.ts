@@ -14,15 +14,49 @@ const now = new Date("2026-08-15T00:00:00.000Z");
 const checkedAt = "2026-08-14T23:00:00.000Z";
 const contentHash = "a".repeat(64);
 
+test("an unavailable required plan cannot start a second interpretation or current-source search", async () => {
+  const result = await retrieveCorpusAwareLegalSources({query: "Independent legal question", locale: "ru", now,
+    requirePlanningHints: true, targetPlanningHints: Promise.resolve(undefined),
+    targetEnvironment: "development", targetQuestionId: "missing-plan",
+    targetService: {async fetch() { assert.fail("A second target interpretation must not run"); }} as unknown as Fetcher,
+    liveSearch: async () => { assert.fail("Current-source search cannot replace an unavailable plan"); }});
+  assert.equal(result.sourceValidationStatus, "unavailable");
+  assert.equal(result.coverageStatus, "no_coverage");
+  assert.deepEqual(result.errors, [{code: "QUESTION_INTERPRETATION_UNAVAILABLE"}]);
+  assert.equal(shouldRetrieveSecondaryInternet(result), false);
+});
+
+test("a historical endpoint from the shared plan cannot fall through to current live evidence", async () => {
+  const result = await retrieveCorpusAwareLegalSources({query: "Rules as of 2018", locale: "ru", now,
+    requirePlanningHints: true, targetPlanningHints: {answerLanguage: "ru", standaloneQuestion: "Rules as of 2018",
+      requirements: [{statement: "Historical rule", priority: "core"}], formulations: ["Historical rule"],
+      temporalEndpoint: {kind: "timestamp", instant: "2018-01-01T00:00:00.000Z"}},
+    liveSearch: async () => { assert.fail("Current rules cannot establish historical applicability"); }});
+  assert.equal(result.sourceValidationStatus, "unavailable");
+  assert.equal(result.sources.length, 0);
+  assert.deepEqual(result.coverageRequirements, [{id: "requirement-1", statement: "Historical rule", priority: "core", sourceIds: []}]);
+  assert.equal(shouldRetrieveSecondaryInternet(result), false);
+});
+
 test("an indexed list-item number is not published as an article number", () => {
   assert.equal(targetCitationArticle("Code — Статья 6", "6) отдельный пункт внутри статьи."), null);
   assert.equal(targetCitationArticle("Code — Article 3", "3. A numbered paragraph."), null);
   assert.equal(targetCitationArticle("Code — Статья 163", "6) отдельный пункт внутри статьи."), "163");
   assert.equal(targetCitationArticle("Code — Статья 6", "Статья 6. Заголовок и текст статьи."), "6");
+  assert.equal(targetCitationArticle("Code — Article 161", "See Article 163 for further restrictions."), "161");
+  assert.equal(targetCitationArticle("Code — Article 161", "The operative rule without an article heading."), "161");
 });
 
 function retrieveCorpusAwareLegalSources(input: Parameters<typeof retrieveWithOfficialStatus>[0]) {
-  return retrieveWithOfficialStatus({ verifyCurrentSource: async () => true, ...input });
+  const service = input.targetService;
+  const targetService = service ? {async fetch(request: RequestInfo | URL, init?: RequestInit) {
+    const result = await service.fetch(request, init);
+    result.headers.set("x-juro-target-answer-contract", "2");
+    return result;
+  }} as Fetcher : undefined;
+  return retrieveWithOfficialStatus({clock: () => (input.now ?? now).getTime(), verifyCurrentSource: async officialUrl => ({version: 2,
+    officialUrl, observedAt: (input.now ?? now).toISOString(), current: true, normalizedTextSha256: contentHash,
+    rawContentSha256: contentHash}), ...input, targetService });
 }
 
 function liveResult(): LiveLexRetrievalResult {
@@ -142,7 +176,7 @@ test("chat retrieval uses the R2-native target service before live Lex", async (
               label: "Трудовой кодекс — Article 9",
               url: "https://lex.uz/ru/docs/777",
             }],
-            evidenceSha256: contentHash,
+            evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
           }, {
             requirementId: "requirement-2",
             provisionConceptId: "concept-1",
@@ -153,7 +187,7 @@ test("chat retrieval uses the R2-native target service before live Lex", async (
               label: "Трудовой кодекс — Article 9",
               url: "https://lex.uz/ru/docs/777",
             }],
-            evidenceSha256: contentHash,
+            evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
           }],
           whatToDoNext: [],
           focusedQuestions: [],
@@ -208,14 +242,16 @@ test("thirteen compact provisions preserve all independent coverage mappings in 
         requirementId: requirement.id, provisionConceptId: `concept-${index}`, provisionRenditionId: `rendition-${index}`,
         proposition: requirement.statement, controllingQuotation: `Complete operative rule ${index}.`,
         officialCitations: [{label: `Example Act — Article ${700 + index}`, url: "https://lex.uz/ru/docs/777"}],
-        evidenceSha256: contentHash,
+        evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
       })), whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
-      temporalEndpoint: {kind: "current"}, coverageRequirements: requirements}});
+      temporalEndpoint: {kind: "current"}, coverageRequirements: requirements.map(requirement => ({...requirement,
+        unresolvedDimensions: ["forum", "claim_kind"]}))}});
   }} as Fetcher;
   const result = await retrieveCorpusAwareLegalSources({query: "Independent rules", locale: "ru",
     targetService, targetEnvironment: "staging", targetQuestionId: "compact-evidence",
     liveSearch: async () => { throw new Error("No fallback expected"); }});
   assert.equal(result.sources.length, 13);
+  assert.deepEqual(result.coverageRequirements?.[0]?.unresolvedDimensions, ["forum", "claim_kind"]);
   assert.equal(result.coverageStatus, "good_coverage");
   assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.id), requirements.map(requirement => requirement.id));
   assert.equal(result.coverageRequirements?.every(requirement => requirement.sourceIds?.length === 1
@@ -228,16 +264,49 @@ test("revoked indexed documents are excluded before live research and cannot cer
     return Response.json({ result: { kind: "legal_answer", sourceLadder: "indexed_official_corpus",
       mainPoint: "A selected rule", whatTheLawSays: [{ requirementId: "rule", provisionConceptId: "concept",
         provisionRenditionId: "rendition", proposition: "A selected rule", controllingQuotation: "A selected rule in an obsolete document.",
-        officialCitations: [{ label: "Law — Article 9", url: "https://lex.uz/ru/docs/777" }], evidenceSha256: contentHash }],
+        officialCitations: [{ label: "Law — Article 9", url: "https://lex.uz/ru/docs/777" }], evidenceSha256: contentHash,
+        currentSourceStatus: {pinnedTextSha256: contentHash, observation: null} }],
       whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
-      temporalEndpoint: { kind: "current" } } });
+      temporalEndpoint: { kind: "current" }, coverageRequirements: [{id: "rule", statement: "A condition discovered in inspected evidence", priority: "core"}] } });
   }, connect() { throw new Error("Unexpected socket connection"); } } satisfies Fetcher;
   const result = await retrieveCorpusAwareLegalSources({ query: "статья 9", locale: "ru", targetService,
-    targetEnvironment: "staging", targetQuestionId: "revoked-doc", verifyCurrentSource: async () => false,
+    targetEnvironment: "staging", targetQuestionId: "revoked-doc", verifyCurrentSource: async officialUrl => ({version: 2,
+      officialUrl, observedAt: now.toISOString(), current: false, normalizedTextSha256: contentHash, rawContentSha256: contentHash}),
     liveSearch: async () => { liveCalls += 1; return liveResult(); } });
   assert.equal(liveCalls, 1);
   assert.equal(result.sourceAccessMode, "direct");
   assert.equal(result.sources.some((source) => source.id.startsWith("target:")), false);
+  assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.statement), ["A condition discovered in inspected evidence"]);
+});
+
+test("the chat adapter preserves observation time and rejects expired or changed pinned evidence", async () => {
+  const url = "https://lex.uz/ru/docs/777";
+  for (const mode of ["fresh", "expired", "changed", "missing"] as const) {
+    const observedAt = new Date(now.getTime() - (mode === "expired" ? 300_000 : 299_999)).toISOString();
+    const observation = {version: 2, officialUrl: url, observedAt, current: true,
+      normalizedTextSha256: mode === "changed" ? "b".repeat(64) : contentHash, rawContentSha256: contentHash};
+    const targetService = {async fetch() {return Response.json({result: {kind: "legal_answer", sourceLadder: "indexed_official_corpus",
+      mainPoint: "A selected rule", whatTheLawSays: [{requirementId: "rule", provisionConceptId: "concept",
+        provisionRenditionId: "rendition", proposition: "The rule applies", controllingQuotation: "Complete operative rule.",
+        officialCitations: [{label: "Law — Article 9", url}], evidenceSha256: contentHash,
+        ...(mode === "missing" ? {} : {currentSourceStatus: {pinnedTextSha256: contentHash, observation}})}],
+      whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
+      temporalEndpoint: {kind: "current"}, coverageRequirements: [{id: "rule", statement: "The rule applies", priority: "core"}]}});
+    }, connect() {throw new Error("No sockets");}} satisfies Fetcher;
+    let refreshes = 0;
+    const result = await retrieveCorpusAwareLegalSources({query: "General rule", locale: "ru", now, targetService,
+      targetEnvironment: "staging", targetQuestionId: `observation-${mode}`,
+      verifyCurrentSource: async () => {refreshes++; throw new Error("Publisher refresh unavailable");},
+      liveSearch: async () => ({...liveResult(), sources: []})});
+    assert.equal(result.sources.length, mode === "fresh" ? 1 : 0);
+    if (mode === "fresh") {
+      assert.equal(result.sources[0]!.verifiedAt, observedAt);
+      assert.equal(result.sources[0]!.lastCheckedAt, observedAt);
+      assert.equal(result.evidence[0]!.validatedAt, observedAt);
+    }
+    assert.equal(refreshes, mode === "expired" || mode === "missing" ? 1 : 0);
+    assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.id), ["rule"]);
+  }
 });
 
 test("an indexed list introduction is completed from separately validated official article evidence", async () => {
@@ -246,7 +315,8 @@ test("an indexed list introduction is completed from separately validated offici
     return Response.json({ result: { kind: "legal_answer", sourceLadder: "indexed_official_corpus",
       mainPoint: "Conditions apply", whatTheLawSays: [{ requirementId: "rule", provisionConceptId: "concept",
         provisionRenditionId: "rendition", proposition: "Applicable grounds", controllingQuotation: "Статья 17. Основания. Применяются следующие основания:",
-        officialCitations: [{ label: "Code — Статья 17", url: "https://lex.uz/ru/docs/777" }], evidenceSha256: contentHash }],
+        officialCitations: [{ label: "Code — Статья 17", url: "https://lex.uz/ru/docs/777" }], evidenceSha256: contentHash,
+        currentSourceStatus: {pinnedTextSha256: contentHash, observation: null} }],
       whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
       temporalEndpoint: { kind: "current" } } });
   }, connect() { throw new Error("Unexpected socket connection"); } } satisfies Fetcher;
@@ -312,7 +382,7 @@ test("contextual planning does not consume the Indexed Official Corpus deadline"
                 label: "Трудовой кодекс — Article 560",
                 url: "https://lex.uz/ru/docs/6257288",
               }],
-              evidenceSha256: contentHash,
+              evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
             }],
             whatToDoNext: [],
             focusedQuestions: [],
@@ -351,7 +421,7 @@ test("target comparison citations retain their endpoint applicability", async ()
       label: `Трудовой кодекс — Article ${suffix}`,
       url: `https://lex.uz/ru/docs/${suffix}`,
     }],
-    evidenceSha256: contentHash,
+    evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
   });
   const answer = (suffix: string, temporalEndpoint: { kind: "current" } | { kind: "timestamp"; instant: string }) => ({
     kind: "legal_answer",
@@ -418,7 +488,7 @@ test("live supplementation retains a different article from an already indexed i
         requirementId: "filing", provisionConceptId: "concept", provisionRenditionId: "rendition",
         proposition: "A verified filing rule", controllingQuotation: "A verified filing rule applies to this application.",
         officialCitations: [{label: "Law — Article 8", url: "https://lex.uz/ru/docs/777"}],
-        evidenceSha256: contentHash,
+        evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
       }], whatToDoNext: [], focusedQuestions: [], formulationsUsed: 2, repairQueriesUsed: 1,
       temporalEndpoint: {kind: "current"}, uncoveredSupportingRequirementIds: ["remedy"],
     } }) } as unknown as Fetcher,
@@ -446,7 +516,7 @@ test("an over-cap comparison fails closed instead of publishing one endpoint", a
         label: `Code — Article ${index + 1}`,
         url: `https://lex.uz/ru/docs/${prefix}${index}`,
       }],
-      evidenceSha256: contentHash,
+      evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null},
     })),
     whatToDoNext: [],
     focusedQuestions: [],
@@ -526,6 +596,39 @@ test("target source unavailability continues to direct validated Lex", async () 
   assert.equal(result.retrievalTelemetry?.targetFailureCode, "INDEXED_CANDIDATE_UNAVAILABLE");
 });
 
+test("slow indexed research overlaps official discovery without treating its URLs as evidence", async () => {
+  let releaseTarget!: () => void;
+  const targetReady = new Promise<void>(resolve => {releaseTarget = resolve;});
+  let discoveryStarted!: () => void;
+  const discoveryReady = new Promise<void>(resolve => {discoveryStarted = resolve;});
+  let discoveryCalls = 0;
+  let targetFinished = false;
+  let liveCalls = 0;
+  const retrieval = retrieveCorpusAwareLegalSources({query: "An unrelated legal question", locale: "ru",
+    targetPlanningHints: {answerLanguage: "ru", standaloneQuestion: "An unrelated legal question",
+      requirements: [{statement: "An unrelated legal question", priority: "core"}], formulations: ["complete formulation"]},
+    targetEnvironment: "staging", targetQuestionId: "overlapped-discovery", officialDiscoveryDelayMs: 1,
+    lexSearchQueries: Promise.resolve(["complete formulation"]),
+    targetService: {fetch: async () => {await targetReady; targetFinished = true; return Response.json({result: {
+      kind: "source_unavailability", sourceLadder: "indexed_official_corpus", nextTier: "live_official_search",
+      safeErrorCode: "INDEXED_CANDIDATE_UNAVAILABLE",
+    }});}} as unknown as Fetcher,
+    discoverOfficialUrls: async query => {discoveryCalls++; assert.equal(targetFinished, false);
+      assert.equal(query, "An unrelated legal question\ncomplete formulation"); discoveryStarted(); return ["https://lex.uz/ru/docs/777"];},
+    liveSearch: async options => {liveCalls++; assert.equal(targetFinished, true);
+      assert.deepEqual(await options.discoverOfficialUrls!("An unrelated legal question\ncomplete formulation", "ru", options.signal ?? new AbortController().signal), ["https://lex.uz/ru/docs/777"]);
+      return {...liveResult(), sources: [], evidence: [], sourceValidationStatus: "unavailable"};},
+  });
+  await discoveryReady;
+  assert.equal(liveCalls, 0, "URL discovery is not validated live evidence");
+  releaseTarget();
+  const result = await retrieval;
+  assert.equal(discoveryCalls, 1);
+  assert.equal(liveCalls, 1);
+  assert.equal(result.sources.length, 0);
+  assert.notEqual(result.coverageStatus, "good_coverage");
+});
+
 test("a timed-out current target preserves budget for direct validated Lex", async () => {
   let liveStarted = 0;
   const result = await retrieveCorpusAwareLegalSources({
@@ -588,6 +691,30 @@ test("an article mismatch keeps direct official coverage below the answer thresh
     liveSearch: async () => liveResult(),
   });
   assert.equal(result.coverageStatus, "partial_coverage");
+});
+
+test("speculative current discovery requires an explicit shared current plan", async () => {
+  let discoveryCalls = 0;
+  await retrieveCorpusAwareLegalSources({query: "A question whose temporal scope is not yet interpreted", locale: "ru",
+    targetEnvironment: "staging", targetQuestionId: "pending-interpretation", officialDiscoveryDelayMs: 1,
+    targetService: {fetch: async () => {await new Promise(resolve => setTimeout(resolve, 10)); return Response.json({result: {
+      kind: "source_unavailability", sourceLadder: "indexed_official_corpus", nextTier: "live_official_search",
+      safeErrorCode: "QUESTION_INTERPRETATION_UNAVAILABLE",
+    }});}} as unknown as Fetcher,
+    discoverOfficialUrls: async () => {discoveryCalls++; return [];},
+    liveSearch: async () => {assert.fail("An unavailable interpretation must not start live research");},
+  });
+  assert.equal(discoveryCalls, 0);
+});
+
+test("one live source or government guidance cannot independently certify official coverage", async () => {
+  for (const sourceClass of ["OFFICIAL_LEGISLATION", "OFFICIAL_GOVERNMENT_GUIDANCE", "SECONDARY_REFERENCE"] as const) {
+    const live = liveResult();
+    live.sources = live.sources.map(source => ({...source, sourceClass}));
+    const result = await retrieveCorpusAwareLegalSources({query: "Which duties and exceptions apply?", locale: "ru",
+      liveSearch: async () => live});
+    assert.notEqual(result.coverageStatus, "good_coverage", "source availability is not semantic requirement coverage");
+  }
 });
 
 test("live research includes the wider internet while sufficient indexed answers stay local", () => {

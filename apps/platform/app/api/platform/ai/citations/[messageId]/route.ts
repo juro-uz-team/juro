@@ -1,5 +1,7 @@
 import { requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
-import { requireD1, requireR2 } from "../../../../../../lib/document-builder/storage/runtime";
+import { requireD1, requireR2, runtimeEnv } from "../../../../../../lib/document-builder/storage/runtime";
+import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCitationEvidence } from "../../../../../../lib/legal-corpus/citation-evidence";
+import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/chat-retrieval";
 import { parsePrivateDocumentLocator } from "../../../../../../lib/document-analysis/private-document-locator";
 import { normalizeArticleNumber } from "../../../../../../lib/legal/legal-language";
 import { workspaceForUser } from "../../../../../../lib/platform/workspace";
@@ -7,6 +9,7 @@ import { workspaceForUser } from "../../../../../../lib/platform/workspace";
 type Context = { params: Promise<{ messageId: string }> };
 
 type CitationRow = {
+  evidenceReceiptJson?: string | null;
   title: string;
   articleReference: string | null;
   excerpt: string | null;
@@ -34,49 +37,7 @@ type PrivateDocumentRow = {
   createdAt: string;
 };
 
-type CorpusArticleRow = {
-  documentId: string;
-  variantId: string;
-  documentTitle: string;
-  documentType: string | null;
-  documentNumber: string | null;
-  adoptingAuthority: string | null;
-  sourceClass: string;
-  articleNumber: string | null;
-  articleTitle: string | null;
-  part: string | null;
-  chapter: string | null;
-  section: string | null;
-  text: string;
-  textLength: number;
-  language: string;
-  status: string;
-  validFrom: string | null;
-  validTo: string | null;
-  versionDate: string | null;
-  sourceUrl: string;
-  fetchedAt: string;
-};
-
-type CorpusLanguageRow = {
-  language: string;
-  sourceUrl: string | null;
-  verifiedAt: string;
-  official: number;
-};
-
-type CorpusVersionRow = {
-  versionNumber: number;
-  status: string;
-  validFrom: string | null;
-  validTo: string | null;
-  versionDate: string | null;
-  fetchedAt: string;
-};
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const MAX_ARTICLE_CHARACTERS = 200_000;
-const MAX_ARTICLE_PARTS = 64;
 const MAX_PRIVATE_DOCUMENT_CHARACTERS = 200_000;
 
 function response(body: unknown, status = 200) {
@@ -140,7 +101,7 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
       reference.document_status AS documentStatus,reference.effective_date AS effectiveDate,
       reference.canonical_url AS canonicalUrl,reference.source_locale AS sourceLocale,
       reference.validated_at AS validatedAt,reference.source_kind AS sourceKind,
-      reference.content_sha256 AS contentSha256
+      reference.content_sha256 AS contentSha256,reference.evidence_receipt_json AS evidenceReceiptJson
     FROM legal_source_references AS reference
     INNER JOIN conversations AS conversation ON conversation.id=reference.conversation_id
     WHERE reference.message_id=? AND reference.canonical_url=?
@@ -230,79 +191,38 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
   }
   if (citation.sourceKind !== "lex") return response({ code: "CITATION_UNAVAILABLE" }, 404);
 
-  const articleNumber = normalizedArticle(citation.articleReference);
-  const articles = articleNumber ? await db.prepare(`SELECT
-      document.id AS documentId,variant.id AS variantId,
-      coalesce(variant.title,document.title) AS documentTitle,
-      document.document_type AS documentType,document.document_number AS documentNumber,
-      document.adopting_authority AS adoptingAuthority,document.source_class AS sourceClass,
-      provision.article_number AS articleNumber,provision.article_title AS articleTitle,
-      provision.part,provision.chapter,provision.section,
-      substr(provision.text,1,?) AS text,length(provision.text) AS textLength,
-      provision.language,version.status,coalesce(provision.valid_from,version.valid_from) AS validFrom,
-      coalesce(provision.valid_to,version.valid_to) AS validTo,version.version_date AS versionDate,
-      provision.source_url AS sourceUrl,version.fetched_at AS fetchedAt
-    FROM legal_corpus_variants AS variant
-    INNER JOIN legal_corpus_documents AS document ON document.id=variant.document_id
-    INNER JOIN legal_corpus_versions AS version ON version.id=variant.current_version_id
-    INNER JOIN legal_corpus_provisions AS provision ON provision.version_id=version.id
-    WHERE variant.source_url=? AND provision.article_number_normalized=?
-      AND document.scope='global' AND document.availability_status='ready'
-    ORDER BY provision.sequence ASC LIMIT ?`).bind(
-    MAX_ARTICLE_CHARACTERS, sourceUrl, articleNumber, MAX_ARTICLE_PARTS,
-  ).all<CorpusArticleRow>() : null;
-  const articleRows = articles?.results ?? [];
-  const article = articleRows[0] ?? null;
-  const languageRows = article ? (await db.prepare(`SELECT
-      language,source_url AS sourceUrl,last_verified_at AS verifiedAt,
-      is_official_language_version AS official
-    FROM legal_corpus_variants
-    WHERE document_id=?
-    ORDER BY CASE language WHEN 'uz-Latn' THEN 1 WHEN 'uz-Cyrl' THEN 2 WHEN 'ru' THEN 3 ELSE 4 END
-    LIMIT 8`).bind(article.documentId).all<CorpusLanguageRow>()).results : [];
-  const versionRows = article ? (await db.prepare(`SELECT
-      version_number AS versionNumber,status,valid_from AS validFrom,valid_to AS validTo,
-      version_date AS versionDate,fetched_at AS fetchedAt
-    FROM legal_corpus_versions
-    WHERE variant_id=?
-    ORDER BY version_number DESC,fetched_at DESC
-    LIMIT 20`).bind(article.variantId).all<CorpusVersionRow>()).results : [];
-  const combinedArticleText = articleRows
-    .map((row) => row.text.trim())
-    .filter(Boolean)
-    .join("\n\n");
-  const articleText = combinedArticleText.slice(0, MAX_ARTICLE_CHARACTERS);
-  const truncated = articleRows.length === MAX_ARTICLE_PARTS
-    || combinedArticleText.length > MAX_ARTICLE_CHARACTERS
-    || articleRows.some((row) => row.textLength > row.text.length);
+  if (citation.evidenceReceiptJson) {
+    try {
+      const receipt = citationEvidenceReceiptSchema.parse(JSON.parse(citation.evidenceReceiptJson));
+      assertCitationEvidenceIdentity(receipt, {officialUrl: citation.canonicalUrl, sha256: citation.contentSha256,
+        languageTag: {ru: "ru", uz: "uz-Latn", uzc: "uz-Cyrl", en: "en"}[citation.sourceLocale] ?? citation.sourceLocale,
+        articleNumber: citation.articleReference});
+      const env = runtimeEnv();
+      if (!env.LEGAL_RETRIEVAL_SERVICE) throw new TypeError("CITATION_SERVICE_UNAVAILABLE");
+      const evidence = await fetchCitationEvidence(env.LEGAL_RETRIEVAL_SERVICE, legalRetrievalEnvironment(env), receipt);
+      return response({documentTitle: citation.title, documentType: null, documentNumber: null,
+        adoptingAuthority: null, sourceClass: "OFFICIAL_LEGISLATION", articleNumber: citation.articleReference,
+        articleTitle: null, part: null, chapter: null, section: null, ...evidence,
+        language: receipt.languageTag, status: citation.documentStatus ?? "unknown",
+        validFrom: citation.effectiveDate, validTo: null, versionDate: citation.effectiveDate,
+        officialUrl: citation.canonicalUrl, verifiedAt: citation.validatedAt,
+        evidenceIdentity: {receiptVersion: receipt.version, capability: receipt.capability, kind: receipt.kind,
+          r2Key: receipt.r2Key, sha256: receipt.sha256, textSha256: receipt.textSha256},
+        availableLanguages: [], versionHistory: []});
+    } catch {
+      // A missing immutable object must never be replaced by the latest text.
+      return response({documentTitle: citation.title, articleNumber: citation.articleReference,
+        text: citation.excerpt, fullArticle: false, truncated: false, evidenceUnavailable: true, language: citation.sourceLocale,
+        status: citation.documentStatus ?? "unknown", officialUrl: citation.canonicalUrl,
+        verifiedAt: citation.validatedAt, availableLanguages: [], versionHistory: []});
+    }
+  }
 
-  return response({
-    documentTitle: article?.documentTitle ?? citation.title,
-    documentType: article?.documentType ?? null,
-    documentNumber: article?.documentNumber ?? null,
-    adoptingAuthority: article?.adoptingAuthority ?? null,
-    sourceClass: article?.sourceClass ?? "OFFICIAL_LEGISLATION",
-    articleNumber: article?.articleNumber ?? citation.articleReference,
-    articleTitle: article?.articleTitle ?? null,
-    part: article?.part ?? null,
-    chapter: article?.chapter ?? null,
-    section: article?.section ?? null,
-    text: articleText || citation.excerpt,
-    fullArticle: Boolean(article),
-    truncated,
-    language: article?.language ?? citation.sourceLocale,
-    status: article?.status ?? citation.documentStatus ?? "unknown",
-    validFrom: article?.validFrom ?? citation.effectiveDate,
-    validTo: article?.validTo ?? null,
-    versionDate: article?.versionDate ?? citation.effectiveDate,
-    officialUrl: citation.canonicalUrl,
-    verifiedAt: article?.fetchedAt ?? citation.validatedAt,
-    availableLanguages: languageRows.flatMap((row) => row.sourceUrl && officialLexUrl(row.sourceUrl) ? [{
-      language: row.language,
-      officialUrl: row.sourceUrl,
-      verifiedAt: row.verifiedAt,
-      official: row.official === 1,
-    }] : []),
-    versionHistory: versionRows,
-  });
+  // Older answers have no authenticated full-article receipt. Preserve the
+  // saved fragment; reopening must not imply completeness or select other text.
+  return response({documentTitle: citation.title, articleNumber: citation.articleReference,
+    text: citation.excerpt, fullArticle: false, truncated: false, evidenceUnavailable: true,
+    language: citation.sourceLocale, status: citation.documentStatus ?? "unknown",
+    officialUrl: citation.canonicalUrl, verifiedAt: citation.validatedAt,
+    availableLanguages: [], versionHistory: []});
 });

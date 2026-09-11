@@ -11,6 +11,8 @@ import {
   handleTargetLegalAnswerRequest,
   parseRevalidatedCandidates,
   planFromQuestionPlanningHints,
+  parseQuestionInterpretationPlan,
+  TARGET_INITIAL_FORMULATION_LIMIT,
   type QuestionInterpretationPlan,
 } from "../lib/legal-corpus/target-retrieval";
 import {
@@ -39,6 +41,64 @@ const release: PinnedCandidateRelease = parsePinnedCandidateRelease({
     gatewayCaching: false,
     similarityCaching: false,
   },
+});
+
+test("the private answer boundary preserves late facts in long current and prior questions", async () => {
+  const question = `${"Ordinary case background. ".repeat(220)} The second independent question concerns an appeal.`;
+  const prior = `${"Earlier case background. ".repeat(220)} The notice was delivered on 2018-01-01.`;
+  let observed = false;
+  const executions: unknown[] = [];
+  const client = createTargetLegalAnswerClient({environment: "development", onExecutionObserved: value => executions.push(value), service: {
+    async fetch(input: RequestInfo | URL, init?: RequestInit) {
+      return handleTargetLegalAnswerRequest(new Request(input, init), {environment: "development",
+        versionId: "corpus-build", releaseIds: () => ["pinned-release"], retriever: {
+        async answer(received) {
+          assert.equal(received.question, question);
+          assert.deepEqual(received.priorUserQuestions, [prior]);
+          observed = true;
+          return {kind: "source_unavailability", sourceLadder: "indexed_official_corpus",
+            nextTier: "live_official_search", safeErrorCode: "INDEXED_CANDIDATE_UNAVAILABLE"};
+        },
+      }});
+    },
+  } as Fetcher});
+  await client.answer({id: "long-question", question, priorUserQuestions: [prior]});
+  assert.equal(observed, true);
+  assert.partialDeepStrictEqual(executions, [{requestId: "long-question", versionId: "corpus-build", releaseIds: ["pinned-release"]}]);
+});
+
+test("the target client rejects an older service before trusting its evidence contract", async () => {
+  const client = createTargetLegalAnswerClient({environment: "development", service: {
+    async fetch() {return Response.json({result: {kind: "source_unavailability", sourceLadder: "indexed_official_corpus",
+      nextTier: "live_official_search", safeErrorCode: "INDEXED_CANDIDATE_UNAVAILABLE"}});},
+  } as unknown as Fetcher});
+  await assert.rejects(client.answer({id: "old-contract", question: "Applicable rule"}), /TARGET_LEGAL_ANSWER_CONTRACT_UNAVAILABLE/);
+});
+
+test("failed execution diagnostics do not change a valid service result", async () => {
+  const result = {kind: "source_unavailability" as const, sourceLadder: "indexed_official_corpus" as const,
+    nextTier: "live_official_search" as const, safeErrorCode: "INDEXED_CANDIDATE_UNAVAILABLE" as const};
+  const client = createTargetLegalAnswerClient({environment: "development",
+    onExecutionObserved() {throw new Error("OBSERVER_FAILED");}, service: {
+      async fetch(input: RequestInfo | URL, init?: RequestInit) {
+        return handleTargetLegalAnswerRequest(new Request(input, init), {environment: "development",
+          versionId: "x".repeat(201), releaseIds() {throw new Error("RELEASE_DIAGNOSTIC_FAILED");},
+          retriever: {async answer() {return result;}}});
+      },
+    } as unknown as Fetcher});
+  assert.deepEqual(await client.answer({id: "diagnostic-failure", question: "Applicable rule"}), result);
+});
+
+test("a full shared interpretation retains grounded requirements added by support assessment", () => {
+  const requirements = Array.from({length: 20}, (_, index) => ({statement: `Independent obligation ${index}`, priority: "core" as const}));
+  const plan = planFromQuestionPlanningHints("full-inventory", {answerLanguage: "en", standaloneQuestion: "All independent obligations",
+    requirements, formulations: requirements.map(requirement => requirement.statement)});
+  const additions = Array.from({length: 3}, (_, index) => ({id: `inspected-${index}`, statement: `Referenced condition ${index}`,
+    priority: "core" as const, origin: {kind: "inspected_candidate" as const, itemKey: "source-item", provisionRenditionId: "source-rendition",
+      textRevisionId: "source-revision", languageFamily: "en" as const}}));
+  const expanded = parseQuestionInterpretationPlan({...plan, readings: plan.readings.map(reading => ({...reading,
+    requirements: [...reading.requirements, ...additions]}))});
+  assert.deepEqual(expanded.readings[0]!.requirements, [...plan.readings[0]!.requirements, ...additions]);
 });
 
 function controllingProvision(input: {
@@ -140,7 +200,14 @@ test("reference evidence is assessed before repair without displacing the initia
   let searches = 0;
   let wrongArticle = false;
   let oversizedEvidence = false;
+  const operativeMiddle = "The applicant may file within forty days after written notification.";
+  const completeLongProvision = `${"Background context. ".repeat(140)}${operativeMiddle}${" Additional definitions.".repeat(140)}`;
+  const verifiedRevisions = new Set<string>();
   const retriever = createTargetLegalAnswerRetriever({environment: "development", interpreter: {interpret: async () => plan},
+    verifyCurrentSource: async evidence => {verifiedRevisions.add(evidence.provisionRenditionId); return {
+      pinnedTextSha256: "a".repeat(64), observation: {version: 2, officialUrl: evidence.officialCitation.url,
+        observedAt: "2026-09-11T00:00:00.000Z", current: true, normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64)},
+    };},
     releaseResolver: {resolve: async () => release},
     candidateIndex: {retrieve: async () => {
       searches++;
@@ -162,14 +229,18 @@ test("reference evidence is assessed before repair without displacing the initia
       return parseControllingEvidenceResolution({controlling: {legalInstrumentId: "instrument", officialExpressionId: "expression",
         textRevisionId: "revision", provisionConceptId: `concept-${id}`, provisionRenditionId: id,
         languageTag: "uz-Latn", script: "Latn", textualAuthority: "controlling",
-        provisionText: oversizedEvidence ? "Complete verified rule. ".repeat(2000) : `Complete verified rule for ${id}.`,
+        provisionText: oversizedEvidence ? "Complete verified rule. ".repeat(2000)
+          : id === "rendition-0" ? completeLongProvision : `Complete verified rule for ${id}.`,
         officialCitation: citation, evidence: {provisionRenditionId: id, r2Key: `evidence/${id}`, byteCount: 100,
-          sha256: "a".repeat(64), sourceNormalizedSha256: "b".repeat(64), schemaVersion: 1}}, materialCitation: citation});
+          sha256: "a".repeat(64), sourceNormalizedSha256: String([...initial, ...references].findIndex(item => item.provisionRenditionId === id)).padStart(64, "0"),
+          schemaVersion: 1}}, materialCitation: citation});
     }},
     provisionSelector: {select: async ({candidates, repairAttempted}) => {
       assert.equal(repairAttempted, false);
       assert.equal(candidates.length, wrongArticle ? 48 : 60);
       if (wrongArticle) return {outcome: "rejected"};
+      assert.equal(candidates.find(item => item.candidate.provisionRenditionId === "rendition-0")!.provisionText,
+        completeLongProvision, "the only operative rule in the middle must reach support assessment intact");
       return {outcome: "selected", mainPoint: "Both independently verified rules.",
         propositions: [{requirementId: "requirement-1", statement: "Rule"}, {requirementId: "requirement-2", statement: "Grounds"}],
         selections: [{itemKey: "item-0", requirementIds: ["requirement-1"]}, {itemKey: "reference-0", requirementIds: ["requirement-2"]}],
@@ -178,6 +249,8 @@ test("reference evidence is assessed before repair without displacing the initia
   });
   const answer = await retriever.answer({id: "reference-flow", question: "Rule and its grounds"});
   assert.equal(answer.kind, "legal_answer");
+  assert.equal(verifiedRevisions.has("reference-0"), true, "Selection beyond the first24 status checks still needs its pinned fingerprint");
+  if (answer.kind === "legal_answer") assert.ok(answer.whatTheLawSays.every(statement => statement.currentSourceStatus?.pinnedTextSha256));
   assert.equal(searches, 1, "explicit reference discovery avoids a second semantic search");
   wrongArticle = true;
   const mismatched = await retriever.answer({id: "reference-mismatch", question: "Rule and its grounds"});
@@ -185,9 +258,9 @@ test("reference evidence is assessed before repair without displacing the initia
   wrongArticle = false;
   oversizedEvidence = true;
   const oversized = await retriever.answer({id: "oversized-evidence", question: "Rule and its grounds"});
-  assert.equal(oversized.kind, "clarification_required", "complete authenticated text must fit even when selection accepts its bounded excerpt");
-  if (oversized.kind === "clarification_required") {
-    assert.equal(oversized.safeErrorCode, "EVIDENCE_CEILING_EXCEEDED");
+  assert.equal(oversized.kind, "source_unavailability", "oversized complete context must fail before assessment, never become a shortened excerpt");
+  if (oversized.kind === "source_unavailability") {
+    assert.equal(oversized.safeErrorCode, "INDEXED_EVIDENCE_CONTEXT_EXCEEDED");
     assert.deepEqual(oversized.coverageRequirements?.map(requirement => requirement.id), ["requirement-1", "requirement-2"]);
   }
 });
@@ -246,7 +319,14 @@ test("selection pool reserves independently ranked candidates for every formulat
   assert.equal(selected.some((entry) => entry.candidate.itemKey === "specific-2"), true);
 });
 
-test("domain-general questions return hash-verified Legal Answers through the private retrieval seam", async () => {
+test("domain-general questions return hash-verified Legal Answers through the private retrieval seam", async (t) => {
+  const stageEvents: Array<{stage: string; elapsedMs: number}> = [];
+  t.mock.method(console, "info", (...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].startsWith("{")) {
+      const event = JSON.parse(args[0]);
+      if (event.event === "legal_target_stage_finished") stageEvents.push(event);
+    }
+  });
   const { sqlite, d1 } = sqliteD1FixtureFromDirectory(new URL("../legal-drizzle/", import.meta.url));
   const bucket = new MemoryEvidenceBucket();
   const fixtures = [{
@@ -329,8 +409,14 @@ test("domain-general questions return hash-verified Legal Answers through the pr
         { ...candidate(key, formulation.id, formulation.readingIds, formulation.requirementIds) },
       ]);
       let supportUnavailable = false;
+      let finishStatusCheck: ((current: boolean) => void) | undefined;
       const retriever = createTargetLegalAnswerRetriever({
         environment: "development",
+        onReleaseResolved() {throw new Error("DIAGNOSTIC_SINK_UNAVAILABLE");},
+        verifyCurrentSource: (evidence) => new Promise(resolve => { finishStatusCheck = (current) => resolve({
+          pinnedTextSha256: "a".repeat(64), observation: {version: 2, officialUrl: evidence.officialCitation.url,
+            observedAt: "2026-08-01T00:00:00.000Z", current, normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64)},
+        }); }),
         interpreter: { interpret: async (input) => {
           assert.equal(input.question, `Resolved context: ${fixture.question}`);
           assert.deepEqual(input.priorUserQuestions, []);
@@ -349,7 +435,14 @@ test("domain-general questions return hash-verified Legal Answers through the pr
         },
         provisionSelector: {
           select: async ({ plan: interpreted, candidates }) => {
-            if (supportUnavailable) throw new Error("SUPPORT_TIMEOUT");
+            assert.ok(finishStatusCheck, "current-status checking starts before support assessment");
+            if (supportUnavailable) {
+              const finish = finishStatusCheck;
+              setTimeout(() => finish(true), 20);
+              throw new Error("SUPPORT_TIMEOUT");
+            }
+            finishStatusCheck(true);
+            finishStatusCheck = undefined;
             assert.equal(candidates.length, 1);
             assert.equal(candidates[0]!.candidate.provisionRenditionId, renditionId);
             return {
@@ -393,15 +486,22 @@ test("domain-general questions return hash-verified Legal Answers through the pr
       assert.equal(result.mainPoint, `Main Point for ${fixture.id}`);
       assert.equal(result.whatTheLawSays[0]?.controllingQuotation, fixture.text);
       assert.equal(result.whatTheLawSays[0]?.officialCitations.length, 1);
+      assert.equal(result.whatTheLawSays[0]?.evidenceLocator?.articleNumber,
+        String(fixtures.indexOf(fixture) + 1), "Receipt identity comes from the authenticated provision article");
       assert.match(result.whatTheLawSays[0]?.officialCitations[0]?.url ?? "", /^https:\/\/lex\.uz\/docs\//u);
       assert.match(result.whatTheLawSays[0]?.evidenceSha256 ?? "", /^[a-f0-9]{64}$/u);
+      assert.equal(result.whatTheLawSays[0]?.currentSourceStatus?.observation?.observedAt, "2026-08-01T00:00:00.000Z",
+        "The packet preserves actual publisher time even when the caller must reject its age");
       assert.equal(JSON.stringify(result).includes("provider excerpt"), false);
       assert.deepEqual(result.focusedQuestions,
         "conditionalQuestion" in fixture ? [fixture.conditionalQuestion] : []);
       supportUnavailable = true;
+      stageEvents.length = 0;
       const unavailable = await retriever.answer({ id: `retry-${fixture.id}`,
         question: `Resolved context: ${fixture.question}` });
       assert.equal(unavailable.kind, "source_unavailability");
+      assert.ok(stageEvents.some(event => event.stage === "source_observation_drain" && event.elapsedMs >= 10),
+        "time waiting for outstanding publisher checks remains attributed after support fails");
       assert.deepEqual(Reflect.get(unavailable, "discoveredOfficialUrls"),
         [result.whatTheLawSays[0]!.officialCitations[0]!.url],
         "verified locations survive support failure as discovery leads, not accepted evidence");
@@ -564,7 +664,7 @@ for (const compoundRepair of [false, true]) test(`every Plausible Reading gets a
     environment: "development",
     interpreter: { interpret: async () => ({
       ...plan,
-      formulations: Array.from({ length: 7 }, (_, index) => ({
+      formulations: Array.from({ length: TARGET_INITIAL_FORMULATION_LIMIT + 1 }, (_, index) => ({
         ...plan.formulations[index % 2]!,
         id: `over-${index}`,
       })),
@@ -576,7 +676,8 @@ for (const compoundRepair of [false, true]) test(`every Plausible Reading gets a
     provisionSelector: { select: async () => { assert.fail("selector must not run"); } },
   });
   const clarification = await overBudget.answer({ id: "question-over-budget", question: "too broad" });
-  assert.equal(clarification.kind, "clarification_required");
+  assert.equal(clarification.kind, "source_unavailability");
+  if (clarification.kind === "source_unavailability") assert.equal(clarification.safeErrorCode, "QUESTION_INTERPRETATION_UNAVAILABLE");
 });
 
 test("unavailable or incomplete indexed packets continue the strict Source Ladder", async () => {

@@ -204,6 +204,23 @@ function selectionCandidate(itemKey: string, retrievalRequirementIds: string[], 
   };
 }
 
+test("new mandatory article references must originate in inspected candidate context", () => {
+  const candidate = selectionCandidate("governing", ["requirement-one", "requirement-two"], 1);
+  candidate.provisionText = "The governing rule applies. Article 88 establishes the necessary exception.";
+  for (const article of [88, 987]) {
+    const decision = selectTargetProvisions({plan, candidates: [candidate], repairAttempted: false}, {
+      mappings: [{itemKey: "governing", supportedRequirementIds: ["requirement-one", "requirement-two"]}],
+      additionalRequirements: [{sourceItemKey: "governing", readingId: "reading-one",
+        statement: `Necessary exception under Article ${article}`, priority: "core"}],
+    });
+    assert.equal(decision.outcome, article === 88 ? "repair" : "selected");
+    if (decision.outcome === "repair") assert.deepEqual(decision.additionalRequirements?.[0]?.requirement.origin, {
+      kind: "inspected_candidate", itemKey: "governing", provisionRenditionId: "rendition-governing",
+      textRevisionId: "revision-governing", languageFamily: "en",
+    });
+  }
+});
+
 test("provision selection uses the minimum assessed Provision Set rather than redundant hits", () => {
   const selectionInput = {
     plan,
@@ -567,7 +584,7 @@ test("assessment batches see already verified references without mixing revision
   reference.provisionText = "Article 732. The exception requires written notice.";
   const otherRevision = selectionCandidate("other", ["requirement-one"], 0.7);
   otherRevision.citationLabel = reference.citationLabel;
-  assert.deepEqual(selectionReferenceContext([source], [source, otherRevision, reference]),
+  assert.deepEqual(selectionReferenceContext([source], [source, otherRevision, reference]).map(({citationLabel, provisionText}) => ({citationLabel, provisionText})),
     [{citationLabel: reference.citationLabel, provisionText: reference.provisionText}]);
   assert.deepEqual(selectionReferenceContext([source, reference], [source, reference]), []);
   source.provisionText = "See Article 732 of a different Act.";
@@ -604,7 +621,7 @@ test("referenced grounds see the referring status rule during their own assessme
   grounds.citationLabel = "Example Act — Article 732";
   grounds.provisionText = "Article 732. The grounds are dissolution and serious misconduct.";
   grounds.candidate.textRevisionId = referring.candidate.textRevisionId;
-  assert.deepEqual(selectionReferenceContext([grounds], [grounds, referring]),
+  assert.deepEqual(selectionReferenceContext([grounds], [grounds, referring]).map(({citationLabel, provisionText}) => ({citationLabel, provisionText})),
     [{citationLabel: referring.citationLabel, provisionText: referring.provisionText}]);
   const foreign = structuredClone(referring);
   foreign.candidate.textRevisionId = "another-revision";
@@ -627,6 +644,45 @@ test("repair retains material cross-references while another requirement is unco
     assert.ok(result.repairFormulation.requirementIds.includes("related-reading-one-1"));
     assert.deepEqual(result.retainedItemKeys, ["item-one"]);
   }
+});
+
+test("complete reference chains cross assessment batches without the former four-context ceiling", () => {
+  const chain = Array.from({length: 12}, (_, index) => {
+    const candidate = selectionCandidate(`chain-${index}`, ["requirement-one"], 0.8);
+    candidate.candidate.textRevisionId = "same-authenticated-revision";
+    candidate.citationLabel = `Example Act — Article ${700 + index}`;
+    candidate.provisionText = index === 11 ? "Written notice is required."
+      : `The conditions in Article ${701 + index} of this Act also apply.`;
+    return candidate;
+  });
+  const batches = selectionAssessmentBatches(chain, 8);
+  assert.equal(batches.length, 2);
+  const context = selectionReferenceContext(batches[1]!, chain);
+  assert.equal(context.length, 8);
+  assert.deepEqual(new Set(context.map(item => item.evidenceIdentity.provisionRenditionId)),
+    new Set(chain.slice(0, 8).map(item => item.candidate.provisionRenditionId)));
+  assert.ok(context.every(item => item.evidenceIdentity.textRevisionId === "same-authenticated-revision"));
+  const otherLanguage = {...chain[0]!, candidate: {...chain[0]!.candidate,
+    languageFamily: "ru", candidate: {...chain[0]!.candidate.candidate, itemKey: "other-language"}}};
+  assert.equal(selectionReferenceContext([chain[1]!], [chain[1]!, otherLanguage]).length, 0);
+});
+
+test("assessment partitions complete short provisions and rejects oversized connected material explicitly", () => {
+  const short = Array.from({length: 13}, (_, index) => selectionCandidate(`short-${index}`, ["requirement-one"], 0.8));
+  assert.equal(selectionAssessmentBatches(short, 8).flat().length, 13);
+  const long = short.map(item => ({...item, provisionText: "Complete paragraph. ".repeat(600)}));
+  const batches = selectionAssessmentBatches(long, 8);
+  assert.equal(batches.flat().length, 13);
+  assert.ok(batches.every(batch => batch.reduce((total, item) => total + item.provisionText.length, 0) <= 32_000));
+  const source = selectionCandidate("oversized-source", ["requirement-one"], 0.8);
+  source.provisionText = "Complete verified material. ".repeat(2000);
+  assert.throws(() => selectionAssessmentBatches([source], 8), /INDEXED_EVIDENCE_CONTEXT_EXCEEDED/u);
+  const pair = long.slice(0, 2).map((item, index) => ({...item,
+    candidate: {...item.candidate, textRevisionId: "shared-revision"},
+    citationLabel: `Example Act — Article ${700 + index}`,
+    provisionText: `See Article ${index === 0 ? 701 : 700} of this Act. ${"Operative condition. ".repeat(900)}`,
+  }));
+  assert.throws(() => selectionAssessmentBatches(pair, 8), /INDEXED_EVIDENCE_CONTEXT_EXCEEDED/u);
 });
 
 test("reasoning routes require the exact private service boundary", async () => {

@@ -1,6 +1,7 @@
 import type { LegalSourceContext } from "../ai/provider";
 import { parsePrivateDocumentLocator } from "../document-analysis/private-document-locator";
 import { canonicalSecondaryInternetUrl } from "./secondary-internet-url";
+import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema } from "../legal-corpus/citation-evidence";
 
 type ReturnedCitation = {
   sourceId: string;
@@ -63,6 +64,15 @@ export function legalCitationStatements(input: {
       && citation.originalUrl === source.officialUrl
       && ((source.sourceType === "lex" && officialLex && validatedLex) || trustedPrivate || trustedSecondary);
     if (!source || !accepted) return [];
+    if (source.citationEvidenceReceipt) {
+      const receipt = citationEvidenceReceiptSchema.parse(source.citationEvidenceReceipt);
+      assertCitationEvidenceIdentity(receipt, {officialUrl: source.officialUrl,
+        languageTag: {ru: "ru", uz: "uz-Latn", uzc: "uz-Cyrl", en: "en"}[source.locale] ?? source.locale,
+        articleNumber: citation.article, sha256: source.contentSha256});
+      if (!source.spans?.some(span => span.textSha256 === receipt.textSha256)) {
+        throw new TypeError("CITATION_EVIDENCE_TEXT_MISMATCH");
+      }
+    }
     const citationKey = `${source.id}\u0000${citation.article ?? ""}`;
     if (seen.has(citationKey)) return [];
     const candidateExcerpt = citation.excerpt;
@@ -77,8 +87,8 @@ export function legalCitationStatements(input: {
         id,ai_run_id,guest_run_id,conversation_id,message_id,source_kind,source_locale,
         canonical_id,source_url,canonical_url,title,act_identifier,article_reference,
         excerpt,document_status,effective_date,retrieved_at,validated_at,content_sha256,
-        fetch_status,citation_validation_status,source_access_mode,created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        fetch_status,citation_validation_status,source_access_mode,created_at,evidence_receipt_json
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       crypto.randomUUID(),
       input.aiRunId ?? null,
@@ -103,6 +113,8 @@ export function legalCitationStatements(input: {
       "validated",
       source.verificationState === "direct_validated" ? "direct" : "approved_package",
       input.now,
+      source.citationEvidenceReceipt
+        ? JSON.stringify(citationEvidenceReceiptSchema.parse(source.citationEvidenceReceipt)) : null,
     )];
   });
 }

@@ -179,6 +179,32 @@ test("unsupported conclusions render an Insufficient-Evidence Result instead of 
   assert.match(html, />Что нужно уточнить</u);
   assert.doesNotMatch(html, />Что говорит закон</u);
   assert.doesNotMatch(html, />Что делать дальше</u);
+  assert.doesNotMatch(html, /проверил доступный индекс/u);
+});
+
+test("planning failures explain that source search did not start, including after serialization", () => {
+  const value = result({ responseKind: "clarification_required", failureReason: "question_interpretation_unavailable",
+    answer: "An obsolete explanation", sources: [], confirmedFindings: [] });
+  for (const locale of ["ru", "uz", "en"] as const) {
+    const html = renderToStaticMarkup(createElement(LegalAnswerView, {
+      result: JSON.parse(JSON.stringify(value)), locale,
+    }));
+    assert.doesNotMatch(html, /An obsolete explanation|configured search tiers|проверил доступный индекс/u);
+    assert.match(html, {ru: /Поиск правовых источников не начался/u,
+      uz: /Huquqiy manbalarni qidirish boshlanmadi/u, en: /Legal source search did not start/u}[locale]);
+  }
+});
+
+test("official research failures explain unavailability without claiming that no law exists", () => {
+  const value = result({responseKind: "clarification_required", failureReason: "official_research_unavailable",
+    answer: "An obsolete explanation", sources: [], confirmedFindings: []});
+  for (const locale of ["ru", "uz", "en"] as const) {
+    const html = renderToStaticMarkup(createElement(LegalAnswerView, {result: JSON.parse(JSON.stringify(value)), locale}));
+    assert.doesNotMatch(html, /An obsolete explanation/u);
+    assert.match(html, {ru: /не означает отсутствия применимых норм/u,
+      uz: /tegishli normalar mavjud emasligini anglatmaydi/u,
+      en: /does not mean that no applicable law exists/u}[locale]);
+  }
 });
 
 test("incomplete evidence displays found provisions and focused questions without a verified-answer badge", () => {

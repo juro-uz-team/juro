@@ -19,8 +19,8 @@ The current opaque server-side session design does not consume a `SESSION_SECRET
 
 ## Non-secret model configuration
 
-- `OPENAI_CHAT_MODEL=gpt-5.6-sol`
-- `OPENAI_DEEP_MODEL=gpt-5.6-sol`
+- `OPENAI_CHAT_MODEL=gpt-5.6-luna`
+- `OPENAI_DEEP_MODEL=gpt-5.6-terra`
 - `OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe`
 - `OPENAI_TTS_MODEL=gpt-4o-mini-tts`
 - `ANTHROPIC_DOCUMENT_MODEL=claude-sonnet-4-6`

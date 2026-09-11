@@ -1,6 +1,15 @@
 import { z } from "zod";
-import { fitsLegalEvidenceBudget, MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
+import {createRuntimeExecutionObserver, parseRuntimeExecutionHeader, readExecutionDiagnostic, type ServiceExecutionObservation} from "../ai/runtime-execution-observation";
+import {pinnedSourceStatusSchema, type PinnedSourceStatus} from "../legal/source-observation";
+import { citationEvidenceLocatorSchema } from "./citation-evidence";
+import { citationArticleNumber } from "../legal/citation-article";
+import { fitsLegalEvidenceBudget, MAX_LEGAL_EVIDENCE_SOURCES, MAX_LEGAL_EVIDENCE_CHARACTERS } from "../legal/legal-evidence-budget";
+import { selectionAssessmentBatches, SelectionEvidenceContextError, SELECTION_ASSESSMENT_BATCH_SIZE } from "./selection-reference-context";
 import { legalCoverageScopeSchema } from "../legal/legal-coverage";
+import { questionRequirementOriginSchema, legalRequirementOriginSchema, questionTemporalEndpointSchema, questionTemporalComparisonSchema, unresolvedQuestionDimensionsSchema, userQuestionContextSchema, questionRelationshipSchema, questionAccountingSchema } from "../legal/question-interpretation";
+import { LEGAL_INTERPRETATION_REQUIREMENT_LIMIT, LEGAL_INTERPRETATION_FORMULATION_LIMIT,
+  LEGAL_EXPANDED_REQUIREMENT_LIMIT, LEGAL_DISCOVERED_REQUIREMENT_LIMIT,
+  LEGAL_TOTAL_FORMULATION_LIMIT, LEGAL_REPAIR_FORMULATION_LIMIT as TARGET_REPAIR_FORMULATION_LIMIT } from "../legal/question-interpretation-limits";
 
 import {
   candidateSchema,
@@ -9,7 +18,7 @@ import {
   type PinnedCandidateRelease,
   type TemporalEndpoint,
 } from "./legal-candidate-index";
-import { LegalEvidenceError, type ControllingEvidenceResolution } from "./target-evidence";
+import { LegalEvidenceError, type ControllingEvidenceResolution, type ResolvedOfficialEvidence } from "./target-evidence";
 import {
   acceptsPrivateServiceRequest,
   declaredRequestBodyWithinLimit,
@@ -27,23 +36,34 @@ import {
 } from "./target-domain-schemas";
 
 export const TARGET_LEGAL_ANSWER_PATH = "/internal/legal-corpus/target/retrieval/answer";
+export const TARGET_LEGAL_ANSWER_CONTRACT_VERSION = "2";
+const observeTargetExecution = createRuntimeExecutionObserver();
+export const TARGET_QUESTION_REQUEST_BYTE_LIMIT = 256_000;
 
 const SERVICE_BINDING_MARKER = "target-legal-answer-v1";
-export const TARGET_INITIAL_FORMULATION_LIMIT = 6;
+export const TARGET_INITIAL_FORMULATION_LIMIT = LEGAL_INTERPRETATION_FORMULATION_LIMIT;
 // One bounded repair pass: one missing requirement plus up to three grounded
 // additions. Keep them independent so unrelated propositions cannot dilute a query.
-const TARGET_REPAIR_FORMULATION_LIMIT = 4;
-export const TARGET_TOTAL_FORMULATION_LIMIT = TARGET_INITIAL_FORMULATION_LIMIT + TARGET_REPAIR_FORMULATION_LIMIT;
+export const TARGET_TOTAL_FORMULATION_LIMIT = LEGAL_TOTAL_FORMULATION_LIMIT;
 export const targetQuestionPlanningHintsSchema = z.object({
+  relationship: questionRelationshipSchema.optional(),
+  questionAccounting: questionAccountingSchema.optional(),
   answerLanguage: z.enum(["ru", "uz", "en"]),
   standaloneQuestion: z.string().trim().min(1).max(900),
   requirements: z.array(z.object({
     statement: z.string().trim().min(1).max(500),
     priority: z.enum(["core", "supporting"]),
     scopeKind: legalCoverageScopeSchema.optional(),
-  }).strict()).min(1).max(6),
-  formulations: z.array(z.string().trim().min(1).max(500)).min(1).max(6),
-  formulationRequirementIndexes: z.array(z.array(z.number().int().min(0).max(5)).min(1).max(6)).min(1).max(6).optional(),
+    origin: questionRequirementOriginSchema.optional(),
+    unresolvedDimensions: unresolvedQuestionDimensionsSchema.optional(),
+    questionContext: userQuestionContextSchema.optional(),
+  }).strict()).min(1).max(LEGAL_INTERPRETATION_REQUIREMENT_LIMIT),
+  formulations: z.array(z.string().trim().min(1).max(500)).min(1).max(LEGAL_INTERPRETATION_FORMULATION_LIMIT),
+  formulationRequirementIndexes: z.array(z.array(z.number().int().min(0).max(LEGAL_INTERPRETATION_REQUIREMENT_LIMIT - 1))
+    .min(1).max(LEGAL_INTERPRETATION_REQUIREMENT_LIMIT)).min(1).max(LEGAL_INTERPRETATION_FORMULATION_LIMIT).optional(),
+  temporalEndpoint: questionTemporalEndpointSchema.optional(),
+  comparison: questionTemporalComparisonSchema.optional(),
+  missingFacts: z.array(z.string().min(1).max(500)).max(20).optional(),
 }).strict().superRefine((value, context) => {
   if (value.formulationRequirementIndexes && (value.formulationRequirementIndexes.length !== value.formulations.length
     || value.formulationRequirementIndexes.some(indexes => indexes.some(index => index >= value.requirements.length)))) {
@@ -53,9 +73,9 @@ export const targetQuestionPlanningHintsSchema = z.object({
 export type TargetQuestionPlanningHints = z.infer<typeof targetQuestionPlanningHintsSchema>;
 const questionSchema = z.object({
   id: legalIdentifierSchema,
-  question: z.string().trim().min(1).max(4_000),
+  question: z.string().trim().min(1).max(8_000),
   contextualQuestion: z.string().trim().min(1).max(900).optional(),
-  priorUserQuestions: z.array(z.string().trim().min(1).max(900)).max(6).optional(),
+  priorUserQuestions: z.array(z.string().trim().min(1).max(8_000)).max(6).optional(),
   planningHints: targetQuestionPlanningHintsSchema.optional(),
   applicableAt: utcInstantSchema.optional(),
 }).strict();
@@ -64,11 +84,14 @@ const requirementSchema = z.object({
   statement: z.string().trim().min(1).max(1_000),
   priority: z.enum(["core", "supporting"]).optional(),
   scopeKind: legalCoverageScopeSchema.optional(),
+  origin: legalRequirementOriginSchema.optional(),
+  unresolvedDimensions: unresolvedQuestionDimensionsSchema.optional(),
+  questionContext: userQuestionContextSchema.optional(),
 }).strict();
 const readingSchema = z.object({
   id: legalIdentifierSchema,
   statement: z.string().trim().min(1).max(1_500),
-  requirements: z.array(requirementSchema).min(1).max(20),
+  requirements: z.array(requirementSchema).min(1).max(LEGAL_EXPANDED_REQUIREMENT_LIMIT),
 }).strict();
 const formulationSchema = z.object({
   id: legalIdentifierSchema,
@@ -93,6 +116,8 @@ const comparisonScopeSchema = z.object({
   right: temporalEndpointSchema,
 }).strict();
 export const questionInterpretationPlanSchema = z.object({
+  relationship: questionRelationshipSchema.optional(),
+  questionAccounting: questionAccountingSchema.optional(),
   id: legalIdentifierSchema,
   originalLanguage: z.string().trim().min(2).max(35),
   answerLanguage: z.string().trim().min(2).max(35),
@@ -124,6 +149,8 @@ export function planFromQuestionPlanningHints(
   const requirementIds = requirements.map((requirement) => requirement.id);
   const hasOneFormulationPerRequirement = hints.formulations.length === requirements.length;
   return questionInterpretationPlanSchema.parse({
+    relationship: hints.relationship,
+    questionAccounting: hints.questionAccounting,
     id: `plan-${id}`.slice(0, 200),
     originalLanguage: hints.answerLanguage,
     answerLanguage: hints.answerLanguage,
@@ -145,7 +172,9 @@ export function planFromQuestionPlanningHints(
         : requirementIds,
       kind: "legal_register" as const,
     })),
-    missingCaseFacts: [],
+    missingCaseFacts: (hints.missingFacts ?? []).map((question, index) => ({id: `missing-fact-${index + 1}`, question, material: true})),
+    ...(hints.temporalEndpoint ? {temporalEndpoint: hints.temporalEndpoint} : {}),
+    ...(hints.comparison ? {comparison: hints.comparison} : {}),
   });
 }
 export const revalidatedCandidateSchema = z.object({
@@ -165,7 +194,7 @@ export function parseRevalidatedCandidates(value: unknown): RevalidatedCandidate
 export const selectionCandidateSchema = z.object({
   candidate: revalidatedCandidateSchema,
   citationLabel: z.string().trim().min(1).max(2_300),
-  provisionText: z.string().trim().min(1).max(4_000),
+  provisionText: z.string().trim().min(1).max(MAX_LEGAL_EVIDENCE_CHARACTERS),
 }).strict();
 export type SelectionCandidate = z.infer<typeof selectionCandidateSchema>;
 
@@ -176,7 +205,7 @@ const repairDecisionSchema = z.object({
   additionalRequirements: z.array(z.object({
     readingId: legalIdentifierSchema,
     requirement: requirementSchema,
-  }).strict()).max(3).optional(),
+  }).strict()).max(LEGAL_DISCOVERED_REQUIREMENT_LIMIT).optional(),
 }).strict();
 const rejectedDecisionSchema = z.object({ outcome: z.literal("rejected") }).strict();
 const selectedDecisionSchema = z.object({
@@ -212,6 +241,8 @@ const officialCitationSchema = z.object({
   url: z.string().url(),
 }).strict();
 const lawStatementSchema = z.object({
+  evidenceLocator: citationEvidenceLocatorSchema.optional(),
+  currentSourceStatus: pinnedSourceStatusSchema.nullable().optional(),
   requirementId: legalIdentifierSchema,
   provisionConceptId: provisionConceptIdSchema,
   provisionRenditionId: provisionRenditionIdSchema,
@@ -255,9 +286,11 @@ const sourceUnavailableSchema = z.object({
   discoveredOfficialUrls: z.array(z.string().url()).max(12).optional(),
   coverageRequirements: z.array(requirementSchema).max(240).optional(),
   safeErrorCode: z.enum([
+    "QUESTION_INTERPRETATION_UNAVAILABLE",
     "INDEXED_CANDIDATE_UNAVAILABLE",
     "INDEXED_REVALIDATION_FAILED",
     "INDEXED_EVIDENCE_UNAVAILABLE",
+    "INDEXED_EVIDENCE_CONTEXT_EXCEEDED",
   ]),
 }).strict();
 const insufficientSchema = z.object({
@@ -310,6 +343,8 @@ export type TargetLegalAnswerRetriever = {
 };
 
 type Dependencies = {
+  onReleaseResolved?: (releaseId: string) => void;
+  verifyCurrentSource?: (evidence: ResolvedOfficialEvidence) => Promise<PinnedSourceStatus>;
   environment: z.infer<typeof legalEnvironmentSchema>;
   now?: () => number;
   interpreter: {
@@ -484,7 +519,15 @@ function mergeCandidateCoverage(
 
 const MAX_SELECTION_CANDIDATES = 48;
 export const TARGET_SUPPORT_CANDIDATE_LIMIT = MAX_SELECTION_CANDIDATES + 12;
+export const TARGET_SELECTION_REQUEST_BYTE_LIMIT = 400_000;
 const MAX_SELECTION_CANDIDATES_PER_FORMULATION = 8;
+
+function assertAssessmentContext(input: {plan: QuestionInterpretationPlan; candidates: SelectionCandidate[]; repairAttempted: boolean}): void {
+  selectionAssessmentBatches(input.candidates, SELECTION_ASSESSMENT_BATCH_SIZE);
+  if (new TextEncoder().encode(JSON.stringify(input)).byteLength > TARGET_SELECTION_REQUEST_BYTE_LIMIT) {
+    throw new SelectionEvidenceContextError();
+  }
+}
 
 function candidateScore(entry: RevalidatedCandidate): number {
   return entry.candidate.fusionScore
@@ -547,15 +590,6 @@ export function boundedSelectionPool(candidates: readonly RevalidatedCandidate[]
   return [...selected.values()];
 }
 
-function boundedProvisionText(value: string): string {
-  const normalized = value.trim();
-  const limit = selectionCandidateSchema.shape.provisionText.maxLength!;
-  if (normalized.length <= limit) return normalized;
-  const omission = "\n[... verified provision text omitted for selection ...]\n";
-  const side = Math.floor((limit - omission.length) / 2);
-  return `${normalized.slice(0, side)}${omission}${normalized.slice(-side)}`;
-}
-
 function emitTargetStageFailure(stage: string, code: string, error?: unknown): void {
   console.warn(JSON.stringify({
     event: "legal_target_stage_failed",
@@ -596,15 +630,34 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
   const environment = legalEnvironmentSchema.parse(dependencies.environment);
   return {
     async answer(untrustedInput) {
+      const currentChecks = new Map<string, Promise<PinnedSourceStatus | null>>();
+      let drainCurrentChecks = async () => { await Promise.all(currentChecks.values()); };
+      const sourceStatusKey = (evidence: ResolvedOfficialEvidence) =>
+        JSON.stringify([evidence.officialCitation.url, evidence.evidence.sourceNormalizedSha256]);
+      try {
       const currentAt = new Date((dependencies.now ?? Date.now)()).toISOString();
       const request = questionSchema.parse(untrustedInput);
+      const correlationBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(request.id));
+      const correlationHash = [...new Uint8Array(correlationBytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
       const timed = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
         const started = Date.now();
-        try { return await operation(); }
-        finally { console.info(JSON.stringify({event: "legal_target_stage_completed", stage,
-          elapsedMs: Date.now() - started})); }
+        let outcome: "completed" | "failed" | "unavailable" = "failed";
+        try {
+          const result = await operation();
+          outcome = typeof result === "object" && result !== null && "availability" in result
+            && result.availability !== "available" ? "unavailable" : "completed";
+          return result;
+        } finally {
+          console.info(JSON.stringify({event: "legal_target_stage_finished", stage, correlationHash,
+            outcome, safeErrorCode: outcome === "unavailable" ? "INDEXED_CANDIDATE_UNAVAILABLE"
+              : outcome === "failed" ? "TARGET_STAGE_FAILED" : null,
+            callCount: 1, elapsedMs: Date.now() - started}));
+        }
       };
       let plan: QuestionInterpretationPlan;
+      drainCurrentChecks = () => timed("source_observation_drain", async () => {
+        await Promise.all(currentChecks.values());
+      });
       try {
         plan = request.planningHints
           ? planFromQuestionPlanningHints(request.id, request.planningHints)
@@ -620,18 +673,14 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
           });
         }
       } catch {
-        return sourceUnavailable("INDEXED_CANDIDATE_UNAVAILABLE");
+        return sourceUnavailable("QUESTION_INTERPRETATION_UNAVAILABLE");
       }
       if (
         plan.formulations.length > TARGET_INITIAL_FORMULATION_LIMIT
         || !formulationsRespectPlan(plan, plan.formulations)
       ) {
-        return clarificationSchema.parse({
-          kind: "clarification_required",
-          sourceLadder: "indexed_official_corpus",
-          focusedQuestions: ["Please narrow the question to the material legal readings that should be checked."],
-          safeErrorCode: "FORMULATION_BUDGET_EXCEEDED",
-        });
+        return {...sourceUnavailable("QUESTION_INTERPRETATION_UNAVAILABLE"),
+          coverageRequirements: plan.readings.flatMap(reading => reading.requirements)};
       }
       if (plan.comparison) {
         const { comparison, temporalEndpoint, ...sharedPlan } = plan;
@@ -653,7 +702,7 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
           interpreter: {
             interpret: async () => ({ ...sharedPlan, temporalEndpoint: endpoint }),
           },
-        }).answer(request);
+        }).answer({ ...request, planningHints: undefined, applicableAt: undefined });
         const left = await runEndpoint(comparison.left, pinned?.left);
         if (left.kind !== "legal_answer" && left.kind !== "conditional_answer") {
           return left;
@@ -717,6 +766,7 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
       if (!release || release.environment !== environment || release.capability !== requiredCapability) {
         return insufficient(plan);
       }
+      readExecutionDiagnostic(() => dependencies.onReleaseResolved?.(release.id), undefined);
 
       const validatedPackets: RevalidatedCandidate[][] = [];
       let initialPacket: CandidatePacket;
@@ -776,6 +826,11 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
                 { release, currentAt },
               );
               evidenceByRendition.set(candidate.provisionRenditionId, evidence);
+              const key = sourceStatusKey(evidence.controlling);
+              if (endpoint.kind === "current" && dependencies.verifyCurrentSource
+                && !currentChecks.has(key) && currentChecks.size < MAX_LEGAL_EVIDENCE_SOURCES) {
+                currentChecks.set(key, dependencies.verifyCurrentSource(evidence.controlling).catch(() => null));
+              }
             }
             const expectedArticle = referenceArticles.get(candidate.candidate.itemKey);
             if (expectedArticle && /(?:Article|Статья|Ст\.)\s+(\d+(?:[.-]\d+)?)\s*$/iu.exec(
@@ -783,10 +838,12 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
               failureCodes.set("REFERENCE_ARTICLE_MISMATCH", (failureCodes.get("REFERENCE_ARTICLE_MISMATCH") ?? 0) + 1);
               return null;
             }
+            const provisionText = (evidence.articleContext ?? evidence.controlling).provisionText;
+            if (provisionText.length > MAX_LEGAL_EVIDENCE_CHARACTERS) throw new SelectionEvidenceContextError();
             return selectionCandidateSchema.parse({
               candidate,
               citationLabel: evidence.materialCitation.label,
-              provisionText: boundedProvisionText((evidence.articleContext ?? evidence.controlling).provisionText),
+              provisionText,
             });
           } catch (error) {
             if (!(error instanceof LegalEvidenceError) || error.code !== "SOURCE_UNAVAILABILITY") {
@@ -837,14 +894,16 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
             hydrated = await timed("reference_evidence", hydrateSelectionCandidates);
           }
         }
+        assertAssessmentContext({plan, candidates: hydrated, repairAttempted: false});
         decision = selectionDecisionSchema.parse(await timed("initial_support", () => dependencies.provisionSelector.select({
           plan,
           candidates: hydrated,
           repairAttempted: false,
         })));
       } catch (error) {
-        emitTargetStageFailure("requirement_support", "INDEXED_REVALIDATION_FAILED", error);
-        return unavailableWithDiscovery("INDEXED_REVALIDATION_FAILED");
+        const code = error instanceof SelectionEvidenceContextError ? "INDEXED_EVIDENCE_CONTEXT_EXCEEDED" : "INDEXED_REVALIDATION_FAILED";
+        emitTargetStageFailure("requirement_support", code, error);
+        return unavailableWithDiscovery(code);
       }
       let repairQueriesUsed = 0;
       if (decision.outcome === "repair") {
@@ -919,13 +978,16 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
         }
         try {
           const hydrated = await timed("repair_evidence", hydrateSelectionCandidates);
+          assertAssessmentContext({plan: { ...plan, formulations: [...plan.formulations, ...repairFormulations] },
+            candidates: hydrated, repairAttempted: true});
           decision = selectionDecisionSchema.parse(await timed("repair_support", () => dependencies.provisionSelector.select({
             plan: { ...plan, formulations: [...plan.formulations, ...repairFormulations] },
             candidates: hydrated,
             repairAttempted: true,
           })));
-        } catch {
-          return unavailableWithDiscovery("INDEXED_REVALIDATION_FAILED");
+        } catch (error) {
+          return unavailableWithDiscovery(error instanceof SelectionEvidenceContextError
+            ? "INDEXED_EVIDENCE_CONTEXT_EXCEEDED" : "INDEXED_REVALIDATION_FAILED");
         }
       }
       if (decision.outcome !== "selected" && decision.outcome !== "partial") return insufficientSchema.parse({
@@ -1006,6 +1068,23 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
         proposition.statement,
       ]));
       if ([...covered].some((id) => !propositions.has(id))) return insufficient(plan, covered);
+      // Selection may retain a later revision outside the speculative checks.
+      // Every selected current revision still requires its authenticated parent.
+      const currentStatuses = await timed("source_observation_wait", async () => {
+      if (endpoint.kind === "current" && dependencies.verifyCurrentSource) {
+        for (let offset = 0; offset < selected.length; offset += 4) {
+          await Promise.all(selected.slice(offset, offset + 4).map(async entry => {
+            const evidence = evidenceByRendition.get(entry.candidate.provisionRenditionId);
+            if (!evidence) return;
+            const key = sourceStatusKey(evidence.controlling);
+            if (!currentChecks.has(key)) currentChecks.set(key,
+              dependencies.verifyCurrentSource!(evidence.controlling).catch(() => null));
+            await currentChecks.get(key);
+          }));
+        }
+      }
+      return new Map(await Promise.all([...currentChecks].map(async ([url, check]) => [url, await check] as const)));
+      });
       const whatTheLawSays = selected.flatMap((entry) => {
         const evidence = evidenceByRendition.get(entry.candidate.provisionRenditionId);
         if (!evidence) return [];
@@ -1020,6 +1099,19 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
             controllingQuotation: (evidence.articleContext ?? evidence.controlling).provisionText,
             officialCitations: [evidence.materialCitation],
             evidenceSha256: (evidence.articleContext ?? evidence.controlling).evidence.sha256,
+            ...(currentStatuses.has(sourceStatusKey(evidence.controlling)) ? {
+              currentSourceStatus: currentStatuses.get(sourceStatusKey(evidence.controlling))!,
+            } : {}),
+            evidenceLocator: {
+              version: 1 as const, capability: release.capability,
+              kind: evidence.articleContext ? "normalized-article" as const : "provision" as const,
+              r2Key: (evidence.articleContext ?? evidence.controlling).evidence.r2Key,
+              byteCount: (evidence.articleContext ?? evidence.controlling).evidence.byteCount,
+              sha256: (evidence.articleContext ?? evidence.controlling).evidence.sha256,
+              officialUrl: evidence.materialCitation.url, languageTag: evidence.controlling.languageTag,
+              articleNumber: citationArticleNumber(evidence.materialCitation.label,
+                (evidence.articleContext ?? evidence.controlling).provisionText),
+            },
             ...(evidence.translation ? {
               officialTranslation: {
                 label: "Official Translation" as const,
@@ -1051,6 +1143,11 @@ export function createTargetLegalAnswerRetriever(dependencies: Dependencies): Ta
         } : {}),
       };
       return partial ? partialAnswerSchema.parse(answer) : answerSchema.parse(answer);
+      } finally {
+        // Drain checks even when selection or repair fails; no request-bound
+        // fetch is left running after this answer's lifetime.
+        await drainCurrentChecks();
+      }
     },
   };
 }
@@ -1060,6 +1157,8 @@ export async function handleTargetLegalAnswerRequest(
   input: {
     environment: z.infer<typeof legalEnvironmentSchema>;
     retriever: TargetLegalAnswerRetriever;
+    versionId?: string;
+    releaseIds?: () => readonly string[];
   },
 ): Promise<Response> {
   const environment = legalEnvironmentSchema.safeParse(input.environment);
@@ -1074,12 +1173,16 @@ export async function handleTargetLegalAnswerRequest(
     })
   ) return privateServiceJson({ code: "TARGET_LEGAL_ANSWER_PRIVATE_ROUTE_REJECTED" }, 404);
   try {
-    if (!declaredRequestBodyWithinLimit(request, 16_384)) {
+    if (!declaredRequestBodyWithinLimit(request, TARGET_QUESTION_REQUEST_BYTE_LIMIT)) {
       throw new TypeError("TARGET_LEGAL_ANSWER_REQUEST_TOO_LARGE");
     }
-    return privateServiceJson({
-      result: await input.retriever.answer(questionSchema.parse(await request.json())),
-    });
+    const question = questionSchema.parse(await request.json());
+    const execution = observeTargetExecution(question.id, input.versionId);
+    const response = privateServiceJson({result: await input.retriever.answer(question)});
+    response.headers.set("x-juro-target-answer-contract", TARGET_LEGAL_ANSWER_CONTRACT_VERSION);
+    response.headers.set("x-juro-runtime-execution", JSON.stringify({...execution,
+      releaseIds: readExecutionDiagnostic(() => input.releaseIds?.() ?? [], [])}));
+    return response;
   } catch {
     return privateServiceJson({ code: "TARGET_LEGAL_ANSWER_UNAVAILABLE" }, 503);
   }
@@ -1089,10 +1192,17 @@ export function createTargetLegalAnswerClient(input: {
   service: Fetcher;
   environment: z.infer<typeof legalEnvironmentSchema>;
   signal?: AbortSignal;
+  onExecutionObserved?: (observation: ServiceExecutionObservation | null) => void;
 }) {
   return {
     async answer(question: z.input<typeof questionSchema>): Promise<TargetLegalAnswerResult> {
-      const response = await input.service.fetch(
+      const parsedQuestion = questionSchema.safeParse(question);
+      if (!parsedQuestion.success) {
+        console.warn(JSON.stringify({ event: "legal_target_client_failed", stage: "request_validation",
+          issues: parsedQuestion.error.issues.map(issue => ({ code: issue.code, path: issue.path })) }));
+        throw parsedQuestion.error;
+      }
+      const response = await Promise.resolve().then(() => input.service.fetch(
         `http://legal-corpus.internal${TARGET_LEGAL_ANSWER_PATH}`,
         {
           method: "POST",
@@ -1100,13 +1210,30 @@ export function createTargetLegalAnswerClient(input: {
             "content-type": "application/json",
             "x-juro-service-binding": SERVICE_BINDING_MARKER,
             "x-juro-legal-environment": input.environment,
+            "x-juro-target-answer-contract": TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
           },
-          body: JSON.stringify(questionSchema.parse(question)),
+          body: JSON.stringify(parsedQuestion.data),
           signal: input.signal,
         },
-      );
-      if (!response.ok) throw new TypeError("TARGET_LEGAL_ANSWER_UNAVAILABLE");
-      return z.object({ result: retrievalResultSchema }).strict().parse(await response.json()).result;
+      )).catch(error => {
+        console.warn(JSON.stringify({ event: "legal_target_client_failed", stage: "service_fetch",
+          errorName: error instanceof Error ? error.name : "unknown" }));
+        throw error;
+      });
+      if (!response.ok) {
+        console.warn(JSON.stringify({ event: "legal_target_client_failed", stage: "service_response", status: response.status }));
+        throw new TypeError("TARGET_LEGAL_ANSWER_UNAVAILABLE");
+      }
+      if (response.headers.get("x-juro-target-answer-contract") !== TARGET_LEGAL_ANSWER_CONTRACT_VERSION) {
+        console.warn(JSON.stringify({event: "legal_target_client_failed", stage: "service_contract",
+          requiredVersion: TARGET_LEGAL_ANSWER_CONTRACT_VERSION,
+          receivedVersion: response.headers.get("x-juro-target-answer-contract")}));
+        throw new TypeError("TARGET_LEGAL_ANSWER_CONTRACT_UNAVAILABLE");
+      }
+      const result = z.object({ result: retrievalResultSchema }).strict().parse(await response.json()).result;
+      readExecutionDiagnostic(() => input.onExecutionObserved?.(
+        parseRuntimeExecutionHeader(response.headers.get("x-juro-runtime-execution"), parsedQuestion.data.id)), undefined);
+      return result;
     },
   };
 }

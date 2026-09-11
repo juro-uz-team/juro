@@ -1005,7 +1005,7 @@ export async function retrieveDirectLegalSources(
     // original search, complementary semantic searches, and bounded official-
     // domain discovery as independent tool branches; all candidates converge
     // on the same canonical fetch and exact-span validation boundary.
-    await Promise.all([
+    const branches = await Promise.allSettled([
       (async () => {
         const original = await originalCandidates;
         if (original.error) {
@@ -1037,6 +1037,7 @@ export async function retrieveDirectLegalSources(
         await fetchCandidates(discovered, "agent_discovery");
       })(),
     ]);
+    for (const branch of branches) if (branch.status === "rejected") throw branch.reason;
     throwIfRequestAborted(options.signal);
   } catch (error) {
     throwIfRequestAborted(options.signal);

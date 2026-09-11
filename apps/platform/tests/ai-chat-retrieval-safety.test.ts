@@ -55,8 +55,9 @@ test("chat uses bounded model-understood queries across the authority ladder wit
   assert.match(understanding, /corpusQueries/u);
   assert.match(route, /const retrievalUnderstandingPromise = \(async/u);
   assert.match(route, /queryUnderstandingFallback = true/u);
-  assert.match(route, /fallbackLegalRetrievalUnderstanding\(rewrite\.query\)/u);
-  assert.match(route, /query: rewrite\.query/u);
+  assert.match(route, /fallbackLegalRetrievalUnderstanding\(legalQuestion\)/u);
+  assert.match(route, /query: legalQuestion/u);
+  assert.doesNotMatch(route, /rewriteLegalConversationQuery/u);
   assert.doesNotMatch(route, /contextualQuestion: retrievalUnderstanding/u);
   assert.match(route, /priorUserQuestions: conversationHistory\.map\(\(turn\) => turn\.user\)/u);
   assert.doesNotMatch(route, /priorUserQuestions: conversationHistory\.map\(\(turn\) => turn\.assistant\)/u);
@@ -161,7 +162,7 @@ test("provider and UI contracts answer first, keep questions last, and conceal i
   const reference = legalAnswer.indexOf("(result.referenceNotes ?? []).length", summary);
   const questions = legalAnswer.lastIndexOf("result.clarificationQuestions.length");
   assert.match(legalAnswer, /data-answer-kind="insufficient-evidence"/u);
-  assert.match(legalAnswer, /не получил достаточного подтверждения для правового вывода/u);
+  assert.match(legalAnswer, /Доступных подтверждений недостаточно для полного правового вывода/u);
   assert.ok(summary >= 0);
   assert.ok(findings > summary);
   assert.ok(actionPlan > findings);

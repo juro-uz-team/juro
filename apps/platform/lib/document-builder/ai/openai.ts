@@ -103,6 +103,16 @@ export type AiStructuredProgress =
   | { stage: "provider_started"; provider: "openai"; model: string }
   | { stage: "provider_delta"; receivedCharacters: number };
 
+export type AiProviderAttemptObservation = {
+  attempt: 1 | 2;
+  model: string;
+  elapsedMs: number;
+  outcome: "completed" | "failed";
+  errorCode: AiProviderErrorCode | null;
+  httpStatus: number | null;
+  usage: AiProviderUsage | null;
+};
+
 
 export function hasAiConfiguration(): boolean {
   const configuration = runtimeEnv();
@@ -145,6 +155,8 @@ export async function callOpenAiStructured<T>(options: {
   maxAttempts?: 1 | 2;
   /** Content-free hook invoked immediately before each real HTTP attempt. */
   onAttempt?: (input: { attempt: 1 | 2; model: string }) => void | Promise<void>;
+  /** Observes each attempt, including rejected output and unknown timeout usage. */
+  onAttemptFinished?: (observation: AiProviderAttemptObservation) => void | Promise<void>;
   signal?: AbortSignal;
   onProgress?: (event: AiStructuredProgress) => void | Promise<void>;
   /**
@@ -185,6 +197,11 @@ export async function callOpenAiStructured<T>(options: {
       throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
     }
     await options.onAttempt?.({ attempt: attempt as 1 | 2, model });
+    const attemptStartedAt = Date.now();
+    let attemptUsage: AiProviderUsage | null = null;
+    let attemptOutcome: AiProviderAttemptObservation["outcome"] = "failed";
+    let attemptErrorCode: AiProviderErrorCode | null = "PROVIDER_UNAVAILABLE";
+    let attemptHttpStatus: number | null = null;
     try {
       await options.onProgress?.({ stage: "provider_started", provider: "openai", model });
       const { response, payload } = await runProviderRequestWithTimeouts({
@@ -252,9 +269,15 @@ export async function callOpenAiStructured<T>(options: {
             : await response.json().catch(() => ({})) as ResponsesApiPayload,
         }),
       });
+      attemptHttpStatus = response.status;
       totalUsage.inputTokens += payload.usage?.input_tokens ?? 0;
       totalUsage.outputTokens += payload.usage?.output_tokens ?? 0;
       totalUsage.cachedInputTokens += payload.usage?.input_tokens_details?.cached_tokens ?? 0;
+      if (payload.usage) attemptUsage = {
+        inputTokens: payload.usage.input_tokens ?? 0,
+        outputTokens: payload.usage.output_tokens ?? 0,
+        cachedInputTokens: payload.usage.input_tokens_details?.cached_tokens ?? 0,
+      };
 
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
@@ -285,6 +308,7 @@ export async function callOpenAiStructured<T>(options: {
       }
       const text = content.find((item) => item.type === "output_text" && item.text)?.text;
       if (!text) {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "AI-проверка не вернула структурированный результат.",
@@ -298,6 +322,7 @@ export async function callOpenAiStructured<T>(options: {
       try {
         decoded = JSON.parse(text);
       } catch {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "AI-проверка вернула некорректный JSON.",
@@ -324,6 +349,8 @@ export async function callOpenAiStructured<T>(options: {
             ? (item.action?.sources ?? []).flatMap((source) => source.type === "url" && source.url ? [source.url] : [])
             : [],
         ))].map((url) => ({ url, title: webSourceTitles.get(url) || null }));
+        attemptOutcome = "completed";
+        attemptErrorCode = null;
         return {
           data,
           provider: "openai",
@@ -336,6 +363,7 @@ export async function callOpenAiStructured<T>(options: {
           ...(webSources.length ? { webSources } : {}),
         };
       } catch {
+        attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;
         throw new AiUnavailableError(
           "AI-проверка вернула результат, не соответствующий контракту.",
@@ -347,10 +375,12 @@ export async function callOpenAiStructured<T>(options: {
       }
     } catch (error) {
       if (error instanceof AiUnavailableError) {
+        attemptErrorCode = error.code;
         if (error.retryable && attempt < maxAttempts) continue;
         throw error;
       }
       if (error instanceof ProviderRequestAbortError) {
+        attemptErrorCode = error.reason === "caller" ? "AI_CANCELLED" : "PROVIDER_TIMEOUT";
         if (error.reason === "caller") {
           throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
         }
@@ -370,6 +400,15 @@ export async function callOpenAiStructured<T>(options: {
       }
       if (attempt >= maxAttempts) {
         throw new AiUnavailableError("AI-проверка временно недоступна.", "PROVIDER_UNAVAILABLE", true);
+      }
+    } finally {
+      try {
+        await options.onAttemptFinished?.({ attempt: attempt as 1 | 2, model,
+          elapsedMs: Date.now() - attemptStartedAt, outcome: attemptOutcome,
+          errorCode: attemptErrorCode, httpStatus: attemptHttpStatus, usage: attemptUsage });
+      } catch {
+        // Telemetry failure must not alter a validated result or repeat a call.
+        console.warn(JSON.stringify({event: "ai.provider_attempt_observation_unavailable"}));
       }
     }
   }

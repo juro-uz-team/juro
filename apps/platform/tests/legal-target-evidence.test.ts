@@ -14,6 +14,7 @@ import {
 } from "../lib/legal-corpus/target-evidence";
 import { createNormalizedArticleEvidenceReader } from "../lib/legal-corpus/normalized-article-evidence";
 import { completeArticleText } from "../lib/legal/article-context";
+import { resolveCitationEvidence, handleCitationEvidenceRequest, CITATION_EVIDENCE_PATH } from "../lib/legal-corpus/citation-evidence";
 import { recordProvisionTemporalEvidence } from "../lib/legal-corpus/target-temporal";
 import { sqliteD1FixtureFromDirectory } from "./helpers/sqlite-d1";
 import { MemoryEvidenceBucket, representativeProvision } from "./helpers/legal-target";
@@ -59,14 +60,49 @@ test("accepted parent recovery authenticates full article context without replac
   assert.doesNotMatch(context!.provisionText, /Article 8/u);
   assert.equal(context!.evidence.sha256, sha256(bytes));
   assert.equal(context!.evidence.r2Key, key);
+  const alreadyComplete = await read({...original, provisionText: context!.provisionText}, "7");
+  assert.equal(alreadyComplete?.evidence.r2Key, key,
+    "An already complete provision still needs an authenticated full-article locator");
+  assert.equal(alreadyComplete?.provisionText, context!.provisionText);
+  const receipt = {version: 1 as const, capability: "current" as const, kind: "normalized-article" as const,
+    r2Key: key, byteCount: bytes.length, sha256: sha256(bytes), officialUrl: representativeProvision.sourceUrl,
+    languageTag: "ru" as const, articleNumber: "7", textSha256: sha256(context!.provisionText)};
+  const reopened = await resolveCitationEvidence(bucket, receipt);
+  assert.equal(reopened.text, context!.provisionText);
+  assert.equal(reopened.fullArticle, true);
+  await assert.rejects(resolveCitationEvidence(bucket, {...receipt, articleNumber: "8"}));
+  await assert.rejects(resolveCitationEvidence(bucket, {...receipt, languageTag: "en"}));
+  await assert.rejects(resolveCitationEvidence(bucket, {...receipt, officialUrl: "https://lex.uz/ru/docs/999"}));
+  await assert.rejects(resolveCitationEvidence(bucket, {...receipt, textSha256: "c".repeat(64)}));
+  const publicRequest = new Request(`https://example.com${CITATION_EVIDENCE_PATH}`, {
+    method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(receipt)});
+  assert.equal((await handleCitationEvidenceRequest(publicRequest, {APP_ENV: "production", LEGAL_EVIDENCE_BUCKET: bucket})).status, 404);
   assert.equal(original.evidence.r2Key, "original");
   assert.match(original.provisionText, /information:$/u);
   assert.equal(await read({...original, officialCitation: {...original.officialCitation, url: "https://lex.uz/ru/docs/999"}}, "7"), null);
   assert.equal(await read({...original, provisionText: "Different statutory introduction:"}, "7"), null);
   assert.equal(completeArticleText([...blocks, ...blocks], "7"), null);
+  for (let index = 0; index < 4; index++) {
+    const revision = `revision:additional-${index}`;
+    const parentKey = `corpus/normalized/${revision}.json`;
+    bucket.objects.set(parentKey, {bytes, customMetadata: {}});
+    const complete = await reader(original, "7", revision);
+    assert.equal(complete?.evidence.r2Key, parentKey, "Cache capacity cannot reject a later authenticated article");
+  }
+  let activeReads = 0, peakReads = 0;
+  const boundedReader = createNormalizedArticleEvidenceReader({async get(parentKey) {
+    activeReads++; peakReads = Math.max(peakReads, activeReads);
+    await new Promise(resolve => setImmediate(resolve));
+    try {return await bucket.get(parentKey);} finally {activeReads--;}
+  }});
+  const parallelArticles = await Promise.all(Array.from({length: 4}, (_, index) =>
+    boundedReader(original, "7", `revision:additional-${index}`)));
+  assert.equal(peakReads, 2);
+  assert.ok(parallelArticles.every(article => article?.provisionText === context!.provisionText));
   const corrupt = bytes.slice();
   corrupt[corrupt.length - 1] = 0;
   bucket.objects.set(key, {bytes: corrupt, customMetadata: {}});
+  await assert.rejects(resolveCitationEvidence(bucket, receipt));
   assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original, "7", sourceRevisionId), null);
 });
 

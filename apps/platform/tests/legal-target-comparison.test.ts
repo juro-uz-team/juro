@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { MAX_LEGAL_EVIDENCE_SOURCES } from "../lib/legal/legal-evidence-budget";
 
 import {
   createInMemoryCandidateIndex,
@@ -124,6 +125,7 @@ function comparisonRetriever(
       ...(comparisonPins ? { resolveComparison: async (
         pinnedLeft: TemporalEndpoint, pinnedRight: TemporalEndpoint,
       ) => {
+        assert.equal(comparisonPins.length, 0, "Resolve a shared comparison once, without recursive reinterpretation");
         comparisonPins.push([pinnedLeft, pinnedRight]);
         return { left: release(pinnedLeft), right: release(pinnedRight) };
       } } : {}),
@@ -185,14 +187,30 @@ function comparisonRetriever(
       select: async ({ candidates }) => ({
         outcome: "selected",
         mainPoint: "Endpoint-specific governing rule.",
-        propositions: [{ requirementId: "requirement-change", statement: "Endpoint rule" }],
-        selections: [{ itemKey: candidates[0]!.candidate.candidate.itemKey, requirementIds: ["requirement-change"] }],
+        propositions: candidates[0]!.candidate.candidate.retrievalRequirementIds.map(requirementId => ({ requirementId, statement: "Endpoint rule" })),
+        selections: [{ itemKey: candidates[0]!.candidate.candidate.itemKey, requirementIds: candidates[0]!.candidate.candidate.retrievalRequirementIds }],
         whatToDoNext: [],
       }),
     },
     lineageResolver: { resolve: lineage },
   });
 }
+
+test("shared planning hints execute each comparison endpoint without reentering comparison", async () => {
+  const left: TemporalEndpoint = {kind: "timestamp", instant: "2020-01-01T00:00:00.000Z"};
+  const right: TemporalEndpoint = {kind: "current"};
+  const calls: TemporalEndpoint[] = [];
+  const pins: Array<[TemporalEndpoint, TemporalEndpoint]> = [];
+  const result = await comparisonRetriever(left, right, calls, undefined, pins).answer({
+    id: "shared-comparison", question: "Compare the rule in 2020 with today",
+    planningHints: {answerLanguage: "en", standaloneQuestion: "Compare the rule in 2020 with today",
+      requirements: [{statement: "Governing rule", priority: "core"}], formulations: ["Governing rule"],
+      comparison: {left, right}},
+  });
+  assert.equal(result.kind, "comparison_answer");
+  assert.deepEqual(pins, [[left, right]]);
+  assert.deepEqual(calls, [left, right]);
+});
 
 test("comparison pins both endpoint releases from one resolver decision", async () => {
   const calls: TemporalEndpoint[] = [];
@@ -350,7 +368,7 @@ test("a lineage edge unrelated to either selected Provision Set fails closed", a
   }
 });
 
-for (const count of [12, 13] as const) {
+for (const count of [13, MAX_LEGAL_EVIDENCE_SOURCES, MAX_LEGAL_EVIDENCE_SOURCES + 1]) {
   test(`${count} provisions are enforced independently at each comparison endpoint`, async () => {
     let endpointSearches = 0;
     const retriever = createTargetLegalAnswerRetriever({
@@ -436,11 +454,11 @@ for (const count of [12, 13] as const) {
       },
     });
     const result = await retriever.answer({ id: `question-ceiling-${count}`, question: "compare" });
-    if (count === 12) {
+    if (count <= MAX_LEGAL_EVIDENCE_SOURCES) {
       assert.equal(result.kind, "comparison_answer");
       if (result.kind === "comparison_answer") {
-        assert.equal(result.left.whatTheLawSays.length, 12);
-        assert.equal(result.right.whatTheLawSays.length, 12);
+        assert.equal(result.left.whatTheLawSays.length, count);
+        assert.equal(result.right.whatTheLawSays.length, count);
       }
       assert.equal(endpointSearches, 2);
     } else {
