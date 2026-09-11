@@ -14,7 +14,8 @@ test("guest AI route is server-only, same-origin protected, provider-backed, and
   assert.match(route, /validateTurnstile/);
   assert.match(route, /guestAiTurnstileAction/);
   assert.match(route, /retrieveCorpusAwareLegalSources/);
-  assert.match(route, /retrieveCorpusAwareLegalSources\(\{\s*query: effectiveQuestion,/);
+  assert.match(route, /retrievalOptions[^=]*=\s*\{\s*query: effectiveQuestion,/);
+  assert.match(route, /retrieveCorpusAwareLegalSources\(retrievalOptions\)/);
   assert.match(route, /understandLegalRetrievalQuery/);
   assert.doesNotMatch(route, /rerankLegalCorpusCandidates/);
   assert.match(route, /shouldRetrieveSecondaryInternet\(retrieval\)/);
@@ -23,7 +24,7 @@ test("guest AI route is server-only, same-origin protected, provider-backed, and
   assert.doesNotMatch(route, /indexQueries:/);
   const official = route.indexOf("retrieval = await retrieveCorpusAwareLegalSources");
   const secondaryGate = route.indexOf("shouldRetrieveSecondaryInternet(retrieval)");
-  const secondary = route.indexOf("await retrieveSecondaryInternetSources", secondaryGate);
+  const secondary = route.indexOf("await retrieveSecondaryResearch", secondaryGate);
   assert.ok(official >= 0 && secondaryGate > official && secondary > secondaryGate);
   assert.match(route, /createLegalAiGateway\(provider\)\.generateGroundedAnswer\(\{/);
   assert.doesNotMatch(route, /provider\.runLegalChat\(/);
@@ -39,7 +40,7 @@ test("guest AI route is server-only, same-origin protected, provider-backed, and
   assert.match(route, /if \(!aiResult\.sourceFallback\) await recordProviderUsage/);
   assert.match(route, /sources:\s*allRetrievedSources,/);
   assert.match(route, /function rethrowGuestCancellation/);
-  assert.equal(route.match(/rethrowGuestCancellation\(error, budget\.signal\)/gu)?.length, 3);
+  assert.equal(route.match(/rethrowGuestCancellation\(error, budget!?\.signal\)/gu)?.length, 3);
   assert.match(route, /legalCitationStatements/);
   assert.doesNotMatch(route, /retrieveInteractiveVerifiedLegalSources/);
   assert.match(route, /legalAiProvider\(\)/);

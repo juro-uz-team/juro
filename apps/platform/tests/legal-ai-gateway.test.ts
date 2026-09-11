@@ -143,6 +143,110 @@ test("a scope without mapped authoritative evidence cannot be repaired by invent
   assert.equal(checked.coverageDiagnostics.missingGuidanceRequirementCount, 1);
 });
 
+test("missing support triggers one scoped evidence recovery before the combined answer is independently validated", async () => {
+  const permissionText = "Для получения разрешения общество подаёт заявление в уполномоченный орган.";
+  const permission: LegalSourceContext = {...source, id: "official:permission", article: "Статья 4",
+    contentSha256: "c".repeat(64), spans: [{...source.spans![0]!, id: "permission-span", article: "Статья 4",
+      text: permissionText, textSha256: "d".repeat(64)}]};
+  const input: LegalChatRequest = {question: "Как зарегистрировать общество и получить разрешение?", locale: "ru",
+    answerMode: "detailed", reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt,
+    requestId: "recover-permission", safetyIdentifier: "test", coverageRequirements: [
+      {id: "registration", statement: "Как зарегистрировать общество?", priority: "core", sourceIds: [source.id]},
+      {id: "permission", statement: "Как получить разрешение?", priority: "core", sourceIds: []},
+    ]};
+  let calls = 0;
+  let discoveries = 0;
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat(request) {
+    calls++;
+    const findings = [{...result.confirmedFindings[0]!, requirementIds: ["registration"], answerRole: "governing_rule" as const}];
+    if (request.contentRepair) {
+      assert.deepEqual(request.contentRepair.unresolved.map(scope => scope.requirementId), ["permission"]);
+      assert.equal(request.sources[0], source, "the original authenticated evidence is retained");
+      assert.deepEqual(request.contentRepair.retained.confirmedFindings, findings);
+      findings.push({title: "Получение разрешения", explanation: permissionText, sourceIds: [permission.id],
+        requirementIds: ["permission"], answerRole: "governing_rule"});
+    }
+    const data = {...result, summary: findings.map(finding => finding.explanation).join(" "),
+      summarySourceIds: findings.flatMap(finding => finding.sourceIds), confirmedFindings: findings,
+      actionPlan: findings.map(finding => ({title: finding.title, description: finding.explanation,
+        sourceIds: finding.sourceIds, requirementIds: finding.requirementIds}))};
+    return {...run, data, guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: data.actionPlan.map((_, index) => index),
+      r1: [0], r2: request.contentRepair ? [1] : []}, request, data.actionPlan)]};
+  }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(input, {fallbackEnabled: false,
+    recoverEvidence: async (request, missingRequirementIds) => {
+      discoveries++;
+      assert.equal(request.question, input.question);
+      assert.deepEqual(missingRequirementIds, ["permission"]);
+      return {sources: [source, permission], legalDatabaseAsOf: source.verifiedAt,
+        coverageRequirements: request.coverageRequirements!.map(scope => ({...scope,
+          sourceIds: scope.id === "permission" ? [permission.id] : scope.sourceIds}))};
+    }});
+  assert.equal(discoveries, 1);
+  assert.equal(calls, 2);
+  assert.equal(checked.run.data.responseKind, "answer");
+  assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.requirementIds), [["registration"], ["permission"]]);
+  assert.deepEqual(checked.recoveredEvidence?.sources.map(item => item.id), [source.id, permission.id]);
+  assert.deepEqual(input.sources, [source], "request input is not mutated");
+});
+
+for (const corruption of ["pinned-bytes", "scope", "unknown-source", "duplicate-source", "unavailable"] as const) {
+  test(`evidence recovery rejects ${corruption} without replacing validated evidence or retrying generation`, async () => {
+    let calls = 0;
+    const request: LegalChatRequest = {question: "Как получить отдельное разрешение?", locale: "ru", answerMode: "short",
+      reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "recovery-integrity",
+      safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Как получить отдельное разрешение?",
+        priority: "core", sourceIds: []}]};
+    const checked = await createLegalAiGateway({name: "openai", async runLegalChat() {calls++; return structuredClone(run);}})
+      .generateGroundedAnswer(request, {recoverEvidence: async () => {
+        if (corruption === "unavailable") throw new Error("OFFICIAL_RESEARCH_UNAVAILABLE");
+        return {legalDatabaseAsOf: source.verifiedAt,
+        sources: corruption === "duplicate-source" ? [source, source] : [{...source,
+          ...(corruption === "pinned-bytes" ? {contentSha256: "e".repeat(64)} : {})}],
+        coverageRequirements: request.coverageRequirements!.map(scope => ({...scope,
+          ...(corruption === "scope" ? {statement: "Другой вопрос"} : {}),
+          ...(corruption === "unknown-source" ? {sourceIds: ["invented"]} : {})})),
+      }; }});
+    assert.equal(calls, 1);
+    assert.equal(checked.run.data.responseKind, "clarification_required");
+    assert.equal(checked.evidenceRecovery?.outcome, "unavailable");
+    assert.equal(checked.recoveredEvidence, undefined);
+  });
+}
+
+test("cancelling scoped discovery cannot start another writer or return a successful answer", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const gateway = createLegalAiGateway({name: "openai", async runLegalChat() {calls++; return structuredClone(run);}});
+  await assert.rejects(gateway.generateGroundedAnswer({question: "Как получить отдельное разрешение?", locale: "ru",
+    answerMode: "short", reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt,
+    requestId: "cancel-recovery", safetyIdentifier: "test", coverageRequirements: [
+      {id: "permission", statement: "Как получить отдельное разрешение?", priority: "core", sourceIds: []},
+    ]}, {signal: controller.signal, recoverEvidence: async request => {
+      controller.abort();
+      return {sources: request.sources, coverageRequirements: request.coverageRequirements!, legalDatabaseAsOf: source.verifiedAt};
+    }}), error => error instanceof DOMException && error.name === "AbortError");
+  assert.equal(calls, 1);
+});
+
+test("a mapped governing provision cannot substitute for its absent operative cross-reference", async () => {
+  const referring: LegalSourceContext = {...source, spans: [{...source.spans![0]!,
+    text: `${source.spans![0]!.text} Исключения установлены статьей 27 настоящего Закона.`}]};
+  let discoveries = 0;
+  const checked = await createLegalAiGateway({name: "openai", async runLegalChat() {return structuredClone(run);}})
+    .generateGroundedAnswer({question: "Как зарегистрировать общество с учетом исключений?", locale: "ru", answerMode: "short",
+      reasoningMode: "deep", sources: [referring], legalDatabaseAsOf: source.verifiedAt, requestId: "missing-reference",
+      safetyIdentifier: "test", coverageRequirements: [{id: "registration", statement: "Регистрация и исключения",
+        priority: "core", sourceIds: [referring.id]}]}, {recoverEvidence: async (_request, missing) => {
+          discoveries++;
+          assert.deepEqual(missing, ["registration"]);
+          throw new Error("OPERATIVE_PROVISION_UNAVAILABLE");
+        }});
+  assert.equal(discoveries, 1);
+  assert.equal(checked.recoveredEvidence, undefined);
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+});
+
 test("validated governing findings permit guidance repair when live evidence has no discovery mapping", async () => {
   let calls = 0;
   const provider: LegalAiProvider = {name: "openai", async runLegalChat(request) {

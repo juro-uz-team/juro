@@ -161,8 +161,15 @@ test("guest AI stores no plaintext, preserves encrypted clarification context, a
       cachedInputTokens: 0,
       attempts: 1,
       latencyMs: 50,
+      sourceVersionHash: "d".repeat(64),
+      legalDatabaseAsOf: "2026-08-02T12:00:00.000Z",
       now: NOW,
     });
+    const replay = await reserveGuestAiRun(reservationInput(d1, session, identityKeyring,
+      "guest-request-0002", `${sensitiveQuestion}\nОтвет: 15 июля`));
+    assert.equal(replay.kind, "completed");
+    assert.equal(replay.run.legalDatabaseAsOf, "2026-08-02T12:00:00.000Z");
+    assert.equal(sqlite.prepare("SELECT source_version_hash FROM guest_ai_runs WHERE id=?").get(answer.run.id)?.source_version_hash, "d".repeat(64));
     session = await resolveGuestAiSession({
       db: d1,
       keyring: identityKeyring,

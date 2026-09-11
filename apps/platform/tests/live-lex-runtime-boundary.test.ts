@@ -31,7 +31,8 @@ test("user AI uses R2-native retrieval before direct Lex while other paths stay 
   assert.match(guestAi, /targetEnvironment: legalRetrievalEnvironment\(env\)/);
   assert.match(guestAi, /timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS/);
   assert.match(guestAi, /budgetMs: LEGAL_RETRIEVAL_BUDGET_MS/);
-  assert.match(guestAi, /retrieveCorpusAwareLegalSources\(\{\s*query: effectiveQuestion,/);
+  assert.match(guestAi, /retrievalOptions[^=]*=\s*\{\s*query: effectiveQuestion,/);
+  assert.match(guestAi, /retrieveCorpusAwareLegalSources\(retrievalOptions\)/);
   assert.doesNotMatch(guestAi, /contextualQuestion: retrievalUnderstanding/);
   assert.match(corpusAware, /retrieveLiveLexSources/);
   // Historical fallback behavior is exercised with explicit and shared-plan

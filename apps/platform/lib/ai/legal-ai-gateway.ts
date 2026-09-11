@@ -2,6 +2,8 @@ import { z } from "zod";
 import {assessedGuidanceActions, assessedGuidanceCoverage} from "./legal-guidance-assessment";
 import {assessedFindingSources} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
+import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
+import {missingReferencedArticles} from "../legal/referenced-article-context";
 
 /**
  * Claim/source filtering and coverage checks adapt the grounding concepts in
@@ -103,11 +105,16 @@ export type LegalGatewayAnswer = z.infer<typeof legalGatewayAnswerSchema>;
 export type GroundedLegalPreliminary = z.infer<typeof groundedLegalPreliminarySchema>;
 
 export type LegalAiGatewayRunOptions = LegalAiRunOptions & {
+  /** One request-owned, scoped retrieval through the authenticated source ladder. */
+  recoverEvidence?: (input: LegalChatRequest, missingRequirementIds: readonly string[]) => Promise<RecoveredLegalEvidence>;
   /** Receives only a claim that has passed the authoritative Lex span gate. */
   onGroundedPreliminary?: (preliminary: GroundedLegalPreliminary) => void | Promise<void>;
 };
 
 export type ValidatedLegalGatewayResult = {
+  /** Final authenticated context, present only after revalidation with recovered evidence. */
+  recoveredEvidence?: RecoveredLegalEvidence;
+  evidenceRecovery?: {outcome: "adopted" | "not_adopted" | "unavailable"; requirementIndexes: number[]; safeErrorCode: string | null};
   contentRepair?: {
     outcome: "repaired" | "incomplete" | "unavailable" | "rejected";
     requirementIndexes: number[];
@@ -1291,41 +1298,79 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       if (fallback) return fallback;
       throw error;
     }
-    const validate = (candidate: LegalAiRunResult) => this.validateAnswerContract({
+    const validate = (candidate: LegalAiRunResult, context = input) => this.validateAnswerContract({
       result: candidate.data,
       run: candidate,
-      sources: input.sources,
+      sources: context.sources,
       question: input.question,
       applicableAt: input.applicableAt,
       temporalComparison: input.temporalComparison,
       retrievalQuery: input.retrievalQuery,
-      coverageRequirements: input.coverageRequirements,
+      coverageRequirements: context.coverageRequirements,
       locale: input.locale,
       answerMode: input.answerMode,
       reasoningMode: input.reasoningMode,
-      legalDatabaseAsOf: input.legalDatabaseAsOf,
+      legalDatabaseAsOf: context.legalDatabaseAsOf,
       availableDocumentTemplateCodes: input.availableDocumentTemplates?.map((template) => template.templateCode),
     });
     let validated = validate(run);
-    const unresolved = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
-      const requirement = input.coverageRequirements?.[item.requirementIndex];
+    const hasEvidence = (context: LegalChatRequest, requirement: NonNullable<LegalChatRequest["coverageRequirements"]>[number]) => {
       // Live official retrieval can lack a discovery-to-scope mapping. A
       // validated governing finding supplies its own evidence relationship;
       // raw writer citations and unrelated findings cannot authorize repair.
-      const evidenceIds = [...(requirement?.sourceIds ?? []),
+      const evidenceIds = [...requirement.sourceIds,
         ...validated.run.data.confirmedFindings.filter(finding => finding.answerRole === "governing_rule"
-          && requirement && finding.requirementIds?.includes(requirement.id)).flatMap(finding => finding.sourceIds)];
-      const available = evidenceIds.some(id => input.sources.some(source => source.id === id
+          && finding.requirementIds?.includes(requirement.id)).flatMap(finding => finding.sourceIds)];
+      return evidenceIds.some(id => context.sources.some(source => source.id === id
         && sourceTier(source) === "authoritative" && source.spans?.some(span => span.quality === "high")));
-      return requirement?.priority === "core" && available
+    };
+    const canRecover = !input.contentRepair && !options.signal?.aborted && (!options.budget || options.budget.remainingMs > 0);
+    const missing = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
+      const requirement = input.coverageRequirements?.[item.requirementIndex];
+      const evidenceIds = new Set([...(requirement?.sourceIds ?? []),
+        ...validated.run.data.confirmedFindings.filter(finding => finding.requirementIds?.includes(requirement?.id ?? ""))
+          .flatMap(finding => finding.sourceIds)]);
+      const missingReference = input.sources.some(source => evidenceIds.has(source.id)
+        && sourceTier(source) === "authoritative" && missingReferencedArticles(source, input.sources).length > 0);
+      return requirement?.priority === "core" && (!hasEvidence(input, requirement) || missingReference) ? [{...item, requirement}] : [];
+    });
+    let repairInput = input;
+    let recoveredEvidence: RecoveredLegalEvidence | undefined;
+    let evidenceRecovery: ValidatedLegalGatewayResult["evidenceRecovery"];
+    if (missing.length && canRecover && options.recoverEvidence) {
+      const requirementIndexes = missing.map(item => item.requirementIndex);
+      try {
+        const recovered = await options.recoverEvidence(input, missing.map(item => item.requirement.id));
+        options.signal?.throwIfAborted();
+        recoveredEvidence = retainRecoveredLegalEvidence(input, recovered);
+        // Newly retrieved text still needs independent claim and scope checks.
+        // Its presence alone never establishes a support mapping or coverage.
+        if (recoveredEvidence.sources.some(source => sourceTier(source) === "authoritative"
+          && !input.sources.some(original => original.id === source.id))) repairInput = {...input, ...recoveredEvidence};
+        else if (missing.some(item => hasEvidence({...input, ...recoveredEvidence},
+          recoveredEvidence!.coverageRequirements[item.requirementIndex]!))) repairInput = {...input, ...recoveredEvidence};
+        evidenceRecovery = {outcome: "not_adopted", requirementIndexes, safeErrorCode: null};
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        evidenceRecovery = {outcome: "unavailable", requirementIndexes,
+          safeErrorCode: error instanceof AiUnavailableError ? error.code : "EVIDENCE_RECOVERY_FAILED"};
+      }
+    }
+    const unresolved = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
+      const requirement = repairInput.coverageRequirements?.[item.requirementIndex];
+      return requirement?.priority === "core" && (hasEvidence(repairInput, requirement)
+        || (repairInput !== input && missing.some(scope => scope.requirement.id === requirement.id)))
         ? [{requirementId: requirement.id, finding: item.finding, guidanceMissing: item.guidanceMissing}] : [];
     });
+    for (const requirement of (repairInput.coverageRequirements ?? []).slice(input.coverageRequirements?.length ?? 0)) {
+      if (requirement.priority === "core") unresolved.push({requirementId: requirement.id, finding: "omitted", guidanceMissing: true});
+    }
     if (unresolved.length && !input.contentRepair && !options.signal?.aborted
       && (!options.budget || options.budget.remainingMs > 0)) {
-      const requirementIndexes = unresolved.map(item => input.coverageRequirements!.findIndex(requirement => requirement.id === item.requirementId));
+      const requirementIndexes = unresolved.map(item => repairInput.coverageRequirements!.findIndex(requirement => requirement.id === item.requirementId));
       let completedRepair: LegalAiRunResult | undefined;
       try {
-        const repaired = await this.provider.runLegalChat({...input, contentRepair: {
+        const repaired = await this.provider.runLegalChat({...repairInput, contentRepair: {
           unresolved, retained: structuredClone(validated.run.data),
         }}, {...options, onPartialLegalFinding: undefined});
         completedRepair = repaired;
@@ -1335,7 +1380,11 @@ class DefaultLegalAiGateway implements LegalAiGateway {
               inputTokens: run.usage.inputTokens + repaired.usage.inputTokens,
               outputTokens: run.usage.outputTokens + repaired.usage.outputTokens,
               cachedInputTokens: run.usage.cachedInputTokens + repaired.usage.cachedInputTokens,
-            }});
+            }}, repairInput);
+          if (repairInput !== input && recoveredEvidence) {
+            validated.recoveredEvidence = recoveredEvidence;
+            evidenceRecovery = {...evidenceRecovery!, outcome: "adopted"};
+          }
           validated.contentRepair = {outcome: validated.run.data.responseKind === "answer" ? "repaired" : "incomplete",
             requirementIndexes, safeErrorCode: null};
         } else {
@@ -1364,6 +1413,7 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       }
       console.info(JSON.stringify({event: "legal.content_repair_finished", ...validated.contentRepair}));
     }
+    if (evidenceRecovery) validated.evidenceRecovery = evidenceRecovery;
     await emitPreliminary(preliminaryFromValidatedResult(validated, input.locale));
     return validated;
   }

@@ -518,7 +518,11 @@ test("AI run reservation is idempotent and clarification does not consume a cycl
     provider: "openai",
     fallbackFromProvider: null,
     outputTokens: 50, cachedInputTokens: 10, attempts: 1, latencyMs: 200,
+    sourceVersionHash: "d".repeat(64), legalDatabaseAsOf: "2026-08-02T12:00:00.000Z",
     chargeable: false,
+  });
+  assert.deepEqual({...sqlite.prepare("SELECT source_version_hash,legal_database_as_of FROM ai_runs WHERE id=?").get(first.runId)}, {
+    source_version_hash: "d".repeat(64), legal_database_as_of: "2026-08-02T12:00:00.000Z",
   });
 
   const replay = await reserveAiRun(input);

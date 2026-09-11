@@ -37,6 +37,7 @@ import {
   shouldRetrieveSecondaryInternet,
   type LegalChatSourceRetrieval,
 } from "../../../../lib/legal-corpus/chat-retrieval";
+import {recoverLegalSourceCoverage, type LegalSourceCoverageRecovery} from "../../../../lib/legal-corpus/source-coverage-recovery";
 import {
   retrieveTrustedUserDocumentSources,
   type TrustedUserDocumentRetrieval,
@@ -656,7 +657,7 @@ async function executePostWithinBudget(
   // tier. The two networks can run together; all returned legal claims still
   // require independently validated official evidence.
   let secondaryResearch: Promise<SecondaryInternetRetrieval> | undefined;
-  const startSecondaryResearch = () => secondaryResearch ??= (async (): Promise<SecondaryInternetRetrieval> => {
+  const retrieveSecondaryResearch = async (query?: string): Promise<SecondaryInternetRetrieval> => {
       if (budget.remainingMs < 8_000) {
         return { sources: [], evidence: [], errors: [{ code: "SECONDARY_RESEARCH_BUDGET_SKIPPED" }] };
       }
@@ -669,7 +670,7 @@ async function executePostWithinBudget(
         const startedAt = isoNow();
         const result = await retrieveSecondaryInternetSources({
           db,
-          query: (await retrievalUnderstandingPromise).webSearchQuery,
+          query: query ?? (await retrievalUnderstandingPromise).webSearchQuery,
           locale: discoveryLocale,
           requestId: `${idempotencyKey}:secondary`,
           safetyIdentifier,
@@ -722,7 +723,8 @@ async function executePostWithinBudget(
           errors: [{ code: "SECONDARY_RESEARCH_UNAVAILABLE" }],
         };
       }
-  })();
+  };
+  const startSecondaryResearch = () => secondaryResearch ??= retrieveSecondaryResearch();
 
   // Private uploads are retrieved above. This authority branch calls the
   // R2-native sparse+dense service first and uses validated live Lex only as
@@ -732,9 +734,7 @@ async function executePostWithinBudget(
   const retrievalStage = budget.beginStage("legal_source_retrieval", {
     timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS,
   });
-  const retrievalResult: LegalChatSourceRetrieval | Response = await (async () => {
-    try {
-      const result = await waitForStage(retrieveCorpusAwareLegalSources({
+  const retrievalOptions: Parameters<typeof retrieveCorpusAwareLegalSources>[0] = {
         query: legalQuestion,
         locale: discoveryLocale,
         targetService: bindings.LEGAL_RETRIEVAL_SERVICE,
@@ -801,7 +801,10 @@ async function executePostWithinBudget(
             },
           });
         },
-      }), retrievalStage.signal);
+      };
+  const retrievalResult: LegalChatSourceRetrieval | Response = await (async () => {
+    try {
+      const result = await waitForStage(retrieveCorpusAwareLegalSources(retrievalOptions), retrievalStage.signal);
       retrievalStage.complete();
       return result;
     } catch (error) {
@@ -817,7 +820,7 @@ async function executePostWithinBudget(
     if (secondaryResearch) await secondaryResearch.catch(() => undefined);
     return retrievalResult;
   }
-  const retrieval = retrievalResult;
+  let retrieval = retrievalResult;
   if (developmentTraceEnabled) {
     await emitProgress({
       stage: "retrieval_trace",
@@ -879,7 +882,7 @@ async function executePostWithinBudget(
   const privateDocuments = await privateDocumentRetrieval;
   const sources = [...retrieval.sources, ...privateDocuments.sources, ...secondaryInternet.sources];
   const evidence = [...retrieval.evidence, ...privateDocuments.evidence, ...secondaryInternet.evidence];
-  const { freshness, legalDatabaseAsOf, coverageStatus } = retrieval;
+  let { freshness, legalDatabaseAsOf, coverageStatus } = retrieval;
   await emitProgress({ stage: "source_verified" });
   const { memoryEncryption, memories } = await memoryContext;
   const requestHash = await sha256Json({
@@ -907,7 +910,7 @@ async function executePostWithinBudget(
     jurisdiction: "UZ",
     runtimeConfigHash: runtimeSettings.configHash,
   });
-  const sourceVersionHash = await sha256Json({
+  let sourceVersionHash = await sha256Json({
     freshness,
     evidence,
     sources: sources.map((source) => ({
@@ -1005,6 +1008,23 @@ async function executePostWithinBudget(
     providerCalls.push({ ...call, startedAt: isoNow() });
   };
 
+
+    let sourceRecovery: LegalSourceCoverageRecovery | undefined;
+    const recoverEvidence: NonNullable<Parameters<ReturnType<typeof createLegalAiGateway>["generateGroundedAnswer"]>[1]>["recoverEvidence"] = async (request, missingRequirementIds) => {
+      const recoveryStage = budget!.beginStage("legal_source_recovery", {timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS});
+      try {
+        sourceRecovery = await recoverLegalSourceCoverage({request, missingRequirementIds, initial: retrieval,
+          retrievalOptions: {...retrievalOptions, signal: recoveryStage.signal, budgetMs: LEGAL_RETRIEVAL_BUDGET_MS,
+            onLiveSearchStarted: async () => { await emitProgress({stage: "lex_search_started"}); }},
+          secondaryResearch: retrieveSecondaryResearch,
+        });
+        recoveryStage.complete();
+        return sourceRecovery.evidence;
+      } catch (error) {
+        recoveryStage.fail();
+        throw error;
+      }
+    };
   let aiResult;
   let coverageDiagnostics: Awaited<ReturnType<typeof gateway.generateGroundedAnswer>>["coverageDiagnostics"] | null = null;
   // Provider-level deadlines are derived from the same absolute request
@@ -1041,6 +1061,7 @@ async function executePostWithinBudget(
     }, {
       signal,
       budget,
+      recoverEvidence,
       onProgress: emitProgress,
       onGroundedPreliminary: async (preliminary) => {
         if (
@@ -1061,6 +1082,17 @@ async function executePostWithinBudget(
           correlationId: reservation.correlationId, ...observation}));
       },
     });
+    if (gatewayResult.recoveredEvidence && sourceRecovery) {
+      retrieval = sourceRecovery.retrieval;
+      sources.splice(0, sources.length, ...gatewayResult.recoveredEvidence.sources);
+      evidence.splice(0, evidence.length, ...new Map([...retrieval.evidence, ...privateDocuments.evidence, ...secondaryInternet.evidence,
+        ...sourceRecovery.secondary.evidence].map(item => [item.sourceId, item])).values());
+      ({freshness, legalDatabaseAsOf, coverageStatus} = retrieval);
+      sourceVersionHash = await sha256Json({
+        freshness: retrieval.freshness, evidence,
+        sources: sources.map(source => ({id: source.id, hash: source.contentSha256})),
+      });
+    }
     aiResult = gatewayResult.run;
     coverageDiagnostics = gatewayResult.coverageDiagnostics;
     console.info(JSON.stringify({
@@ -1457,6 +1489,7 @@ async function executePostWithinBudget(
       fallbackFromProvider: aiResult.fallbackFromProvider,
       inputTokens: aiResult.usage.inputTokens, outputTokens: aiResult.usage.outputTokens,
       cachedInputTokens: aiResult.usage.cachedInputTokens, attempts: aiResult.attempts,
+      sourceVersionHash, legalDatabaseAsOf,
       latencyMs: aiResult.latencyMs, chargeable: result.responseKind === "answer",
     })]);
     persistenceStage.complete();

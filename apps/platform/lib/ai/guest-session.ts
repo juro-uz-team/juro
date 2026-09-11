@@ -519,6 +519,8 @@ export async function completeGuestAiRun(input: {
   attempts: number;
   latencyMs: number;
   additionalStatements?: D1PreparedStatement[];
+  sourceVersionHash?: string;
+  legalDatabaseAsOf?: string;
   now?: Date | string;
 }): Promise<void> {
   const protectedResult = await protectIdentityValue(
@@ -538,6 +540,7 @@ export async function completeGuestAiRun(input: {
          result_ciphertext=?,result_iv=?,result_key_version=?,provider=?,model=?,
          provider_response_id=?,fallback_from_provider=?,input_tokens=?,output_tokens=?,
          cached_input_tokens=?,attempt_count=?,latency_ms=?,error_code=NULL,
+         source_version_hash=COALESCE(?,source_version_hash),legal_database_as_of=COALESCE(?,legal_database_as_of),
          completed_at=?,updated_at=?
        WHERE id=? AND session_id=? AND status='processing'
          AND EXISTS (
@@ -558,6 +561,8 @@ export async function completeGuestAiRun(input: {
       input.cachedInputTokens,
       input.attempts,
       input.latencyMs,
+      input.sourceVersionHash ?? null,
+      input.legalDatabaseAsOf ?? null,
       nowIso,
       nowIso,
       input.run.id,

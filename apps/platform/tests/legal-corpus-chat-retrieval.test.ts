@@ -8,7 +8,9 @@ import {
 } from "../lib/legal-corpus/chat-retrieval";
 import type { LiveLexRetrievalResult } from "../lib/legal/live-lex-retrieval";
 import { legalDatabaseFreshnessFromAsOf } from "../lib/legal/verified-retrieval";
-import { referencedArticleContextRequests, referencedLegalSourceIds, selectReferencedArticleContext } from "../lib/legal/referenced-article-context";
+import { missingReferencedArticles, referencedArticleContextRequests, referencedLegalSourceIds, selectReferencedArticleContext } from "../lib/legal/referenced-article-context";
+import {recoverLegalSourceCoverage} from "../lib/legal-corpus/source-coverage-recovery";
+import type {LegalChatRequest} from "../lib/ai/provider";
 
 const now = new Date("2026-08-15T00:00:00.000Z");
 const checkedAt = "2026-08-14T23:00:00.000Z";
@@ -113,6 +115,49 @@ function liveResult(): LiveLexRetrievalResult {
     }],
   };
 }
+
+for (const discoveredOrigin of [false, true]) test(`scoped recovery preserves ${discoveredOrigin ? "inspected" : "question"} scope provenance through the official source ladder`, async () => {
+  const question = "Как зарегистрировать общество и оформить трудовой договор?";
+  const requirements: NonNullable<LegalChatRequest["coverageRequirements"]> = [
+    {id: "registration", statement: "Как зарегистрировать общество?", priority: "core" as const, sourceIds: []},
+    {id: "employment", statement: "Как оформить трудовой договор?", priority: "core" as const, scopeKind: "general" as const, sourceIds: [],
+      ...(discoveredOrigin ? {origin: {kind: "inspected_candidate" as const, itemKey: "candidate-item", provisionRenditionId: "rendition-employment",
+        textRevisionId: "revision-employment", languageFamily: "ru" as const}} : {})},
+  ];
+  const planningHints = {answerLanguage: "ru" as const, standaloneQuestion: question,
+    requirements: requirements.map(({statement, priority, scopeKind, origin}) => ({statement, priority,
+      ...(scopeKind ? {scopeKind} : {}), ...(origin ? {origin} : {})})),
+    formulations: ["государственная регистрация общества", "письменная форма трудового договора"],
+    formulationRequirementIndexes: [[0], [1]], temporalEndpoint: {kind: "current" as const}};
+  const initial = await retrieveCorpusAwareLegalSources({query: question, locale: "ru", now,
+    targetPlanningHints: planningHints, liveSearch: async () => ({...liveResult(), sources: [], evidence: []})});
+  const sequence: string[] = [];
+  const recovered = await recoverLegalSourceCoverage({request: {question, locale: "ru", answerMode: "detailed", reasoningMode: "deep",
+    sources: [], coverageRequirements: requirements, legalDatabaseAsOf: initial.legalDatabaseAsOf,
+    requestId: "scoped-request", safetyIdentifier: "test"}, missingRequirementIds: ["employment"], initial,
+    retrievalOptions: {query: question, locale: "ru", now, targetEnvironment: "staging", targetPlanningHints: planningHints,
+      targetService: {async fetch(_input: RequestInfo | URL, init?: RequestInit) {
+        sequence.push("indexed");
+        const payload = JSON.parse(String(init?.body));
+        assert.equal(payload.question, question);
+        assert.equal(payload.id, "scoped-request:coverage-recovery");
+        assert.deepEqual(payload.planningHints.requirements, [planningHints.requirements[1]]);
+        assert.deepEqual(payload.planningHints.formulations, ["письменная форма трудового договора"]);
+        assert.deepEqual(payload.planningHints.formulationRequirementIndexes, [[0]]);
+        return new Response(null, {status: 503});
+      }} as Fetcher,
+      liveSearch: async request => {sequence.push("live");
+        assert.deepEqual(await request.searchQueries, ["письменная форма трудового договора"]);
+        return liveResult();},
+    },
+    secondaryResearch: async query => {sequence.push("secondary"); assert.equal(query, "письменная форма трудового договора");
+      return {sources: [], evidence: [], errors: []};},
+  });
+  assert.deepEqual(sequence, ["indexed", "live", "secondary"]);
+  assert.deepEqual(recovered.evidence.coverageRequirements, requirements, "live search provenance cannot fabricate Requirement Support");
+  assert.equal(recovered.evidence.sources[0]?.id, liveResult().sources[0]!.id);
+  assert.equal(recovered.retrieval.coverageStatus, "partial_coverage");
+});
 
 test("article context follows only unresolved same-instrument references and never historical evidence", () => {
   const source = liveResult().sources[0]!;
@@ -277,6 +322,17 @@ test("revoked indexed documents are excluded before live research and cannot cer
   assert.equal(result.sourceAccessMode, "direct");
   assert.equal(result.sources.some((source) => source.id.startsWith("target:")), false);
   assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.statement), ["A condition discovered in inspected evidence"]);
+});
+
+test("an operative reference is available only in the same instrument language and revision", () => {
+  const base = liveResult().sources[0]!;
+  const referring = {...base, article: "17", spans: [{...base.spans![0]!, text: "Исключения установлены статьей 27 настоящего Кодекса."}]};
+  const related = {...base, id: "article-27", article: "27", spans: [{...base.spans![0]!, text: "Полное правило исключения, применимое к указанному правоотношению и соответствующим участникам."}]};
+  assert.deepEqual(missingReferencedArticles(referring, [referring]), ["27"]);
+  assert.deepEqual(missingReferencedArticles(referring, [referring, related]), []);
+  assert.deepEqual(missingReferencedArticles(referring, [referring, {...related, revisionDate: "2025-01-01"}]), ["27"]);
+  assert.deepEqual(missingReferencedArticles(referring, [referring, {...related, officialUrl: "https://lex.uz/ru/docs/888"}]), ["27"]);
+  assert.deepEqual(missingReferencedArticles(referring, [referring, {...related, locale: "uz"}]), ["27"]);
 });
 
 test("the chat adapter preserves observation time and rejects expired or changed pinned evidence", async () => {

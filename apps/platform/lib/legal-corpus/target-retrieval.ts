@@ -6,7 +6,7 @@ import { citationArticleNumber } from "../legal/citation-article";
 import { fitsLegalEvidenceBudget, MAX_LEGAL_EVIDENCE_SOURCES, MAX_LEGAL_EVIDENCE_CHARACTERS } from "../legal/legal-evidence-budget";
 import { selectionAssessmentBatches, SelectionEvidenceContextError, SELECTION_ASSESSMENT_BATCH_SIZE } from "./selection-reference-context";
 import { legalCoverageScopeSchema } from "../legal/legal-coverage";
-import { questionRequirementOriginSchema, legalRequirementOriginSchema, questionTemporalEndpointSchema, questionTemporalComparisonSchema, unresolvedQuestionDimensionsSchema, userQuestionContextSchema, questionRelationshipSchema, questionAccountingSchema } from "../legal/question-interpretation";
+import { legalRequirementOriginSchema, questionTemporalEndpointSchema, questionTemporalComparisonSchema, unresolvedQuestionDimensionsSchema, userQuestionContextSchema, questionRelationshipSchema, questionAccountingSchema } from "../legal/question-interpretation";
 import { LEGAL_INTERPRETATION_REQUIREMENT_LIMIT, LEGAL_INTERPRETATION_FORMULATION_LIMIT,
   LEGAL_EXPANDED_REQUIREMENT_LIMIT, LEGAL_DISCOVERED_REQUIREMENT_LIMIT,
   LEGAL_TOTAL_FORMULATION_LIMIT, LEGAL_REPAIR_FORMULATION_LIMIT as TARGET_REPAIR_FORMULATION_LIMIT } from "../legal/question-interpretation-limits";
@@ -54,7 +54,10 @@ export const targetQuestionPlanningHintsSchema = z.object({
     statement: z.string().trim().min(1).max(500),
     priority: z.enum(["core", "supporting"]),
     scopeKind: legalCoverageScopeSchema.optional(),
-    origin: questionRequirementOriginSchema.optional(),
+    // Server-owned recovery can retain a requirement discovered from an
+    // inspected provision. This provenance never grants evidence eligibility;
+    // selected candidates still undergo the complete membership/source checks.
+    origin: legalRequirementOriginSchema.optional(),
     unresolvedDimensions: unresolvedQuestionDimensionsSchema.optional(),
     questionContext: userQuestionContextSchema.optional(),
   }).strict()).min(1).max(LEGAL_INTERPRETATION_REQUIREMENT_LIMIT),

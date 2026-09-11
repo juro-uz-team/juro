@@ -35,6 +35,19 @@ export function referencedLegalSourceIds(source: LegalSourceContext, sources: re
       && !/:\s*$/u.test(span.text))).map(other => other.id);
 }
 
+/** Missing explicit same-instrument references are discovery needs, even when
+ * the referring provision already supports part of a requirement. */
+export function missingReferencedArticles(source: LegalSourceContext, sources: readonly LegalSourceContext[]): string[] {
+  if (source.sourceType !== "lex" || (source.sourceClass && source.sourceClass !== "OFFICIAL_LEGISLATION")) return [];
+  const relatedIds = new Set(referencedLegalSourceIds(source, sources));
+  const available = new Set(sources.filter(item => relatedIds.has(item.id)).map(item => articleNumber(item.article)));
+  if (source.spans?.some(span => span.quality === "high" && span.text.trim().length > 40 && !/:\s*$/u.test(span.text))) {
+    available.add(articleNumber(source.article));
+  }
+  return sameInstrumentArticleReferences((source.spans ?? []).map(span => span.text).join("\n"))
+    .filter(article => !available.has(article));
+}
+
 /** Follow only explicit references to this same instrument, not citations to
  * other codes that happen to share an article number. These are discovery
  * candidates; separately fetched text still goes through answer grounding. */

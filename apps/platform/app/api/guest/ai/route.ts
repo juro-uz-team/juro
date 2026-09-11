@@ -36,6 +36,7 @@ import {
   retrieveCorpusAwareLegalSources,
   shouldRetrieveSecondaryInternet,
 } from "../../../../lib/legal-corpus/chat-retrieval";
+import {recoverLegalSourceCoverage, type LegalSourceCoverageRecovery} from "../../../../lib/legal-corpus/source-coverage-recovery";
 import {
   fallbackLegalRetrievalUnderstanding,
   targetQuestionPlanningHints,
@@ -513,12 +514,11 @@ export async function POST(request: Request): Promise<Response> {
     const synthesisApplicableAt = applicableAt?.toISOString()
       ?? (retrievalUnderstanding.temporalEndpoint?.kind === "timestamp" ? retrievalUnderstanding.temporalEndpoint.instant : undefined);
     const temporalComparison = applicableAt ? undefined : retrievalUnderstanding.comparison;
-    let retrieval;
+    let retrieval: Awaited<ReturnType<typeof retrieveCorpusAwareLegalSources>>;
     const retrievalStage = budget.beginStage("live_lex_retrieval", {
       timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS,
     });
-    try {
-      retrieval = await retrieveCorpusAwareLegalSources({
+  const retrievalOptions: Parameters<typeof retrieveCorpusAwareLegalSources>[0] = {
         query: effectiveQuestion,
         locale: discoveryLocale,
         targetService: env.LEGAL_RETRIEVAL_SERVICE,
@@ -531,7 +531,9 @@ export async function POST(request: Request): Promise<Response> {
         signal: retrievalStage.signal,
         limit: 4,
         budgetMs: LEGAL_RETRIEVAL_BUDGET_MS,
-      });
+      };
+    try {
+      retrieval = await retrieveCorpusAwareLegalSources(retrievalOptions);
       retrievalStage.complete();
     } catch (error) {
       retrievalStage.fail();
@@ -540,14 +542,12 @@ export async function POST(request: Request): Promise<Response> {
         query: "", locale: discoveryLocale, limit: 1, budgetMs: 1,
       });
     }
-    const secondaryInternet: SecondaryInternetRetrieval = !synthesisApplicableAt && !temporalComparison
-      && shouldRetrieveSecondaryInternet(retrieval)
-      ? await (async () => {
-        const secondaryStage = budget.beginStage("secondary_web_retrieval", { timeoutMs: 25_000 });
+    const retrieveSecondaryResearch = async (query: string): Promise<SecondaryInternetRetrieval> => {
+        const secondaryStage = budget!.beginStage("secondary_web_retrieval", { timeoutMs: 25_000 });
         try {
           const secondary = await retrieveSecondaryInternetSources({
             db,
-            query: retrievalUnderstanding.webSearchQuery,
+            query,
             locale: discoveryLocale,
             requestId: `${idempotencyKey}:secondary`,
             safetyIdentifier,
@@ -558,10 +558,13 @@ export async function POST(request: Request): Promise<Response> {
           return secondary;
         } catch (error) {
           secondaryStage.fail();
-          rethrowGuestCancellation(error, budget.signal);
+          rethrowGuestCancellation(error, budget!.signal);
           return { sources: [], evidence: [], errors: [{ code: "SECONDARY_RESEARCH_UNAVAILABLE" }] };
         }
-      })()
+    };
+    const secondaryInternet: SecondaryInternetRetrieval = !synthesisApplicableAt && !temporalComparison
+      && shouldRetrieveSecondaryInternet(retrieval)
+      ? await retrieveSecondaryResearch(retrievalUnderstanding.webSearchQuery)
       : { sources: [], evidence: [], errors: [] };
     const allRetrievedSources = [...retrieval.sources, ...secondaryInternet.sources];
     const evidence = [...retrieval.evidence, ...secondaryInternet.evidence];
@@ -578,7 +581,7 @@ export async function POST(request: Request): Promise<Response> {
       jurisdiction: "UZ",
       runtimeConfigHash: runtimeSettings.configHash,
     });
-    const sourceVersionHash = await sha256Json({
+    let sourceVersionHash = await sha256Json({
       freshness: retrieval.freshness,
       evidence,
       sources: allRetrievedSources.map((source) => ({
@@ -651,6 +654,23 @@ export async function POST(request: Request): Promise<Response> {
       providerCalls.push({ ...call, startedAt: new Date().toISOString() });
     };
 
+
+    let sourceRecovery: LegalSourceCoverageRecovery | undefined;
+    const recoverEvidence: NonNullable<Parameters<ReturnType<typeof createLegalAiGateway>["generateGroundedAnswer"]>[1]>["recoverEvidence"] = async (request, missingRequirementIds) => {
+      const recoveryStage = budget!.beginStage("legal_source_recovery", {timeoutMs: LEGAL_RETRIEVAL_STAGE_TIMEOUT_MS});
+      try {
+        sourceRecovery = await recoverLegalSourceCoverage({request, missingRequirementIds, initial: retrieval,
+          retrievalOptions: {...retrievalOptions, signal: recoveryStage.signal, budgetMs: LEGAL_RETRIEVAL_BUDGET_MS,
+            onLiveSearchStarted: undefined},
+          secondaryResearch: retrieveSecondaryResearch,
+        });
+        recoveryStage.complete();
+        return sourceRecovery.evidence;
+      } catch (error) {
+        recoveryStage.fail();
+        throw error;
+      }
+    };
     let aiResult;
     let gatewayResult;
     const providerStage = budget.beginStage("provider_execution");
@@ -677,7 +697,17 @@ export async function POST(request: Request): Promise<Response> {
         requestId: reservation.run.correlationId,
         safetyIdentifier,
         runtimeSettings,
-      }, { signal: budget.signal, budget, beforeProviderCall });
+      }, { signal: budget.signal, budget, beforeProviderCall, recoverEvidence });
+      if (gatewayResult.recoveredEvidence && sourceRecovery) {
+        retrieval = sourceRecovery.retrieval;
+        allRetrievedSources.splice(0, allRetrievedSources.length, ...gatewayResult.recoveredEvidence.sources);
+        evidence.splice(0, evidence.length, ...new Map([...retrieval.evidence, ...secondaryInternet.evidence,
+          ...sourceRecovery.secondary.evidence].map(item => [item.sourceId, item])).values());
+        sourceVersionHash = await sha256Json({
+          freshness: retrieval.freshness, evidence,
+          sources: allRetrievedSources.map(source => ({id: source.id, hash: source.contentSha256, excerpt: source.excerpt ?? null})),
+        });
+      }
       aiResult = gatewayResult.run;
       providerStage.complete();
     } catch (error) {
@@ -907,6 +937,7 @@ export async function POST(request: Request): Promise<Response> {
         cachedInputTokens: aiResult.usage.cachedInputTokens,
         attempts: aiResult.attempts,
         latencyMs: aiResult.latencyMs,
+        sourceVersionHash, legalDatabaseAsOf: retrieval.legalDatabaseAsOf,
         additionalStatements: legalCitationStatements({
           db,
           sources: retrieval.sources,

@@ -292,6 +292,8 @@ export type CompleteAiRunInput = {
   attempts: number;
   latencyMs: number;
   chargeable: boolean;
+  sourceVersionHash?: string;
+  legalDatabaseAsOf?: string;
 };
 
 export function completeAiRunStatements(input: CompleteAiRunInput): D1PreparedStatement[] {
@@ -300,12 +302,14 @@ export function completeAiRunStatements(input: CompleteAiRunInput): D1PreparedSt
   return [
     input.db.prepare(
       `UPDATE ai_runs SET conversation_id=?,request_message_id=?,response_message_id=?,provider_response_id=?,provider=?,fallback_from_provider=?,model=?,status='completed',
-       input_tokens=?,output_tokens=?,cached_input_tokens=?,attempt_count=?,latency_ms=?,completed_at=?,updated_at=?
+       input_tokens=?,output_tokens=?,cached_input_tokens=?,attempt_count=?,latency_ms=?,
+       source_version_hash=COALESCE(?,source_version_hash),legal_database_as_of=COALESCE(?,legal_database_as_of),completed_at=?,updated_at=?
        WHERE id=? AND workspace_id=? AND user_id=? AND status='finalizing'`,
     ).bind(
       input.conversationId, input.requestMessageId, input.responseMessageId, input.providerResponseId,
       input.provider, input.fallbackFromProvider, input.model,
       input.inputTokens, input.outputTokens, input.cachedInputTokens, input.attempts, input.latencyMs,
+      input.sourceVersionHash ?? null, input.legalDatabaseAsOf ?? null,
       now, now, input.runId, input.workspaceId, input.userId,
     ),
     input.db.prepare(
