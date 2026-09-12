@@ -1,5 +1,5 @@
 import { z } from "zod";
-import {assessedGuidanceActions, assessedGuidanceCoverage} from "./legal-guidance-assessment";
+import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
 import {assessedFindingSources} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
@@ -1372,6 +1372,8 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       try {
         const repaired = await this.provider.runLegalChat({...repairInput, contentRepair: {
           unresolved, retained: structuredClone(validated.run.data),
+          materialGaps: assessedGuidanceGaps({...input, assessments: run.guidanceAssessments ?? []})
+            .filter(gap => unresolved.some(scope => scope.requirementId === gap.requirementId && scope.guidanceMissing)),
         }}, {...options, onPartialLegalFinding: undefined});
         completedRepair = repaired;
         if (repaired.provider === run.provider && repaired.model === run.model) {

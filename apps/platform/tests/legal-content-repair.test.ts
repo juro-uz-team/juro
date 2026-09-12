@@ -61,7 +61,9 @@ for (const initialFailure of ["omitted", "rejected"] as const) test(`sufficient 
         assert.equal(payload.actions[1].description, `Notify the registry.\n\n${seller}`);
         assert.deepEqual(payload.actions[1].sourceIds, [source.id]);
       }
-      data = {scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: {quotation: "", sourceId: "", reason: ""}},
+      data = {scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: repairRequested
+        ? {quotation: "", sourceId: "", reason: ""}
+        : {quotation: seller, sourceId: source.id, reason: "Seller notification and its accompanying certificate are missing."}},
         supportedActions: repairRequested ? payload.actions.map((_: unknown, index: number) => index) : [0],
         sourceSupport: Object.fromEntries(payload.actions.map((action: {sourceIds: string[]}, index: number) =>
           [`a${index}`, repairRequested || index === 0 ? action.sourceIds : []])),
@@ -71,6 +73,8 @@ for (const initialFailure of ["omitted", "rejected"] as const) test(`sufficient 
       repairRequested = Boolean(payload.contentRepair);
       if (repairRequested) {
         assert.deepEqual(payload.contentRepair.unresolved.map((item: {requirementId: string}) => item.requirementId), ["r2"]);
+        assert.deepEqual(payload.contentRepair.materialGaps, [{requirementId: "r2", sourceId: "s1", sourceSpanId: "s1-1", quotation: seller}]);
+        assert.equal(payload.contentRepair.materialGaps[0].sourceSpanId, payload.verifiedSources[0].sourceSpans[0].sourceSpanId);
         assert.equal(payload.verifiedSources[0].sourceSpans[0].text, source.spans![0]!.text);
         assert.equal(payload.contentRepair.retainedFindings.length, 2);
         assert.equal(payload.contentRepair.retainedActions.length, 1);

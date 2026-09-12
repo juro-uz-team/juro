@@ -4,6 +4,7 @@ import {callAnthropicStructured} from "../document-builder/ai/anthropic";
 import {questionScopeSelection} from "../legal/question-interpretation";
 import type {LegalAiRunOptions, LegalAiRunResult, LegalChatRequest, LegalSourceContext} from "./provider";
 import type {LegalChatResponse} from "./legal-chat-schema";
+import type {LegalMaterialGuidanceGap} from "./legal-content-repair";
 
 type AssessmentInput = {
   question?: string;
@@ -29,7 +30,23 @@ export type LegalGuidanceAssessment = {
   evidenceIdentity: string;
   coverage: Array<{requirementId: string; actionIdentities: string[]}>;
   actions: Array<{identity: string; supported: boolean}>;
+  materialGaps?: LegalMaterialGuidanceGap[];
 };
+
+/** A routing hint from an independent assessment, never answer text or a new
+ * source. Only exact quotations from this request's official spans survive. */
+export function assessedGuidanceGaps(input: AssessmentInput & {assessments: readonly LegalGuidanceAssessment[]}): LegalMaterialGuidanceGap[] {
+  const identity = evidenceIdentity(input);
+  const requirements = new Set(input.coverageRequirements?.map(scope => scope.id));
+  const gaps = input.assessments.filter(assessment => assessment.evidenceIdentity === identity)
+    .flatMap(assessment => assessment.materialGaps ?? []).filter(gap => {
+      const source = input.sources.find(source => source.id === gap.sourceId);
+      return requirements.has(gap.requirementId) && gap.quotation.trim().length > 0 && gap.quotation.length <= 2_000
+        && source?.sourceClass === "OFFICIAL_LEGISLATION" && source.status === "verified"
+        && source.spans?.some(span => span.id === gap.sourceSpanId && span.quality === "high" && span.text.includes(gap.quotation));
+    });
+  return [...new Map(gaps.map(gap => [JSON.stringify(gap), {...gap}])).values()];
+}
 
 function guidanceAssessmentSchema(requirements: NonNullable<LegalChatRequest["coverageRequirements"]>, actionCount: number) {
   const indexes = z.array(z.number().int().min(0).max(Math.max(0, actionCount - 1))).max(16);
@@ -152,6 +169,12 @@ export async function assessLegalGuidance(input: LegalChatRequest, run: LegalAiR
       onAttemptFinished: observation => options.onProviderAttemptFinished?.({
         ...observation, provider: "anthropic", part: "guidance_validation"})});
   const {sourceSupport, scopeGaps, ...coverageDecision} = assessed.data;
+  const materialGaps = requirements.flatMap((requirement, index) => {
+    const gap = scopeGaps[`r${index + 1}`]!;
+    const source = input.sources.find(source => source.id === gap.sourceId);
+    const span = gap.quotation.trim() ? source?.spans?.find(span => span.quality === "high" && span.text.includes(gap.quotation)) : undefined;
+    return span ? [{requirementId: requirement.id, sourceId: source!.id, sourceSpanId: span.id, quotation: gap.quotation}] : [];
+  });
   const coverage: Record<string, number[]> & {supportedActions: number[]} = coverageDecision;
   for (const [scope, gap] of Object.entries(scopeGaps)) {
     if (gap.quotation.trim() || gap.sourceId.trim() || gap.reason.trim()) coverage[scope] = [];
@@ -164,7 +187,7 @@ export async function assessLegalGuidance(input: LegalChatRequest, run: LegalAiR
     return {...action, sourceIds};
   });
   return {...run, data: {...run.data, actionPlan: evaluatedActions},
-    guidanceAssessments: [bind(coverage, evaluatedActions)], providerResponseId: null,
+    guidanceAssessments: [{...bind(coverage, evaluatedActions), materialGaps}], providerResponseId: null,
     attempts: run.attempts + assessed.attempts, latencyMs: Math.round(run.latencyMs + performance.now() - started),
     usage: {inputTokens: run.usage.inputTokens + assessed.usage.inputTokens,
       outputTokens: run.usage.outputTokens + assessed.usage.outputTokens,

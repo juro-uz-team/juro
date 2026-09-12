@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {env} from "cloudflare:workers";
-import {assessLegalGuidance, assessedGuidanceActions, assessedGuidanceCoverage, parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
+import {assessLegalGuidance, assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps, parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
 import type {LegalChatRequest, LegalAiRunResult, LegalSourceContext} from "../lib/ai/provider";
@@ -27,6 +27,26 @@ const data = parseLegalChatResponse({responseKind: "answer", summary: buyer, sum
 {...input, coverageRequirements: []});
 const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "generated",
   attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null};
+
+test("repair diagnostics require exact official quotations and the original question and evidence", () => {
+  const gap = {requirementId: "seller", sourceId: source.id, sourceSpanId: "shared-span", quotation: seller};
+  const assessment = {...parseLegalGuidanceAssessment({supportedActions: [0], r1: [0], r2: []}, input, data.actionPlan), materialGaps: [gap]};
+  const request = {...input, assessments: [assessment]};
+  assert.deepEqual(assessedGuidanceGaps(request), [gap]);
+  for (const invalid of [{...gap, sourceId: "unknown"}, {...gap, requirementId: "unknown"},
+    {...gap, sourceSpanId: "unknown"}, {...gap, quotation: `${seller} Invented rule.`}, {...gap, quotation: " "}]) {
+    assert.deepEqual(assessedGuidanceGaps({...request, assessments: [{...assessment, materialGaps: [invalid]}]}), []);
+  }
+  assert.deepEqual(assessedGuidanceGaps({...request, question: "Another user's question"}), []);
+  assert.deepEqual(assessedGuidanceGaps({...request, applicableAt: "2025-01-01"}), []);
+  assert.deepEqual(assessedGuidanceGaps({...request, sources: [{...source, revisionDate: "2025-01-01"}]}), []);
+  const weakInput = {...input, sources: [{...source, spans: []}]};
+  const weakAssessment = {...parseLegalGuidanceAssessment({supportedActions: [0], r1: [0], r2: []}, weakInput, data.actionPlan), materialGaps: [gap]};
+  assert.deepEqual(assessedGuidanceGaps({...weakInput, assessments: [weakAssessment]}), []);
+  const privateInput = {...input, sources: [{...source, sourceClass: "USER_TRUSTED_PRIVATE" as const}]};
+  const privateAssessment = {...parseLegalGuidanceAssessment({supportedActions: [0], r1: [0], r2: []}, privateInput, data.actionPlan), materialGaps: [gap]};
+  assert.deepEqual(assessedGuidanceGaps({...privateInput, assessments: [privateAssessment]}), []);
+});
 
 test("an independently reported material rule gap prevents complete coverage while retaining a supported preparatory step", async context => {
   const previous = env.OPENAI_API_KEY;
