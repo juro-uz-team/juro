@@ -5,6 +5,7 @@ import {env} from "cloudflare:workers";
 import type {LegalChatRequest, LegalSourceContext, LegalAiRunResult} from "../lib/ai/provider";
 import type {LegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
+import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
 const sources: LegalSourceContext[] = ["commission", "court"].map(id => ({id, officialUrl: `https://lex.uz/ru/docs/${id}`,
   actTitle: "Procedure", article: "1", locale: "en", sourceClass: "OFFICIAL_LEGISLATION", contentSha256: "a".repeat(64),
   actIdentifier: id, revisionDate: null, lastCheckedAt: "2026-09-11T00:00:00Z", publishedAt: null,
@@ -16,6 +17,36 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
   reasoningMode: "deep", legalDatabaseAsOf: "2026-09-11T00:00:00Z", requestId: "finding-test", safetyIdentifier: "test"};
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
+
+test("a single cited provision cannot bypass independent rejection of a missing exception", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const rule = "The seller must transfer the records unless the registry already holds them.";
+  const request: LegalChatRequest = {...input, question: "Must the seller transfer records?", sources: [{...sources[0]!,
+    spans: [{...sources[0]!.spans![0]!, text: rule}]}]};
+  const candidate = parseLegalChatResponse({responseKind: "answer", summary: rule, summarySourceIds: ["commission"],
+    confirmedFindings: ["The seller must transfer the records.", rule].map(explanation => ({title: "Transfer of records",
+      explanation, sourceIds: ["commission"], answerRole: "governing_rule"})),
+    actionPlan: [], clarificationQuestions: [], risks: [], deadlines: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  const run: LegalAiRunResult = {data: candidate, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null};
+  let called = false;
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    called = true;
+    const body = JSON.parse(String(init.body));
+    const payload = JSON.parse(body.input);
+    assert.equal(payload.sources[0].spans[0].text, rule);
+    assert.equal(payload.findings.length, 2);
+    return Response.json({id: "single-source-assessment", model: run.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify({f1: [], f2: ["commission"]})}]}],
+      usage: {input_tokens: 100, output_tokens: 10}});
+  });
+  const assessed = await assessLegalFindings(request, run, {}, Date.now() + 12_000);
+  const validated = validateLegalGatewayAnswer({...request, result: assessed.data, run: assessed});
+  assert.equal(called, true);
+  assert.deepEqual(validated.run.data.confirmedFindings.map(item => item.explanation), [rule]);
+});
 test("finding support binds the original claim, scopes and exact evidence", () => {
   const assessment = parseLegalFindingAssessment({f1: ["commission", "court"]}, input, [finding]);
   const check = (context = input, value = finding) => assessedFindingSources(context, [value], [assessment]).get(value);

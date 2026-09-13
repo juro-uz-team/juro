@@ -21,6 +21,16 @@ const input: LegalChatRequest = {question: "What must the buyer and seller do wh
     id: index ? "seller" : "buyer", statement, priority: "core", scopeKind: "general", sourceIds: [source.id],
   }))};
 
+function findingAssessmentResponse(request: {text: {format: {name: string}}; input: string; model: string}) {
+  if (request.text.format.name !== "juro_legal_finding_support") return null;
+  const payload: {findings: Array<{sourceIds: string[]}>; sources: Array<{id: string}>} = JSON.parse(request.input);
+  const sourceIds = new Set(payload.sources.map(item => item.id));
+  const support = Object.fromEntries(payload.findings.map((finding, index) =>
+    [`f${index + 1}`, finding.sourceIds.filter(id => sourceIds.has(id))]));
+  return Response.json({id: "finding-support", model: request.model,
+    output: [{content: [{type: "output_text", text: JSON.stringify(support)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+}
+
 for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [false, true]) test(`${reasoningMode} initial guidance timeout ${cancelled ? "propagates cancellation without recovery" : "preserves candidate findings through validation and withholds unassessed actions"}`, async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
@@ -29,6 +39,8 @@ for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [
   const controller = new AbortController();
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const findingResponse = findingAssessmentResponse(request);
+    if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
     if (request.text.format.name === "juro_legal_guidance_coverage") throw new ProviderRequestAbortError("first_byte_timeout");
     if (payload.contentRepair) {
@@ -63,7 +75,7 @@ for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [
   assert.equal(checked.run.data.responseKind, "clarification_required");
   assert.equal(checked.contentRepair?.outcome, "unavailable");
   assert.equal(checked.run.sourceFallback, undefined);
-  assert.equal(checked.run.usage.inputTokens, reasoningMode === "fast" ? 200 : 100);
+  assert.equal(checked.run.usage.inputTokens, reasoningMode === "fast" ? 300 : 200);
   assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
   assert.equal(repairRequested, true);
 });
@@ -76,6 +88,8 @@ test("bounded repair completes timed-out guidance while retaining the original f
   const outcomes: string[] = [];
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const findingResponse = findingAssessmentResponse(request);
+    if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_guidance_coverage") {
@@ -106,8 +120,8 @@ test("bounded repair completes timed-out guidance while retaining the original f
   assert.equal(checked.contentRepair?.outcome, "repaired");
   assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.explanation), [buyer, seller]);
   assert.deepEqual(checked.run.data.actionPlan.map(action => action.description), [buyer, seller]);
-  assert.deepEqual(outcomes, ["completed", "failed", "completed", "completed"]);
-  assert.equal(checked.run.usage.inputTokens, 300);
+  assert.deepEqual(outcomes, ["completed", "completed", "failed", "completed", "completed", "completed"]);
+  assert.equal(checked.run.usage.inputTokens, 500);
   assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
 });
 
@@ -145,6 +159,8 @@ for (const initialFailure of ["omitted", "rejected"] as const) test(`sufficient 
   let repairRequested = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const findingResponse = findingAssessmentResponse(request);
+    if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_guidance_coverage") {
@@ -202,6 +218,8 @@ test("unavailable content repair retains the validated partial answer and report
   context.after(() => {env.OPENAI_API_KEY = previous;});
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const findingResponse = findingAssessmentResponse(request);
+    if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
     if (payload.contentRepair) throw new TypeError("Provider unavailable during repair");
     const data = request.text.format.name === "juro_legal_guidance_coverage"
