@@ -143,6 +143,9 @@ test("the finding assessor receives complete semantic evidence without private r
   env.OPENAI_API_KEY = "test-only-key";
   context.after(() => {env.OPENAI_API_KEY = previous;});
   const privateSources = structuredClone(sources);
+  const requestInput: LegalChatRequest = {...input, sources: privateSources, coverageRequirements: [{id: "filing", statement: input.question,
+    priority: "core" as const, scopeKind: "general" as const, sourceIds: ["court"],
+    questionContext: {questions: [input.question], sourceQuestionIndex: 0}, unresolvedDimensions: ["forum"]}]};
   Object.defineProperty(privateSources[0], "citationEvidenceReceipt", {value: {privateObject: "must-not-leave-server"}, enumerable: true});
   const data = parseLegalChatResponse({responseKind: "answer", summary: finding.explanation,
     confirmedFindings: [finding], summarySourceIds: finding.sourceIds, actionPlan: [], clarificationQuestions: [],
@@ -154,11 +157,15 @@ test("the finding assessor receives complete semantic evidence without private r
     const payload = JSON.parse(request.input);
     assert.equal("citationEvidenceReceipt" in payload.sources[0], false);
     assert.equal(payload.sources[0].spans[0].text, sources[0]!.spans![0]!.text);
+    assert.equal("sourceIds" in payload.requirements[0], false,
+      "discovery hints must not restrict independent completeness assessment to a suggested source subset");
+    assert.deepEqual(payload.requirements[0].questionContext.questions, [input.question]);
     assert.deepEqual(request.text.format.schema.properties.f1.items.enum, finding.sourceIds,
       "each finding has a closed source identity enum, without ambiguous local/global indexes");
     return Response.json({id: "finding-assessment", model: run.model,
-      output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"]})}]}],
+      output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
+        scopeCoverage: {r1: [0]}, scopeGaps: {r1: []}})}]}],
       usage: {input_tokens: 100, output_tokens: 10}});
   });
-  await assessLegalFindings({...input, sources: privateSources}, run, {}, Date.now() + 12_000);
+  await assessLegalFindings(requestInput, run, {}, Date.now() + 12_000);
 });
