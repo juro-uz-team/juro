@@ -163,6 +163,7 @@ export type LegalAiRunResult = AiStructuredResult<LegalChatResponse> & {
   findingAssessments?: LegalFindingAssessment[];
   /** Initial assessment failed; retained findings still require gateway validation. */
   initialGuidanceAssessmentFailure?: {code: "PROVIDER_TIMEOUT"};
+  repairGuidanceAssessmentFailure?: {code: "PROVIDER_TIMEOUT"};
 };
 export type LegalAiProgress =
   | { stage: "provider_started"; provider: "openai" | "anthropic"; model: string }

@@ -43,25 +43,25 @@ test("expired assessment window preserves candidates without inventing a dispatc
   assert.equal(recovered.attempts, run.attempts);
 });
 
-for (const reason of ["cancelled", "exhausted"] as const) test(`${reason} shared budget prevents assessment timeout recovery`, async () => {
+for (const duringRepair of [false, true]) for (const reason of ["cancelled", "exhausted"] as const) test(`${duringRepair ? "repair" : "initial"} ${reason} shared budget prevents assessment timeout recovery`, async () => {
   const controller = new AbortController();
   let now = 0;
   const budget = createAiExecutionBudget({totalBudgetMs: 1_000, callerSignal: controller.signal, now: () => now});
   try {
     if (reason === "cancelled") controller.abort();
     else now = 1_001;
-    await assert.rejects(assessLegalGuidance(input, run, {budget}, Date.now() - 1), AiUnavailableError);
+    await assert.rejects(assessLegalGuidance({...input, ...(duringRepair ? {contentRepair: {unresolved: [], retained: data}} : {})}, run, {budget}, Date.now() - 1), AiUnavailableError);
     assert.equal(budget.signal.aborted, true);
   } finally {budget.dispose();}
 });
 
-test("malformed assessment output cannot use timeout recovery", async context => {
+for (const duringRepair of [false, true]) test(`${duringRepair ? "repair" : "initial"} malformed assessment output cannot use timeout recovery`, async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
   context.after(() => {env.OPENAI_API_KEY = previous;});
   context.mock.method(globalThis, "fetch", async () => Response.json({id: "malformed-assessment", model: run.model,
     output: [{content: [{type: "output_text", text: "{}"}]}], usage: {input_tokens: 20, output_tokens: 1}}));
-  await assert.rejects(assessLegalGuidance(input, run, {}, Date.now() + 12_000),
+  await assert.rejects(assessLegalGuidance({...input, ...(duringRepair ? {contentRepair: {unresolved: [], retained: data}} : {})}, run, {}, Date.now() + 12_000),
     (error: unknown) => error instanceof AiUnavailableError && error.code === "INVALID_AI_OUTPUT");
 });
 

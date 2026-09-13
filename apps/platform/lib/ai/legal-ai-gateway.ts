@@ -1391,7 +1391,15 @@ class DefaultLegalAiGateway implements LegalAiGateway {
         }}, {...options, onPartialLegalFinding: undefined});
         completedRepair = repaired;
         if (repaired.provider === run.provider && repaired.model === run.model) {
-          validated = validate({...repaired, attempts: run.attempts + repaired.attempts,
+          // A later advice assessment timeout cannot erase findings that already
+          // passed their independent assessment. Restore only the prior actions
+          // and their exact assessment receipts; new unassessed advice stays out.
+          // Evidence identity checks still reject receipts for a changed packet.
+          const candidate = repaired.repairGuidanceAssessmentFailure ? {...repaired,
+            data: {...repaired.data, actionPlan: validated.run.data.actionPlan},
+            guidanceAssessments: run.guidanceAssessments ?? [],
+          } : repaired;
+          validated = validate({...candidate, attempts: run.attempts + repaired.attempts,
             initialGuidanceAssessmentFailure: run.initialGuidanceAssessmentFailure,
             latencyMs: Math.max(0, Date.now() - startedAt), usage: {
               inputTokens: run.usage.inputTokens + repaired.usage.inputTokens,

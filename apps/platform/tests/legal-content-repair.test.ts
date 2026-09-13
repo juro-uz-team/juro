@@ -75,6 +75,50 @@ test("finding gaps reach one bounded repair even when practical guidance already
   assert.deepEqual(checked.run.data.actionPlan.map(item => item.description), [buyer, seller]);
 });
 
+for (const priorGuidanceComplete of [true, false]) for (const supportedReplacement of [true, false]) test(`repair guidance timeout retains ${supportedReplacement ? "supported" : "no rejected"} repaired findings and ${priorGuidanceComplete ? "complete" : "partial"} previous guidance`, async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const requestInput: LegalChatRequest = {...input, coverageRequirements: [{id: "registry", statement: input.question,
+    priority: "core", scopeKind: "general", sourceIds: [source.id]}]};
+  let repaired = false;
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    let data: unknown;
+    if (request.text.format.name === "juro_legal_finding_support") {
+      data = {f1: [source.id], ...(repaired ? {f2: supportedReplacement ? [source.id] : []} : {}), mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false}},
+        scopeCoverage: {r1: repaired && supportedReplacement ? [0, 1] : []}, scopeGoverning: {r1: repaired && supportedReplacement ? [0, 1] : []}, scopeGaps: {r1: repaired ? [] : [
+          {sourceId: source.id, quotation: seller, reason: "Seller duty is absent from findings"}]}};
+    } else if (request.text.format.name === "juro_legal_guidance_coverage") {
+      if (repaired) throw new ProviderRequestAbortError("first_byte_timeout");
+      data = {supportedActions: priorGuidanceComplete ? [0, 1] : [0], r1: priorGuidanceComplete ? [0, 1] : [],
+        sourceSupport: priorGuidanceComplete ? {a0: [source.id], a1: [source.id]} : {a0: [source.id]},
+        scopeGaps: {r1: priorGuidanceComplete ? [] : [{sourceId: source.id, quotation: seller, reason: "Seller action omitted"}]}};
+    } else {
+      repaired = Boolean(payload.contentRepair);
+      if (repaired) {
+        assert.deepEqual(payload.contentRepair.unresolved, [{requirementId: "r1", finding: "omitted", guidanceMissing: !priorGuidanceComplete}]);
+        assert.deepEqual(payload.contentRepair.findingGaps, [{requirementId: "r1", sourceId: "s1", sourceSpanId: "s1-1", quotation: seller}]);
+        assert.equal(payload.contentRepair.retainedActions.length, priorGuidanceComplete ? 2 : 1);
+      }
+      data = {responseKind: "answer", summary: buyer, summarySourceIds: ["s1"],
+        confirmedFindings: [{title: repaired ? "Seller duty" : "Buyer duty", explanation: repaired ? seller : buyer,
+          sourceIds: ["s1"], answerRole: "governing_rule"}], coverage: {r1: [0]},
+        actionPlan: repaired ? [{title: "Unassessed instruction", description: "Wait 365 days before filing.", sourceIds: ["s1"]}] : (priorGuidanceComplete ? [buyer, seller] : [buyer]).map((description, index) => ({title: index ? "Notify the registry" : "Submit the application",
+          description, sourceIds: ["s1"]})), guidanceCoverage: {r1: repaired || !priorGuidanceComplete ? [0] : [0, 1]},
+        risks: [], deadlines: [], conditionalBranches: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
+    }
+    return Response.json({id: "finding-repair", model: request.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+  });
+  const checked = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer(requestInput, {fallbackEnabled: false});
+  assert.equal(repaired, true);
+  assert.equal(checked.run.data.responseKind, priorGuidanceComplete && supportedReplacement ? "answer" : "clarification_required");
+  assert.deepEqual(checked.run.data.confirmedFindings.map(item => item.explanation), supportedReplacement ? [buyer, seller] : [buyer]);
+  assert.deepEqual(checked.run.data.actionPlan.map(item => item.description), priorGuidanceComplete ? [buyer, seller] : [buyer]);
+});
+
 for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [false, true]) test(`${reasoningMode} initial guidance timeout ${cancelled ? "propagates cancellation without recovery" : "preserves candidate findings through validation and withholds unassessed actions"}`, async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";

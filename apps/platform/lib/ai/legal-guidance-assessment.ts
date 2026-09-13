@@ -121,12 +121,14 @@ export async function assessLegalGuidance(input: LegalChatRequest, run: LegalAiR
   try {
     return await runGuidanceAssessment(input, run, options, deadlineAt);
   } catch (error) {
-    if (input.contentRepair || options.signal?.aborted || options.budget?.signal.aborted
+    if (options.signal?.aborted || options.budget?.signal.aborted
       || !(error instanceof AiUnavailableError) || error.code !== "PROVIDER_TIMEOUT") throw error;
     // Preserve generated findings as candidates, never as an already approved
     // answer. Unassessed advice must not reach validation or repair retention.
-    return {...run, data: {...run.data, responseKind: "clarification_required", actionPlan: []},
-      guidanceAssessments: [], initialGuidanceAssessmentFailure: {code: "PROVIDER_TIMEOUT"},
+    return {...run, data: {...run.data, responseKind: input.contentRepair ? run.data.responseKind : "clarification_required", actionPlan: []},
+      guidanceAssessments: [], ...(input.contentRepair
+        ? {repairGuidanceAssessmentFailure: {code: "PROVIDER_TIMEOUT" as const}}
+        : {initialGuidanceAssessmentFailure: {code: "PROVIDER_TIMEOUT" as const}}),
       latencyMs: Math.round(run.latencyMs + performance.now() - started)};
   }
 }
