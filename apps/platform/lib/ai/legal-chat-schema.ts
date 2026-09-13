@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {composeSourceLinkedAction, type LegalPassageSource} from "./legal-source-passages";
+import {MAX_LEGAL_ACTION_DESCRIPTION_LENGTH, MAX_LEGAL_ACTION_PASSAGE_REFERENCES, MAX_LEGAL_ACTION_STEPS} from "./legal-action-limits";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import type { LegalDatabaseFreshness } from "../legal/verified-retrieval";
 import { aiText, type AiOutputLocale } from "./localization";
@@ -9,8 +10,6 @@ import {
 } from "./legal-output-safety";
 import { legalEvidenceSourceClass } from "./legal-evidence-mode";
 export { deriveLegalEvidenceMode } from "./legal-evidence-mode";
-
-const MAX_ACTION_STEPS = 16;
 
 const sourceIdList = z.array(z.string().min(1).max(160)).max(12);
 
@@ -95,7 +94,7 @@ export const requiredDocumentSchema = z.object({
 
 export const actionStepSchema = z.object({
   title: z.string().min(1).max(240),
-  description: z.string().min(1).max(2_000),
+  description: z.string().min(1).max(MAX_LEGAL_ACTION_DESCRIPTION_LENGTH),
   sourceIds: sourceIdList,
   requirementIds: z.array(z.string().min(1).max(240)).max(40).optional(),
 }).strict();
@@ -134,7 +133,7 @@ export const legalChatResponseSchema = z.object({
   risks: z.array(legalRiskSchema).max(16),
   sources: z.array(legalSourceRefSchema).max(MAX_LEGAL_EVIDENCE_SOURCES),
   requiredDocuments: z.array(requiredDocumentSchema).max(16),
-  actionPlan: z.array(actionStepSchema).max(MAX_ACTION_STEPS),
+  actionPlan: z.array(actionStepSchema).max(MAX_LEGAL_ACTION_STEPS),
   deadlines: z.array(legalDeadlineSchema).max(12),
   successOutlook: z.object({
     level: z.enum(["low", "medium", "high"]),
@@ -189,7 +188,7 @@ export const legalChatModelResponseSchema = legalChatResponseSchema
     summarySourceIds: true,
   })
   .extend({
-    actionPlan: z.array(actionStepSchema.omit({requirementIds: true})).max(MAX_ACTION_STEPS),
+    actionPlan: z.array(actionStepSchema.omit({requirementIds: true})).max(MAX_LEGAL_ACTION_STEPS),
     summary: z.string().min(1).max(650),
     summarySourceIds: sourceIdList,
     confirmedFindings: z.array(legalFindingSchema.extend({
@@ -217,8 +216,8 @@ export function legalChatJsonSchemaForCoverage(requirements: readonly {id: strin
     ...(repair ? {summary: z.string().max(1_500)} : {}),
     actionPlan: z.array(actionStepSchema.omit({requirementIds: true}).extend({
       ...(repair && !passageIds.length ? {retainedFindingIndexes: z.array(z.number().int().min(0).max(15)).max(16)} : {}),
-      ...(passageIds.length ? {sourcePassageIds: z.array(z.enum(passageIds)).max(16)} : {}),
-    })).max(MAX_ACTION_STEPS),
+      ...(passageIds.length ? {sourcePassageIds: z.array(z.enum(passageIds)).max(MAX_LEGAL_ACTION_PASSAGE_REFERENCES)} : {}),
+    })).max(MAX_LEGAL_ACTION_STEPS),
   }) : legalChatModelResponseSchema;
   const schema = part === "findings" ? base.omit({actionPlan: true, risks: true,
     deadlines: true, conditionalBranches: true})
@@ -272,7 +271,7 @@ export function parseLegalChatResponse(value: unknown, context?: {
   const guidanceCoverage = requirements.length && context.synthesisPart !== "findings"
     ? answerCoverageSchema(requirements).parse(record.guidanceCoverage) : null;
   const actionCount = Array.isArray(record.actionPlan) ? record.actionPlan.length : 0;
-  if (actionCount > MAX_ACTION_STEPS) throw new TypeError("ANSWER_ACTION_LIMIT_EXCEEDED");
+  if (actionCount > MAX_LEGAL_ACTION_STEPS) throw new TypeError("ANSWER_ACTION_LIMIT_EXCEEDED");
   if (guidanceCoverage && Object.values(guidanceCoverage).some(indices => indices.some(index => index >= actionCount))) {
     throw new TypeError("ANSWER_COVERAGE_ACTION_UNAVAILABLE");
   }
