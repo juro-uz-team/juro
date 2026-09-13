@@ -3,7 +3,7 @@
 import { ExternalLink } from "lucide-react";
 import { lazy, Suspense, useId, type ReactNode } from "react";
 import { deriveLegalEvidenceMode } from "../../lib/ai/legal-evidence-mode";
-import { questionInterpretationFailureText, officialResearchFailureText, type LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
+import { questionInterpretationFailureText, officialResearchFailureText, answerVerificationFailureText, type LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 const SafeMarkdown = lazy(() => import("./SafeMarkdown").then((module) => ({ default: module.SafeMarkdown })));
@@ -245,6 +245,7 @@ export function LegalAnswerView({
   if (result.responseKind === "clarification_required") {
     const interpretationFailed = result.failureReason === "question_interpretation_unavailable";
     const researchFailed = result.failureReason === "official_research_unavailable";
+    const verificationFailed = result.failureReason === "answer_verification_unavailable";
     return <article className={`${rootClass} legal-answer--insufficient`} data-answer-kind="insufficient-evidence">
       {internetNotice}
       <p className="legal-answer__authority">{copy.authority.none}</p>
@@ -252,13 +253,14 @@ export function LegalAnswerView({
         <span>{copy.checked}</span>
         <h2>{copy.insufficient}</h2>
         <Markdown result={result} locale={locale}>{interpretationFailed ? questionInterpretationFailureText(locale)
-          : researchFailed ? officialResearchFailureText(locale) : result.answer}</Markdown>
+          : researchFailed ? officialResearchFailureText(locale)
+          : verificationFailed ? answerVerificationFailureText(locale) : result.answer}</Markdown>
       </header>
-      <section className="legal-answer__checked" aria-labelledby={`${id}-checked`}>
+      {!verificationFailed && <section className="legal-answer__checked" aria-labelledby={`${id}-checked`}>
         <h3 id={`${id}-checked`}>{copy.checked}</h3>
         <p>{copy.checkedBody}</p>
         {!interpretationFailed && !researchFailed && <p>{copy.missing}</p>}
-      </section>
+      </section>}
       {result.confirmedFindings.length > 0 && <Section id={`${id}-found`} title={copy.law}>
         {result.confirmedFindings.map((finding, index) => <div className="legal-answer__finding" key={index}>
           <h3>{finding.title}</h3>

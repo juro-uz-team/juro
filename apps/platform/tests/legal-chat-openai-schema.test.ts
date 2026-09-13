@@ -64,6 +64,20 @@ test("only server-owned planning failure survives persistence and freshness reco
   assert.deepEqual(restored.clarificationQuestions, []);
 });
 
+test("answer verification failure is server-owned and yields to a later source-freshness failure", () => {
+  const context = {locale: "en" as const, answerMode: "short" as const, reasoningMode: "fast" as const,
+    legalDatabaseAsOf: "2026-09-14", sources: []};
+  const proposed = {responseKind: "clarification_required", summary: "Verification did not finish.",
+    confirmedFindings: [], clarificationQuestions: [], risks: [], actionPlan: [], deadlines: [],
+    urgency: "normal", suggestedDocument: null, suggestLawyer: false, failureReason: "answer_verification_unavailable"};
+  const parsed = parseLegalChatResponse(proposed, context);
+  assert.equal(parsed.failureReason, undefined);
+  const stored = parseLegalChatResponse(JSON.parse(JSON.stringify({...parsed, failureReason: proposed.failureReason})));
+  const current = legalDatabaseFreshnessFromAsOf("2026-09-14T00:00:00Z", new Date("2026-09-14T01:00:00Z"));
+  assert.equal(enforceLegalDatabaseFreshness(stored, current, context).failureReason, proposed.failureReason);
+  assert.equal(enforceLegalDatabaseFreshness(stored, legalDatabaseFreshnessFromAsOf(""), context).failureReason, undefined);
+});
+
 test("findings and guidance have disjoint provider contracts and restore only their assigned sections", () => {
   const context = {locale: "ru" as const, answerMode: "short" as const, reasoningMode: "fast" as const,
     legalDatabaseAsOf: "2026-09-11", sources: [{id: "verified-evidence"}]};

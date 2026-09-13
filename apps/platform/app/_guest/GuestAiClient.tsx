@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { TurnstileWidget } from "../_auth/TurnstileWidget";
 import { LegalAnswerView, type LegalAnswerViewResult } from "../_platform/LegalAnswerView";
 import { aiText } from "../../lib/ai/localization";
+import { answerVerificationFailureText } from "../../lib/ai/legal-answer-failure";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 type GuestResult = LegalAnswerViewResult & {
@@ -140,7 +141,8 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
       setQuestion("");
       setTurnstileToken("");
       setMessage(body.result?.responseKind === "clarification_required"
-        ? text("Нужно уточнить несколько фактов. Гостевой ответ пока не использован.", "Bir nechta faktni aniqlashtirish kerak. Mehmon javobi hali ishlatilmadi.", "A few facts need clarification. Your guest answer has not been used yet.")
+        ? body.result.failureReason === "answer_verification_unavailable" ? answerVerificationFailureText(locale)
+          : text("Нужно уточнить несколько фактов. Гостевой ответ пока не использован.", "Bir nechta faktni aniqlashtirish kerak. Mehmon javobi hali ishlatilmadi.", "A few facts need clarification. Your guest answer has not been used yet.")
         : text("Ответ получен. Для продолжения сохраните работу в аккаунте.", "Javob olindi. Davom etish uchun ishni akkauntda saqlang.", "Answer ready. Save your work in an account to continue."));
       setState("ready");
     } catch (error) {

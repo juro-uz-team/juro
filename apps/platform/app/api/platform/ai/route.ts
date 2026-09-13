@@ -4,7 +4,7 @@ import { getPublishedDocuments } from "../../../../lib/document-builder/registry
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import { AiUnavailableError, type AiProviderAttemptObservation } from "../../../../lib/document-builder/ai/openai";
 import {createRuntimeExecutionObserver} from "../../../../lib/ai/runtime-execution-observation";
-import {legalResearchFailureReason} from "../../../../lib/ai/legal-answer-failure";
+import {resolveLegalAnswerFailureReason} from "../../../../lib/ai/legal-answer-failure";
 import {citationPreview} from "../../../../lib/legal/citation-preview";
 import { aiProviderStatus, legalAiProvider, type LegalAiProgress, type LegalAiRunOptions } from "../../../../lib/ai/provider";
 import {
@@ -1220,7 +1220,7 @@ async function executePostWithinBudget(
       sourcesRetrievedAt: retrieval.sourcesRetrievedAt,
       sourceValidationStatus: retrieval.sourceValidationStatus,
       ...(boundedResult.responseKind === "clarification_required"
-        ? {failureReason: legalResearchFailureReason(retrieval.errors)} : {}),
+        ? {failureReason: resolveLegalAnswerFailureReason(boundedResult.failureReason, retrieval.errors)} : {}),
       coverageStatus: boundedResult.coverageGaps?.length && coverageStatus === "good_coverage"
         ? "partial_coverage" as const : coverageStatus,
     };

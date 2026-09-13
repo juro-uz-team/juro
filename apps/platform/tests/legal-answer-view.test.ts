@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {retrieveCorpusAwareLegalSources} from "../lib/legal-corpus/chat-retrieval";
 import {buildVerifiedSourceOnlyFallback} from "../lib/ai/legal-ai-gateway";
-import {legalResearchFailureReason} from "../lib/ai/legal-answer-failure";
+import {legalResearchFailureReason, resolveLegalAnswerFailureReason} from "../lib/ai/legal-answer-failure";
 import {legalDatabaseFreshnessFromAsOf} from "../lib/legal/verified-retrieval";
 
 import {
@@ -217,6 +217,25 @@ test("a completed answer does not display earlier research failure diagnostics a
     const html = renderToStaticMarkup(createElement(LegalAnswerView, {result: JSON.parse(JSON.stringify(value)), locale}));
     assert.doesNotMatch(html, /data-answer-kind="insufficient-evidence"/u);
     assert.doesNotMatch(html, /не означает отсутствия применимых норм|tegishli normalar mavjud emasligini anglatmaydi|does not mean that no applicable law exists/u);
+  }
+});
+
+for (const researchErrors of [[], [{code: "INSUFFICIENT_INDEXED_COVERAGE"}], [{code: "LEGAL_SOURCE_SEARCH_TIMEOUT"}]])
+test(`unavailable answer verification survives research finalization and serialization: ${JSON.stringify(researchErrors)}`, () => {
+  for (const locale of ["ru", "uz", "en"] as const) {
+    const value = result({responseKind: "clarification_required", failureReason: "answer_verification_unavailable",
+      answer: "A relevant source could not be retrieved", clarificationQuestions: [], sources: [], confirmedFindings: []});
+    const finalized = {...value, failureReason: resolveLegalAnswerFailureReason(value.failureReason, researchErrors)};
+    const html = renderToStaticMarkup(createElement(LegalAnswerView, {result: JSON.parse(JSON.stringify(finalized)), locale}));
+    if (researchErrors[0]?.code === "LEGAL_SOURCE_SEARCH_TIMEOUT") {
+      assert.equal(finalized.failureReason, "official_research_unavailable");
+      assert.doesNotMatch(html, /Проверка правового ответа временно недоступна|Huquqiy javobni tekshirish vaqtincha mavjud emas|Legal answer verification is temporarily unavailable/u);
+      continue;
+    }
+    assert.match(html, {ru: /Проверка правового ответа временно недоступна/u,
+      uz: /Huquqiy javobni tekshirish vaqtincha mavjud emas/u,
+      en: /Legal answer verification is temporarily unavailable/u}[locale]);
+    assert.doesNotMatch(html, /A relevant source could not be retrieved|Нужны дополнительные факты|Qo‘shimcha faktlar|Additional facts|The available evidence is insufficient|Доступных подтверждений недостаточно|Mavjud tasdiqlar/u);
   }
 });
 

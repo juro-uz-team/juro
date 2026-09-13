@@ -151,7 +151,7 @@ export const legalChatResponseSchema = z.object({
   coverageStatus: z.enum(["good_coverage", "partial_coverage", "weak_coverage", "no_coverage"]).optional(),
   referenceNotes: z.array(legalReferenceNoteSchema).max(8).optional(),
   coverageGaps: z.array(z.string().min(1).max(1_000)).max(240).optional(),
-  failureReason: z.enum(["question_interpretation_unavailable", "official_research_unavailable"]).optional(),
+  failureReason: z.enum(["question_interpretation_unavailable", "official_research_unavailable", "answer_verification_unavailable"]).optional(),
 }).strict();
 
 export type LegalChatResponse = z.infer<typeof legalChatResponseSchema>;
@@ -412,6 +412,11 @@ export function enforceLegalDatabaseFreshness(
       ...forceClarificationWithoutVerifiedSources(result, { ...options, legalDatabaseAsOf: result.legalDatabaseAsOf }),
       summary: answer, answer, clarificationQuestions: [], conditionalBranches: [], coverageGaps: [],
     };
+  }
+  // A later source-freshness failure takes precedence over the earlier
+  // unavailable answer check; do not mask its explanation in the renderer.
+  if (freshness.status !== "fresh" && result.failureReason === "answer_verification_unavailable") {
+    result = {...result, failureReason: undefined};
   }
   if (freshness.status === "unavailable") {
     const nonLegislativeFactsOnly = result.sources.length > 0

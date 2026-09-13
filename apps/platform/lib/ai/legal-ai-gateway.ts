@@ -4,6 +4,7 @@ import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps}
 import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
+import {answerVerificationFailureText} from "./legal-answer-failure";
 
 /**
  * Claim/source filtering and coverage checks adapt the grounding concepts in
@@ -1176,6 +1177,15 @@ export function validateLegalGatewayAnswer(input: {
     const span = firstSpanBySource.get(sourceId);
     return source && span ? [sourceMetadata(source, span)] : [];
   });
+  if (input.run.findingAssessmentUnavailable) {
+    // No published citation is different from no retrieved evidence. A failed
+    // answer check cannot diagnose missing sources or missing user facts.
+    safeResult.failureReason = "answer_verification_unavailable";
+    safeResult.summary = safeResult.answer = answerVerificationFailureText(input.locale);
+    safeResult.clarificationQuestions = [];
+  } else if (safeResult.failureReason === "answer_verification_unavailable") {
+    delete safeResult.failureReason;
+  }
   const parsedAnswer = legalGatewayAnswerSchema.safeParse({
     answer: safeResult.answer,
     claims: validated,

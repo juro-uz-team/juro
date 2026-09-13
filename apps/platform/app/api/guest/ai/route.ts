@@ -25,7 +25,7 @@ import {
   parseLegalChatResponse,
 } from "../../../../lib/ai/legal-chat-schema";
 import { createLegalAiGateway } from "../../../../lib/ai/legal-ai-gateway";
-import { legalResearchFailureReason } from "../../../../lib/ai/legal-answer-failure";
+import { resolveLegalAnswerFailureReason } from "../../../../lib/ai/legal-answer-failure";
 import {
   legalDatabaseFreshnessFromAsOf,
 } from "../../../../lib/legal/verified-retrieval";
@@ -753,7 +753,7 @@ export async function POST(request: Request): Promise<Response> {
         sourcesRetrievedAt: retrieval.sourcesRetrievedAt,
         sourceValidationStatus: retrieval.sourceValidationStatus,
         ...(validated.run.data.responseKind === "clarification_required"
-          ? {failureReason: legalResearchFailureReason(retrieval.errors)} : {}),
+          ? {failureReason: resolveLegalAnswerFailureReason(validated.run.data.failureReason, retrieval.errors)} : {}),
         coverageStatus: validated.run.data.coverageGaps?.length && retrieval.coverageStatus === "good_coverage"
           ? "partial_coverage" as const : retrieval.coverageStatus,
       }, retrieval.freshness, {

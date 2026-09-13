@@ -11,6 +11,7 @@ import { resolveVoiceModeState, type VoiceModeState, type VoiceRecorderPhase, ty
 import { formatPlatformDate, formatPlatformLongDate, formatPlatformMonth } from "../../lib/platform/date-time";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { aiText } from "../../lib/ai/localization";
+import type { LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import { uzbekistanCalendarDate } from "../../lib/legal/applicability-date";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 import { AiSelect } from "./AiSelect";
@@ -88,7 +89,7 @@ type AiPreliminary = {
   };
 };
 type LegalResult = {
-  failureReason?: "question_interpretation_unavailable";
+  failureReason?: LegalAnswerFailureReason;
   responseKind: "answer" | "clarification_required";
   summary: string;
   answer: string;

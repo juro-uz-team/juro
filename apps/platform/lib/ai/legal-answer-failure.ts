@@ -1,11 +1,24 @@
 import { aiText, type AiOutputLocale } from "./localization";
 
-export type LegalAnswerFailureReason = "question_interpretation_unavailable" | "official_research_unavailable";
+export type LegalAnswerFailureReason = "question_interpretation_unavailable" | "official_research_unavailable" | "answer_verification_unavailable";
+
+export function answerVerificationFailureText(locale: AiOutputLocale): string {
+  return aiText(locale,
+    "Проверка правового ответа временно недоступна. Это не означает отсутствия применимых норм. Полный правовой вывод пока не подтверждён. Попробуйте отправить вопрос ещё раз; лимит ответа не списан.",
+    "Huquqiy javobni tekshirish vaqtincha mavjud emas. Bu tegishli normalar mavjud emasligini anglatmaydi. To‘liq huquqiy xulosa hali tasdiqlanmadi. Savolni qayta yuboring; javob limiti sarflanmadi.",
+    "Legal answer verification is temporarily unavailable. This does not mean that no applicable law exists. A complete legal conclusion has not yet been verified. Please retry the question; your answer allowance was not used.");
+}
 
 export function legalResearchFailureReason(errors: readonly {code: string}[]): LegalAnswerFailureReason | undefined {
   if (errors.some(error => error.code === "QUESTION_INTERPRETATION_UNAVAILABLE")) return "question_interpretation_unavailable";
   return errors.some(error => /^(?:LEGAL_SOURCE_(?:SEARCH_TIMEOUT|SEARCH_UNAVAILABLE|UPSTREAM_UNAVAILABLE|CURRENT_STATUS_UNAVAILABLE|TIMEOUT|HTTP_\d+)|TARGET_RETRIEVAL_(?:TIMEOUT|FAILED))$/u.test(error.code))
     ? "official_research_unavailable" : undefined;
+}
+
+/** Retain a known answer failure unless research supplies a more specific cause. */
+export function resolveLegalAnswerFailureReason(previous: LegalAnswerFailureReason | undefined,
+  researchErrors: readonly {code: string}[]): LegalAnswerFailureReason | undefined {
+  return legalResearchFailureReason(researchErrors) ?? previous;
 }
 
 export function officialResearchFailureText(locale: AiOutputLocale): string {

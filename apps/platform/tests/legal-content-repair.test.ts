@@ -99,6 +99,12 @@ test(`${reasoningMode} finding assessment timeout quarantines the draft before $
   if (!repairAssessed) {
     assert.equal(checked.coverageDiagnostics.writerOmissionCount, 0);
     assert.equal(checked.coverageDiagnostics.validatorRejectionCount, 0);
+    assert.equal(checked.run.data.failureReason, "answer_verification_unavailable");
+    assert.match(checked.answer.answer, /answer verification is temporarily unavailable/u);
+    assert.doesNotMatch(checked.answer.answer, /could not be retrieved|requires more facts/u);
+    assert.deepEqual(checked.run.data.clarificationQuestions, [], "verification failure does not invent a request for facts");
+  } else {
+    assert.notEqual(checked.run.data.failureReason, "answer_verification_unavailable", "a completed repair assessment replaces the current failure reason");
   }
   assert.deepEqual(checked.run.initialFindingAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
   assert.deepEqual(checked.run.data.confirmedFindings.map(item => item.explanation), repairOutcome === "complete"
