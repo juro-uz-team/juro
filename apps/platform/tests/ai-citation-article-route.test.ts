@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+import {fileURLToPath} from "node:url";
+
+test("the authenticated citation route executes pinned evidence and fragment fallbacks", async () => {
+  await promisify(execFile)(process.execPath, ["--experimental-test-module-mocks",
+    "--import", new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url).href,
+    "--experimental-loader", new URL("../scripts/cloudflare-workers-loader.mjs", import.meta.url).href,
+    fileURLToPath(new URL("./fixtures/citation-route-runtime.mts", import.meta.url))]);
+});
 
 test("citation endpoint is private, ownership-scoped and revalidates Lex or private document evidence", async () => {
   const route = await readFile(
