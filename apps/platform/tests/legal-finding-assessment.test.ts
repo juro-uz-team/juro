@@ -60,6 +60,27 @@ for (const summary of ["An unsupported 999 day period applies.", sources[0]!.spa
   assert.equal(result.run.data.summary, sources.map(source => source.spans![0]!.text).join(" "));
 });
 
+for (const scopeComplete of [true, false]) test(`broad-scope Main Point approval requires its independent scope decision: ${scopeComplete}`, () => {
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    priority: "core", scopeKind: "general", sourceIds: finding.sourceIds}]};
+  const data = parseLegalChatResponse({responseKind: "answer", summary: "Mediation suspends commission filing periods.",
+    summarySourceIds: finding.sourceIds, coverage: {r1: [0]}, guidanceCoverage: {r1: [0]},
+    confirmedFindings: [finding], actionPlan: [{title: "Account for mediation", description: finding.explanation,
+      sourceIds: finding.sourceIds}], risks: [], deadlines: [], clarificationQuestions: [], urgency: "normal",
+    suggestedDocument: null, suggestLawyer: false}, request);
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null,
+    findingAssessments: [parseLegalFindingAssessment({f1: finding.sourceIds, scopeCoverage: {r1: [0]},
+      scopeGoverning: {r1: [0]}, scopeGaps: {r1: []},
+      mainPoint: {supported: true, findingIndexes: [0], scopeCoverage: {r1: scopeComplete}}}, request, data.confirmedFindings, data)],
+    guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0], r1: [0]}, request, data.actionPlan)]};
+  const result = validateLegalGatewayAnswer({...request, result: data, run});
+  assert.equal(result.run.data.responseKind, "answer");
+  assert.equal(result.run.data.summary, scopeComplete ? data.summary : finding.explanation,
+    "the same lexically grounded text is retained only with an explicit independent scope approval");
+  assert.deepEqual(result.run.data.summarySourceIds, finding.sourceIds);
+});
+
 test("a finding governs only the independently assessed question scope, regardless of its global label", () => {
   const request: LegalChatRequest = {...input, question: "How does mediation affect filing, and what are the ordinary filing periods?",
     coverageRequirements: [
