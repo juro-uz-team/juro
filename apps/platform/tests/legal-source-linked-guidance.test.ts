@@ -4,7 +4,7 @@ import {env} from "cloudflare:workers";
 import {createLegalAiGateway} from "../lib/ai/legal-ai-gateway";
 import {legalAiProvider, type LegalChatRequest, type LegalSourceContext} from "../lib/ai/provider";
 import {legalChatJsonSchemaForCoverage, parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
-import {legalSourcePassages} from "../lib/ai/legal-source-passages";
+import {legalSourcePassageView, legalSourcePassages} from "../lib/ai/legal-source-passages";
 
 const rule = "The buyer must apply within 6 days after receiving a copy of the notice. The period is suspended during mediation.";
 const source: LegalSourceContext = {id: "official:registry:1", actTitle: "Registry procedure", article: "1",
@@ -35,7 +35,10 @@ test("the optional passage view respects the complete evidence context bound", (
   const within = {...source, spans: [{...source.spans![0]!, text: "x".repeat(16_000)}]};
   assert.equal(legalSourcePassages([within], "en")[0]!.text.length, 16_000);
   const oversized = {...source, spans: [{...source.spans![0]!, text: "x".repeat(16_001)}]};
-  assert.deepEqual(legalSourcePassages([oversized], "en"), []);
+  assert.equal(legalSourcePassages([oversized], "en")[0]!.text.length, 16_001);
+  assert.equal("text" in legalSourcePassageView([oversized], legalSourcePassages([oversized], "en"))[0]!, false);
+  const unavailable = {...source, spans: [{...source.spans![0]!, text: "x".repeat(32_001)}]};
+  assert.deepEqual(legalSourcePassages([unavailable], "en"), []);
   assert.equal(oversized.spans[0]!.text.length, 16_001, "complete original evidence remains intact");
 });
 
@@ -150,10 +153,12 @@ test("passage composition rejects unavailable evidence, missing instructions and
     sources: [{...source, locale: "uz-Cyrl", spans: [{...source.spans![0]!, text: "Қоида қўлланади."}]}]}));
 });
 
-for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} practical instructions retain exact selected source conditions through independent assessment and grounding`, async context => {
+for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} ${largePacket ? "reference-only" : "full-text"} practical instructions retain exact selected source conditions through independent assessment and grounding`, async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
   context.after(() => {env.OPENAI_API_KEY = previous;});
+  const fullText = rule + (largePacket ? " " + Array.from({length: 12}, (_, index) => `Other procedure ${index} requires ${"additional documentation ".repeat(65)}and review.`).join(" ") : "");
+  const requestInput = {...input, reasoningMode, sources: [{...source, spans: [{...source.spans![0]!, text: fullText}]}]};
   let independentlyAssessed = false;
   let repairRequested = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
@@ -166,14 +171,19 @@ for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} pr
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {
       independentlyAssessed = true;
       assert.equal(payload.actions[0].description, "File the application with the registry.\n\n" +
-        "The buyer must apply within 6 days after receiving a copy of the notice. \n\nThe period is suspended during mediation.");
+        "The buyer must apply within 6 days after receiving a copy of the notice. \n\nThe period is suspended during mediation." + (largePacket ? " " : ""));
       assert.deepEqual(payload.actions[0].sourceIds, [source.id]);
       data = {supportedActions: [0], r1: [0], sourceSupport: {a0: [source.id]}, scopeGaps: {r1: []}};
     } else {
       assert.equal(Boolean(payload.contentRepair), repairRequested);
       if (request.text.format.schema.properties.actionPlan) {
-        assert.equal(payload.verifiedPassages.map((passage: {text: string}) => passage.text).join(""), rule);
-        assert.deepEqual(request.text.format.schema.properties.actionPlan.items.properties.sourcePassageIds.items.enum,
+        assert.equal(payload.verifiedSources[0].sourceSpans[0].text, fullText);
+        assert.ok(payload.verifiedPassages.length >= 2);
+        if (largePacket) {
+          assert.ok(payload.verifiedPassages.every((passage: object) => !("text" in passage)));
+          assert.deepEqual(payload.verifiedPassages.slice(0, 2).map((passage: {sentenceNumber: number}) => passage.sentenceNumber), [1, 2]);
+        } else assert.equal(payload.verifiedPassages.map((passage: {text: string}) => passage.text).join(""), rule);
+        assert.deepEqual(request.text.format.schema.properties.actionPlan.items.properties.sourcePassageIds.items.enum.slice(0, 2),
           ["s1-1:p0", "s1-1:p1"]);
         assert.equal(request.text.format.schema.properties.actionPlan.items.properties.retainedFindingIndexes, undefined);
       } else assert.equal(payload.verifiedPassages, undefined, "finding-only generation keeps its existing evidence contract");
@@ -187,7 +197,7 @@ for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} pr
     return Response.json({id: "source-linked", model: request.model,
       output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
   });
-  const result = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer({...input, reasoningMode}, {fallbackEnabled: false});
+  const result = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer(requestInput, {fallbackEnabled: false});
   assert.equal(independentlyAssessed, true);
   assert.equal(result.run.data.responseKind, "answer");
   assert.match(result.run.data.actionPlan[0]!.description, /receiving a copy of the notice/u);
@@ -195,10 +205,10 @@ for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} pr
   assert.equal("sourcePassageIds" in result.run.data.actionPlan[0]!, false, "selection metadata is consumed before persistence");
   repairRequested = true;
   independentlyAssessed = false;
-  const repaired = await legalAiProvider()!.runLegalChat({...input, reasoningMode, contentRepair: {
+  const repaired = await legalAiProvider()!.runLegalChat({...requestInput, contentRepair: {
     unresolved: [{requirementId: "filing", finding: null, guidanceMissing: true}], retained: {...result.run.data, actionPlan: []},
   }});
   assert.equal(independentlyAssessed, true);
-  assert.equal(repaired.data.actionPlan[0]!.description.replace(/\s+/gu, " "), result.run.data.actionPlan[0]!.description.replace(/\s+/gu, " "),
+  assert.equal(repaired.data.actionPlan[0]!.description.replace(/\s+/gu, " ").trim(), result.run.data.actionPlan[0]!.description.replace(/\s+/gu, " ").trim(),
     "repair composes the same source conditions once, without also appending retained findings");
 });
