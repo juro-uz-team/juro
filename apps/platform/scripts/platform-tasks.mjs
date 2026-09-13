@@ -270,6 +270,7 @@ const coreTestFiles = [
   "tests/anthropic-attempt-observability.test.ts",
   "tests/official-research-schedule.test.ts",
   "tests/legal-answer-failure.test.ts",
+  "tests/legal-answer-view.test.ts",
   "tests/citation-preview.test.ts",
   "tests/runtime-execution-observation.test.ts",
   "tests/openai-schema-compatibility.test.ts",
