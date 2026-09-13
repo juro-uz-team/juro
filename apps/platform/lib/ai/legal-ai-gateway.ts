@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
-import {assessedFindingSources} from "./legal-finding-assessment";
+import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
 import {missingReferencedArticles} from "../legal/referenced-article-context";
@@ -461,6 +461,7 @@ function filteredLegacyResult(
   availableDocumentTemplateCodes: ReadonlySet<string>,
   redundantCitations: ReadonlyMap<string, ReadonlySet<string>>,
   actionOrigins: Map<LegalChatResponse["actionPlan"][number], LegalChatResponse["actionPlan"][number]>,
+  findingOrigins: Map<LegalChatResponse["confirmedFindings"][number], LegalChatResponse["confirmedFindings"][number]>,
 ): LegalChatResponse {
   const retainedSources = (title: string, explanation: string, sourceIds: readonly string[]) =>
     sourceIds.filter(id => !redundantCitations.get(nonRepeatingLegalText(title, explanation))?.has(id));
@@ -474,12 +475,14 @@ function filteredLegacyResult(
     ...result,
     confirmedFindings: result.confirmedFindings.filter((finding) =>
       supported(finding.title, finding.explanation, finding.sourceIds),
-    ).map((finding) => ({
-      ...finding,
-      sourceIds: retainedSources(finding.title, finding.explanation, finding.sourceIds),
-      title: plainGroundedText(finding.title),
-      explanation: plainGroundedText(finding.explanation),
-    })),
+    ).map((finding) => {
+      const retained = {...finding, sourceIds: retainedSources(finding.title, finding.explanation, finding.sourceIds),
+        title: plainGroundedText(finding.title), explanation: plainGroundedText(finding.explanation)};
+      // Formatting preserves the assessed proposition. Dropping an assessed
+      // citation does not preserve the proof of its complete support set.
+      if (retained.sourceIds.length === finding.sourceIds.length) findingOrigins.set(retained, finding);
+      return retained;
+    }),
     conditionalBranches: (result.conditionalBranches ?? []).filter((branch) =>
       supported(branch.condition, branch.outcome, branch.sourceIds),
     ).map((branch) => ({
@@ -1012,6 +1015,7 @@ export function validateLegalGatewayAnswer(input: {
     if (source && span && !firstSpanBySource.has(source.id)) firstSpanBySource.set(source.id, span);
   }
   const actionOrigins = new Map<LegalChatResponse["actionPlan"][number], LegalChatResponse["actionPlan"][number]>();
+  const findingOrigins = new Map<LegalChatResponse["confirmedFindings"][number], LegalChatResponse["confirmedFindings"][number]>();
   const filtered = filteredLegacyResult(
     assessedResult,
     publishable,
@@ -1019,6 +1023,7 @@ export function validateLegalGatewayAnswer(input: {
     new Set(input.availableDocumentTemplateCodes ?? []),
     redundantCitations,
     actionOrigins,
+    findingOrigins,
   );
   const visibleProviderSourceIds = new Set([
     ...filtered.confirmedFindings.flatMap((finding) => finding.sourceIds),
@@ -1099,7 +1104,9 @@ export function validateLegalGatewayAnswer(input: {
   groundedResult.actionPlan = filtered.actionPlan.map(action => ({...action,
     requirementIds: guidanceCoverage.get(actionOrigins.get(action)!) ?? []}));
   const covers = (findings: LegalChatResponse["confirmedFindings"], requirement: typeof requirements[number]) =>
-    findings.some(finding => finding.requirementIds?.includes(requirement.id)
+    assessedFindingCoverage(input, findings.map(finding => findingOrigins.get(finding) ?? finding),
+      input.run.findingAssessments ?? []).has(requirement.id)
+    && findings.some(finding => finding.requirementIds?.includes(requirement.id)
       && (requiredCoverageAnswerRole(requirement) === null
         || finding.answerRole === requiredCoverageAnswerRole(requirement))
       && (requirement.sourceIds.length === 0
@@ -1374,6 +1381,8 @@ class DefaultLegalAiGateway implements LegalAiGateway {
           unresolved, retained: structuredClone(validated.run.data),
           materialGaps: assessedGuidanceGaps({...input, assessments: run.guidanceAssessments ?? []})
             .filter(gap => unresolved.some(scope => scope.requirementId === gap.requirementId && scope.guidanceMissing)),
+          findingGaps: assessedFindingGaps(input, run.findingAssessments ?? [])
+            .filter(gap => unresolved.some(scope => scope.requirementId === gap.requirementId && scope.finding)),
         }}, {...options, onPartialLegalFinding: undefined});
         completedRepair = repaired;
         if (repaired.provider === run.provider && repaired.model === run.model) {

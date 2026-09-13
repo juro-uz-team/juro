@@ -4,6 +4,7 @@ import {env} from "cloudflare:workers";
 import {assessLegalGuidance, assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps, parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
+import {parseLegalFindingAssessment} from "../lib/ai/legal-finding-assessment";
 import type {LegalChatRequest, LegalAiRunResult, LegalSourceContext} from "../lib/ai/provider";
 import {createAiExecutionBudget} from "../lib/ai/execution-budget";
 import {AiUnavailableError} from "../lib/document-builder/ai/openai";
@@ -28,7 +29,9 @@ const data = parseLegalChatResponse({responseKind: "answer", summary: buyer, sum
   clarificationQuestions: [], risks: [], deadlines: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false},
 {...input, coverageRequirements: []});
 const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "generated",
-  attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null};
+  attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null,
+  findingAssessments: [parseLegalFindingAssessment({f1: [source.id], f2: [source.id],
+    scopeCoverage: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, input, data.confirmedFindings)]};
 
 test("expired assessment window preserves candidates without inventing a dispatched attempt", async () => {
   let attempts = 0;
@@ -231,7 +234,10 @@ test("gateway formatting and removal of a redundant citation preserve an indepen
     {title: "Обязанность продавца", description: seller, sourceIds: [source.id]},
   ];
   const answer = {...data, actionPlan: actions};
-  const assessed = {...run, data: answer, guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0, 1], r1: [0], r2: [1]}, request, actions)]};
+  const assessed = {...run, data: answer,
+    findingAssessments: [parseLegalFindingAssessment({f1: [source.id], f2: [source.id],
+      scopeCoverage: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, request, answer.confirmedFindings)],
+    guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0, 1], r1: [0], r2: [1]}, request, actions)]};
   const checked = validateLegalGatewayAnswer({...request, result: answer, run: assessed});
   assert.equal(checked.run.data.responseKind, "answer");
   assert.deepEqual(checked.run.data.actionPlan[0]!.sourceIds, [source.id]);

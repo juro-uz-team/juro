@@ -4,7 +4,7 @@ import {callAnthropicStructured} from "../document-builder/ai/anthropic";
 import {questionScopeSelection} from "../legal/question-interpretation";
 import type {LegalAiRunOptions, LegalAiRunResult, LegalChatRequest, LegalSourceContext} from "./provider";
 import type {LegalChatResponse} from "./legal-chat-schema";
-import type {LegalMaterialGuidanceGap} from "./legal-content-repair";
+import type {LegalMaterialContentGap} from "./legal-content-repair";
 
 type AssessmentInput = {
   question?: string;
@@ -30,12 +30,12 @@ export type LegalGuidanceAssessment = {
   evidenceIdentity: string;
   coverage: Array<{requirementId: string; actionIdentities: string[]}>;
   actions: Array<{identity: string; supported: boolean}>;
-  materialGaps?: LegalMaterialGuidanceGap[];
+  materialGaps?: LegalMaterialContentGap[];
 };
 
 /** A routing hint from an independent assessment, never answer text or a new
  * source. Only exact quotations from this request's official spans survive. */
-export function assessedGuidanceGaps(input: AssessmentInput & {assessments: readonly LegalGuidanceAssessment[]}): LegalMaterialGuidanceGap[] {
+export function assessedGuidanceGaps(input: AssessmentInput & {assessments: readonly LegalGuidanceAssessment[]}): LegalMaterialContentGap[] {
   const identity = evidenceIdentity(input);
   const requirements = new Set(input.coverageRequirements?.map(scope => scope.id));
   const gaps = input.assessments.filter(assessment => assessment.evidenceIdentity === identity)

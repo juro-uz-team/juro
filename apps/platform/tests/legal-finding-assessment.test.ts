@@ -18,6 +18,30 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
 
+test("a supported governing finding cannot hide a missing material rule in the same scope", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    scopeKind: "general", priority: "core", sourceIds: ["commission", "court"]}]};
+  const data = parseLegalChatResponse({responseKind: "answer", summary: finding.explanation,
+    coverage: {r1: [0]}, guidanceCoverage: {r1: []},
+    confirmedFindings: [finding], summarySourceIds: finding.sourceIds, actionPlan: [], clarificationQuestions: [],
+    risks: [], deadlines: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null};
+  context.mock.method(globalThis, "fetch", async () => Response.json({id: "scope-assessment", model: run.model,
+    output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
+      scopeCoverage: {r1: [0]}, scopeGaps: {r1: [{sourceId: "commission", quotation: "nonexistent quotation", reason: "Missing ordinary rule"}]}})}]}],
+    usage: {input_tokens: 100, output_tokens: 10}}));
+  const assessed = await assessLegalFindings(request, run, {}, Date.now() + 12_000);
+  const validated = validateLegalGatewayAnswer({...request, result: assessed.data, run: assessed});
+  assert.equal(validated.run.data.confirmedFindings.length, 1, "individually supported content survives an incomplete scope");
+  assert.equal(validated.coverageDiagnostics.validatedRequirementCount, 0,
+    "a nonempty gap invalidates completeness even when its quotation cannot be routed to repair");
+  assert.equal(validated.coverageDiagnostics.unresolvedCoverage[0]?.finding, "omitted");
+});
+
 test("a single cited provision cannot bypass independent rejection of a missing exception", async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
@@ -58,6 +82,44 @@ test("finding support binds the original claim, scopes and exact evidence", () =
   assert.equal(check(input, {...finding, sourceIds: ["commission"]}), undefined);
   assert.throws(() => parseLegalFindingAssessment({f1: [2]}, input, [finding]));
   assert.throws(() => parseLegalFindingAssessment({f1: ["another-cited-source"]}, input, [finding]));
+});
+
+test("complete finding coverage survives display formatting but not loss of a selected finding", () => {
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    scopeKind: "general", priority: "core", sourceIds: ["commission", "court"]}]};
+  const findings = sources.map(source => ({title: `**${source.id} mediation**`, explanation: source.spans![0]!.text,
+    sourceIds: [source.id], answerRole: "governing_rule" as const}));
+  const data = parseLegalChatResponse({responseKind: "answer", summary: findings[0]!.explanation,
+    confirmedFindings: findings, coverage: {r1: [0, 1]}, guidanceCoverage: {r1: []}, summarySourceIds: ["commission"],
+    actionPlan: [], clarificationQuestions: [], risks: [], deadlines: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  const assessment = parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
+    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null,
+    findingAssessments: [assessment]};
+  const complete = validateLegalGatewayAnswer({...request, result: data, run});
+  assert.equal(complete.coverageDiagnostics.validatedRequirementCount, 1);
+  const missing = {...data, confirmedFindings: data.confirmedFindings.slice(0, 1)};
+  const incomplete = validateLegalGatewayAnswer({...request, result: missing, run: {...run, data: missing}});
+  assert.equal(incomplete.run.data.confirmedFindings.length, 1);
+  assert.equal(incomplete.coverageDiagnostics.validatedRequirementCount, 0);
+  const unsupported = parseLegalFindingAssessment({f1: ["commission"], f2: [],
+    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
+  const rejected = validateLegalGatewayAnswer({...request, result: data, run: {...run, findingAssessments: [unsupported]}});
+  assert.equal(rejected.run.data.confirmedFindings.length, 1);
+  assert.equal(rejected.coverageDiagnostics.validatedRequirementCount, 0,
+    "scope indexes cannot override an individual support rejection");
+  const stale = validateLegalGatewayAnswer({...request, question: "Which other filing rule applies?", result: data, run});
+  assert.equal(stale.coverageDiagnostics.validatedRequirementCount, 0, "another question cannot reuse the scope proof");
+  const invalidCitation = {...request, sources: sources.map(source => source.id === "court"
+    ? {...source, spans: source.spans!.map(span => ({...span, textSha256: "invalid"}))} : source)};
+  const freshAssessment = parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
+    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, invalidCitation, data.confirmedFindings);
+  const lostCitation = validateLegalGatewayAnswer({...invalidCitation, result: data,
+    run: {...run, findingAssessments: [freshAssessment]}});
+  assert.equal(lostCitation.run.data.confirmedFindings.length, 1);
+  assert.equal(lostCitation.coverageDiagnostics.validatedRequirementCount, 0,
+    "a fresh semantic approval cannot survive a selected citation's validation failure");
 });
 test("an explicit rejection stays distinct from absent assessment and can remove a redundant citation", () => {
   const rejected = parseLegalFindingAssessment({f1: []}, input, [finding]);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { combineCoverageSynthesis } from "../lib/ai/coverage-synthesis";
 import {parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
+import {parseLegalFindingAssessment} from "../lib/ai/legal-finding-assessment";
 
 import {
   buildVerifiedSourceOnlyFallback,
@@ -170,7 +171,9 @@ test("missing support triggers one scoped evidence recovery before the combined 
       summarySourceIds: findings.flatMap(finding => finding.sourceIds), confirmedFindings: findings,
       actionPlan: findings.map(finding => ({title: finding.title, description: finding.explanation,
         sourceIds: finding.sourceIds, requirementIds: finding.requirementIds}))};
-    return {...run, data, guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: data.actionPlan.map((_, index) => index),
+    return {...run, data, findingAssessments: [fixtureFindingAssessment({...request, result: data},
+      {r1: [0], r2: request.contentRepair ? [1] : []})],
+      guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: data.actionPlan.map((_, index) => index),
       r1: [0], r2: request.contentRepair ? [1] : []}, request, data.actionPlan)]};
   }};
   const checked = await createLegalAiGateway(provider).generateGroundedAnswer(input, {fallbackEnabled: false,
@@ -254,6 +257,7 @@ test("validated governing findings permit guidance repair when live evidence has
     const candidate = structuredClone(run);
     candidate.data.confirmedFindings = candidate.data.confirmedFindings.map(finding => ({...finding,
       requirementIds: ["registration"], answerRole: "governing_rule"}));
+    candidate.findingAssessments = [fixtureFindingAssessment({...request, result: candidate.data}, {r1: [0]})];
     if (calls > 1) {
       candidate.data.actionPlan = [{title: "Зарегистрируйте общество", description: "Общество подлежит государственной регистрации в установленном порядке.",
         sourceIds: [source.id], requirementIds: ["registration"]}];
@@ -275,12 +279,20 @@ test("validated governing findings permit guidance repair when live evidence has
 // These grounding fixtures explicitly assume the separate semantic assessor
 // approved their stated scopes. Cross-scope rejection is exercised with an
 // independent response in legal-guidance-assessment.test.ts.
-function validateWithAssessedFixtureGuidance(input: Parameters<typeof validateLegalGatewayAnswer>[0]) {
+function fixtureFindingAssessment(input: Pick<Parameters<typeof validateLegalGatewayAnswer>[0],
+  "question" | "sources" | "coverageRequirements" | "result">, scopeCoverage: Record<string, number[]>) {
+  return parseLegalFindingAssessment({...Object.fromEntries(input.result.confirmedFindings.map((finding, index) =>
+    [`f${index + 1}`, finding.sourceIds])), scopeCoverage,
+    scopeGaps: Object.fromEntries(Object.keys(scopeCoverage).map(scope => [scope, []]))}, input, input.result.confirmedFindings);
+}
+
+function validateWithAssessedFixtureGuidance(input: Parameters<typeof validateLegalGatewayAnswer>[0], findingCoverage: Record<string, number[]>) {
   const coverage = Object.fromEntries((input.coverageRequirements ?? []).map((requirement, index) => [
     `r${index + 1}`, input.result.actionPlan.flatMap((action, actionIndex) =>
       action.requirementIds?.includes(requirement.id) ? [actionIndex] : []),
   ]));
   return validateLegalGatewayAnswer({...input, run: {...input.run,
+    findingAssessments: [fixtureFindingAssessment(input, findingCoverage)],
     guidanceAssessments: [parseLegalGuidanceAssessment({...coverage,
       supportedActions: [...new Set(Object.values(coverage).flat())]}, input, input.result.actionPlan)]}});
 }
@@ -375,7 +387,7 @@ test("a narrow but grounded summary cannot displace another independently valida
     locale: "ru", answerMode: "detailed", reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt,
     coverageRequirements: [{id: "registration", statement: "Registration", priority: "core", scopeKind: "forum", sourceIds: [source.id]},
       {id: "commission", statement: "Commission filing", priority: "core", scopeKind: "forum", sourceIds: [second.id]}],
-  }).run.data;
+  }, {r1: [0], r2: [1]}).run.data;
   assert.equal(validated.summary, `${first.explanation} ${secondText}`);
   assert.deepEqual(validated.summarySourceIds, [source.id, second.id]);
 });
@@ -396,7 +408,7 @@ for (const variant of ["ordinary", "oversized", "identical_text"] as const) test
       sourceIds: [source.id, exception.id], requirementIds: ["registration"]}]};
   const checked = validateWithAssessedFixtureGuidance({result: candidate, run: {...run, data: candidate}, sources: [source, exception],
     locale: "ru", answerMode: "detailed", reasoningMode: "deep", legalDatabaseAsOf: source.verifiedAt,
-    coverageRequirements: [{id: "registration", statement: "Государственная регистрация", priority: "core", scopeKind: "general", sourceIds: [source.id, exception.id]}]});
+    coverageRequirements: [{id: "registration", statement: "Государственная регистрация", priority: "core", scopeKind: "general", sourceIds: [source.id, exception.id]}]}, {r1: [0, 1]});
   assert.equal(checked.run.data.confirmedFindings.length, 2);
   if (oversized) {
     assert.equal(checked.run.data.responseKind, "clarification_required");
@@ -437,7 +449,7 @@ test("independent requirements remain visibly unresolved when findings disappear
   ]};
   const validated = validateWithAssessedFixtureGuidance({result: answer, run: {...run, data: answer},
     sources: [source], coverageRequirements: requirements, locale: "ru", answerMode: "detailed",
-    reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt});
+    reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt}, {r1: [0], r2: [1]});
   assert.equal(validated.run.data.responseKind, "clarification_required");
   assert.deepEqual(validated.run.data.coverageGaps, ["Срок подачи документов"]);
   assert.equal(validated.run.data.confirmedFindings.length, 1);
@@ -456,7 +468,7 @@ test("a qualification cannot replace the governing rule of an independent core s
       return validateWithAssessedFixtureGuidance({result: answer, run: {...run, data: answer}, sources: [evidence],
         locale: "ru", answerMode: "detailed", reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt,
         coverageRequirements: [{id: "registration", statement: "Государственная регистрация общества",
-          priority: "core", scopeKind, sourceIds: [source.id]}]}).run.data;
+          priority: "core", scopeKind, sourceIds: [source.id]}]}, {r1: findings.length === 2 ? [0, 1] : [0]}).run.data;
     };
     const incomplete = validate([qualification]);
     assert.equal(incomplete.responseKind, "clarification_required", scopeKind);
@@ -493,7 +505,7 @@ test("complementary citations can separately support a finding's rule and qualif
     legalDatabaseAsOf: source.verifiedAt, coverageRequirements: [
       {id: "rule", statement: title, priority: "core", sourceIds: [rule.id]},
       {id: "qualification", statement: explanation, priority: "core", sourceIds: [qualification.id]},
-    ]});
+    ]}, {r1: [0], r2: [0]});
   assert.deepEqual(new Set(validated.run.data.confirmedFindings[0]?.sourceIds), new Set([rule.id, qualification.id]));
   assert.deepEqual(validated.run.data.coverageGaps, []);
   const invented = {...answer, confirmedFindings: [{...answer.confirmedFindings[0]!, explanation: `${explanation} Штраф составляет 999.`}]};
@@ -1714,7 +1726,9 @@ test("gateway drops a follow-up question that asserts a legal premise instead of
 for (const rejected of [false, true]) test('coverage diagnostics distinguish ' + (rejected ? 'validator rejection' : 'writer omission'), () => {
   const requirement = {id: 'registration', statement: 'Registration obligation', priority: 'core' as const, sourceIds: [source.id]};
   const proposed = {...result, confirmedFindings: rejected ? [{title:'Unsupported obligation', explanation:'Общество обязано выплатить 999999 сумов за каждый день.', sourceIds:[source.id], requirementIds:[requirement.id]}] : []};
-  const checked = validateLegalGatewayAnswer({result:proposed, run:{...run,data:proposed}, sources:[source], coverageRequirements:[requirement], locale:'ru', answerMode:'short', reasoningMode:'fast', legalDatabaseAsOf:source.verifiedAt});
+  const context = {result: proposed, sources: [source], coverageRequirements: [requirement]};
+  const checked = validateLegalGatewayAnswer({...context, run:{...run,data:proposed,
+    findingAssessments: [fixtureFindingAssessment(context, {r1: rejected ? [0] : []})]}, locale:'ru', answerMode:'short', reasoningMode:'fast', legalDatabaseAsOf:source.verifiedAt});
   assert.deepEqual(checked.coverageDiagnostics, {requirementCount:1, writerOmissionCount:rejected ? 0 : 1, validatorRejectionCount:rejected ? 1 : 0, validatedRequirementCount:0, proposedFindingCount:rejected ? 1 : 0, validatedFindingCount:0, proposedActionCount:0, validatedActionCount:0,
     validatedGuidanceRequirementCount:0, missingGuidanceRequirementCount:1, completeRequirementCount:0,
     unresolvedCoverage:[{requirementIndex:0, finding:rejected ? "rejected" : "omitted", guidanceMissing:true}]});
@@ -1731,7 +1745,7 @@ test("a governing finding cannot hide absent, rejected or unrelated practical gu
       requirementIds: [requirement.id], answerRole: "governing_rule"}]};
     return validateWithAssessedFixtureGuidance({result: answer, run: {...run, data: answer}, sources: [source],
       coverageRequirements: [requirement], locale: "ru", answerMode: "detailed", reasoningMode: "fast",
-      legalDatabaseAsOf: source.verifiedAt}).run.data;
+      legalDatabaseAsOf: source.verifiedAt}, {r1: [0]}).run.data;
   };
   for (const actions of [[], [{...action, description: "Общество обязано выплатить 999999 сумов за каждый день."}],
     [{...action, requirementIds: ["unrelated"]}], [{...action, sourceIds: ["unknown"]}]]) {
