@@ -162,6 +162,9 @@ export type LegalChatRequest = {
 export type LegalAiRunResult = AiStructuredResult<LegalChatResponse> & {
   guidanceAssessments?: LegalGuidanceAssessment[];
   findingAssessments?: LegalFindingAssessment[];
+  /** Initial finding assessment timed out; all draft publication content was removed. */
+  initialFindingAssessmentFailure?: {code: "PROVIDER_TIMEOUT"};
+  findingAssessmentUnavailable?: true;
   /** Initial assessment failed; retained findings still require gateway validation. */
   initialGuidanceAssessmentFailure?: {code: "PROVIDER_TIMEOUT"};
   repairGuidanceAssessmentFailure?: {code: "PROVIDER_TIMEOUT"};
@@ -473,7 +476,8 @@ class OpenAiLegalProvider implements LegalAiProvider {
     // waste the request budget and trigger an unnecessary fallback when only
     // one model-authored citation selection is malformed.
     const constrained = await assessLegalFindings(input, { ...result, data: mergeRepairedLegalContent(input, constrainedData) }, options, providerDeadlineAt);
-    return part === "findings" ? constrained : assessLegalGuidance(input, constrained, options, providerDeadlineAt);
+    return part === "findings" || constrained.initialFindingAssessmentFailure
+      ? constrained : assessLegalGuidance(input, constrained, options, providerDeadlineAt);
   }
 }
 

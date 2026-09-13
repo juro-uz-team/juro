@@ -6,6 +6,7 @@ import type {LegalChatRequest, LegalAiRunResult, LegalAiRunOptions, LegalSourceC
 import type {LegalMaterialContentGap} from "./legal-content-repair";
 import {questionScopeSelection} from "../legal/question-interpretation";
 import {requiredCoverageAnswerRole} from "../legal/legal-coverage";
+import {aiText} from "./localization";
 
 type Finding = LegalChatResponse["confirmedFindings"][number];
 type MainPoint = Pick<LegalChatResponse, "summary" | "summarySourceIds">;
@@ -133,6 +134,42 @@ export function assessedFindingSources(input: Context, findings: readonly Findin
 }
 
 export async function assessLegalFindings(input: LegalChatRequest, run: LegalAiRunResult, options: LegalAiRunOptions,
+  deadlineAt: number): Promise<LegalAiRunResult> {
+  const started = performance.now();
+  let attempts = 0;
+  const usage = {inputTokens: 0, outputTokens: 0, cachedInputTokens: 0};
+  try {
+    return await runFindingAssessment(input, run, {...options, onProviderAttemptFinished: async observation => {
+      attempts++;
+      usage.inputTokens += observation.usage?.inputTokens ?? 0;
+      usage.outputTokens += observation.usage?.outputTokens ?? 0;
+      usage.cachedInputTokens += observation.usage?.cachedInputTokens ?? 0;
+      await options.onProviderAttemptFinished?.(observation);
+    }}, deadlineAt);
+  } catch (error) {
+    if (input.contentRepair || !input.coverageRequirements?.some(requirement => requirement.priority === "core")
+      || options.signal?.aborted || options.budget?.signal.aborted
+      || (options.budget?.hasOverallDeadline && options.budget.remainingMs <= 0)
+      || !(error instanceof AiUnavailableError) || error.code !== "PROVIDER_TIMEOUT") throw error;
+    const pending = aiText(input.locale, "Проверка правового ответа не завершена.",
+      "Huquqiy javobni tekshirish yakunlanmadi.", "Legal answer verification is incomplete.");
+    // No part of this draft was independently assessed. Retain only request
+    // metadata and actual call accounting, so existing evidence routing can
+    // request a repair without publishing or automatically merging draft prose.
+    return {...run, providerResponseId: null, initialFindingAssessmentFailure: {code: "PROVIDER_TIMEOUT"}, findingAssessmentUnavailable: true,
+      findingAssessments: [], guidanceAssessments: [], data: {
+        confirmedFindings: [], responseKind: "clarification_required", summary: pending, summarySourceIds: [], answer: pending,
+        conditionalBranches: [], language: input.locale, jurisdiction: "UZ", answerMode: input.answerMode,
+        reasoningMode: input.reasoningMode, legalDatabaseAsOf: input.legalDatabaseAsOf,
+        clarificationQuestions: [], assumptions: [], risks: [], sources: [], requiredDocuments: [], actionPlan: [],
+        deadlines: [], successOutlook: null, urgency: "normal", suggestedDocument: null, suggestLawyer: false,
+      }, attempts: run.attempts + attempts, latencyMs: Math.round(run.latencyMs + performance.now() - started),
+      usage: {inputTokens: run.usage.inputTokens + usage.inputTokens, outputTokens: run.usage.outputTokens + usage.outputTokens,
+        cachedInputTokens: run.usage.cachedInputTokens + usage.cachedInputTokens}};
+  }
+}
+
+async function runFindingAssessment(input: LegalChatRequest, run: LegalAiRunResult, options: LegalAiRunOptions,
   deadlineAt: number): Promise<LegalAiRunResult> {
   const findings = run.data.confirmedFindings.filter(finding => finding.sourceIds.length > 0);
   if (!findings.length) return run;

@@ -9,7 +9,7 @@ export type LegalMaterialContentGap = {
 };
 
 export type LegalContentRepair = {
-  unresolved: Array<{requirementId: string; finding: "omitted" | "rejected" | null; guidanceMissing: boolean}>;
+  unresolved: Array<{requirementId: string; finding: "omitted" | "rejected" | "assessment_unavailable" | null; guidanceMissing: boolean}>;
   retained: LegalChatResponse;
   materialGaps?: LegalMaterialContentGap[];
   findingGaps?: LegalMaterialContentGap[];

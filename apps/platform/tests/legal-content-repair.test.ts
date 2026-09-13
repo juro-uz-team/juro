@@ -21,6 +21,92 @@ const input: LegalChatRequest = {question: "What must the buyer and seller do wh
     id: index ? "seller" : "buyer", statement, priority: "core", scopeKind: "general", sourceIds: [source.id],
   }))};
 
+for (const reasoningMode of ["deep", "fast"] as const) for (const repairOutcome of ["complete", "timeout", "routing_unavailable", "missing_evidence", "unsupported"] as const)
+test(`${reasoningMode} finding assessment timeout quarantines the draft before ${repairOutcome} recovery`, async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  let repairs = 0;
+  let findingCalls = 0;
+  let initialGuidanceCalls = 0;
+  const observations: string[] = [];
+  const poison = "UNASSESSED DRAFT: pay 999 dollars immediately.";
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    let data: unknown;
+    if (request.text.format.name === "juro_legal_evidence_routing") {
+      assert.equal(JSON.stringify(payload).includes(poison), false);
+      if (repairOutcome === "routing_unavailable") throw new ProviderRequestAbortError("first_byte_timeout");
+      if (repairOutcome === "missing_evidence") return Response.json({id: "missing-evidence", model: request.model,
+        output: [{content: [{type: "output_text", text: JSON.stringify(Object.fromEntries(payload.requirements.map((item: {id: string}) =>
+          [item.id, {decision: "missing_evidence", support: [], missingEvidenceQuestion: "Which operative registry provision applies?"}])))}]}],
+        usage: {input_tokens: 100, output_tokens: 20}});
+      return evidenceRoutingResponse(request)!;
+    }
+    if (request.text.format.name === "juro_legal_finding_support") {
+      findingCalls++;
+      if (!repairs || repairOutcome === "timeout") throw new ProviderRequestAbortError("first_byte_timeout");
+      assert.equal(JSON.stringify(payload).includes(poison), false);
+      if (repairOutcome === "unsupported") return Response.json({id: "rejected-repair", model: request.model,
+        output: [{content: [{type: "output_text", text: JSON.stringify({f1: [], f2: [], scopeCoverage: {r1: [], r2: []},
+          scopeGoverning: {r1: [], r2: []}, scopeGaps: {r1: [], r2: []},
+          mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false, r2: false}}})}]}],
+        usage: {input_tokens: 100, output_tokens: 20}});
+      return findingAssessmentResponse(request)!;
+    }
+    if (request.text.format.name === "juro_legal_guidance_coverage") {
+      if (!repairs) initialGuidanceCalls++;
+      assert.equal(JSON.stringify(payload).includes(poison), false);
+      data = {supportedActions: [0, 1], r1: [0], r2: [1], sourceSupport: {a0: [source.id], a1: [source.id]},
+        scopeGaps: {r1: [], r2: []}};
+    } else {
+      const repairing = Boolean(payload.contentRepair);
+      const guidanceOnly = !request.text.format.schema.properties.confirmedFindings;
+      if (repairing) {
+        repairs++;
+        assert.ok(payload.contentRepair.unresolved.every((item: {finding: string}) => item.finding === "assessment_unavailable"));
+        assert.deepEqual(payload.contentRepair.retainedFindings, []);
+        assert.equal(payload.contentRepair.retainedActions.length, reasoningMode === "fast" ? 2 : 0);
+        assert.equal(JSON.stringify(payload.contentRepair).includes(poison), false);
+      }
+      const trusted = repairing || guidanceOnly;
+      data = {responseKind: "answer", summary: trusted ? buyer : poison, summarySourceIds: ["s1"],
+        confirmedFindings: [buyer, seller].map((explanation, index) => ({title: index ? "Seller duty" : "Buyer duty",
+          explanation: trusted ? explanation : poison, sourceIds: ["s1"], answerRole: "governing_rule"})),
+        coverage: {r1: [0], r2: [1]}, guidanceCoverage: {r1: [0], r2: [1]},
+        actionPlan: [buyer, seller].map(description => ({title: "Registry duty", description: trusted ? description : poison, sourceIds: ["s1"]})),
+        risks: trusted ? [] : [{level: "critical", title: poison, explanation: poison, sourceIds: ["s1"]}],
+        deadlines: [], conditionalBranches: trusted ? [] : [{condition: poison, outcome: poison, sourceIds: ["s1"]}],
+        clarificationQuestions: trusted ? [] : [poison], urgency: trusted ? "normal" : "critical",
+        suggestedDocument: trusted ? null : {templateCode: null, title: poison, reason: poison}, suggestLawyer: !trusted};
+    }
+    return Response.json({id: "finding-timeout-recovery", model: request.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+  });
+  const checked = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer({...input, reasoningMode}, {
+    fallbackEnabled: false, onProviderAttemptFinished: observation => {observations.push(`${observation.part}:${observation.outcome}`);},
+  });
+  const routingBlocked = repairOutcome === "routing_unavailable" || repairOutcome === "missing_evidence";
+  const repairAssessed = repairOutcome === "complete" || repairOutcome === "unsupported";
+  assert.equal(repairs, routingBlocked ? 0 : 1);
+  assert.equal(findingCalls, routingBlocked ? 1 : 2);
+  assert.equal(initialGuidanceCalls, reasoningMode === "fast" ? 1 : 0);
+  assert.equal(JSON.stringify(checked).includes(poison), false);
+  assert.equal(checked.run.data.responseKind, repairOutcome === "complete" ? "answer" : "clarification_required");
+  assert.equal(checked.run.sourceFallback, undefined);
+  assert.equal(checked.coverageDiagnostics.findingAssessmentUnavailable, repairAssessed ? undefined : true);
+  if (!repairAssessed) {
+    assert.equal(checked.coverageDiagnostics.writerOmissionCount, 0);
+    assert.equal(checked.coverageDiagnostics.validatorRejectionCount, 0);
+  }
+  assert.deepEqual(checked.run.initialFindingAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
+  assert.deepEqual(checked.run.data.confirmedFindings.map(item => item.explanation), repairOutcome === "complete"
+    ? [buyer, seller] : reasoningMode === "deep" && !repairAssessed ? [buyer] : [], "source extracts remain explicitly incomplete and never enter repair retention");
+  assert.deepEqual(checked.run.data.actionPlan.map(item => item.description), reasoningMode === "fast" || repairAssessed ? [buyer, seller] : []);
+  assert.equal(observations.filter(item => item === "finding_validation:failed").length, repairOutcome === "timeout" ? 2 : 1);
+});
+
 function evidenceRoutingResponse(request: {text: {format: {name: string}}; input: string; model: string}) {
   if (request.text.format.name !== "juro_legal_evidence_routing") return null;
   const payload = JSON.parse(request.input);

@@ -137,6 +137,7 @@ export type ValidatedLegalGatewayResult = {
   removedClaimCount: number;
   coverageDiagnostics: {
     mainPointIncomplete?: true;
+    findingAssessmentUnavailable?: true;
     requirementCount: number;
     writerOmissionCount: number;
     validatorRejectionCount: number;
@@ -151,7 +152,7 @@ export type ValidatedLegalGatewayResult = {
     completeRequirementCount: number;
     /** Request-local requirement positions avoid logging question text or IDs.
      * Finding support and independently assessed practical coverage are distinct. */
-    unresolvedCoverage: Array<{requirementIndex: number; finding: "omitted" | "rejected" | null; guidanceMissing: boolean}>;
+    unresolvedCoverage: Array<{requirementIndex: number; finding: "omitted" | "rejected" | "assessment_unavailable" | null; guidanceMissing: boolean}>;
   };
 };
 
@@ -1224,9 +1225,10 @@ export function validateLegalGatewayAnswer(input: {
       .some(visible => visible.text === claim.text && visible.type === claim.type)).length,
     coverageDiagnostics: {
       ...(mainPoint.text === null ? {mainPointIncomplete: true as const} : {}),
+      ...(input.run.findingAssessmentUnavailable ? {findingAssessmentUnavailable: true as const} : {}),
       requirementCount: requirements.length,
-      writerOmissionCount: writerOmissions.length,
-      validatorRejectionCount: rejectedRequirements.length,
+      writerOmissionCount: input.run.findingAssessmentUnavailable ? 0 : writerOmissions.length,
+      validatorRejectionCount: input.run.findingAssessmentUnavailable ? 0 : rejectedRequirements.length,
       validatedRequirementCount: requirements.filter(requirement => covers(filtered.confirmedFindings, requirement)).length,
       proposedFindingCount: input.result.confirmedFindings.length,
       validatedFindingCount: filtered.confirmedFindings.length,
@@ -1237,6 +1239,7 @@ export function validateLegalGatewayAnswer(input: {
       completeRequirementCount: requirements.length - uncovered.length,
       unresolvedCoverage: requirements.flatMap((requirement, requirementIndex) => {
         const finding = covers(filtered.confirmedFindings, requirement) ? null
+          : input.run.findingAssessmentUnavailable ? "assessment_unavailable" as const
           : covers(input.result.confirmedFindings, requirement) ? "rejected" as const : "omitted" as const;
         const guidanceMissing = requirement.priority === "core" && !guidanceCovers(requirement);
         return finding || guidanceMissing ? [{requirementIndex, finding, guidanceMissing}] : [];
@@ -1466,8 +1469,13 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       const requirementIndexes = unresolved.map(item => repairInput.coverageRequirements!.findIndex(requirement => requirement.id === item.requirementId));
       let completedRepair: LegalAiRunResult | undefined;
       try {
+        // A timed-out finding draft has no retained findings. The validator's
+        // source-reader fallback is display evidence, not an assessed draft.
         const repaired = await this.provider.runLegalChat({...repairInput, contentRepair: {
-          unresolved, retained: structuredClone(validated.run.data),
+          unresolved, retained: structuredClone(run.initialFindingAssessmentFailure
+            ? {...validated.run.data, confirmedFindings: [], summary: run.data.summary,
+              summarySourceIds: [], answer: run.data.answer}
+            : validated.run.data),
           materialGaps: assessedGuidanceGaps({...input, assessments: run.guidanceAssessments ?? []})
             .filter(gap => unresolved.some(scope => scope.requirementId === gap.requirementId && scope.guidanceMissing)),
           findingGaps: assessedFindingGaps(input, run.findingAssessments ?? [])
@@ -1489,6 +1497,7 @@ class DefaultLegalAiGateway implements LegalAiGateway {
           } : repaired;
           validated = validate({...candidate, attempts: run.attempts + repaired.attempts,
             initialGuidanceAssessmentFailure: run.initialGuidanceAssessmentFailure,
+            initialFindingAssessmentFailure: run.initialFindingAssessmentFailure,
             latencyMs: Math.max(0, Date.now() - startedAt), usage: {
               inputTokens: run.usage.inputTokens + repaired.usage.inputTokens,
               outputTokens: run.usage.outputTokens + repaired.usage.outputTokens,

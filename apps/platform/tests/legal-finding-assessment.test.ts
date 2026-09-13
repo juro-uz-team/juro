@@ -7,6 +7,9 @@ import type {LegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
 import {parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
+import {AiUnavailableError} from "../lib/document-builder/ai/openai";
+import {AiExecutionBudget} from "../lib/ai/execution-budget";
+import {ProviderRequestAbortError} from "../lib/ai/provider-request-timeout";
 const sources: LegalSourceContext[] = ["commission", "court"].map(id => ({id, officialUrl: `https://lex.uz/ru/docs/${id}`,
   actTitle: "Procedure", article: "1", locale: "en", sourceClass: "OFFICIAL_LEGISLATION", contentSha256: "a".repeat(64),
   actIdentifier: id, revisionDate: null, lastCheckedAt: "2026-09-11T00:00:00Z", publishedAt: null,
@@ -18,6 +21,50 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
   reasoningMode: "deep", legalDatabaseAsOf: "2026-09-11T00:00:00Z", requestId: "finding-test", safetyIdentifier: "test"};
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
+
+for (const failure of ["timeout", "before_dispatch", "cancelled", "budget_exhausted", "repair", "invalid"] as const)
+test(`finding assessment ${failure} preserves the recovery boundary and physical accounting`, async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    priority: "core", scopeKind: "general", sourceIds: finding.sourceIds}]};
+  const data = parseLegalChatResponse({responseKind: "answer", summary: finding.explanation,
+    summarySourceIds: finding.sourceIds, confirmedFindings: [finding], coverage: {r1: [0]}, guidanceCoverage: {r1: []},
+    actionPlan: [], risks: [], deadlines: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  if (failure === "repair") request.contentRepair = {retained: data, unresolved: [{requirementId: "filing", finding: "omitted", guidanceMissing: true}]};
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "completed-writer",
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 100, outputTokens: 20, cachedInputTokens: 5}, fallbackFromProvider: null};
+  const original = structuredClone(run);
+  const controller = new AbortController();
+  let now = 0;
+  const budget = new AiExecutionBudget({totalBudgetMs: 30_000, now: () => now});
+  context.after(() => budget.dispose());
+  let calls = 0;
+  let observations = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    if (failure === "invalid") return Response.json({id: "invalid-assessment", model: run.model,
+      output: [{content: [{type: "output_text", text: "{}"}]}], usage: {input_tokens: 40, output_tokens: 2}});
+    if (failure === "cancelled") controller.abort();
+    if (failure === "budget_exhausted") now = 30_001;
+    throw new ProviderRequestAbortError("first_byte_timeout");
+  });
+  const pending = assessLegalFindings(request, run, {signal: controller.signal, budget,
+    onProviderAttemptFinished: () => {observations++;}}, failure === "before_dispatch" ? Date.now() - 1 : Date.now() + 12_000);
+  if (failure === "timeout" || failure === "before_dispatch") {
+    const result = await pending;
+    assert.deepEqual(result.initialFindingAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
+    assert.deepEqual(result.data.confirmedFindings, []);
+    assert.equal(JSON.stringify(result.data).includes(finding.explanation), false);
+    assert.equal(result.attempts, failure === "timeout" ? 2 : 1);
+    assert.deepEqual(result.usage, run.usage, "unknown failed usage is not invented or counted as completed writer usage again");
+    assert.equal(result.providerResponseId, null);
+  } else await assert.rejects(pending, error => error instanceof AiUnavailableError || controller.signal.aborted);
+  assert.equal(calls, failure === "before_dispatch" ? 0 : 1);
+  assert.equal(observations, calls);
+  assert.deepEqual(run, original, "the original draft and its receipt are immutable");
+});
 
 test("Main Point approval binds exact summary, citations, surviving dependencies and every core scope", () => {
   const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
