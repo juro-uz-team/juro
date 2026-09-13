@@ -34,6 +34,9 @@ import {
 } from "./legal-query-planner";
 import {
   forceClarificationWithoutVerifiedSources,
+  actionStepSchema,
+  legalAssumptionSchema,
+  legalRiskSchema,
   legalFindingSchema,
   type LegalChatResponse,
 } from "./legal-chat-schema";
@@ -53,7 +56,10 @@ import {
 const claimTypeSchema = z.enum(["legal_basis", "action", "deadline", "risk", "fact"]);
 
 export const legalGatewayClaimSchema = z.object({
-  text: z.string().trim().min(1).max(4_000),
+  // A gateway claim retains both fields of the largest generated proposition.
+  text: z.string().trim().min(1).max(
+    legalFindingSchema.shape.title.maxLength! + 2 + legalFindingSchema.shape.explanation.maxLength!,
+  ),
   type: claimTypeSchema,
   sourceId: z.string().trim().min(1).max(160).nullable(),
   sourceSpanId: z.string().trim().min(1).max(200).nullable(),
@@ -87,8 +93,13 @@ export const legalGatewayAnswerSchema = z.object({
   answer: z.string().trim().min(1).max(20_000),
   claims: z.array(legalGatewayClaimSchema).max(64),
   sources: z.array(legalGatewaySourceSchema).max(MAX_LEGAL_EVIDENCE_SOURCES),
-  nextSteps: z.array(z.string().trim().min(1).max(2_000)).max(16),
-  uncertainty: z.array(z.string().trim().min(1).max(2_000)).max(24),
+  nextSteps: z.array(z.string().trim().min(1).max(
+    actionStepSchema.shape.title.maxLength! + 2 + actionStepSchema.shape.description.maxLength!,
+  )).max(16),
+  uncertainty: z.array(z.string().trim().min(1).max(Math.max(
+    legalAssumptionSchema.shape.statement.maxLength! + 2 + legalAssumptionSchema.shape.impact.maxLength!,
+    legalRiskSchema.shape.title.maxLength! + 2 + legalRiskSchema.shape.explanation.maxLength!,
+  ))).max(24),
   providerMetadata: legalGatewayProviderMetadataSchema,
 }).strict();
 

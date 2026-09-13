@@ -7,11 +7,14 @@ import {parseLegalFindingAssessment} from "../lib/ai/legal-finding-assessment";
 import {
   buildVerifiedSourceOnlyFallback,
   createLegalAiGateway,
+  legalGatewayAnswerSchema,
+  legalGatewayClaimSchema,
   validateGroundedPreliminaryFinding,
   validateLegalGatewayAnswer,
 } from "../lib/ai/legal-ai-gateway";
 import { AiUnavailableError } from "../lib/document-builder/ai/openai";
-import type { LegalChatResponse } from "../lib/ai/legal-chat-schema";
+import {actionStepSchema, legalFindingSchema, legalConditionalBranchSchema, legalAssumptionSchema,
+  legalRiskSchema, type LegalChatResponse} from "../lib/ai/legal-chat-schema";
 import type {
   LegalAiProvider,
   LegalAiRunResult,
@@ -298,6 +301,47 @@ function validateWithAssessedFixtureGuidance(input: Parameters<typeof validateLe
     guidanceAssessments: [parseLegalGuidanceAssessment({...coverage,
       supportedActions: [...new Set(Object.values(coverage).flat())]}, input, input.result.actionPlan)]}});
 }
+
+test("gateway retains the complete assessed action when joining its valid title and description exceeds the description limit", () => {
+  const description = "Подайте документы для государственной регистрации общества. ".repeat(32)
+    + "Сохраните подтверждение подачи документов.";
+  assert.ok(description.length <= 2_000);
+  const title = "Подготовка и подача документов для государственной регистрации общества и получение подтверждения их принятия";
+  assert.ok(`${title}. ${description}`.length > 2_000);
+  const evidence = {...source, spans: [{...source.spans![0]!, text: `${source.spans![0]!.text} ${description}`}]};
+  const data: LegalChatResponse = {...result, actionPlan: [{title, description,
+    sourceIds: [source.id], requirementIds: ["registration"]}]};
+  const checked = validateWithAssessedFixtureGuidance({result: data, run: {...run, data},
+    sources: [evidence], question: "Как зарегистрировать общество?",
+    coverageRequirements: [{id: "registration", statement: "Регистрация общества", priority: "core", sourceIds: [source.id]}],
+    locale: "ru", answerMode: "short", reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt}, {r1: [0]});
+  assert.deepEqual(checked.answer.nextSteps, [`${title}. ${description}`]);
+  assert.equal(checked.run.data.actionPlan[0]?.description, description);
+});
+
+test("gateway claim contract accommodates complete findings and conditional branches at their existing field limits", () => {
+  const finding = legalFindingSchema.parse({title: "т".repeat(240), explanation: "п".repeat(4_000), sourceIds: [source.id]});
+  const branch = legalConditionalBranchSchema.parse({condition: "у".repeat(1_000), outcome: "и".repeat(3_000), sourceIds: [source.id]});
+  for (const text of [`${finding.title}. ${finding.explanation}`, `${branch.condition}. ${branch.outcome}`]) {
+    assert.equal(legalGatewayClaimSchema.parse({text, type: "legal_basis", sourceId: source.id,
+      sourceSpanId: source.spans![0]!.id, confidence: 1}).text, text);
+  }
+  assert.equal(legalFindingSchema.safeParse({...finding, explanation: "п".repeat(4_001)}).success, false);
+  assert.equal(legalConditionalBranchSchema.safeParse({...branch, outcome: "и".repeat(3_001)}).success, false);
+});
+
+test("gateway projection preserves complete uncertainty and keeps generated action limits", () => {
+  const assumption = legalAssumptionSchema.parse({statement: "у".repeat(1_000), impact: "п".repeat(2_000)});
+  const risk = legalRiskSchema.parse({title: "р".repeat(240), explanation: "п".repeat(3_000), level: "low", sourceIds: []});
+  const uncertainty = [`${assumption.statement}. ${assumption.impact}`, `${risk.title}. ${risk.explanation}`];
+  assert.deepEqual(legalGatewayAnswerSchema.shape.uncertainty.parse(uncertainty), uncertainty);
+  const action = {title: "д".repeat(240), description: "п".repeat(2_000), sourceIds: [source.id]};
+  assert.equal(actionStepSchema.safeParse(action).success, true);
+  assert.equal(actionStepSchema.safeParse({...action, title: "д".repeat(241)}).success, false);
+  assert.equal(actionStepSchema.safeParse({...action, description: "п".repeat(2_001)}).success, false);
+  assert.equal(legalGatewayAnswerSchema.shape.nextSteps.safeParse(["д".repeat(2_243)]).success, false);
+  assert.equal(legalGatewayClaimSchema.shape.text.safeParse("п".repeat(4_243)).success, false);
+});
 
 test("parallel synthesis assigns each independent scope once and preserves all evidence bindings", () => {
   const requirements = Array.from({length: 8}, (_, index) => ({id: `scope-${index}`,
