@@ -5,6 +5,8 @@ import {assessLegalGuidance, assessedGuidanceActions, assessedGuidanceCoverage, 
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
 import type {LegalChatRequest, LegalAiRunResult, LegalSourceContext} from "../lib/ai/provider";
+import {createAiExecutionBudget} from "../lib/ai/execution-budget";
+import {AiUnavailableError} from "../lib/document-builder/ai/openai";
 
 const buyer = "Покупатель обязан предоставить подписанное заявление в комиссию.";
 const seller = "Продавец обязан передать документы о качестве товара покупателю.";
@@ -27,6 +29,38 @@ const data = parseLegalChatResponse({responseKind: "answer", summary: buyer, sum
 {...input, coverageRequirements: []});
 const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "generated",
   attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null};
+
+test("expired assessment window preserves candidates without inventing a dispatched attempt", async () => {
+  let attempts = 0;
+  const recovered = await assessLegalGuidance(input, run, {beforeProviderCall: () => {attempts += 1;}}, Date.now() - 1);
+  assert.equal(attempts, 0);
+  assert.deepEqual(recovered.data.confirmedFindings, data.confirmedFindings);
+  assert.deepEqual(recovered.data.actionPlan, []);
+  assert.deepEqual(recovered.usage, run.usage);
+  assert.equal(recovered.attempts, run.attempts);
+});
+
+for (const reason of ["cancelled", "exhausted"] as const) test(`${reason} shared budget prevents assessment timeout recovery`, async () => {
+  const controller = new AbortController();
+  let now = 0;
+  const budget = createAiExecutionBudget({totalBudgetMs: 1_000, callerSignal: controller.signal, now: () => now});
+  try {
+    if (reason === "cancelled") controller.abort();
+    else now = 1_001;
+    await assert.rejects(assessLegalGuidance(input, run, {budget}, Date.now() - 1), AiUnavailableError);
+    assert.equal(budget.signal.aborted, true);
+  } finally {budget.dispose();}
+});
+
+test("malformed assessment output cannot use timeout recovery", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  context.mock.method(globalThis, "fetch", async () => Response.json({id: "malformed-assessment", model: run.model,
+    output: [{content: [{type: "output_text", text: "{}"}]}], usage: {input_tokens: 20, output_tokens: 1}}));
+  await assert.rejects(assessLegalGuidance(input, run, {}, Date.now() + 12_000),
+    (error: unknown) => error instanceof AiUnavailableError && error.code === "INVALID_AI_OUTPUT");
+});
 
 test("independent guidance assessment retains multiple missing rules in the same scope for repair", async context => {
   const previous = env.OPENAI_API_KEY;

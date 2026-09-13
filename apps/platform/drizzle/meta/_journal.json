@@ -1107,6 +1107,13 @@
       "when": 1788915600000,
       "tag": "0151_remove_legacy_official_corpus_schemas",
       "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1789257600000,
+      "tag": "0156_provider_usage_observation",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,7 @@ export function combineCoverageSynthesis(parts: readonly LegalAiRunResult[], lat
   return {...first, data, latencyMs: Math.max(0, Math.trunc(latencyMs)), providerResponseId: null,
     guidanceAssessments: parts.flatMap(part => part.guidanceAssessments ?? []),
     findingAssessments: parts.flatMap(part => part.findingAssessments ?? []),
+    initialGuidanceAssessmentFailure: parts.find(part => part.initialGuidanceAssessmentFailure)?.initialGuidanceAssessmentFailure,
     attempts: parts.reduce((sum, part) => sum + part.attempts, 0),
     usage: parts.reduce((sum, part) => ({inputTokens: sum.inputTokens + part.usage.inputTokens,
       outputTokens: sum.outputTokens + part.usage.outputTokens,

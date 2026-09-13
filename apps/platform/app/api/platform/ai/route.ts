@@ -92,6 +92,7 @@ import {
   ProviderCostControlError,
 } from "../../../../lib/ai/provider-cost-control";
 import { recordProviderUsage } from "../../../../lib/ai/provider-usage";
+import {createLegalProviderUsageCollector} from "../../../../lib/ai/legal-provider-usage";
 import { resolveAiRuntimeSettings } from "../../../../lib/ai/runtime-settings";
 import { aiDiscoveryLocale, aiText, parseAiOutputLocale, type AiOutputLocale } from "../../../../lib/ai/localization";
 import {
@@ -976,6 +977,8 @@ async function executePostWithinBudget(
   }
 
   const providerAttemptObservations: Array<Parameters<NonNullable<LegalAiRunOptions["onProviderAttemptFinished"]>>[0]> = [];
+  const providerUsage = createLegalProviderUsageCollector({db, environment: providerEnvironment,
+    workspaceId: workspace.id, userId: user.id, feature: "legal_chat", runId: reservation.runId});
   const providerCalls: Array<{
     provider: "openai" | "anthropic";
     model: string;
@@ -1077,6 +1080,7 @@ async function executePostWithinBudget(
       beforeProviderCall,
       onProviderFailure: async (failure) => { providerFailures.push(failure); },
       onProviderAttemptFinished: observation => {
+        providerUsage.observe(observation);
         providerAttemptObservations.push(observation);
         console.info(JSON.stringify({event: "ai.legal_writer_attempt_finished",
           correlationId: reservation.correlationId, ...observation}));
@@ -1093,7 +1097,7 @@ async function executePostWithinBudget(
         sources: sources.map(source => ({id: source.id, hash: source.contentSha256})),
       });
     }
-    aiResult = gatewayResult.run;
+    aiResult = {...gatewayResult.run, usage: providerUsage.knownUsage(), attempts: providerUsage.attemptCount()};
     coverageDiagnostics = gatewayResult.coverageDiagnostics;
     console.info(JSON.stringify({
       event: "ai.legal_answer_coverage_validated",
@@ -1142,31 +1146,6 @@ async function executePostWithinBudget(
     } catch {
       // Failure audit must not mask the durable run failure or public response.
     }
-    const completedAt = isoNow();
-    try {
-      for (const [callIndex, call] of providerCalls.entries()) {
-        await recordProviderUsage({
-          db,
-          environment: providerEnvironment,
-          workspaceId: workspace.id,
-          userId: user.id,
-          feature: "legal_chat",
-          operation: call.provider === "openai" ? "responses" : "messages",
-          provider: call.provider,
-          model: call.model,
-          inputTokens: 0,
-          outputTokens: 0,
-          cachedInputTokens: 0,
-          status: "failed",
-          errorCode: code,
-          startedAt: call.startedAt,
-          completedAt,
-          eventId: `provider_usage_${reservation.runId}_${call.provider}_${call.attempt}_${callIndex}`,
-        });
-      }
-    } catch {
-      // The durable ai_run failure below remains the reconciliation source.
-    }
     await failAiRun({
       db, runId: reservation.runId, ledgerId: reservation.ledgerId,
       workspaceId: workspace.id, userId: user.id, idempotencyKey, errorCode: code,
@@ -1192,6 +1171,10 @@ async function executePostWithinBudget(
       correlationId: reservation.correlationId,
       error: localizedProviderError(locale, code),
     }, code === "AI_REFUSED" || code === "INVALID_AI_OUTPUT" ? 422 : 503);
+  } finally {
+    try {await providerUsage.persist();} catch {
+      console.warn(JSON.stringify({event: "ai.provider_usage_deferred", correlationId: reservation.correlationId}));
+    }
   }
 
   let result;
@@ -1331,63 +1314,6 @@ async function executePostWithinBudget(
     }, 409);
   }
 
-  try {
-    const completedAt = isoNow();
-    const successfulCallIndex = aiResult.sourceFallback
-      ? -1
-      : providerCalls.findLastIndex((call) => call.provider === aiResult.provider);
-    for (const [callIndex, call] of providerCalls.entries()) {
-      if (callIndex === successfulCallIndex) continue;
-      await recordProviderUsage({
-        db,
-        environment: providerEnvironment,
-        workspaceId: workspace.id,
-        userId: user.id,
-        feature: "legal_chat",
-        operation: call.provider === "openai" ? "responses" : "messages",
-        provider: call.provider,
-        model: call.model,
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedInputTokens: 0,
-        status: "failed",
-        errorCode: aiResult.sourceFallback
-          ? (aiResult.sourceFallbackReason ?? "PROVIDER_UNAVAILABLE")
-          : call.provider === aiResult.provider ? "RETRY_USED" : "FALLBACK_USED",
-        startedAt: call.startedAt,
-        completedAt,
-        eventId: `provider_usage_${reservation.runId}_${call.provider}_${call.attempt}_${callIndex}`,
-      });
-    }
-    if (!aiResult.sourceFallback) {
-      const successfulCall = successfulCallIndex >= 0 ? providerCalls[successfulCallIndex] : undefined;
-      await recordProviderUsage({
-        db,
-        environment: providerEnvironment,
-        workspaceId: workspace.id,
-        userId: user.id,
-        feature: "legal_chat",
-        operation: aiResult.provider === "openai" ? "responses" : "messages",
-        provider: aiResult.provider,
-        model: aiResult.model,
-        providerRequestId: aiResult.providerResponseId,
-        inputTokens: aiResult.usage.inputTokens,
-        outputTokens: aiResult.usage.outputTokens,
-        cachedInputTokens: aiResult.usage.cachedInputTokens,
-        status: "succeeded",
-        startedAt: successfulCall?.startedAt ?? completedAt,
-        completedAt,
-        eventId: `provider_usage_${reservation.runId}_${aiResult.provider}_${successfulCall?.attempt ?? aiResult.attempts}_success`,
-      });
-    }
-  } catch {
-    // Cost telemetry is reconciled from the completed ai_run. It must never
-    // turn an otherwise durable, validated legal result into a 503.
-    console.warn(JSON.stringify({
-      event: "ai.provider_usage_deferred",
-      correlationId: reservation.correlationId,
-    }));
-  }
   const userMessageId = crypto.randomUUID();
   const assistantMessageId = crypto.randomUUID();
   const branchId = crypto.randomUUID();

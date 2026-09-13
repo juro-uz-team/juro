@@ -36,8 +36,6 @@ test("guest AI route is server-only, same-origin protected, provider-backed, and
   assert.match(route, /requirePlanningHints: true/);
   assert.match(route, /!synthesisApplicableAt && !temporalComparison/);
   assert.match(route, /coverageGaps\?\.length && retrieval\.coverageStatus === "good_coverage"/);
-  assert.match(route, /successfulCallIndex = aiResult\.sourceFallback \? -1/);
-  assert.match(route, /if \(!aiResult\.sourceFallback\) await recordProviderUsage/);
   assert.match(route, /sources:\s*allRetrievedSources,/);
   assert.match(route, /function rethrowGuestCancellation/);
   assert.equal(route.match(/rethrowGuestCancellation\(error, budget!?\.signal\)/gu)?.length, 3);
@@ -49,14 +47,8 @@ test("guest AI route is server-only, same-origin protected, provider-backed, and
   assert.match(route, /failGuestAiRun/);
   assert.match(route, /assertProviderCallAllowed/);
   assert.match(route, /beforeProviderCall/);
-  assert.match(route, /recordProviderUsage/);
   assert.match(route, /feature: "guest_legal_chat"/);
   assert.match(route, /workspaceId: null/);
-  const validation = route.indexOf("const validated = gatewayResult;");
-  const invalidOutput = route.indexOf('errorCode: code', validation);
-  const successfulUsage = route.indexOf('status: "succeeded"', validation);
-  assert.ok(validation >= 0 && invalidOutput > validation && successfulUsage > invalidOutput);
-  assert.match(route.slice(validation, successfulUsage), /status: "failed"[\s\S]*errorCode: code/);
   assert.match(route, /GUEST_AI_DISABLED/);
   assert.doesNotMatch(route, /(?:mock|fake)(?:Answer|Response|Result)/i);
   assert.doesNotMatch(route, /OPENAI_API_KEY[^\n]+(?:json|Response)/);

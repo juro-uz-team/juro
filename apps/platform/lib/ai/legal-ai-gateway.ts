@@ -1378,6 +1378,7 @@ class DefaultLegalAiGateway implements LegalAiGateway {
         completedRepair = repaired;
         if (repaired.provider === run.provider && repaired.model === run.model) {
           validated = validate({...repaired, attempts: run.attempts + repaired.attempts,
+            initialGuidanceAssessmentFailure: run.initialGuidanceAssessmentFailure,
             latencyMs: Math.max(0, Date.now() - startedAt), usage: {
               inputTokens: run.usage.inputTokens + repaired.usage.inputTokens,
               outputTokens: run.usage.outputTokens + repaired.usage.outputTokens,

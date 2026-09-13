@@ -117,6 +117,22 @@ export function assessedGuidanceCoverage(input: AssessmentInput & {
 
 export async function assessLegalGuidance(input: LegalChatRequest, run: LegalAiRunResult,
   options: LegalAiRunOptions, deadlineAt: number): Promise<LegalAiRunResult> {
+  const started = performance.now();
+  try {
+    return await runGuidanceAssessment(input, run, options, deadlineAt);
+  } catch (error) {
+    if (input.contentRepair || options.signal?.aborted || options.budget?.signal.aborted
+      || !(error instanceof AiUnavailableError) || error.code !== "PROVIDER_TIMEOUT") throw error;
+    // Preserve generated findings as candidates, never as an already approved
+    // answer. Unassessed advice must not reach validation or repair retention.
+    return {...run, data: {...run.data, responseKind: "clarification_required", actionPlan: []},
+      guidanceAssessments: [], initialGuidanceAssessmentFailure: {code: "PROVIDER_TIMEOUT"},
+      latencyMs: Math.round(run.latencyMs + performance.now() - started)};
+  }
+}
+
+async function runGuidanceAssessment(input: LegalChatRequest, run: LegalAiRunResult,
+  options: LegalAiRunOptions, deadlineAt: number): Promise<LegalAiRunResult> {
   const requirements = input.coverageRequirements ?? [];
   if (!requirements.some(requirement => requirement.priority === "core")) return run;
   const started = performance.now();

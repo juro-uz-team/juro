@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   evaluateProviderCostControl,
-  ProviderCostControlError,
   readProviderCostControlDashboard,
   type ProviderCostControlDashboard,
 } from "./provider-cost-control";
@@ -31,6 +30,8 @@ export type ProviderUsageInput = {
   inputTokens: number;
   outputTokens?: number;
   cachedInputTokens?: number;
+  /** False means token counts are storage placeholders, never measured usage. */
+  usageObserved?: boolean;
   itemCount?: number;
   dimensions?: number | null;
   status: "succeeded" | "failed";
@@ -85,6 +86,14 @@ export class ProviderUsageError extends Error {
   constructor(readonly code: "PROVIDER_USAGE_INVALID" | "PROVIDER_USAGE_PERSISTENCE_FAILED") {
     super(code);
     this.name = "ProviderUsageError";
+  }
+}
+
+/** The usage transaction is durable; only its subsequent control check failed. */
+export class ProviderUsageControlError extends ProviderUsageError {
+  constructor(readonly recorded: ProviderUsageRecord) {
+    super("PROVIDER_USAGE_PERSISTENCE_FAILED");
+    this.name = "ProviderUsageControlError";
   }
 }
 
@@ -195,11 +204,13 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
   const errorCode = input.status === "failed"
     ? cleanIdentifier(input.errorCode || "PROVIDER_REQUEST_FAILED", 100, /^[A-Z0-9._-]+$/)
     : null;
-  if (input.status === "failed" && (inputTokens || outputTokens || cachedInputTokens)) {
+  // A response rejected after parsing may still report billable tokens.
+  // Its failed outcome is independent of that observed usage.
+  const hasObservedUsage = input.usageObserved ?? (input.status === "succeeded" || inputTokens > 0 || outputTokens > 0);
+  if (!hasObservedUsage && (inputTokens || outputTokens || cachedInputTokens)) {
     throw new ProviderUsageError("PROVIDER_USAGE_INVALID");
   }
-
-  const price = input.status === "succeeded"
+  const price = hasObservedUsage
     ? await activePrice(input.db, input.provider, model, operation, completedAt)
     : null;
   const cost = price
@@ -230,8 +241,8 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
          (id,environment,usage_day,workspace_id,user_id,feature,operation,provider,model,
           provider_request_id,request_count,input_tokens,output_tokens,cached_input_tokens,
           item_count,dimensions,status,error_code,price_version_id,estimated_cost_microusd,
-          started_at,completed_at,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          started_at,completed_at,created_at,usage_observed)
+         VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).bind(
         eventId,
         input.environment,
@@ -255,6 +266,7 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
         startedAt,
         completedAt,
         now,
+        hasObservedUsage ? 1 : 0,
       ),
       input.db.prepare(
         `INSERT INTO ai_cost_daily_aggregates
@@ -287,7 +299,7 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
         outputTokens,
         cachedInputTokens,
         cost ?? 0,
-        input.status === "succeeded" && !price ? 1 : 0,
+        hasObservedUsage && !price ? 1 : 0,
         now,
         now,
       ),
@@ -302,11 +314,8 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
       provider: input.provider,
       now: completedAt,
     });
-  } catch (error) {
-    if (error instanceof ProviderCostControlError) {
-      throw new ProviderUsageError("PROVIDER_USAGE_PERSISTENCE_FAILED");
-    }
-    throw error;
+  } catch {
+    throw new ProviderUsageControlError({id: eventId, priceVersionId: price?.id ?? null, estimatedCostMicrousd: cost});
   }
   return { id: eventId, priceVersionId: price?.id ?? null, estimatedCostMicrousd: cost };
 }
@@ -403,7 +412,8 @@ export async function readAiCostDashboard(input: {
     ).bind(input.environment, cutoff).all<AiCostDailyView>(),
     input.db.prepare(
       `SELECT count(*) AS count FROM ai_provider_usage_events
-       WHERE environment=? AND status='succeeded' AND price_version_id IS NULL`,
+       WHERE environment=? AND (usage_observed=1 OR (usage_observed IS NULL AND status='succeeded'))
+         AND price_version_id IS NULL`,
     ).bind(input.environment).first<{ count: number }>(),
     readProviderCostControlDashboard({ db: input.db, environment: input.environment }),
   ]);

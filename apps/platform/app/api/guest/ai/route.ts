@@ -60,7 +60,7 @@ import {
   parseProviderEnvironment,
   ProviderCostControlError,
 } from "../../../../lib/ai/provider-cost-control";
-import { recordProviderUsage } from "../../../../lib/ai/provider-usage";
+import {createLegalProviderUsageCollector} from "../../../../lib/ai/legal-provider-usage";
 import { parseLegalApplicabilityDate } from "../../../../lib/legal/applicability-date";
 import { sha256Json } from "../../../../lib/ai/run-store";
 import {
@@ -624,12 +624,8 @@ export async function POST(request: Request): Promise<Response> {
     }
     if (reservation.kind === "failed") throw new GuestAiError("GUEST_RUN_FAILED");
 
-    const providerCalls: Array<{
-      provider: "openai" | "anthropic";
-      model: string;
-      attempt: number;
-      startedAt: string;
-    }> = [];
+    const providerUsage = createLegalProviderUsageCollector({db, environment: providerEnvironment,
+      workspaceId: null, userId: null, feature: "guest_legal_chat", runId: reservation.run.id});
     const beforeProviderCall = async (call: {
       provider: "openai" | "anthropic";
       model: string;
@@ -651,7 +647,6 @@ export async function POST(request: Request): Promise<Response> {
         }
         throw error;
       }
-      providerCalls.push({ ...call, startedAt: new Date().toISOString() });
     };
 
 
@@ -697,7 +692,7 @@ export async function POST(request: Request): Promise<Response> {
         requestId: reservation.run.correlationId,
         safetyIdentifier,
         runtimeSettings,
-      }, { signal: budget.signal, budget, beforeProviderCall, recoverEvidence });
+      }, { signal: budget.signal, budget, beforeProviderCall, recoverEvidence, onProviderAttemptFinished: providerUsage.observe });
       if (gatewayResult.recoveredEvidence && sourceRecovery) {
         retrieval = sourceRecovery.retrieval;
         allRetrievedSources.splice(0, allRetrievedSources.length, ...gatewayResult.recoveredEvidence.sources);
@@ -708,41 +703,13 @@ export async function POST(request: Request): Promise<Response> {
           sources: allRetrievedSources.map(source => ({id: source.id, hash: source.contentSha256, excerpt: source.excerpt ?? null})),
         });
       }
-      aiResult = gatewayResult.run;
+      aiResult = {...gatewayResult.run, usage: providerUsage.knownUsage(), attempts: providerUsage.attemptCount()};
       providerStage.complete();
     } catch (error) {
       providerStage.fail();
       const code = error instanceof AiUnavailableError
         ? error.code
         : "PROVIDER_UNAVAILABLE";
-      const completedAt = new Date().toISOString();
-      try {
-        for (const [callIndex, call] of providerCalls.entries()) {
-          await recordProviderUsage({
-            db,
-            environment: providerEnvironment,
-            workspaceId: null,
-            userId: null,
-            feature: "guest_legal_chat",
-            operation: call.provider === "openai" ? "responses" : "messages",
-            provider: call.provider,
-            model: call.model,
-            inputTokens: 0,
-            outputTokens: 0,
-            cachedInputTokens: 0,
-            status: "failed",
-            errorCode: code,
-            startedAt: call.startedAt,
-            completedAt,
-            eventId: `guest_provider_usage_${reservation.run.id}_${call.provider}_${call.attempt}_${callIndex}`,
-          });
-        }
-      } catch {
-        console.warn(JSON.stringify({
-          event: "guest_ai.provider_usage_deferred",
-          correlationId: reservation.run.correlationId,
-        }));
-      }
       await failGuestAiRun({ db, run: reservation.run, errorCode: code });
       await recordGuestAiSlo({
         telemetry,
@@ -759,6 +726,10 @@ export async function POST(request: Request): Promise<Response> {
         ),
       }, code === "AI_REFUSED" || code === "INVALID_AI_OUTPUT" ? 422 : 503,
       sessionContext.setCookie ? { "set-cookie": sessionContext.setCookie } : undefined);
+    } finally {
+      try {await providerUsage.persist();} catch {
+        console.warn(JSON.stringify({event: "guest_ai.provider_usage_deferred", correlationId: reservation.run.correlationId}));
+      }
     }
 
     let result;
@@ -795,34 +766,6 @@ export async function POST(request: Request): Promise<Response> {
       validationStage.fail();
       const code = error instanceof Error && error.message === "FINAL_SOURCE_OBSERVATION_UNAVAILABLE"
         ? "SOURCE_OBSERVATION_UNAVAILABLE" : "INVALID_AI_OUTPUT";
-      try {
-        const completedAt = new Date().toISOString();
-        for (const [callIndex, call] of providerCalls.entries()) {
-          await recordProviderUsage({
-            db,
-            environment: providerEnvironment,
-            workspaceId: null,
-            userId: null,
-            feature: "guest_legal_chat",
-            operation: call.provider === "openai" ? "responses" : "messages",
-            provider: call.provider,
-            model: call.model,
-            inputTokens: 0,
-            outputTokens: 0,
-            cachedInputTokens: 0,
-            status: "failed",
-            errorCode: code,
-            startedAt: call.startedAt,
-            completedAt,
-            eventId: `guest_provider_usage_${reservation.run.id}_${call.provider}_${call.attempt}_${callIndex}`,
-          });
-        }
-      } catch {
-        console.warn(JSON.stringify({
-          event: "guest_ai.provider_usage_deferred",
-          correlationId: reservation.run.correlationId,
-        }));
-      }
       await failGuestAiRun({
         db,
         run: reservation.run,
@@ -842,57 +785,6 @@ export async function POST(request: Request): Promise<Response> {
         ),
       }, code === "SOURCE_OBSERVATION_UNAVAILABLE" ? 503 : 422,
       sessionContext.setCookie ? { "set-cookie": sessionContext.setCookie } : undefined);
-    }
-
-    try {
-      const completedAt = new Date().toISOString();
-      const successfulCallIndex = aiResult.sourceFallback ? -1
-        : providerCalls.findLastIndex((call) => call.provider === aiResult.provider);
-      for (const [callIndex, call] of providerCalls.entries()) {
-        if (callIndex === successfulCallIndex) continue;
-        await recordProviderUsage({
-          db,
-          environment: providerEnvironment,
-          workspaceId: null,
-          userId: null,
-          feature: "guest_legal_chat",
-          operation: call.provider === "openai" ? "responses" : "messages",
-          provider: call.provider,
-          model: call.model,
-          inputTokens: 0,
-          outputTokens: 0,
-          cachedInputTokens: 0,
-          status: "failed",
-          errorCode: aiResult.sourceFallbackReason ?? (call.provider === aiResult.provider ? "RETRY_USED" : "FALLBACK_USED"),
-          startedAt: call.startedAt,
-          completedAt,
-          eventId: `guest_provider_usage_${reservation.run.id}_${call.provider}_${call.attempt}_${callIndex}`,
-        });
-      }
-      const successfulCall = successfulCallIndex >= 0 ? providerCalls[successfulCallIndex] : undefined;
-      if (!aiResult.sourceFallback) await recordProviderUsage({
-        db,
-        environment: providerEnvironment,
-        workspaceId: null,
-        userId: null,
-        feature: "guest_legal_chat",
-        operation: aiResult.provider === "openai" ? "responses" : "messages",
-        provider: aiResult.provider,
-        model: aiResult.model,
-        providerRequestId: aiResult.providerResponseId,
-        inputTokens: aiResult.usage.inputTokens,
-        outputTokens: aiResult.usage.outputTokens,
-        cachedInputTokens: aiResult.usage.cachedInputTokens,
-        status: "succeeded",
-        startedAt: successfulCall?.startedAt ?? completedAt,
-        completedAt,
-        eventId: `guest_provider_usage_${reservation.run.id}_${aiResult.provider}_${successfulCall?.attempt ?? aiResult.attempts}_success`,
-      });
-    } catch {
-      console.warn(JSON.stringify({
-        event: "guest_ai.provider_usage_deferred",
-        correlationId: reservation.run.correlationId,
-      }));
     }
 
     // A disconnected guest request is released. Retrieval and LLM calls keep

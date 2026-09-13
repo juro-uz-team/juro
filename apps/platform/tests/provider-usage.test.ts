@@ -8,9 +8,96 @@ import {
   recordProviderUsage,
 } from "../lib/ai/provider-usage";
 import { platformStaffRoleAllows } from "../lib/auth/staff-access";
+import {createLegalProviderUsageCollector} from "../lib/ai/legal-provider-usage";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const now = "2026-08-04T12:00:00.000Z";
+
+test("a post-commit control failure does not replay usage or block later legal receipts", async context => {
+  const {sqlite, d1} = sqliteD1Fixture();
+  try {
+    const prepare = d1.prepare.bind(d1);
+    let failControl = true;
+    context.mock.method(d1, "prepare", (sql: string) => {
+      if (failControl && sql.includes("FROM ai_cost_guard_policy_versions")) {
+        failControl = false;
+        throw new Error("Control read unavailable after usage commit");
+      }
+      return prepare(sql);
+    });
+    const receipts = createLegalProviderUsageCollector({db: d1, environment: "development", workspaceId: null,
+      userId: null, feature: "legal_chat", runId: "control-failure"});
+    for (const part of ["findings", "guidance"] as const) receipts.observe({provider: "openai", model: "same-model",
+      attempt: 1, part, elapsedMs: 1, httpStatus: 200, outcome: "completed", errorCode: null,
+      usage: {inputTokens: 10, outputTokens: 2, cachedInputTokens: 0}});
+    await receipts.persist();
+    await receipts.persist();
+    const dashboard = await readAiCostDashboard({db: d1, environment: "development"});
+    assert.equal(failControl, false);
+    assert.equal(dashboard.daily[0]!.requestCount, 2);
+    assert.equal(dashboard.daily[0]!.inputTokens, 20);
+  } finally {sqlite.close();}
+});
+
+test("legal request receipts retain concurrent completed and failed attempts without aggregate double counting", async () => {
+  const {sqlite, d1} = sqliteD1Fixture();
+  try {
+    const receipts = createLegalProviderUsageCollector({db: d1, environment: "development", workspaceId: null,
+      userId: null, feature: "legal_chat", runId: "parallel-request"});
+    const observation = {provider: "openai" as const, model: "same-model", attempt: 1 as const,
+      part: "guidance_validation" as const, elapsedMs: 15, httpStatus: 200};
+    receipts.observe({...observation, outcome: "completed", errorCode: null,
+      usage: {inputTokens: 100, outputTokens: 20, cachedInputTokens: 10}});
+    receipts.observe({...observation, outcome: "failed", errorCode: "PROVIDER_TIMEOUT", httpStatus: null, usage: null});
+    receipts.observe({...observation, outcome: "failed", errorCode: "INVALID_AI_OUTPUT",
+      usage: {inputTokens: 50, outputTokens: 5, cachedInputTokens: 0}});
+    await receipts.persist();
+    await receipts.persist();
+    const dashboard = await readAiCostDashboard({db: d1, environment: "development"});
+    assert.equal(dashboard.daily[0]!.requestCount, 3);
+    assert.equal(dashboard.daily[0]!.failedRequestCount, 2);
+    assert.equal(dashboard.daily[0]!.inputTokens, 150);
+    assert.equal(dashboard.daily[0]!.outputTokens, 25);
+    assert.deepEqual(receipts.knownUsage(), {inputTokens: 150, outputTokens: 25, cachedInputTokens: 10});
+    assert.equal(receipts.attemptCount(), 3);
+    assert.deepEqual(sqlite.prepare("SELECT status,usage_observed AS observed FROM ai_provider_usage_events ORDER BY id")
+      .all().map(row => [row.status, row.observed]), [["succeeded", 1], ["failed", 0], ["failed", 1]]);
+  } finally {sqlite.close();}
+});
+
+test("a rejected provider response retains observed usage and its failed outcome", async () => {
+  const {sqlite, d1} = sqliteD1Fixture();
+  try {
+    seed(sqlite);
+    await createAiModelPriceVersion({db: d1, actorUserId: "cost-user", now: new Date(now), value: {
+      provider: "openai", model: "observed-failure", operation: "responses",
+      inputMicrousdPerMillionTokens: 1_000_000, outputMicrousdPerMillionTokens: 2_000_000,
+      cachedInputMicrousdPerMillionTokens: 0, effectiveFrom: "2026-08-01T00:00:00.000Z",
+    }});
+    const recorded = await recordProviderUsage({db: d1, environment: "development", workspaceId: null,
+      userId: null, feature: "legal_chat", operation: "responses", provider: "openai", model: "observed-failure",
+      inputTokens: 100, outputTokens: 50, cachedInputTokens: 20, status: "failed", errorCode: "INVALID_AI_OUTPUT",
+      startedAt: now, completedAt: now});
+    assert.equal(recorded.estimatedCostMicrousd, 180);
+    const dashboard = await readAiCostDashboard({db: d1, environment: "development", now: new Date(now)});
+    const daily = dashboard.daily.find(row => row.model === "observed-failure")!;
+    assert.equal(daily.failedRequestCount, 1);
+    assert.equal(daily.inputTokens, 100);
+    assert.equal(daily.outputTokens, 50);
+    assert.equal(daily.estimatedCostMicrousd, 180);
+    const base = {db: d1, environment: "development" as const, workspaceId: null, userId: null,
+      feature: "legal_chat", operation: "responses", provider: "openai" as const, model: "observed-failure",
+      inputTokens: 0, outputTokens: 0, status: "failed" as const, errorCode: "PROVIDER_TIMEOUT",
+      startedAt: now, completedAt: now};
+    const unknown = await recordProviderUsage({...base, usageObserved: false});
+    const measuredZero = await recordProviderUsage({...base, usageObserved: true});
+    assert.equal(unknown.estimatedCostMicrousd, null);
+    assert.equal(measuredZero.estimatedCostMicrousd, 0);
+    assert.deepEqual(sqlite.prepare("SELECT usage_observed AS observed FROM ai_provider_usage_events WHERE id IN (?,?) ORDER BY usage_observed")
+      .all(unknown.id, measuredZero.id).map(row => row.observed), [0, 1]);
+    await assert.rejects(recordProviderUsage({...base, inputTokens: 1, usageObserved: false}), ProviderUsageError);
+  } finally {sqlite.close();}
+});
 
 function seed(sqlite: ReturnType<typeof sqliteD1Fixture>["sqlite"]) {
   sqlite.prepare("INSERT INTO user_profiles(id,email,created_at,updated_at) VALUES ('cost-user','cost@example.test',?,?)")

@@ -4,6 +4,7 @@ import {env} from "cloudflare:workers";
 import {createLegalAiGateway} from "../lib/ai/legal-ai-gateway";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {legalAiProvider, type LegalChatRequest, type LegalSourceContext} from "../lib/ai/provider";
+import {ProviderRequestAbortError} from "../lib/ai/provider-request-timeout";
 
 const buyer = "The buyer must submit a signed application and proof of identity to the registry.";
 const seller = "The seller must notify the registry after transferring ownership and attach the transfer certificate.";
@@ -19,6 +20,96 @@ const input: LegalChatRequest = {question: "What must the buyer and seller do wh
   requestId: "content-repair", safetyIdentifier: "test", coverageRequirements: [buyer, seller].map((statement, index) => ({
     id: index ? "seller" : "buyer", statement, priority: "core", scopeKind: "general", sourceIds: [source.id],
   }))};
+
+for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [false, true]) test(`${reasoningMode} initial guidance timeout ${cancelled ? "propagates cancellation without recovery" : "preserves candidate findings through validation and withholds unassessed actions"}`, async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  let repairRequested = false;
+  const controller = new AbortController();
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    if (request.text.format.name === "juro_legal_guidance_coverage") throw new ProviderRequestAbortError("first_byte_timeout");
+    if (payload.contentRepair) {
+      repairRequested = true;
+      assert.equal(payload.contentRepair.retainedFindings.length, 2);
+      assert.deepEqual(payload.contentRepair.retainedActions, []);
+      throw new TypeError("Repair temporarily unavailable");
+    }
+    const data = {responseKind: "answer", summary: "Both parties have registry duties.", summarySourceIds: ["s1"],
+      confirmedFindings: [...[buyer, seller].map((explanation, index) => ({title: index ? "Seller duty" : "Buyer duty",
+        explanation, sourceIds: ["s1"], answerRole: "governing_rule"})),
+        {title: "Unverified fine", explanation: "The buyer must pay a fine of 1000.", sourceIds: ["missing"], answerRole: "consequence"}],
+      coverage: {r1: [0], r2: [1]}, guidanceCoverage: {r1: [0], r2: []},
+      actionPlan: [{title: "Wait before filing", description: "Wait 365 days before submitting the application.", sourceIds: ["s1"]}],
+      risks: [], deadlines: [], conditionalBranches: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
+    return Response.json({id: "writer-before-timeout", model: request.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+  });
+  const pending = createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer({...input, reasoningMode}, {
+    fallbackEnabled: false, signal: controller.signal, onProviderAttemptFinished: observation => {
+      if (cancelled && observation.part === "guidance_validation") controller.abort();
+    },
+  });
+  if (cancelled) {
+    await assert.rejects(pending);
+    assert.equal(repairRequested, false);
+    return;
+  }
+  const checked = await pending;
+  assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.explanation), [buyer, seller]);
+  assert.deepEqual(checked.run.data.actionPlan, []);
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+  assert.equal(checked.contentRepair?.outcome, "unavailable");
+  assert.equal(checked.run.sourceFallback, undefined);
+  assert.equal(checked.run.usage.inputTokens, reasoningMode === "fast" ? 200 : 100);
+  assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
+  assert.equal(repairRequested, true);
+});
+
+test("bounded repair completes timed-out guidance while retaining the original failure history", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  let repairRequested = false;
+  const outcomes: string[] = [];
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    let data: unknown;
+    if (request.text.format.name === "juro_legal_guidance_coverage") {
+      if (!repairRequested) throw new ProviderRequestAbortError("first_byte_timeout");
+      data = {scopeGaps: {r1: [], r2: []}, r1: [0], r2: [1], supportedActions: [0, 1],
+        sourceSupport: {a0: [source.id], a1: [source.id]}};
+    } else {
+      repairRequested = Boolean(payload.contentRepair);
+      if (repairRequested) {
+        assert.equal(payload.contentRepair.retainedFindings.length, 2);
+        assert.deepEqual(payload.contentRepair.retainedActions, []);
+        assert.deepEqual(payload.contentRepair.materialGaps, []);
+      }
+      data = {responseKind: "answer", summary: repairRequested ? "" : "Both parties have registry duties.", summarySourceIds: [],
+        confirmedFindings: repairRequested ? [] : [buyer, seller].map((explanation, index) => ({
+          title: index ? "Seller duty" : "Buyer duty", explanation, sourceIds: ["s1"], answerRole: "governing_rule"})),
+        coverage: {r1: repairRequested ? [] : [0], r2: repairRequested ? [] : [1]},
+        guidanceCoverage: {r1: [0], r2: [1]}, actionPlan: [buyer, seller].map((description, index) => ({
+          title: index ? "Notify the registry" : "Submit the application", description, sourceIds: ["s1"]})),
+        risks: [], deadlines: [], conditionalBranches: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
+    }
+    return Response.json({id: "repair-after-timeout", model: request.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+  });
+  const checked = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer(input, {fallbackEnabled: false,
+    onProviderAttemptFinished: observation => {outcomes.push(observation.outcome);}});
+  assert.equal(checked.run.data.responseKind, "answer");
+  assert.equal(checked.contentRepair?.outcome, "repaired");
+  assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.explanation), [buyer, seller]);
+  assert.deepEqual(checked.run.data.actionPlan.map(action => action.description), [buyer, seller]);
+  assert.deepEqual(outcomes, ["completed", "failed", "completed", "completed"]);
+  assert.equal(checked.run.usage.inputTokens, 300);
+  assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
+});
 
 test("repair carries exact retained rule context into a practical step before independent validation", () => {
   const retained = {summary: buyer, summarySourceIds: [source.id], confirmedFindings: [
