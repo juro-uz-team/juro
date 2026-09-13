@@ -1,10 +1,9 @@
 import { z } from "zod";
-import {parseLegalEvidenceRouting} from "./legal-evidence-routing";
+import {parseLegalEvidenceRouting, hasRequiredEvidenceReference, legalEvidenceReferenceContexts} from "./legal-evidence-routing";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
 import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
-import {missingReferencedArticles} from "../legal/referenced-article-context";
 
 /**
  * Claim/source filtering and coverage checks adapt the grounding concepts in
@@ -1404,10 +1403,14 @@ class DefaultLegalAiGateway implements LegalAiGateway {
     const hasMissingReference = (context: LegalChatRequest, requirement: NonNullable<LegalChatRequest["coverageRequirements"]>[number]) => {
       const evidenceIds = new Set([...requirement.sourceIds,
         ...(evidenceRouting?.[requirement.id]?.support.map(witness => witness.sourceId) ?? []),
+        ...legalEvidenceReferenceContexts(context).filter(reference => {
+          const disposition = evidenceRouting?.[requirement.id]?.referenceApplicability?.[reference.id];
+          return disposition && disposition !== "outside";
+        }).map(reference => reference.sourceId),
         ...validated.run.data.confirmedFindings.filter(finding => finding.requirementIds?.includes(requirement.id))
           .flatMap(finding => finding.sourceIds)]);
       return context.sources.some(source => evidenceIds.has(source.id)
-        && sourceTier(source) === "authoritative" && missingReferencedArticles(source, context.sources).length > 0);
+        && sourceTier(source) === "authoritative" && hasRequiredEvidenceReference(context, source, evidenceRouting?.[requirement.id]));
     };
     const missing = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
       const requirement = input.coverageRequirements?.[item.requirementIndex];

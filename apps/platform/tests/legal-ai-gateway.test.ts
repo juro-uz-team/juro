@@ -2054,3 +2054,96 @@ for (const phase of ["routing", "recovery"] as const) test(`caller cancellation 
     assert.equal(research, phase === "recovery" ? 1 : 0);
   } finally {budget.dispose();}
 });
+
+for (const disposition of ["outside", "required", "uncertain", "missing", "foreign-reference", "direct-witness"] as const)
+test(`reference disposition ${disposition} preserves the scope repair boundary`, async () => {
+  let writers = 0;
+  let research = 0;
+  const candidate: LegalSourceContext = {...source, spans: [{...source.spans![0]!, text: source.spans![0]!.text
+    + " При прикомандировании работника к другому работодателю применяются условия статьи 147 настоящего Закона."}]};
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "detailed",
+    reasoningMode: "deep", sources: [candidate], legalDatabaseAsOf: source.verifiedAt, requestId: "scoped-reference",
+    safetyIdentifier: "test", coverageRequirements: [{id: "registration", statement: "Как зарегистрировать ООО?",
+      priority: "core", sourceIds: [source.id]}]};
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence() {return {...run, data: {registration: {decision: "sufficient",
+      support: [{sourceId: source.id, quotation: disposition === "direct-witness" ? candidate.spans![0]!.text : source.spans![0]!.text}], missingEvidenceQuestion: "",
+      ...(disposition === "missing" ? {} : {referenceApplicability: {[disposition === "foreign-reference" ? "ref-2" : "ref-1"]:
+        disposition === "required" || disposition === "uncertain" ? disposition : "outside" as const}})}}};}};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async () => {research++; throw new AiUnavailableError("Official research unavailable", "PROVIDER_UNAVAILABLE", false);}});
+  assert.equal(writers, disposition === "outside" ? 2 : 1, "only an explicit scoped exemption permits repair");
+  assert.equal(research, disposition === "outside" ? 0 : 1);
+  assert.equal(checked.run.data.responseKind, "clarification_required", "reference relevance cannot approve unassessed content");
+});
+
+for (const repeated of [false, true]) test(`a ${repeated ? "repeated" : "single"} required reference outside the writer mapping still requires research`, async () => {
+  let writers = 0;
+  let research = 0;
+  const dependency: LegalSourceContext = {...source, id: "official:conditions", article: "2", spans: [{...source.spans![0]!, id: "conditions",
+    text: (repeated ? "Условия другой процедуры определяются статьей 147 настоящего Закона. " : "")
+      + "Для регистрации должны быть соблюдены условия статьи 147 настоящего Закона."}]};
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source, dependency], legalDatabaseAsOf: source.verifiedAt, requestId: "unmapped-reference",
+    safetyIdentifier: "test", coverageRequirements: [{id: "registration", statement: "Как зарегистрировать ООО?",
+      priority: "core", sourceIds: [source.id]}]};
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence(): ReturnType<NonNullable<LegalAiProvider["assessEvidence"]>> {return {...run, data: {registration: {decision: "sufficient",
+      support: [{sourceId: source.id, quotation: source.spans![0]!.text}], missingEvidenceQuestion: "",
+      referenceApplicability: repeated ? {"ref-1": "outside" as const, "ref-2": "required" as const} : {"ref-1": "required" as const}}}};}};
+  await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async () => {research++; throw new AiUnavailableError("Official research unavailable", "PROVIDER_UNAVAILABLE", false);}});
+  assert.equal(research, 1);
+  assert.equal(writers, 1);
+});
+
+test("a reference exemption cannot transfer to another question scope", async () => {
+  const candidate: LegalSourceContext = {...source, spans: [{...source.spans![0]!, text: source.spans![0]!.text
+    + " Условия прикомандирования определяются статьей 147 настоящего Закона."}]};
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО и при каких условиях допускается прикомандирование?", locale: "ru",
+    answerMode: "detailed", reasoningMode: "deep", sources: [candidate], legalDatabaseAsOf: source.verifiedAt,
+    requestId: "separate-reference-scopes", safetyIdentifier: "test", coverageRequirements: [
+      {id: "registration", statement: "Регистрация ООО", priority: "core", sourceIds: [source.id]},
+      {id: "secondment", statement: "Условия прикомандирования", priority: "core", sourceIds: [source.id]},
+    ]};
+  const repaired: string[] = [], researched: string[] = [];
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat(input) {
+    repaired.push(...(input.contentRepair?.unresolved.map(scope => scope.requirementId) ?? [])); return structuredClone(run);
+  }, async assessEvidence() {return {...run, data: {
+    registration: {decision: "sufficient", support: [{sourceId: source.id, quotation: source.spans![0]!.text}], missingEvidenceQuestion: "",
+      referenceApplicability: {"ref-1": "outside" as const}},
+    secondment: {decision: "missing_evidence", support: [], missingEvidenceQuestion: "Каковы условия прикомандирования?",
+      referenceApplicability: {"ref-1": "required" as const}},
+  }};}};
+  await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false, recoverEvidence: async (_input, ids) => {
+    researched.push(...ids); throw new AiUnavailableError("Official research unavailable", "PROVIDER_UNAVAILABLE", false);
+  }});
+  assert.deepEqual(researched, ["secondment"]);
+  assert.deepEqual(repaired, ["registration"]);
+});
+
+for (const stale of [false, true]) test(`recovery ${stale ? "rejects stale" : "reassesses renumbered"} reference dispositions`, async () => {
+  const candidate: LegalSourceContext = {...source, spans: [{...source.spans![0]!, text: source.spans![0]!.text
+    + " Другая процедура описана статьей 147 настоящего Закона. Условия регистрации определяются статьей 148 настоящего Закона."}]};
+  const recovered: LegalSourceContext = {...source, id: "official:147", article: "147", spans: [{...source.spans![0]!, id: "resolved-147",
+    article: "147", text: "Это полное положение о другой процедуре, включая ее участников и все необходимые условия ее проведения."}]};
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "detailed", reasoningMode: "deep",
+    sources: [candidate], legalDatabaseAsOf: source.verifiedAt, requestId: "renumbered-reference", safetyIdentifier: "test",
+    coverageRequirements: [{id: "registration", statement: "Регистрация ООО", priority: "core", sourceIds: [source.id]}]};
+  let routing = 0, writers = 0;
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence(input): ReturnType<NonNullable<LegalAiProvider["assessEvidence"]>> {
+      routing++;
+      const initial = routing === 1;
+      assert.equal(input.sources.some(source => source.id === recovered.id), !initial);
+      return {...run, data: {registration: {decision: initial ? "missing_evidence" : "sufficient",
+        support: [{sourceId: source.id, quotation: source.spans![0]!.text}], missingEvidenceQuestion: initial ? "Каковы условия регистрации?" : "",
+        referenceApplicability: initial || stale ? {"ref-1": "outside", "ref-2": "required"} : {"ref-1": "required"}}}};
+    }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async () => ({sources: [candidate, recovered], coverageRequirements: request.coverageRequirements!, legalDatabaseAsOf: request.legalDatabaseAsOf})});
+  assert.equal(routing, 2);
+  assert.equal(writers, 1, "the unresolved registration reference stays blocking after the unrelated reference is resolved");
+  assert.equal(checked.evidenceRouting?.outcome, stale ? "unavailable" : "assessed");
+  assert.equal(checked.recoveredEvidence, undefined);
+});

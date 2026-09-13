@@ -240,6 +240,7 @@ export type LegalEvidenceRoutingDecision = {
   decision: "sufficient" | "missing_evidence" | "unsupported_relationship";
   support: Array<{sourceId: string; quotation: string}>;
   missingEvidenceQuestion: string;
+  referenceApplicability?: Record<string, "required" | "outside" | "uncertain">;
 };
 
 export interface LegalAiProvider {

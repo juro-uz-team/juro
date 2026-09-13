@@ -194,3 +194,56 @@ for (const phase of ["before-dispatch", "during-admission", "during-fetch"] as c
     if (phase === "during-fetch") assert.equal(fetchCancelled, true);
   });
 }
+
+test("evidence routing assesses every missing reference with full scope and source context", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const referring = "Secondment conditions are governed by article 147 of this Act.";
+  const candidate = {...source, spans: [{...source.spans![0]!, text: `${rule} ${referring}`}]};
+  const input: LegalChatRequest = {question: "What must the seller do?", sources: [candidate], locale: "en",
+    answerMode: "detailed", reasoningMode: "deep", legalDatabaseAsOf: source.verifiedAt, requestId: "reference-context",
+    safetyIdentifier: "test", coverageRequirements: [{id: "seller", statement: "Seller duty", priority: "core", sourceIds: [source.id]}]};
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    assert.equal(payload.question, input.question);
+    assert.deepEqual(payload.sources[0].spans, candidate.spans);
+    assert.deepEqual(payload.missingReferences, [{id: "ref-1", sourceId: source.id, sourceSpanId: source.spans![0]!.id,
+      sourceSpanTextSha256: source.spans![0]!.textSha256, referencedArticle: "147", exactReferringSentence: referring,
+      startUtf16: rule.length + 1, endUtf16: candidate.spans[0]!.text.length}]);
+    assert.deepEqual(request.text.format.schema.properties.seller.properties.referenceApplicability.required, ["ref-1"]);
+    return Response.json({id: "reference-context", model: "gpt-5.6-terra", output: [{content: [{type: "output_text",
+      text: JSON.stringify({seller: {decision: "sufficient", support: [{sourceId: source.id, quotation: rule}], missingEvidenceQuestion: "",
+        referenceApplicability: {"ref-1": "outside"}}})}]}], usage: {input_tokens: 40, output_tokens: 20}});
+  });
+  const result = await legalAiProvider()!.assessEvidence!(input, ["seller"], {provider: "openai", model: "gpt-5.6-terra"});
+  assert.equal(result.data.seller?.referenceApplicability?.["ref-1"], "outside");
+});
+
+test("long repeated reference contexts retain complete sources without exceeding the evidence text bound", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const text = `${rule} ${"Context ".repeat(3500)}article 147 of this Act and article 148 of this Act govern secondment.`;
+  const candidate = {...source, spans: [{...source.spans![0]!, text}]};
+  const input: LegalChatRequest = {question: "What must the seller do?", sources: [candidate], locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", legalDatabaseAsOf: source.verifiedAt, requestId: "long-reference-context", safetyIdentifier: "test",
+    coverageRequirements: [{id: "seller", statement: "Seller duty", priority: "core", sourceIds: [source.id]}]};
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const payload = JSON.parse(JSON.parse(String(init.body)).input);
+    assert.deepEqual(payload.sources[0].spans, candidate.spans);
+    assert.equal(payload.missingReferences.length, 2);
+    for (const reference of payload.missingReferences) {
+      assert.equal(reference.exactReferringSentence, undefined, "full source text already supplies this long reference context");
+      assert.equal(reference.sourceSpanId, source.spans![0]!.id);
+      assert.equal(reference.sourceSpanTextSha256, source.spans![0]!.textSha256);
+      assert.ok(text.slice(reference.startUtf16, reference.endUtf16).includes(`article ${reference.referencedArticle} of this Act`));
+    }
+    return Response.json({id: "long-reference-context", model: "gpt-5.6-terra", output: [{content: [{type: "output_text",
+      text: JSON.stringify({seller: {decision: "sufficient", support: [{sourceId: source.id, quotation: rule}], missingEvidenceQuestion: "",
+        referenceApplicability: {"ref-1": "outside", "ref-2": "outside"}}})}]}], usage: {input_tokens: 40, output_tokens: 20}});
+  });
+  const result = await legalAiProvider()!.assessEvidence!(input, ["seller"], {provider: "openai", model: "gpt-5.6-terra"});
+  assert.equal(result.data.seller?.referenceApplicability?.["ref-2"], "outside");
+});
