@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
-import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings} from "./legal-finding-assessment";
+import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
 import {missingReferencedArticles} from "../legal/referenced-article-context";
@@ -544,7 +544,7 @@ function groundedVisibleAnswer(
 }
 
 function groundedMainPoint(result: LegalChatResponse, claims: readonly LegalGatewayClaim[],
-  requirements: LegalChatRequest["coverageRequirements"] = [], contextualGoverning: ReadonlySet<LegalChatResponse["confirmedFindings"][number]> = new Set()): {text: string | null; acceptedSummary: boolean} {
+  requirements: LegalChatRequest["coverageRequirements"] = [], contextualGoverning: ReadonlySet<LegalChatResponse["confirmedFindings"][number]> = new Set(), independentlySupported = false): {text: string | null; acceptedSummary: boolean} {
   const summary = plainGroundedText(result.summary);
   const supportedFindings = result.confirmedFindings.filter((item) => claims.some((claim) =>
     claim.text === nonRepeatingLegalText(item.title, item.explanation)));
@@ -561,7 +561,7 @@ function groundedMainPoint(result: LegalChatResponse, claims: readonly LegalGate
   const evidenceText = summaryClaims.map((claim) => claim.text).join(" ");
   const terms = legalTerms(summary);
   const covered = terms.filter(evidenceTermMatcher(evidenceText)).length;
-  const acceptedSummary = summary.length <= 650 && terms.length > 0 && covered / terms.length >= 0.8
+  const acceptedSummary = independentlySupported && summary.length <= 650 && terms.length > 0 && covered / terms.length >= 0.8
     && forumFindings.every(finding => finding.sourceIds.some(id => summarySourceIds?.includes(id)))
     && (!summarySourceIds || (summarySourceIds.length > 0
       && summarySourceIds.every(id => summaryClaims.some(claim => claim.sourceId === id))))
@@ -1071,7 +1071,9 @@ export function validateLegalGatewayAnswer(input: {
   const governingOrigins = assessedGoverningFindings(input, filtered.confirmedFindings.map(finding => findingOrigins.get(finding) ?? finding),
     input.run.findingAssessments ?? []);
   const contextualGoverning = new Set(filtered.confirmedFindings.filter(finding => governingOrigins.has(findingOrigins.get(finding) ?? finding)));
-  const mainPoint = groundedMainPoint(grounded, publishable, input.coverageRequirements, contextualGoverning);
+  const mainPointSupported = assessedMainPointSupported(input, input.result,
+    filtered.confirmedFindings.map(finding => findingOrigins.get(finding) ?? finding), input.run.findingAssessments ?? []);
+  const mainPoint = groundedMainPoint(grounded, publishable, input.coverageRequirements, contextualGoverning, mainPointSupported);
   const groundedResult: LegalChatResponse = {
     ...grounded,
     responseKind: fallback || input.run.sourceFallback || input.result.responseKind === "clarification_required" || mainPoint.text === null

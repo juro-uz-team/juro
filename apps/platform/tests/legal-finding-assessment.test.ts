@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {parseLegalFindingAssessment, assessedFindingSources, assessLegalFindings} from "../lib/ai/legal-finding-assessment";
+import {parseLegalFindingAssessment, assessedFindingSources, assessLegalFindings, assessedMainPointSupported} from "../lib/ai/legal-finding-assessment";
 import {env} from "cloudflare:workers";
 import type {LegalChatRequest, LegalSourceContext, LegalAiRunResult} from "../lib/ai/provider";
 import type {LegalChatResponse} from "../lib/ai/legal-chat-schema";
@@ -19,10 +19,32 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
 
-test("Main Point fallback retains every contextual governing answer with qualification labels", () => {
+test("Main Point approval binds exact summary, citations, surviving dependencies and every core scope", () => {
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    priority: "core", scopeKind: "general", sourceIds: finding.sourceIds}]};
+  const point = {summary: finding.explanation, summarySourceIds: finding.sourceIds};
+  const decision = {f1: finding.sourceIds, scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []},
+    mainPoint: {supported: true, findingIndexes: [0], scopeCoverage: {r1: true}}};
+  const assessment = parseLegalFindingAssessment(decision, request, [finding], point);
+  assert.equal(assessedMainPointSupported(request, point, [finding], [assessment]), true);
+  assert.equal(assessedMainPointSupported(request, {...point, summary: point.summary + " Always."}, [finding], [assessment]), false);
+  assert.equal(assessedMainPointSupported(request, {...point, summarySourceIds: ["court"]}, [finding], [assessment]), false);
+  assert.equal(assessedMainPointSupported({...request, question: "Another question"}, point, [finding], [assessment]), false);
+  assert.equal(assessedMainPointSupported(request, point, [], [assessment]), false);
+  assert.equal(assessedMainPointSupported(request, point, [{...finding, sourceIds: ["court"]}], [assessment]), false);
+  for (const changed of [{...decision, f1: []}, {...decision, scopeGoverning: {r1: []}},
+    {...decision, mainPoint: {...decision.mainPoint, supported: false}},
+    {...decision, mainPoint: {...decision.mainPoint, findingIndexes: []}},
+    {...decision, mainPoint: {...decision.mainPoint, scopeCoverage: {r1: false}}}]) {
+    const rejected = parseLegalFindingAssessment(changed, request, [finding], point);
+    assert.equal(assessedMainPointSupported(request, point, [finding], [rejected]), false);
+  }
+});
+
+for (const summary of ["An unsupported 999 day period applies.", sources[0]!.spans![0]!.text]) test(`Main Point fallback retains every contextual governing answer when summary is ${summary}`, () => {
   const request: LegalChatRequest = {...input, coverageRequirements: sources.map(source => ({id: source.id,
     statement: `How does mediation affect ${source.id} filing?`, priority: "core", scopeKind: "forum", sourceIds: [source.id]}))};
-  const data = parseLegalChatResponse({responseKind: "answer", summary: "An unsupported 999 day period applies.",
+  const data = parseLegalChatResponse({responseKind: "answer", summary,
     summarySourceIds: sources.map(source => source.id), coverage: {r1: [0], r2: [1]}, guidanceCoverage: {r1: [0], r2: [1]},
     confirmedFindings: sources.map(source => ({title: `${source.id} mediation`, explanation: source.spans![0]!.text,
       sourceIds: [source.id], answerRole: "qualification"})),
@@ -76,7 +98,7 @@ test("a supported governing finding cannot hide a missing material rule in the s
   const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
     attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null};
   context.mock.method(globalThis, "fetch", async () => Response.json({id: "scope-assessment", model: run.model,
-    output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
+    output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"], mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false}},
       scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: [{sourceId: "commission", quotation: "nonexistent quotation", reason: "Missing ordinary rule"}]}})}]}],
     usage: {input_tokens: 100, output_tokens: 10}}));
   const assessed = await assessLegalFindings(request, run, {}, Date.now() + 12_000);
@@ -108,7 +130,7 @@ test("a single cited provision cannot bypass independent rejection of a missing 
     assert.equal(payload.sources[0].spans[0].text, rule);
     assert.equal(payload.findings.length, 2);
     return Response.json({id: "single-source-assessment", model: run.model,
-      output: [{content: [{type: "output_text", text: JSON.stringify({f1: [], f2: ["commission"]})}]}],
+      output: [{content: [{type: "output_text", text: JSON.stringify({f1: [], f2: ["commission"], mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {}}})}]}],
       usage: {input_tokens: 100, output_tokens: 10}});
   });
   const assessed = await assessLegalFindings(request, run, {}, Date.now() + 12_000);
@@ -211,13 +233,14 @@ test("the finding assessor receives complete semantic evidence without private r
     const payload = JSON.parse(request.input);
     assert.equal("citationEvidenceReceipt" in payload.sources[0], false);
     assert.equal(payload.sources[0].spans[0].text, sources[0]!.spans![0]!.text);
+    assert.deepEqual(payload.mainPoint, {text: data.summary, sourceIds: data.summarySourceIds});
     assert.equal("sourceIds" in payload.requirements[0], false,
       "discovery hints must not restrict independent completeness assessment to a suggested source subset");
     assert.deepEqual(payload.requirements[0].questionContext.questions, [input.question]);
     assert.deepEqual(request.text.format.schema.properties.f1.items.enum, finding.sourceIds,
       "each finding has a closed source identity enum, without ambiguous local/global indexes");
     return Response.json({id: "finding-assessment", model: run.model,
-      output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
+      output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"], mainPoint: {supported: true, findingIndexes: [0], scopeCoverage: {r1: true}},
         scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []}})}]}],
       usage: {input_tokens: 100, output_tokens: 10}});
   });

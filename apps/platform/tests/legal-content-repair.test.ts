@@ -28,7 +28,8 @@ function findingAssessmentResponse(request: {text: {format: {name: string}}; inp
   const support = Object.fromEntries(payload.findings.map((finding, index) =>
     [`f${index + 1}`, finding.sourceIds.filter(id => sourceIds.has(id))]));
   const coverage = [buyer, seller].map(rule => payload.findings.flatMap((finding, index) => finding.explanation === rule ? [index] : []));
-  Object.assign(support, {scopeCoverage: {r1: coverage[0], r2: coverage[1]}, scopeGoverning: {r1: coverage[0], r2: coverage[1]}, scopeGaps: {r1: [], r2: []}});
+  Object.assign(support, {scopeCoverage: {r1: coverage[0], r2: coverage[1]}, scopeGoverning: {r1: coverage[0], r2: coverage[1]}, scopeGaps: {r1: [], r2: []},
+    mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false, r2: false}}});
   return Response.json({id: "finding-support", model: request.model,
     output: [{content: [{type: "output_text", text: JSON.stringify(support)}]}], usage: {input_tokens: 100, output_tokens: 20}});
 }
@@ -45,7 +46,7 @@ test("finding gaps reach one bounded repair even when practical guidance already
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_finding_support") {
-      data = {f1: [source.id], ...(repaired ? {f2: [source.id]} : {}),
+      data = {f1: [source.id], ...(repaired ? {f2: [source.id]} : {}), mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false}},
         scopeCoverage: {r1: repaired ? [0, 1] : []}, scopeGoverning: {r1: repaired ? [0, 1] : []}, scopeGaps: {r1: repaired ? [] : [
           {sourceId: source.id, quotation: seller, reason: "Seller duty is absent from findings"}]}};
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {

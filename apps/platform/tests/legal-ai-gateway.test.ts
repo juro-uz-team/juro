@@ -366,7 +366,11 @@ test("a multi-scope Main Point must cite the validated evidence for both scopes"
   const answer: LegalChatResponse = {...result, summary, summarySourceIds: [source.id, second.id],
     confirmedFindings: [{...result.confirmedFindings[0]!, answerRole: "governing_rule"},
       {title: "Уведомление комиссии", explanation: secondText, answerRole: "governing_rule", sourceIds: [second.id]}]};
-  const validate = (value: LegalChatResponse) => validateLegalGatewayAnswer({result: value, run: {...run, data: value},
+  const assessment = parseLegalFindingAssessment({f1: [source.id], f2: [second.id],
+    mainPoint: {supported: true, findingIndexes: [0, 1], scopeCoverage: {}}},
+  {sources: [source, second]}, answer.confirmedFindings, answer);
+  const validate = (value: LegalChatResponse) => validateLegalGatewayAnswer({result: value,
+    run: {...run, data: value, findingAssessments: [assessment]},
     sources: [source, second], locale: "ru", answerMode: "detailed", reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt});
   const accepted = validate(answer).run.data;
   assert.equal(accepted.summary, summary);
