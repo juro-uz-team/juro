@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
-import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps} from "./legal-finding-assessment";
+import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
 import {missingReferencedArticles} from "../legal/referenced-article-context";
@@ -17,7 +17,6 @@ import { groundingNumericTokens } from "../legal/grounding-numbers";
 import { canonicalSecondaryInternetUrl } from "../legal/secondary-internet-url";
 import { parsePrivateDocumentLocator } from "../document-analysis/private-document-locator";
 import { AiUnavailableError } from "../document-builder/ai/openai";
-import { requiredCoverageAnswerRole } from "../legal/legal-coverage";
 import {
   containsSensitiveAgentContent,
   containsUnvalidatedHttpLink,
@@ -545,11 +544,11 @@ function groundedVisibleAnswer(
 }
 
 function groundedMainPoint(result: LegalChatResponse, claims: readonly LegalGatewayClaim[],
-  requirements: LegalChatRequest["coverageRequirements"] = []): {text: string | null; acceptedSummary: boolean} {
+  requirements: LegalChatRequest["coverageRequirements"] = [], contextualGoverning: ReadonlySet<LegalChatResponse["confirmedFindings"][number]> = new Set()): {text: string | null; acceptedSummary: boolean} {
   const summary = plainGroundedText(result.summary);
   const supportedFindings = result.confirmedFindings.filter((item) => claims.some((claim) =>
     claim.text === nonRepeatingLegalText(item.title, item.explanation)));
-  const governingFindings = supportedFindings.filter(item => item.answerRole === "governing_rule");
+  const governingFindings = supportedFindings.filter(item => item.answerRole === "governing_rule" || contextualGoverning.has(item));
   const forumFindings = requirements.filter(requirement => requirement.priority === "core"
     && requirement.scopeKind === "forum").flatMap(requirement => {
       const finding = governingFindings.find(item => item.requirementIds?.includes(requirement.id)
@@ -1069,7 +1068,10 @@ export function validateLegalGatewayAnswer(input: {
     : retainedTiers.size > 1 ? "mixed" as const
       : retainedTiers.has("official") ? "official" as const
         : "private_only" as const;
-  const mainPoint = groundedMainPoint(grounded, publishable, input.coverageRequirements);
+  const governingOrigins = assessedGoverningFindings(input, filtered.confirmedFindings.map(finding => findingOrigins.get(finding) ?? finding),
+    input.run.findingAssessments ?? []);
+  const contextualGoverning = new Set(filtered.confirmedFindings.filter(finding => governingOrigins.has(findingOrigins.get(finding) ?? finding)));
+  const mainPoint = groundedMainPoint(grounded, publishable, input.coverageRequirements, contextualGoverning);
   const groundedResult: LegalChatResponse = {
     ...grounded,
     responseKind: fallback || input.run.sourceFallback || input.result.responseKind === "clarification_required" || mainPoint.text === null
@@ -1107,8 +1109,6 @@ export function validateLegalGatewayAnswer(input: {
     assessedFindingCoverage(input, findings.map(finding => findingOrigins.get(finding) ?? finding),
       input.run.findingAssessments ?? []).has(requirement.id)
     && findings.some(finding => finding.requirementIds?.includes(requirement.id)
-      && (requiredCoverageAnswerRole(requirement) === null
-        || finding.answerRole === requiredCoverageAnswerRole(requirement))
       && (requirement.sourceIds.length === 0
         || finding.sourceIds.some(id => requirement.sourceIds.includes(id))));
   const guidanceCovers = (requirement: typeof requirements[number]) => groundedResult.actionPlan.some(action =>
@@ -1325,8 +1325,11 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       // Live official retrieval can lack a discovery-to-scope mapping. A
       // validated governing finding supplies its own evidence relationship;
       // raw writer citations and unrelated findings cannot authorize repair.
+      const requirementIndex = context.coverageRequirements?.findIndex(scope => scope.id === requirement.id);
+      const contextualFindingComplete = requirementIndex !== undefined && requirementIndex >= 0
+        && validated.coverageDiagnostics.unresolvedCoverage.some(scope => scope.requirementIndex === requirementIndex && scope.finding === null);
       const evidenceIds = [...requirement.sourceIds,
-        ...validated.run.data.confirmedFindings.filter(finding => finding.answerRole === "governing_rule"
+        ...validated.run.data.confirmedFindings.filter(finding => (finding.answerRole === "governing_rule" || contextualFindingComplete)
           && finding.requirementIds?.includes(requirement.id)).flatMap(finding => finding.sourceIds)];
       return evidenceIds.some(id => context.sources.some(source => source.id === id
         && sourceTier(source) === "authoritative" && source.spans?.some(span => span.quality === "high")));

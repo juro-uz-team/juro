@@ -250,14 +250,14 @@ test("a mapped governing provision cannot substitute for its absent operative cr
   assert.equal(checked.run.data.responseKind, "clarification_required");
 });
 
-test("validated governing findings permit guidance repair when live evidence has no discovery mapping", async () => {
+for (const answerRole of ["governing_rule", "qualification"] as const) test(`contextual governing findings labelled ${answerRole} permit guidance repair without discovery mappings`, async () => {
   let calls = 0;
   const provider: LegalAiProvider = {name: "openai", async runLegalChat(request) {
     calls += 1;
     const candidate = structuredClone(run);
     candidate.data.confirmedFindings = candidate.data.confirmedFindings.map(finding => ({...finding,
-      requirementIds: ["registration"], answerRole: "governing_rule"}));
-    candidate.findingAssessments = [fixtureFindingAssessment({...request, result: candidate.data}, {r1: [0]})];
+      requirementIds: ["registration"], answerRole}));
+    candidate.findingAssessments = [fixtureFindingAssessment({...request, result: candidate.data}, {r1: [0]}, {r1: [0]})];
     if (calls > 1) {
       candidate.data.actionPlan = [{title: "Зарегистрируйте общество", description: "Общество подлежит государственной регистрации в установленном порядке.",
         sourceIds: [source.id], requirementIds: ["registration"]}];
@@ -269,7 +269,7 @@ test("validated governing findings permit guidance repair when live evidence has
     question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "short", reasoningMode: "deep",
     sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "live-repair-evidence", safetyIdentifier: "test",
     coverageRequirements: [{id: "registration", statement: "Как зарегистрировать ООО?", priority: "core", scopeKind: "general", sourceIds: []}],
-  }, {fallbackEnabled: false});
+  }, {fallbackEnabled: false, recoverEvidence: async () => {assert.fail("validated contextual evidence must proceed to content repair");}});
   assert.ok(checked.run.data.confirmedFindings.some(finding => finding.requirementIds?.includes("registration")));
   assert.equal(calls, 2);
   assert.equal(checked.contentRepair?.outcome, "repaired");
@@ -280,9 +280,11 @@ test("validated governing findings permit guidance repair when live evidence has
 // approved their stated scopes. Cross-scope rejection is exercised with an
 // independent response in legal-guidance-assessment.test.ts.
 function fixtureFindingAssessment(input: Pick<Parameters<typeof validateLegalGatewayAnswer>[0],
-  "question" | "sources" | "coverageRequirements" | "result">, scopeCoverage: Record<string, number[]>) {
+  "question" | "sources" | "coverageRequirements" | "result">, scopeCoverage: Record<string, number[]>, scopeGoverning?: Record<string, number[]>) {
   return parseLegalFindingAssessment({...Object.fromEntries(input.result.confirmedFindings.map((finding, index) =>
     [`f${index + 1}`, finding.sourceIds])), scopeCoverage,
+    scopeGoverning: scopeGoverning ?? Object.fromEntries(Object.entries(scopeCoverage).map(([scope, indexes]) => [scope,
+      indexes.filter(index => input.result.confirmedFindings[index]?.answerRole === "governing_rule")])),
     scopeGaps: Object.fromEntries(Object.keys(scopeCoverage).map(scope => [scope, []]))}, input, input.result.confirmedFindings);
 }
 

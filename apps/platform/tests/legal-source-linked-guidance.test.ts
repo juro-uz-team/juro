@@ -73,7 +73,7 @@ for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} pr
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_finding_support") {
-      data = {f1: [source.id], scopeCoverage: {r1: [0]}, scopeGaps: {r1: []}};
+      data = {f1: [source.id], scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []}};
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {
       independentlyAssessed = true;
       assert.equal(payload.actions[0].description, "File the application with the registry.\n\n" +

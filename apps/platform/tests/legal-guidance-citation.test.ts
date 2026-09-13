@@ -61,7 +61,7 @@ test("independent finding support retains complementary citations and consumes i
   const result = {...data, confirmedFindings: [finding]};
   const checked = (decision: number[]) => validateLegalGatewayAnswer({...input, result,
     run: {...run, data: result, findingAssessments: [parseLegalFindingAssessment({f1: decision.map(index => action.sourceIds[index]),
-      scopeCoverage: {r1: [0]}, scopeGaps: {r1: []}}, input, [finding])]}});
+      scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []}}, input, [finding])]}});
   assert.deepEqual(checked([0, 1]).run.data.confirmedFindings[0]?.sourceIds, action.sourceIds);
   assert.equal(checked([0, 1]).run.findingAssessments, undefined);
   assert.equal(checked([]).run.data.confirmedFindings.length, 0);

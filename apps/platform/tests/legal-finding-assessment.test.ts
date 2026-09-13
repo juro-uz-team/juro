@@ -6,6 +6,7 @@ import type {LegalChatRequest, LegalSourceContext, LegalAiRunResult} from "../li
 import type {LegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
 import {validateLegalGatewayAnswer} from "../lib/ai/legal-ai-gateway";
+import {parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
 const sources: LegalSourceContext[] = ["commission", "court"].map(id => ({id, officialUrl: `https://lex.uz/ru/docs/${id}`,
   actTitle: "Procedure", article: "1", locale: "en", sourceClass: "OFFICIAL_LEGISLATION", contentSha256: "a".repeat(64),
   actIdentifier: id, revisionDate: null, lastCheckedAt: "2026-09-11T00:00:00Z", publishedAt: null,
@@ -17,6 +18,50 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
   reasoningMode: "deep", legalDatabaseAsOf: "2026-09-11T00:00:00Z", requestId: "finding-test", safetyIdentifier: "test"};
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
+
+test("Main Point fallback retains every contextual governing answer with qualification labels", () => {
+  const request: LegalChatRequest = {...input, coverageRequirements: sources.map(source => ({id: source.id,
+    statement: `How does mediation affect ${source.id} filing?`, priority: "core", scopeKind: "forum", sourceIds: [source.id]}))};
+  const data = parseLegalChatResponse({responseKind: "answer", summary: "An unsupported 999 day period applies.",
+    summarySourceIds: sources.map(source => source.id), coverage: {r1: [0], r2: [1]}, guidanceCoverage: {r1: [0], r2: [1]},
+    confirmedFindings: sources.map(source => ({title: `${source.id} mediation`, explanation: source.spans![0]!.text,
+      sourceIds: [source.id], answerRole: "qualification"})),
+    actionPlan: sources.map(source => ({title: `Account for ${source.id} mediation`, description: source.spans![0]!.text, sourceIds: [source.id]})),
+    risks: [], deadlines: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null,
+    findingAssessments: [parseLegalFindingAssessment({f1: ["commission"], f2: ["court"], scopeCoverage: {r1: [0], r2: [1]},
+      scopeGoverning: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, request, data.confirmedFindings)],
+    guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0, 1], r1: [0], r2: [1]}, request, data.actionPlan)]};
+  const result = validateLegalGatewayAnswer({...request, result: data, run});
+  assert.equal(result.run.data.responseKind, "answer");
+  assert.equal(result.run.data.summary, sources.map(source => source.spans![0]!.text).join(" "));
+});
+
+test("a finding governs only the independently assessed question scope, regardless of its global label", () => {
+  const request: LegalChatRequest = {...input, question: "How does mediation affect filing, and what are the ordinary filing periods?",
+    coverageRequirements: [
+      {id: "mediation", statement: "How does mediation affect filing?", scopeKind: "general", priority: "core", sourceIds: ["commission", "court"]},
+      {id: "periods", statement: "What are the ordinary filing periods?", scopeKind: "general", priority: "core", sourceIds: ["commission", "court"]},
+    ]};
+  for (const answerRole of ["qualification", "governing_rule"] as const) {
+    const data = parseLegalChatResponse({responseKind: "answer", summary: finding.explanation,
+      confirmedFindings: [{...finding, answerRole}], coverage: {r1: [0], r2: [0]}, guidanceCoverage: {r1: [], r2: []},
+      summarySourceIds: finding.sourceIds, actionPlan: [], risks: [], deadlines: [], clarificationQuestions: [],
+      urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+    const assessment = parseLegalFindingAssessment({f1: finding.sourceIds,
+      scopeCoverage: {r1: [0], r2: [0]}, scopeGoverning: {r1: [0], r2: []}, scopeGaps: {r1: [], r2: []}}, request, data.confirmedFindings);
+    const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+      attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null,
+      findingAssessments: [assessment]};
+    const result = validateLegalGatewayAnswer({...request, result: data, run});
+    assert.equal(result.coverageDiagnostics.validatedRequirementCount, 1,
+      "explicit mediation is answered, while suspension alone cannot replace ordinary filing periods");
+    assert.equal(result.coverageDiagnostics.unresolvedCoverage.find(scope => scope.requirementIndex === 0)?.finding, null);
+    assert.notEqual(result.coverageDiagnostics.unresolvedCoverage.find(scope => scope.requirementIndex === 1)?.finding, null);
+    assert.equal(result.run.data.confirmedFindings[0]!.answerRole, answerRole, "presentation labels are not rewritten as coverage proof");
+  }
+});
 
 test("a supported governing finding cannot hide a missing material rule in the same scope", async context => {
   const previous = env.OPENAI_API_KEY;
@@ -32,7 +77,7 @@ test("a supported governing finding cannot hide a missing material rule in the s
     attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null};
   context.mock.method(globalThis, "fetch", async () => Response.json({id: "scope-assessment", model: run.model,
     output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
-      scopeCoverage: {r1: [0]}, scopeGaps: {r1: [{sourceId: "commission", quotation: "nonexistent quotation", reason: "Missing ordinary rule"}]}})}]}],
+      scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: [{sourceId: "commission", quotation: "nonexistent quotation", reason: "Missing ordinary rule"}]}})}]}],
     usage: {input_tokens: 100, output_tokens: 10}}));
   const assessed = await assessLegalFindings(request, run, {}, Date.now() + 12_000);
   const validated = validateLegalGatewayAnswer({...request, result: assessed.data, run: assessed});
@@ -93,18 +138,27 @@ test("complete finding coverage survives display formatting but not loss of a se
     confirmedFindings: findings, coverage: {r1: [0, 1]}, guidanceCoverage: {r1: []}, summarySourceIds: ["commission"],
     actionPlan: [], clarificationQuestions: [], risks: [], deadlines: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
   const assessment = parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
-    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
+    scopeCoverage: {r1: [0, 1]}, scopeGoverning: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
   const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
     attempts: 1, latencyMs: 1, usage: {inputTokens: 1, outputTokens: 1, cachedInputTokens: 0}, fallbackFromProvider: null,
     findingAssessments: [assessment]};
   const complete = validateLegalGatewayAnswer({...request, result: data, run});
   assert.equal(complete.coverageDiagnostics.validatedRequirementCount, 1);
+  const unrelatedDirectRule = parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
+    scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
+  const outsideSelectedSet = validateLegalGatewayAnswer({...request, result: data,
+    run: {...run, findingAssessments: [unrelatedDirectRule]}});
+  assert.equal(outsideSelectedSet.coverageDiagnostics.validatedRequirementCount, 0,
+    "a governing finding outside the independently selected scope cannot authorize it");
+  assert.throws(() => parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
+    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings),
+    "missing contextual direct-rule assessment cannot fall back to the writer's labels");
   const missing = {...data, confirmedFindings: data.confirmedFindings.slice(0, 1)};
   const incomplete = validateLegalGatewayAnswer({...request, result: missing, run: {...run, data: missing}});
   assert.equal(incomplete.run.data.confirmedFindings.length, 1);
   assert.equal(incomplete.coverageDiagnostics.validatedRequirementCount, 0);
   const unsupported = parseLegalFindingAssessment({f1: ["commission"], f2: [],
-    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
+    scopeCoverage: {r1: [0, 1]}, scopeGoverning: {r1: [0, 1]}, scopeGaps: {r1: []}}, request, data.confirmedFindings);
   const rejected = validateLegalGatewayAnswer({...request, result: data, run: {...run, findingAssessments: [unsupported]}});
   assert.equal(rejected.run.data.confirmedFindings.length, 1);
   assert.equal(rejected.coverageDiagnostics.validatedRequirementCount, 0,
@@ -114,7 +168,7 @@ test("complete finding coverage survives display formatting but not loss of a se
   const invalidCitation = {...request, sources: sources.map(source => source.id === "court"
     ? {...source, spans: source.spans!.map(span => ({...span, textSha256: "invalid"}))} : source)};
   const freshAssessment = parseLegalFindingAssessment({f1: ["commission"], f2: ["court"],
-    scopeCoverage: {r1: [0, 1]}, scopeGaps: {r1: []}}, invalidCitation, data.confirmedFindings);
+    scopeCoverage: {r1: [0, 1]}, scopeGoverning: {r1: [0, 1]}, scopeGaps: {r1: []}}, invalidCitation, data.confirmedFindings);
   const lostCitation = validateLegalGatewayAnswer({...invalidCitation, result: data,
     run: {...run, findingAssessments: [freshAssessment]}});
   assert.equal(lostCitation.run.data.confirmedFindings.length, 1);
@@ -164,7 +218,7 @@ test("the finding assessor receives complete semantic evidence without private r
       "each finding has a closed source identity enum, without ambiguous local/global indexes");
     return Response.json({id: "finding-assessment", model: run.model,
       output: [{content: [{type: "output_text", text: JSON.stringify({f1: ["commission", "court"],
-        scopeCoverage: {r1: [0]}, scopeGaps: {r1: []}})}]}],
+        scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []}})}]}],
       usage: {input_tokens: 100, output_tokens: 10}});
   });
   await assessLegalFindings(requestInput, run, {}, Date.now() + 12_000);

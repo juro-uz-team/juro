@@ -31,7 +31,7 @@ const data = parseLegalChatResponse({responseKind: "answer", summary: buyer, sum
 const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "generated",
   attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null,
   findingAssessments: [parseLegalFindingAssessment({f1: [source.id], f2: [source.id],
-    scopeCoverage: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, input, data.confirmedFindings)]};
+    scopeCoverage: {r1: [0], r2: [1]}, scopeGoverning: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, input, data.confirmedFindings)]};
 
 test("expired assessment window preserves candidates without inventing a dispatched attempt", async () => {
   let attempts = 0;
@@ -236,7 +236,7 @@ test("gateway formatting and removal of a redundant citation preserve an indepen
   const answer = {...data, actionPlan: actions};
   const assessed = {...run, data: answer,
     findingAssessments: [parseLegalFindingAssessment({f1: [source.id], f2: [source.id],
-      scopeCoverage: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, request, answer.confirmedFindings)],
+      scopeCoverage: {r1: [0], r2: [1]}, scopeGoverning: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, request, answer.confirmedFindings)],
     guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0, 1], r1: [0], r2: [1]}, request, actions)]};
   const checked = validateLegalGatewayAnswer({...request, result: answer, run: assessed});
   assert.equal(checked.run.data.responseKind, "answer");

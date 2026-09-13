@@ -5,6 +5,7 @@ import type {LegalChatResponse} from "./legal-chat-schema";
 import type {LegalChatRequest, LegalAiRunResult, LegalAiRunOptions, LegalSourceContext} from "./provider";
 import type {LegalMaterialContentGap} from "./legal-content-repair";
 import {questionScopeSelection} from "../legal/question-interpretation";
+import {requiredCoverageAnswerRole} from "../legal/legal-coverage";
 
 type Finding = LegalChatResponse["confirmedFindings"][number];
 type Context = Pick<LegalChatRequest, "applicableAt" | "temporalComparison" | "coverageRequirements"> & {
@@ -20,12 +21,14 @@ const findingIdentity = (finding: Finding) => JSON.stringify({title: finding.tit
 /** Private request-local decisions, consumed before returning a Legal Answer. */
 export type LegalFindingAssessment = {evidenceIdentity: string;
   findings: Array<{identity: string; sourceIds: string[]}>;
-  coverage: Array<{requirementId: string; findingIdentities: string[]}>;
+  coverage: Array<{requirementId: string; findingIdentities: string[]; governingFindingIdentities: string[]}>;
   materialGaps: LegalMaterialContentGap[]};
 const schemaFor = (findings: readonly Finding[], input: Context) => z.object({...Object.fromEntries(findings.map((finding, index) => [
   `f${index + 1}`, z.array(z.enum(finding.sourceIds)).max(finding.sourceIds.length),
 ])), ...((input.coverageRequirements?.length ?? 0) ? {
   scopeCoverage: z.object(Object.fromEntries(input.coverageRequirements!.map((_, index) => [`r${index + 1}`,
+    z.array(z.number().int().min(0).max(Math.max(0, findings.length - 1))).max(findings.length)]))).strict(),
+  scopeGoverning: z.object(Object.fromEntries(input.coverageRequirements!.map((_, index) => [`r${index + 1}`,
     z.array(z.number().int().min(0).max(Math.max(0, findings.length - 1))).max(findings.length)]))).strict(),
   scopeGaps: z.object(Object.fromEntries(input.coverageRequirements!.map((_, index) => [`r${index + 1}`,
     z.array(z.object({quotation: z.string(), sourceId: z.string(), reason: z.string()}).strict()).max(20)]))).strict(),
@@ -35,14 +38,20 @@ export function parseLegalFindingAssessment(value: unknown, input: Context, find
   const result: Record<string, unknown> = schemaFor(findings, input).parse(value);
   const selected = (index: number) => result[`f${index + 1}`] as string[];
   const scopeCoverage = result.scopeCoverage as Record<string, number[]> | undefined;
+  const scopeGoverning = result.scopeGoverning as Record<string, number[]> | undefined;
   const scopeGaps = result.scopeGaps as Record<string, Array<{quotation: string; sourceId: string}>> | undefined;
   return {evidenceIdentity: evidenceIdentity(input), findings: findings.map((finding, index) => ({
     identity: findingIdentity(finding), sourceIds: [...new Set(selected(index))],
   })), coverage: (input.coverageRequirements ?? []).map((requirement, index) => {
     const indexes = scopeCoverage?.[`r${index + 1}`] ?? [];
+    const governing = scopeGoverning?.[`r${index + 1}`] ?? [];
+    const complete = !scopeGaps?.[`r${index + 1}`]?.length && indexes.every(i => findings[i] && selected(i).length)
+      && governing.every(i => indexes.includes(i));
+    const identities = (selectedIndexes: number[]) => [...new Set(selectedIndexes.map(i =>
+      findingIdentity({...findings[i]!, sourceIds: selected(i)})))];
     return {requirementId: requirement.id,
-      findingIdentities: !scopeGaps?.[`r${index + 1}`]?.length && indexes.every(i => findings[i] && selected(i).length)
-        ? [...new Set(indexes.map(i => findingIdentity({...findings[i]!, sourceIds: selected(i)})))] : []};
+      findingIdentities: complete ? identities(indexes) : [],
+      governingFindingIdentities: complete ? identities(governing) : []};
   }), materialGaps: (input.coverageRequirements ?? []).flatMap((requirement, index) =>
     (scopeGaps?.[`r${index + 1}`] ?? []).flatMap(gap => {
       const source = input.sources.find(source => source.id === gap.sourceId);
@@ -58,12 +67,25 @@ export function assessedFindingGaps(input: Context, assessments: readonly LegalF
 }
 
 /** A scope is complete only while its entire independently supported set survives. */
-export function assessedFindingCoverage(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]): Set<string> {
+function retainedFindingScopes(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]) {
   const identity = evidenceIdentity(input);
   const retained = new Set(findings.map(findingIdentity));
-  return new Set(assessments.filter(assessment => assessment.evidenceIdentity === identity)
+  const ordinaryScopes = new Set((input.coverageRequirements ?? [])
+    .filter(requirement => requiredCoverageAnswerRole(requirement) !== null).map(requirement => requirement.id));
+  return assessments.filter(assessment => assessment.evidenceIdentity === identity)
     .flatMap(assessment => assessment.coverage.filter(scope => scope.findingIdentities.length
-      && scope.findingIdentities.every(finding => retained.has(finding))).map(scope => scope.requirementId)));
+      && scope.findingIdentities.every(finding => retained.has(finding))
+      && (!ordinaryScopes.has(scope.requirementId)
+        || scope.governingFindingIdentities.length > 0)));
+}
+
+export function assessedFindingCoverage(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]): Set<string> {
+  return new Set(retainedFindingScopes(input, findings, assessments).map(scope => scope.requirementId));
+}
+
+export function assessedGoverningFindings(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]): Set<Finding> {
+  const governing = new Set(retainedFindingScopes(input, findings, assessments).flatMap(scope => scope.governingFindingIdentities));
+  return new Set(findings.filter(finding => governing.has(findingIdentity(finding))));
 }
 
 export function assessedFindingSources(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]) {
@@ -108,7 +130,7 @@ export async function assessLegalFindings(input: LegalChatRequest, run: LegalAiR
     maxAttempts: 1 as const, firstByteTimeoutMs: Math.min(10_000, remaining), totalResponseTimeoutMs: remaining,
     deadlineAt, requestId: input.requestId, signal: options.signal,
   };
-  if (input.coverageRequirements?.length) common.instructions += " Separately assess completeness of the legal findings for every requested scope. For scopeGaps inspect the complete supplied provisions for every independent material rule missing or contradicted in the supported findings. Return short exact contiguous source quotations, exact sourceId and a brief reason; [] only when no material gap remains. Do not demand identical wording, optional peripheral details or rules absent from supplied evidence. A contextual shorthand is sufficient only when the actor, period, trigger and conditions remain unambiguous. Do not fill missing findings from practical guidance or the evidence itself. For scopeCoverage return zero-based finding indexes that collectively answer the complete scope, or [] when any material rule is missing. Use only findings with nonempty individual support. Include every complementary finding needed for complete coverage. Presence of one governing rule does not establish completeness of the scope. This collective completeness decision never relaxes each finding's own-citation support requirements.";
+  if (input.coverageRequirements?.length) common.instructions += " Separately assess completeness of the legal findings for every requested scope. For scopeGaps inspect the complete supplied provisions for every independent material rule missing or contradicted in the supported findings. Return short exact contiguous source quotations, exact sourceId and a brief reason; [] only when no material gap remains. Do not demand identical wording, optional peripheral details or rules absent from supplied evidence. A contextual shorthand is sufficient only when the actor, period, trigger and conditions remain unambiguous. Do not fill missing findings from practical guidance or the evidence itself. For scopeCoverage return zero-based finding indexes that collectively answer the complete scope, or [] when any material rule is missing. Use only findings with nonempty individual support. Include every complementary finding needed for complete coverage. Presence of one governing rule does not establish completeness of the scope. This collective completeness decision never relaxes each finding's own-citation support requirements. Independently identify the direct governing findings for each exact requested question scope using the complete supplied official evidence. For scopeGoverning return zero-based finding indexes that state the ordinary direct rule answering that scope, or [] if no such supported finding exists. Roles are relative to the actual actor, forum, action stage and claim kind of each scope. The writer answerRole is a proposed global presentation label, not proof: a rule can directly answer one scope and only qualify a broader scope. An exception, consequence or later procedure alone cannot establish the missing ordinary rule for the broader question. Conversely an explicit question about that exception or procedure needs its own direct governing answer. scopeGoverning must be a subset of scopeCoverage. A direct-rule decision never waives full scope completeness: any missing ordinary rule or material condition requires a scope gap and empty scopeCoverage.";
   await options.beforeProviderCall?.({provider: run.provider, model: run.model, attempt: 1});
   const assessed = run.provider === "openai"
     ? await callOpenAiStructured({...common, schemaName: "juro_legal_finding_support", reasoningEffort: "low",
