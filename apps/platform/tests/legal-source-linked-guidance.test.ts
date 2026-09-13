@@ -39,11 +39,99 @@ test("the optional passage view respects the complete evidence context bound", (
   assert.equal(oversized.spans[0]!.text.length, 16_001, "complete original evidence remains intact");
 });
 
+test("an oversized source-composed action does not discard valid neighboring actions or shift their scopes", () => {
+  const longSource = {...source, id: "official:registry:2", spans: [{...source.spans![0]!,
+    text: "The permit requires " + "verified documentation and ".repeat(80) + "a signature."}]};
+  const request = {...input, synthesisPart: "guidance" as const, sources: [source, longSource],
+    coverageRequirements: ["filing", "permit", "mediation"].map(id => ({id, statement: id,
+      scopeKind: "general" as const, priority: "core" as const, sourceIds: [source.id, longSource.id]}))};
+  const data = parseLegalChatResponse({responseKind: "answer", summary: rule, guidanceCoverage: {r1: [0], r2: [1], r3: [2]},
+    actionPlan: [
+      {title: "Apply", description: "Apply to the registry.", sourceIds: [], sourcePassageIds: ["s1-1:p0"]},
+      {title: "Permit", description: "Check the permit conditions.", sourceIds: [], sourcePassageIds: ["s2-1:p0"]},
+      {title: "Mediation", description: "Account for mediation.", sourceIds: [], sourcePassageIds: ["s1-1:p1"]},
+    ], risks: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  assert.deepEqual(data.actionPlan.map(action => action.requirementIds), [["filing"], ["mediation"]]);
+  assert.deepEqual(data.actionPlan.map(action => action.description), [
+    "Apply to the registry.\n\nThe buyer must apply within 6 days after receiving a copy of the notice. ",
+    "Account for mediation.\n\nThe period is suspended during mediation.",
+  ]);
+  assert.equal(data.actionPlan.some(action => action.requirementIds?.includes("permit")), false,
+    "the missing permit scope remains available to independent assessment and repair");
+  assert.throws(() => parseLegalChatResponse({responseKind: "answer", summary: rule,
+    guidanceCoverage: {r1: [0], r2: [], r3: []},
+    actionPlan: [...Array.from({length: 16}, () => ({title: "Apply", description: "Apply to the registry.",
+      sourceIds: [source.id], sourcePassageIds: []})),
+      {title: "Permit", description: "Check the permit conditions.", sourceIds: [], sourcePassageIds: ["s2-1:p0"]}],
+    risks: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request),
+  "discarding a composed overflow must not hide an oversized raw action array");
+});
+
 test("source passage references cannot inject a different response language", () => {
   const candidate = {responseKind: "answer", summary: rule, actionPlan: [{title: "Apply", description: "Apply to the registry.",
     sourceIds: [], sourcePassageIds: ["s1-1:p0"]}], guidanceCoverage: {r1: [0]}, risks: [],
     clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
   assert.throws(() => parseLegalChatResponse(candidate, {...input, synthesisPart: "guidance", sources: [{...source, locale: "ru"}]}));
+});
+
+for (const repairAvailable of [true, false]) test(`oversized composition preserves valid actions and requires supported scope repair: ${repairAvailable}`, async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const permitRule = "The permit requires verified documentation and a signature.";
+  const permit = {...source, id: "official:registry:2", article: "2", spans: [{...source.spans![0]!, article: "2",
+    text: "The permit requires " + "verified documentation and ".repeat(80) + "a signature."}]};
+  const requestInput: LegalChatRequest = {...input, sources: [source, permit], coverageRequirements: [
+    input.coverageRequirements![0]!, {id: "permit", statement: "Permit documentation and signature", scopeKind: "general",
+      priority: "core", sourceIds: [permit.id]},
+  ]};
+  let writerCalls = 0;
+  let assessmentCalls = 0;
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    let data: unknown;
+    if (request.text.format.name === "juro_legal_finding_support") {
+      data = {f1: [source.id], f2: [permit.id], scopeCoverage: {r1: [0], r2: [1]}, scopeGoverning: {r1: [0], r2: [1]},
+        scopeGaps: {r1: [], r2: []}, mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false, r2: false}}};
+    } else if (request.text.format.name === "juro_legal_guidance_coverage") {
+      assessmentCalls++;
+      const repaired = payload.actions.length === 2;
+      assert.equal(payload.actions[0].description, rule, "the valid original action survives without rewriting");
+      if (repaired) assert.equal(payload.actions[1].description, permitRule);
+      data = {supportedActions: repaired ? [0, 1] : [0], r1: [0], r2: repaired ? [1] : [],
+        sourceSupport: repaired ? {a0: [source.id], a1: [permit.id]} : {a0: [source.id]},
+        scopeGaps: {r1: [], r2: repaired ? [] : [{sourceId: permit.id, quotation: "a signature.", reason: "No permit guidance remains."}]}};
+    } else {
+      writerCalls++;
+      const repair = Boolean(payload.contentRepair);
+      assert.equal(repair, writerCalls === 2, "composition overflow reaches scoped repair, not a whole-response retry");
+      if (repair) {
+        assert.equal(payload.contentRepair.unresolved.length, 1);
+        assert.equal(payload.contentRepair.unresolved[0].requirementId, "r2");
+        if (!repairAvailable) return Response.json({error: {message: "Repair unavailable", type: "invalid_request_error"}}, {status: 400});
+      }
+      data = {responseKind: "answer", summary: rule, summarySourceIds: ["s1"],
+        confirmedFindings: repair ? [] : [
+          {title: "Buyer filing procedure", explanation: rule, sourceIds: ["s1"], answerRole: "governing_rule"},
+          {title: "Permit documentation", explanation: permitRule, sourceIds: ["s2"], answerRole: "governing_rule"},
+        ], coverage: repair ? {r1: [], r2: []} : {r1: [0], r2: [1]},
+        guidanceCoverage: repair ? {r1: [], r2: [0]} : {r1: [0], r2: [1]},
+        actionPlan: repair ? [{title: "Permit documentation", description: permitRule, sourceIds: ["s2"], sourcePassageIds: []}]
+          : [{title: "Buyer filing procedure", description: rule, sourceIds: ["s1"], sourcePassageIds: []},
+            {title: "Permit documentation", description: "Check the permit conditions.", sourceIds: [], sourcePassageIds: ["s2-1:p0"]}],
+        risks: [], deadlines: [], conditionalBranches: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
+    }
+    return Response.json({id: "source-composition-repair", model: request.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+  });
+  const result = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer(requestInput, {fallbackEnabled: false});
+  assert.equal(writerCalls, 2);
+  assert.equal(assessmentCalls, repairAvailable ? 2 : 1);
+  assert.equal(result.run.data.responseKind, repairAvailable ? "answer" : "clarification_required");
+  assert.deepEqual(result.run.data.actionPlan.map(action => action.description), repairAvailable ? [rule, permitRule] : [rule]);
+  assert.equal(result.coverageDiagnostics.validatedRequirementCount, 2, "both legal finding scopes stay supported");
+  assert.equal(result.coverageDiagnostics.unresolvedCoverage.some(scope => scope.requirementIndex === 1 && scope.guidanceMissing), !repairAvailable);
 });
 
 test("passage composition rejects unavailable evidence, missing instructions and overflowing advice without truncation", () => {

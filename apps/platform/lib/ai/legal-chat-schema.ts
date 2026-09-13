@@ -10,6 +10,8 @@ import {
 import { legalEvidenceSourceClass } from "./legal-evidence-mode";
 export { deriveLegalEvidenceMode } from "./legal-evidence-mode";
 
+const MAX_ACTION_STEPS = 16;
+
 const sourceIdList = z.array(z.string().min(1).max(160)).max(12);
 
 export const legalFindingSchema = z.object({
@@ -132,7 +134,7 @@ export const legalChatResponseSchema = z.object({
   risks: z.array(legalRiskSchema).max(16),
   sources: z.array(legalSourceRefSchema).max(MAX_LEGAL_EVIDENCE_SOURCES),
   requiredDocuments: z.array(requiredDocumentSchema).max(16),
-  actionPlan: z.array(actionStepSchema).max(16),
+  actionPlan: z.array(actionStepSchema).max(MAX_ACTION_STEPS),
   deadlines: z.array(legalDeadlineSchema).max(12),
   successOutlook: z.object({
     level: z.enum(["low", "medium", "high"]),
@@ -187,7 +189,7 @@ export const legalChatModelResponseSchema = legalChatResponseSchema
     summarySourceIds: true,
   })
   .extend({
-    actionPlan: z.array(actionStepSchema.omit({requirementIds: true})).max(16),
+    actionPlan: z.array(actionStepSchema.omit({requirementIds: true})).max(MAX_ACTION_STEPS),
     summary: z.string().min(1).max(650),
     summarySourceIds: sourceIdList,
     confirmedFindings: z.array(legalFindingSchema.extend({
@@ -216,7 +218,7 @@ export function legalChatJsonSchemaForCoverage(requirements: readonly {id: strin
     actionPlan: z.array(actionStepSchema.omit({requirementIds: true}).extend({
       ...(repair && !passageIds.length ? {retainedFindingIndexes: z.array(z.number().int().min(0).max(15)).max(16)} : {}),
       ...(passageIds.length ? {sourcePassageIds: z.array(z.enum(passageIds)).max(16)} : {}),
-    })).max(16),
+    })).max(MAX_ACTION_STEPS),
   }) : legalChatModelResponseSchema;
   const schema = part === "findings" ? base.omit({actionPlan: true, risks: true,
     deadlines: true, conditionalBranches: true})
@@ -270,6 +272,7 @@ export function parseLegalChatResponse(value: unknown, context?: {
   const guidanceCoverage = requirements.length && context.synthesisPart !== "findings"
     ? answerCoverageSchema(requirements).parse(record.guidanceCoverage) : null;
   const actionCount = Array.isArray(record.actionPlan) ? record.actionPlan.length : 0;
+  if (actionCount > MAX_ACTION_STEPS) throw new TypeError("ANSWER_ACTION_LIMIT_EXCEEDED");
   if (guidanceCoverage && Object.values(guidanceCoverage).some(indices => indices.some(index => index >= actionCount))) {
     throw new TypeError("ANSWER_COVERAGE_ACTION_UNAVAILABLE");
   }
@@ -277,12 +280,20 @@ export function parseLegalChatResponse(value: unknown, context?: {
     throw new TypeError("ANSWER_COVERAGE_FINDING_UNAVAILABLE");
   }
   const claims = Object.fromEntries(["confirmedFindings", "conditionalBranches", "risks", "actionPlan", "deadlines"]
-    .filter(key => Array.isArray(record[key])).map(key => [key, (record[key] as unknown[]).map((item, findingIndex) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    .filter(key => Array.isArray(record[key])).map(key => [key, (record[key] as unknown[]).flatMap((item, findingIndex) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [item];
       let claim = {...item} as Record<string, unknown>;
       if (Array.isArray(claim.sourceIds)) claim.sourceIds = claim.sourceIds.map(id =>
         typeof id === "string" ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id);
+      const sourceComposed = key === "actionPlan" && "sourcePassageIds" in claim;
+      const originalDescription = claim.description;
       if (key === "actionPlan") claim = composeSourceLinkedAction(claim, context.sources ?? [], context.locale);
+      if (sourceComposed) actionStepSchema.parse({...claim, description: originalDescription, requirementIds: undefined});
+      // Appending verified text can exceed the action contract even when the
+      // writer's instruction fits. Keep neighboring candidates intact, while
+      // leaving this entire action absent for independent coverage and repair.
+      // Original indexes below still bind every surviving action to its scope.
+      if (sourceComposed && !actionStepSchema.shape.description.safeParse(claim.description).success) return [];
       const scopeCoverage = key === "confirmedFindings" ? coverage : key === "actionPlan" ? guidanceCoverage : null;
       const requirementIds = scopeCoverage ? requirements.flatMap((requirement, index) =>
         scopeCoverage[`r${index + 1}`]!.includes(findingIndex) ? [requirement.id] : []) : null;
@@ -307,9 +318,9 @@ export function parseLegalChatResponse(value: unknown, context?: {
         }
         delete claim.retainedFindingIndexes;
       }
-      return {...claim, ...(scopeCoverage ? {
+      return [{...claim, ...(scopeCoverage ? {
         requirementIds,
-      } : {})};
+      } : {})}];
     })]));
   // Source cards and the legacy answer copy are rebuilt after validation.
   // The concise summary can cover several independently grounded findings.
