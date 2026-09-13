@@ -47,7 +47,7 @@ import { combineCoverageSynthesis } from "./coverage-synthesis";
 import {assessLegalGuidance, type LegalGuidanceAssessment} from "./legal-guidance-assessment";
 import {LEGAL_CONTENT_REPAIR_RULE, legalContentRepairPayload, mergeRepairedLegalContent, type LegalContentRepair} from "./legal-content-repair";
 import {assessLegalFindings, type LegalFindingAssessment} from "./legal-finding-assessment";
-import {legalSourcePassageView, legalSourcePassages, SOURCE_LINKED_GUIDANCE_RULE} from "./legal-source-passages";
+import {legalSourcePassageView, legalSourcePassages, legalSourceSpanTextView, SOURCE_LINKED_GUIDANCE_RULE} from "./legal-source-passages";
 import { openAiChatModel } from "./provider-models";
 import type { CitationEvidenceReceipt } from "../legal-corpus/citation-evidence";
 import type { LegalRequirementOrigin } from "../legal/question-interpretation";
@@ -301,6 +301,7 @@ class OpenAiLegalProvider implements LegalAiProvider {
       : Math.max(1, Math.min(30_000, providerBudgetMs));
     const providerDeadlineAt = Date.now() + providerBudgetMs;
     const passages = part === "findings" ? [] : legalSourcePassages(input.sources, input.locale);
+    const passageView = legalSourcePassageView(input.sources, passages);
     const emittedFindingsByAttempt = new Map<1 | 2, number>();
     const result = await callOpenAiStructured<LegalChatResponse>({
       schemaName: "juro_legal_chat_response",
@@ -410,7 +411,7 @@ class OpenAiLegalProvider implements LegalAiProvider {
         applicableAt: input.applicableAt ?? null,
         temporalComparison: input.temporalComparison ?? null,
         conversationHistory: input.conversationHistory ?? [],
-        ...(passages.length ? {verifiedPassages: legalSourcePassageView(input.sources, passages)} : {}),
+        ...(passages.length ? {verifiedPassages: passageView} : {}),
         verifiedSources: input.sources.map((source, index) => ({
           sourceId: `s${index + 1}`,
           referencedSourceIds: referencedLegalSourceIds(source, input.sources)
@@ -428,7 +429,7 @@ class OpenAiLegalProvider implements LegalAiProvider {
             sourceSpanId: `s${index + 1}-${spanIndex + 1}`,
             article: span.article,
             paragraph: span.paragraph,
-            text: span.text,
+            ...legalSourceSpanTextView(span.text, `s${index + 1}-${spanIndex + 1}`, passageView),
           })),
         })),
         userMemory: (input.memories ?? []).map((memory) => ({

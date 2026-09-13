@@ -4,7 +4,7 @@ import {env} from "cloudflare:workers";
 import {createLegalAiGateway} from "../lib/ai/legal-ai-gateway";
 import {legalAiProvider, type LegalChatRequest, type LegalSourceContext} from "../lib/ai/provider";
 import {legalChatJsonSchemaForCoverage, parseLegalChatResponse} from "../lib/ai/legal-chat-schema";
-import {legalSourcePassageView, legalSourcePassages} from "../lib/ai/legal-source-passages";
+import {legalSourcePassageView, legalSourcePassages, legalSourceSpanTextView} from "../lib/ai/legal-source-passages";
 
 const rule = "The buyer must apply within 6 days after receiving a copy of the notice. The period is suspended during mediation.";
 const source: LegalSourceContext = {id: "official:registry:1", actTitle: "Registry procedure", article: "1",
@@ -75,6 +75,32 @@ test("source passage references cannot inject a different response language", ()
     sourceIds: [], sourcePassageIds: ["s1-1:p0"]}], guidanceCoverage: {r1: [0]}, risks: [],
     clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
   assert.throws(() => parseLegalChatResponse(candidate, {...input, synthesisPart: "guidance", sources: [{...source, locale: "ru"}]}));
+});
+
+test("source span serialization rejects missing, duplicated, reordered and mismatched sentence navigation", () => {
+  const text = `First rule requires ${"📄".repeat(8_000)}.\r\nAnother rule applies.\nAn exception remains.`;
+  const evidence = {...source, spans: [{...source.spans![0]!, text}]};
+  const references = legalSourcePassageView([evidence], legalSourcePassages([evidence], "en"));
+  assert.equal(references.length, 3);
+  const view = legalSourceSpanTextView(text, "s1-1", references);
+  assert.ok(view.sentences);
+  assert.equal(view.sentences.map(sentence => sentence.text).join(""), text);
+  for (const invalid of [
+    [references[0]!, references[2]!],
+    references.slice(0, -1),
+    [references[0]!, references[1]!, references[1]!, references[2]!],
+    [references[1]!, references[0]!, references[2]!],
+    references.map((reference, index) => index ? reference : {...reference, id: "s2-1:p0"}),
+    references.map((reference, index) => index ? reference : {...reference, sourceSpanId: "s2-1"}),
+    references.map((reference, index) => index ? reference : {...reference, end: reference.end + 1}),
+  ]) assert.throws(() => legalSourceSpanTextView(text, "s1-1", invalid), /LEGAL_PASSAGE_CONTEXT_UNAVAILABLE/u);
+
+  view.sentences[1]!.text = "A changed writer-facing quotation is not canonical evidence.";
+  const parsed = parseLegalChatResponse({responseKind: "answer", summary: "Read the applicable rule.",
+    actionPlan: [{title: "Read the rule", description: "Read the second rule.", sourceIds: [], sourcePassageIds: ["s1-1:p1"]}],
+    guidanceCoverage: {r1: [0]}, risks: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null,
+    suggestLawyer: false}, {...input, synthesisPart: "guidance", sources: [evidence]});
+  assert.equal(parsed.actionPlan[0]?.description, "Read the second rule.\n\nAnother rule applies.\n");
 });
 
 for (const repairAvailable of [true, false]) test(`oversized composition preserves valid actions and requires supported scope repair: ${repairAvailable}`, async context => {
@@ -153,12 +179,17 @@ test("passage composition rejects unavailable evidence, missing instructions and
     sources: [{...source, locale: "uz-Cyrl", spans: [{...source.spans![0]!, text: "Қоида қўлланади."}]}]}));
 });
 
-for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} ${largePacket ? "reference-only" : "full-text"} practical instructions retain exact selected source conditions through independent assessment and grounding`, async context => {
+for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "fast"] as const) test(`${reasoningMode} ${largePacket ? "sentence-labelled" : "full-text"} practical instructions retain exact selected source conditions through independent assessment and grounding`, async context => {
   const previous = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
   context.after(() => {env.OPENAI_API_KEY = previous;});
-  const fullText = rule + (largePacket ? " " + Array.from({length: 12}, (_, index) => `Other procedure ${index} requires ${"additional documentation ".repeat(65)}and review.`).join(" ") : "");
-  const requestInput = {...input, reasoningMode, sources: [{...source, spans: [{...source.spans![0]!, text: fullText}]}]};
+  const fullText = rule + (largePacket ? " " + Array.from({length: 12}, (_, index) => `Other procedure ${index} requires 📄 ${"additional documentation ".repeat(65)}and review.`).join("\r\n") : "");
+  const otherSpan = "A separate permit requires a different application. ";
+  const otherLanguage = "Бошқа рухсатнома учун алоҳида ариза талаб қилинади.";
+  const requestInput = {...input, reasoningMode, sources: [{...source, spans: [{...source.spans![0]!, text: fullText},
+    ...(largePacket ? [{...source.spans![0]!, id: "other-span", text: otherSpan}] : [])]},
+    ...(largePacket ? [{...source, id: "official:other-language", locale: "uz-Cyrl", spans: [{...source.spans![0]!, text: otherLanguage}]}] : [])]};
+  const originalSources = structuredClone(requestInput.sources);
   let independentlyAssessed = false;
   let repairRequested = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
@@ -166,10 +197,14 @@ for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "f
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_finding_support") {
+      assert.equal(payload.sources[0].spans[0].text, fullText);
+      assert.deepEqual(payload.sources[0].spans, originalSources[0]!.spans);
       data = {f1: [source.id], scopeCoverage: {r1: [0]}, scopeGoverning: {r1: [0]}, scopeGaps: {r1: []},
         mainPoint: {supported: true, findingIndexes: [0], scopeCoverage: {r1: true}}};
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {
       independentlyAssessed = true;
+      assert.equal(payload.sources[0].spans[0].text, fullText);
+      assert.deepEqual(payload.sources[0].spans, originalSources[0]!.spans);
       assert.equal(payload.actions[0].description, "File the application with the registry.\n\n" +
         "The buyer must apply within 6 days after receiving a copy of the notice. \n\nThe period is suspended during mediation." + (largePacket ? " " : ""));
       assert.deepEqual(payload.actions[0].sourceIds, [source.id]);
@@ -177,12 +212,25 @@ for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "f
     } else {
       assert.equal(Boolean(payload.contentRepair), repairRequested);
       if (request.text.format.schema.properties.actionPlan) {
-        assert.equal(payload.verifiedSources[0].sourceSpans[0].text, fullText);
         assert.ok(payload.verifiedPassages.length >= 2);
         if (largePacket) {
+          const span = payload.verifiedSources[0].sourceSpans[0];
+          assert.equal(span.text, undefined);
+          assert.equal(span.sentences.map((sentence: {text: string}) => sentence.text).join(""), fullText);
+          assert.deepEqual(span.sentences.slice(0, 2), [
+            {sourcePassageId: "s1-1:p0", text: "The buyer must apply within 6 days after receiving a copy of the notice. "},
+            {sourcePassageId: "s1-1:p1", text: "The period is suspended during mediation. "},
+          ]);
+          assert.deepEqual(payload.verifiedSources[0].sourceSpans[1].sentences,
+            [{sourcePassageId: "s1-2:p0", text: otherSpan}]);
+          assert.equal(payload.verifiedSources[1].sourceSpans[0].text, otherLanguage);
+          assert.equal(payload.verifiedSources[1].sourceSpans[0].sentences, undefined);
           assert.ok(payload.verifiedPassages.every((passage: object) => !("text" in passage)));
           assert.deepEqual(payload.verifiedPassages.slice(0, 2).map((passage: {sentenceNumber: number}) => passage.sentenceNumber), [1, 2]);
-        } else assert.equal(payload.verifiedPassages.map((passage: {text: string}) => passage.text).join(""), rule);
+        } else {
+          assert.equal(payload.verifiedSources[0].sourceSpans[0].text, fullText);
+          assert.equal(payload.verifiedPassages.map((passage: {text: string}) => passage.text).join(""), rule);
+        }
         assert.deepEqual(request.text.format.schema.properties.actionPlan.items.properties.sourcePassageIds.items.enum.slice(0, 2),
           ["s1-1:p0", "s1-1:p1"]);
         assert.equal(request.text.format.schema.properties.actionPlan.items.properties.retainedFindingIndexes, undefined);
@@ -198,6 +246,7 @@ for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "f
       output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
   });
   const result = await createLegalAiGateway(legalAiProvider()!).generateGroundedAnswer(requestInput, {fallbackEnabled: false});
+  assert.deepEqual(requestInput.sources, originalSources);
   assert.equal(independentlyAssessed, true);
   assert.equal(result.run.data.responseKind, "answer");
   assert.match(result.run.data.actionPlan[0]!.description, /receiving a copy of the notice/u);
@@ -208,6 +257,7 @@ for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "f
   const repaired = await legalAiProvider()!.runLegalChat({...requestInput, contentRepair: {
     unresolved: [{requirementId: "filing", finding: null, guidanceMissing: true}], retained: {...result.run.data, actionPlan: []},
   }});
+  assert.deepEqual(requestInput.sources, originalSources);
   assert.equal(independentlyAssessed, true);
   assert.equal(repaired.data.actionPlan[0]!.description.replace(/\s+/gu, " ").trim(), result.run.data.actionPlan[0]!.description.replace(/\s+/gu, " ").trim(),
     "repair composes the same source conditions once, without also appending retained findings");
