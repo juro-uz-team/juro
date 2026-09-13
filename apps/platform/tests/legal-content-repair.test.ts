@@ -61,9 +61,9 @@ for (const initialFailure of ["omitted", "rejected"] as const) test(`sufficient 
         assert.equal(payload.actions[1].description, `Notify the registry.\n\n${seller}`);
         assert.deepEqual(payload.actions[1].sourceIds, [source.id]);
       }
-      data = {scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: repairRequested
-        ? {quotation: "", sourceId: "", reason: ""}
-        : {quotation: seller, sourceId: source.id, reason: "Seller notification and its accompanying certificate are missing."}},
+      data = {scopeGaps: {r1: [], r2: repairRequested
+        ? []
+        : [{quotation: seller, sourceId: source.id, reason: "Seller notification and its accompanying certificate are missing."}]},
         supportedActions: repairRequested ? payload.actions.map((_: unknown, index: number) => index) : [0],
         sourceSupport: Object.fromEntries(payload.actions.map((action: {sourceIds: string[]}, index: number) =>
           [`a${index}`, repairRequested || index === 0 ? action.sourceIds : []])),
@@ -115,7 +115,7 @@ test("unavailable content repair retains the validated partial answer and report
     if (payload.contentRepair) throw new TypeError("Provider unavailable during repair");
     const data = request.text.format.name === "juro_legal_guidance_coverage"
       ? {supportedActions: [0], r1: [0], r2: [], sourceSupport: {a0: [source.id]},
-        scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: {quotation: "", sourceId: "", reason: ""}}}
+        scopeGaps: {r1: [], r2: []}}
       : {responseKind: "answer", summary: "Both parties have registry duties.", summarySourceIds: ["s1"],
         confirmedFindings: [buyer, seller].map((explanation, index) => ({title: index ? "Seller duty" : "Buyer duty",
           explanation, sourceIds: ["s1"], answerRole: "governing_rule"})), coverage: {r1: [0], r2: [1]},

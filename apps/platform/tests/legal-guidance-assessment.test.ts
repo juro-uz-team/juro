@@ -28,6 +28,27 @@ const data = parseLegalChatResponse({responseKind: "answer", summary: buyer, sum
 const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: "generated",
   attempts: 1, latencyMs: 10, usage: {inputTokens: 10, outputTokens: 10, cachedInputTokens: 0}, fallbackFromProvider: null};
 
+test("independent guidance assessment retains multiple missing rules in the same scope for repair", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const additionalRule = "Продавец обязан сохранить копии переданных документов.";
+  const request = {...input, sources: [{...source, spans: [{...source.spans![0]!, text: `${buyer} ${seller} ${additionalRule}`}]}]};
+  context.mock.method(globalThis, "fetch", async () => Response.json({id: "multiple-guidance-gaps", model: run.model,
+    output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [0],
+      sourceSupport: {a0: [source.id]}, scopeGaps: {r1: [], r2: [
+        {quotation: seller, sourceId: source.id, reason: "The transfer duty is missing."},
+        {quotation: additionalRule, sourceId: source.id, reason: "The separate retention duty is missing."},
+      ]}})}]}], usage: {input_tokens: 100, output_tokens: 30}}));
+  const assessed = await assessLegalGuidance(request, run, {}, Date.now() + 12_000);
+  assert.deepEqual(assessedGuidanceGaps({...request, assessments: assessed.guidanceAssessments!}), [
+    {requirementId: "seller", sourceId: source.id, sourceSpanId: "shared-span", quotation: seller},
+    {requirementId: "seller", sourceId: source.id, sourceSpanId: "shared-span", quotation: additionalRule},
+  ]);
+  assert.deepEqual([...assessedGuidanceCoverage({...request, actions: assessed.data.actionPlan,
+    assessments: assessed.guidanceAssessments!}).values()], [["buyer"]]);
+});
+
 test("repair diagnostics require exact official quotations and the original question and evidence", () => {
   const gap = {requirementId: "seller", sourceId: source.id, sourceSpanId: "shared-span", quotation: seller};
   const assessment = {...parseLegalGuidanceAssessment({supportedActions: [0], r1: [0], r2: []}, input, data.actionPlan), materialGaps: [gap]};
@@ -55,8 +76,8 @@ test("an independently reported material rule gap prevents complete coverage whi
   context.mock.method(globalThis, "fetch", async () => Response.json({id: "scope-gap", model: run.model,
     output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [],
       sourceSupport: {a0: [source.id]}, scopeGaps: {
-        r1: {quotation: buyer, sourceId: source.id, reason: "The required proof of identity is missing from the practical instruction."},
-        r2: {quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."},
+        r1: [{quotation: buyer, sourceId: source.id, reason: "The required proof of identity is missing from the practical instruction."}],
+        r2: [{quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}],
       }})}]}], usage: {input_tokens: 100, output_tokens: 10}}));
   const candidate = {...run, data: {...data, actionPlan: data.actionPlan.map(action => ({...action,
     description: "Подготовьте подписанное заявление."}))}};
@@ -80,7 +101,7 @@ test("independent guidance assessment removes an irrelevant citation while retai
     assert.equal(payload.sources.length, 2, "retain complete evidence for the independent decision");
     return Response.json({id: "citation-assessment", model: run.model,
       output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [],
-        scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: {quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}},
+        scopeGaps: {r1: [], r2: [{quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}]},
         sourceSupport: {a0: [source.id]}})}]}], usage: {input_tokens: 100, output_tokens: 10}});
   });
   const assessed = await assessLegalGuidance(requestInput, candidate, {}, Date.now() + 12_000);
@@ -96,7 +117,7 @@ for (const selectedSources of [[], ["official:uncited-source"]]) test(`guidance 
   context.after(() => {env.OPENAI_API_KEY = previous;});
   context.mock.method(globalThis, "fetch", async () => Response.json({id: "invalid-citation-assessment", model: run.model,
     output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [],
-      scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: {quotation: "", sourceId: "", reason: ""}},
+      scopeGaps: {r1: [], r2: []},
       sourceSupport: {a0: selectedSources}})}]}], usage: {input_tokens: 100, output_tokens: 10}}));
   await assert.rejects(assessLegalGuidance(input, run, {}, Date.now() + 12_000));
 });
@@ -113,7 +134,7 @@ test("a separately assessed buyer step cannot cover the seller merely by sharing
     assert.equal(assessment.sources[0].spans[0].text, source.spans![0]!.text);
     return Response.json({id: "independent-assessment", model: run.model,
       output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [], sourceSupport: {a0: [source.id]},
-        scopeGaps: {r1: {quotation: "", sourceId: "", reason: ""}, r2: {quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}}})}]}],
+        scopeGaps: {r1: [], r2: [{quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}]}})}]}],
       usage: {input_tokens: 100, output_tokens: 10}});
   });
   const attempts: string[] = [];
