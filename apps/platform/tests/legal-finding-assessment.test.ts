@@ -22,6 +22,55 @@ const input: LegalChatRequest = {question: "How does mediation affect filing?", 
 const finding: LegalChatResponse["confirmedFindings"][number] = {title: "Mediation", explanation: "Mediation suspends commission and court filing periods.",
   sourceIds: ["commission", "court"], requirementIds: ["filing"], answerRole: "governing_rule"};
 
+for (const variant of ["accepted", "omitted", "rejected", "incomplete", "unverified", "stale", "conflicting", "gateway_rejection",
+  "citation_pruned", "pruned_then_removed", "mixed_complete", "unmapped", "unknown_citation"] as const)
+test(`finding loss diagnostics distinguish ${variant} without approving unsupported scope coverage`, () => {
+  const request: LegalChatRequest = {...input, coverageRequirements: [{id: "filing", statement: input.question,
+    priority: "core", scopeKind: "general", sourceIds: finding.sourceIds}]};
+  const selectedSources = variant === "omitted" ? [] : variant === "incomplete" || variant === "unknown_citation" ? sources.slice(0, 1)
+    : variant === "mixed_complete" ? [...sources, sources[0]!] : sources;
+  const sourcePruned = ["conflicting", "citation_pruned", "pruned_then_removed"].includes(variant);
+  const gatewayRemoved = variant === "gateway_rejection" || variant === "pruned_then_removed";
+  const accepted = ["accepted", "citation_pruned", "mixed_complete"].includes(variant);
+  const data = parseLegalChatResponse({responseKind: "answer", summary: finding.explanation, summarySourceIds: finding.sourceIds,
+    confirmedFindings: selectedSources.map((source, index) => ({title: index === 2 ? "Additional claim" : `${source.id} mediation`,
+      explanation: gatewayRemoved && index === 0 ? "Mediation requires paying 999999 dollars."
+        : index === 2 ? "Mediation cancels all filing duties." : source.spans![0]!.text,
+      sourceIds: variant === "unknown_citation" && index === 0 ? ["unknown-source"]
+        : sourcePruned && index === 0 ? finding.sourceIds : [source.id], answerRole: "governing_rule"})),
+    coverage: {r1: variant === "unmapped" ? [] : selectedSources.map((_, index) => index)}, guidanceCoverage: {r1: [0]},
+    actionPlan: [{title: "Account for mediation", description: finding.explanation, sourceIds: finding.sourceIds}],
+    risks: [], deadlines: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false}, request);
+  const complete = !["omitted", "rejected", "incomplete"].includes(variant);
+  const raw = {...Object.fromEntries(data.confirmedFindings.map((value, index) => [`f${index + 1}`,
+    (variant === "rejected" && index === 0) || index === 2 ? [] : sourcePruned && index === 0 ? ["commission"] : value.sourceIds])),
+    scopeCoverage: {r1: complete ? selectedSources.slice(0, 2).map((_, index) => index) : []},
+    scopeGoverning: {r1: complete ? selectedSources.slice(0, 2).map((_, index) => index) : []},
+    scopeGaps: {r1: variant === "incomplete" ? [{sourceId: "court", quotation: sources[1]!.spans![0]!.text, reason: "Court rule absent"}] : []}};
+  const assessments = variant === "unverified" ? [] : [parseLegalFindingAssessment(raw,
+    variant === "stale" ? {...request, question: "A different question"} : request, data.confirmedFindings)];
+  if (variant === "conflicting") assessments.push(parseLegalFindingAssessment({...raw, f1: ["court"]}, request, data.confirmedFindings));
+  const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra", providerResponseId: null,
+    attempts: 1, latencyMs: 1, usage: {inputTokens: 0, outputTokens: 0, cachedInputTokens: 0}, fallbackFromProvider: null,
+    findingAssessments: assessments,
+    guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: [0], r1: [0]}, request, data.actionPlan)]};
+  const checked = validateLegalGatewayAnswer({...request, result: data, run});
+  assert.equal(checked.run.data.responseKind, accepted ? "answer" : "clarification_required");
+  assert.equal(checked.coverageDiagnostics.writerOmissionCount, variant === "omitted" || variant === "unmapped" ? 1 : 0);
+  assert.equal(checked.coverageDiagnostics.validatorRejectionCount, variant === "rejected" || gatewayRemoved || variant === "unknown_citation" ? 1 : 0);
+  const loss = checked.coverageDiagnostics.findingLosses?.[0];
+  if (accepted) assert.equal(loss, undefined);
+  else {
+    assert.equal(loss?.reason, variant === "stale" ? "unverified" : variant === "conflicting" ? "assessment_conflict"
+      : gatewayRemoved || variant === "unknown_citation" ? "rejected" : variant === "unmapped" ? "omitted" : variant);
+    assert.equal(loss?.proposedFindingCount, variant === "unmapped" ? 0 : selectedSources.length);
+    assert.equal(loss?.explicitRejectionCount, variant === "rejected" ? 1 : 0);
+    assert.equal(loss?.conflictingAssessmentCount, variant === "conflicting" ? 1 : 0);
+    assert.equal(loss?.gatewayCoverageLoss, gatewayRemoved);
+    assert.equal(loss?.gatewayRejectedFindingCount, gatewayRemoved || variant === "unknown_citation" ? 1 : 0);
+  }
+});
+
 for (const failure of ["timeout", "before_dispatch", "cancelled", "budget_exhausted", "repair", "invalid"] as const)
 test(`finding assessment ${failure} preserves the recovery boundary and physical accounting`, async context => {
   const previous = env.OPENAI_API_KEY;
@@ -174,7 +223,7 @@ test("a supported governing finding cannot hide a missing material rule in the s
   assert.equal(validated.run.data.confirmedFindings.length, 1, "individually supported content survives an incomplete scope");
   assert.equal(validated.coverageDiagnostics.validatedRequirementCount, 0,
     "a nonempty gap invalidates completeness even when its quotation cannot be routed to repair");
-  assert.equal(validated.coverageDiagnostics.unresolvedCoverage[0]?.finding, "omitted");
+  assert.equal(validated.coverageDiagnostics.unresolvedCoverage[0]?.finding, "incomplete");
 });
 
 test("a single cited provision cannot bypass independent rejection of a missing exception", async context => {

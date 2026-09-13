@@ -1999,6 +1999,9 @@ for (const rejected of [false, true]) test('coverage diagnostics distinguish ' +
   const checked = validateLegalGatewayAnswer({...context, run:{...run,data:proposed,
     findingAssessments: [fixtureFindingAssessment(context, {r1: rejected ? [0] : []})]}, locale:'ru', answerMode:'short', reasoningMode:'fast', legalDatabaseAsOf:source.verifiedAt});
   assert.deepEqual(checked.coverageDiagnostics, {requirementCount:1, writerOmissionCount:rejected ? 0 : 1, validatorRejectionCount:rejected ? 1 : 0, validatedRequirementCount:0, proposedFindingCount:rejected ? 1 : 0, validatedFindingCount:0, proposedActionCount:0, validatedActionCount:0,
+    findingLosses:[{requirementIndex:0, reason:rejected ? "rejected" : "omitted", proposedFindingCount:rejected ? 1 : 0,
+      explicitRejectionCount:0, conflictingAssessmentCount:0, unassessedFindingCount:0, scopeAssessmentAvailable:true,
+      gatewayRejectedFindingCount:rejected ? 1 : 0, gatewayCoverageLoss:rejected}],
     validatedGuidanceRequirementCount:0, missingGuidanceRequirementCount:1, completeRequirementCount:0,
     unresolvedCoverage:[{requirementIndex:0, finding:rejected ? "rejected" : "omitted", guidanceMissing:true}]});
   assert.equal(checked.run.data.responseKind, 'clarification_required');

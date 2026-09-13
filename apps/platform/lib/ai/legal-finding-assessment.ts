@@ -117,20 +117,69 @@ export function assessedMainPointSupported(input: Context, mainPoint: MainPoint,
 }
 
 export function assessedFindingSources(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]) {
+  return new Map([...findingSupportDecisions(input, findings, assessments)].map(([finding, decision]) => [finding, decision.sourceIds]));
+}
+
+function findingSupportDecisions(input: Context, findings: readonly Finding[], assessments: readonly LegalFindingAssessment[]) {
   const identity = evidenceIdentity(input);
-  const decisions = new Map<string, string[]>();
+  const decisions = new Map<string, {sourceIds: string[]; explicitlyRejected: boolean; conflicting: boolean}>();
   for (const assessment of assessments) {
     if (assessment.evidenceIdentity !== identity) continue;
     for (const finding of assessment.findings) {
       const previous = decisions.get(finding.identity);
-      const same = previous && JSON.stringify([...previous].sort()) === JSON.stringify([...finding.sourceIds].sort());
-      decisions.set(finding.identity, previous && !same ? [] : finding.sourceIds);
+      const same = previous && JSON.stringify([...previous.sourceIds].sort()) === JSON.stringify([...finding.sourceIds].sort());
+      const conflicting = Boolean(previous?.conflicting || (previous && !same));
+      decisions.set(finding.identity, {sourceIds: conflicting ? [] : finding.sourceIds, conflicting,
+        explicitlyRejected: Boolean(previous?.explicitlyRejected || finding.sourceIds.length === 0)});
     }
   }
   return new Map(findings.flatMap(finding => {
-    const sourceIds = decisions.get(findingIdentity(finding));
-    return sourceIds ? [[finding, sourceIds] as const] : [];
+    const decision = decisions.get(findingIdentity(finding));
+    return decision ? [[finding, decision] as const] : [];
   }));
+}
+
+export type LegalFindingLossReason = "omitted" | "rejected" | "incomplete" | "unverified" | "assessment_conflict" | "assessment_unavailable";
+export type LegalFindingCoverageLoss = {
+  requirementIndex: number;
+  reason: LegalFindingLossReason;
+  proposedFindingCount: number;
+  explicitRejectionCount: number;
+  conflictingAssessmentCount: number;
+  unassessedFindingCount: number;
+  scopeAssessmentAvailable: boolean;
+  gatewayRejectedFindingCount: number;
+  gatewayCoverageLoss: boolean;
+};
+
+/** Content-free causal facts; writer mappings never establish accepted coverage. */
+export function findingCoverageLosses(input: Context, state: {
+  proposedFindings: readonly Finding[];
+  gatewayRejectedFindings: readonly Finding[];
+  assessments: readonly LegalFindingAssessment[];
+  completeBeforeGatewayIds: ReadonlySet<string>;
+  completeRequirementIds: ReadonlySet<string>;
+}): LegalFindingCoverageLoss[] {
+  const decisions = findingSupportDecisions(input, state.proposedFindings, state.assessments);
+  const identity = evidenceIdentity(input);
+  const assessedScopes = new Set(state.assessments.filter(assessment => assessment.evidenceIdentity === identity)
+    .flatMap(assessment => assessment.coverage.map(scope => scope.requirementId)));
+  return (input.coverageRequirements ?? []).flatMap((requirement, requirementIndex) => {
+    if (state.completeRequirementIds.has(requirement.id)) return [];
+    const proposed = state.proposedFindings.filter(finding => finding.requirementIds?.includes(requirement.id));
+    const explicitRejectionCount = proposed.filter(finding => decisions.get(finding)?.explicitlyRejected).length;
+    const conflictingAssessmentCount = proposed.filter(finding => decisions.get(finding)?.conflicting).length;
+    const unassessedFindingCount = proposed.filter(finding => !decisions.has(finding)).length;
+    const scopeAssessmentAvailable = assessedScopes.has(requirement.id);
+    const gatewayRejectedFindingCount = state.gatewayRejectedFindings.filter(finding => finding.requirementIds?.includes(requirement.id)).length;
+    const gatewayCoverageLoss = state.completeBeforeGatewayIds.has(requirement.id);
+    const reason: LegalFindingLossReason = !proposed.length ? "omitted"
+      : conflictingAssessmentCount ? "assessment_conflict"
+        : explicitRejectionCount || gatewayRejectedFindingCount || gatewayCoverageLoss ? "rejected"
+          : unassessedFindingCount || !scopeAssessmentAvailable ? "unverified" : "incomplete";
+    return [{requirementIndex, reason, proposedFindingCount: proposed.length, explicitRejectionCount,
+      conflictingAssessmentCount, unassessedFindingCount, scopeAssessmentAvailable, gatewayRejectedFindingCount, gatewayCoverageLoss}];
+  });
 }
 
 export async function assessLegalFindings(input: LegalChatRequest, run: LegalAiRunResult, options: LegalAiRunOptions,

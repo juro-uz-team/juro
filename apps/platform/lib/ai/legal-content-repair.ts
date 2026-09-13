@@ -1,5 +1,6 @@
 import {legalChatResponseSchema, type LegalChatResponse} from "./legal-chat-schema";
 import type {LegalChatRequest} from "./provider";
+import type {LegalFindingLossReason} from "./legal-finding-assessment";
 
 export type LegalMaterialContentGap = {
   requirementId: string;
@@ -9,7 +10,7 @@ export type LegalMaterialContentGap = {
 };
 
 export type LegalContentRepair = {
-  unresolved: Array<{requirementId: string; finding: "omitted" | "rejected" | "assessment_unavailable" | null; guidanceMissing: boolean}>;
+  unresolved: Array<{requirementId: string; finding: LegalFindingLossReason | null; guidanceMissing: boolean}>;
   retained: LegalChatResponse;
   materialGaps?: LegalMaterialContentGap[];
   findingGaps?: LegalMaterialContentGap[];

@@ -162,7 +162,7 @@ test("finding gaps reach one bounded repair even when practical guidance already
     } else {
       repaired = Boolean(payload.contentRepair);
       if (repaired) {
-        assert.deepEqual(payload.contentRepair.unresolved, [{requirementId: "r1", finding: "omitted", guidanceMissing: false}]);
+        assert.deepEqual(payload.contentRepair.unresolved, [{requirementId: "r1", finding: "incomplete", guidanceMissing: false}]);
         assert.deepEqual(payload.contentRepair.findingGaps, [{requirementId: "r1", sourceId: "s1", sourceSpanId: "s1-1", quotation: seller}]);
         assert.deepEqual(payload.contentRepair.materialGaps, []);
       }
@@ -208,7 +208,7 @@ for (const priorGuidanceComplete of [true, false]) for (const supportedReplaceme
     } else {
       repaired = Boolean(payload.contentRepair);
       if (repaired) {
-        assert.deepEqual(payload.contentRepair.unresolved, [{requirementId: "r1", finding: "omitted", guidanceMissing: !priorGuidanceComplete}]);
+        assert.deepEqual(payload.contentRepair.unresolved, [{requirementId: "r1", finding: "incomplete", guidanceMissing: !priorGuidanceComplete}]);
         assert.deepEqual(payload.contentRepair.findingGaps, [{requirementId: "r1", sourceId: "s1", sourceSpanId: "s1-1", quotation: seller}]);
         assert.equal(payload.contentRepair.retainedActions.length, priorGuidanceComplete ? 2 : 1);
       }

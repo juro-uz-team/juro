@@ -1,7 +1,8 @@
 import { z } from "zod";
 import {parseLegalEvidenceRouting, hasRequiredEvidenceReference, legalEvidenceReferenceContexts} from "./legal-evidence-routing";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
-import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported} from "./legal-finding-assessment";
+import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported,
+  findingCoverageLosses, type LegalFindingCoverageLoss, type LegalFindingLossReason} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import {retainRecoveredLegalEvidence, type RecoveredLegalEvidence} from "./legal-evidence-recovery";
 import {answerVerificationFailureText} from "./legal-answer-failure";
@@ -139,6 +140,7 @@ export type ValidatedLegalGatewayResult = {
   coverageDiagnostics: {
     mainPointIncomplete?: true;
     findingAssessmentUnavailable?: true;
+    findingLosses?: LegalFindingCoverageLoss[];
     requirementCount: number;
     writerOmissionCount: number;
     validatorRejectionCount: number;
@@ -153,7 +155,7 @@ export type ValidatedLegalGatewayResult = {
     completeRequirementCount: number;
     /** Request-local requirement positions avoid logging question text or IDs.
      * Finding support and independently assessed practical coverage are distinct. */
-    unresolvedCoverage: Array<{requirementIndex: number; finding: "omitted" | "rejected" | "assessment_unavailable" | null; guidanceMissing: boolean}>;
+    unresolvedCoverage: Array<{requirementIndex: number; finding: LegalFindingLossReason | null; guidanceMissing: boolean}>;
   };
 };
 
@@ -1224,9 +1226,17 @@ export function validateLegalGatewayAnswer(input: {
     );
   }
   const answer = parsedAnswer.data;
-  const writerOmissions = requirements.filter(requirement => !covers(input.result.confirmedFindings, requirement));
-  const rejectedRequirements = requirements.filter(requirement =>
-    covers(input.result.confirmedFindings, requirement) && !covers(filtered.confirmedFindings, requirement));
+  const findingLosses = input.run.findingAssessmentUnavailable ? [] : findingCoverageLosses(input, {
+    proposedFindings: input.result.confirmedFindings,
+    gatewayRejectedFindings: assessedResult.confirmedFindings.filter(candidate => !filtered.confirmedFindings.some(retained =>
+      retained.title === plainGroundedText(candidate.title) && retained.explanation === plainGroundedText(candidate.explanation)
+      && retained.sourceIds.every(id => candidate.sourceIds.includes(id)))),
+    assessments: input.run.findingAssessments ?? [],
+    // Use the same coverage predicate and source-pruned identities on both
+    // sides. Missing writer mappings are not a later gateway removal.
+    completeBeforeGatewayIds: new Set(requirements.filter(requirement => covers(assessedResult.confirmedFindings, requirement)).map(requirement => requirement.id)),
+    completeRequirementIds: new Set(requirements.filter(requirement => covers(filtered.confirmedFindings, requirement)).map(requirement => requirement.id)),
+  });
   const {guidanceAssessments: _consumedAssessments, findingAssessments: _consumedFindingAssessments, ...completedRun} = input.run;
   return {
     run: { ...completedRun, data: safeResult },
@@ -1236,9 +1246,10 @@ export function validateLegalGatewayAnswer(input: {
     coverageDiagnostics: {
       ...(mainPoint.text === null ? {mainPointIncomplete: true as const} : {}),
       ...(input.run.findingAssessmentUnavailable ? {findingAssessmentUnavailable: true as const} : {}),
+      ...(findingLosses.length ? {findingLosses} : {}),
       requirementCount: requirements.length,
-      writerOmissionCount: input.run.findingAssessmentUnavailable ? 0 : writerOmissions.length,
-      validatorRejectionCount: input.run.findingAssessmentUnavailable ? 0 : rejectedRequirements.length,
+      writerOmissionCount: findingLosses.filter(loss => loss.proposedFindingCount === 0).length,
+      validatorRejectionCount: findingLosses.filter(loss => loss.explicitRejectionCount > 0 || loss.gatewayRejectedFindingCount > 0 || loss.gatewayCoverageLoss).length,
       validatedRequirementCount: requirements.filter(requirement => covers(filtered.confirmedFindings, requirement)).length,
       proposedFindingCount: input.result.confirmedFindings.length,
       validatedFindingCount: filtered.confirmedFindings.length,
@@ -1250,7 +1261,7 @@ export function validateLegalGatewayAnswer(input: {
       unresolvedCoverage: requirements.flatMap((requirement, requirementIndex) => {
         const finding = covers(filtered.confirmedFindings, requirement) ? null
           : input.run.findingAssessmentUnavailable ? "assessment_unavailable" as const
-          : covers(input.result.confirmedFindings, requirement) ? "rejected" as const : "omitted" as const;
+          : findingLosses.find(loss => loss.requirementIndex === requirementIndex)?.reason ?? "unverified" as const;
         const guidanceMissing = requirement.priority === "core" && !guidanceCovers(requirement);
         return finding || guidanceMissing ? [{requirementIndex, finding, guidanceMissing}] : [];
       }),
