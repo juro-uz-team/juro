@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {composeSourceLinkedAction, type LegalPassageSource} from "./legal-source-passages";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
 import type { LegalDatabaseFreshness } from "../legal/verified-retrieval";
 import { aiText, type AiOutputLocale } from "./localization";
@@ -208,10 +209,13 @@ function answerCoverageSchema(requirements: readonly {id: string}[]) {
 }
 
 /** Every planned scope gets an explicit slot; an empty slot remains a visible gap. */
-export function legalChatJsonSchemaForCoverage(requirements: readonly {id: string}[] = [], part?: "findings" | "guidance", repair = false) {
-  const base = repair ? legalChatModelResponseSchema.extend({summary: z.string().max(1_500),
+export function legalChatJsonSchemaForCoverage(requirements: readonly {id: string}[] = [], part?: "findings" | "guidance", repair = false,
+  passageIds: readonly string[] = []) {
+  const base = repair || passageIds.length ? legalChatModelResponseSchema.extend({
+    ...(repair ? {summary: z.string().max(1_500)} : {}),
     actionPlan: z.array(actionStepSchema.omit({requirementIds: true}).extend({
-      retainedFindingIndexes: z.array(z.number().int().min(0).max(15)).max(16),
+      ...(repair && !passageIds.length ? {retainedFindingIndexes: z.array(z.number().int().min(0).max(15)).max(16)} : {}),
+      ...(passageIds.length ? {sourcePassageIds: z.array(z.enum(passageIds)).max(16)} : {}),
     })).max(16),
   }) : legalChatModelResponseSchema;
   const schema = part === "findings" ? base.omit({actionPlan: true, risks: true,
@@ -243,7 +247,7 @@ export function parseLegalChatResponse(value: unknown, context?: {
   answerMode: "short" | "detailed";
   reasoningMode: "fast" | "deep";
   legalDatabaseAsOf: string;
-  sources?: readonly { id: string }[];
+  sources?: readonly LegalPassageSource[];
   coverageRequirements?: readonly {id: string}[];
   synthesisPart?: "findings" | "guidance";
   contentRepair?: {retained: Pick<LegalChatResponse, "summary" | "summarySourceIds"> & Partial<Pick<LegalChatResponse, "confirmedFindings">>};
@@ -275,9 +279,10 @@ export function parseLegalChatResponse(value: unknown, context?: {
   const claims = Object.fromEntries(["confirmedFindings", "conditionalBranches", "risks", "actionPlan", "deadlines"]
     .filter(key => Array.isArray(record[key])).map(key => [key, (record[key] as unknown[]).map((item, findingIndex) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-      const claim = {...item} as Record<string, unknown>;
+      let claim = {...item} as Record<string, unknown>;
       if (Array.isArray(claim.sourceIds)) claim.sourceIds = claim.sourceIds.map(id =>
         typeof id === "string" ? restoreLegalSourceIds([id], context.sources ?? [])[0] : id);
+      if (key === "actionPlan") claim = composeSourceLinkedAction(claim, context.sources ?? [], context.locale);
       const scopeCoverage = key === "confirmedFindings" ? coverage : key === "actionPlan" ? guidanceCoverage : null;
       const requirementIds = scopeCoverage ? requirements.flatMap((requirement, index) =>
         scopeCoverage[`r${index + 1}`]!.includes(findingIndex) ? [requirement.id] : []) : null;

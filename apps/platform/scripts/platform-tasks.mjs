@@ -249,6 +249,7 @@ const coreTestFiles = [
   "tests/legal-guidance-context.test.ts",
   "tests/legal-guidance-assessment.test.ts",
   "tests/legal-content-repair.test.ts",
+  "tests/legal-source-linked-guidance.test.ts",
   "tests/legal-guidance-citation.test.ts",
   "tests/legal-finding-assessment.test.ts",
   "tests/legal-chat-release-gate.test.ts",

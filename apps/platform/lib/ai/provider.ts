@@ -47,6 +47,7 @@ import { combineCoverageSynthesis } from "./coverage-synthesis";
 import {assessLegalGuidance, type LegalGuidanceAssessment} from "./legal-guidance-assessment";
 import {LEGAL_CONTENT_REPAIR_RULE, legalContentRepairPayload, mergeRepairedLegalContent, type LegalContentRepair} from "./legal-content-repair";
 import {assessLegalFindings, type LegalFindingAssessment} from "./legal-finding-assessment";
+import {legalSourcePassages, SOURCE_LINKED_GUIDANCE_RULE} from "./legal-source-passages";
 import { openAiChatModel } from "./provider-models";
 import type { CitationEvidenceReceipt } from "../legal-corpus/citation-evidence";
 import type { LegalRequirementOrigin } from "../legal/question-interpretation";
@@ -298,10 +299,11 @@ class OpenAiLegalProvider implements LegalAiProvider {
       ? Math.max(1, Math.min(4_500, providerBudgetMs))
       : Math.max(1, Math.min(30_000, providerBudgetMs));
     const providerDeadlineAt = Date.now() + providerBudgetMs;
+    const passages = part === "findings" ? [] : legalSourcePassages(input.sources, input.locale);
     const emittedFindingsByAttempt = new Map<1 | 2, number>();
     const result = await callOpenAiStructured<LegalChatResponse>({
       schemaName: "juro_legal_chat_response",
-      schema: legalChatJsonSchemaForCoverage(input.coverageRequirements, part, Boolean(input.contentRepair)),
+      schema: legalChatJsonSchemaForCoverage(input.coverageRequirements, part, Boolean(input.contentRepair), passages.map(passage => passage.id)),
       parse: value => parseLegalChatResponse(value, {...input, synthesisPart: part}),
       // Chat is interactive: fail quickly if the provider never starts, but
       // allow a healthy structured stream enough time to finish completely.
@@ -384,6 +386,7 @@ class OpenAiLegalProvider implements LegalAiProvider {
         "Если intent=document, можно указать suggestedDocument только выбрав templateCode из availableDocumentTemplates. Не выдумывай реквизиты: перечисли недостающие данные и предложи открыть существующий конструктор.",
         "Если intent=calculation, не выдавай правовой срок, сумму или формулу как подтверждённые, пока все числа и правило расчёта не покрыты verifiedSources.sourceSpans с sourceClass=OFFICIAL_LEGISLATION. Числа из USER_TRUSTED_PRIVATE можно назвать только фактом содержания документа.",
         aiResponseToneInstruction(settings.responseTone, input.locale),
+        ...(passages.length ? [SOURCE_LINKED_GUIDANCE_RULE] : []),
         aiText(input.locale, "Отвечай полностью на русском языке.", "Отвечай на узбекском языке латиницей.", "Answer entirely in professional English."),
       ].join(" "),
       input: {
@@ -406,6 +409,8 @@ class OpenAiLegalProvider implements LegalAiProvider {
         applicableAt: input.applicableAt ?? null,
         temporalComparison: input.temporalComparison ?? null,
         conversationHistory: input.conversationHistory ?? [],
+        ...(passages.length ? {verifiedPassages: passages.map(passage => ({id: passage.id,
+          sourceId: passage.sourceAlias, sourceSpanId: passage.spanAlias, start: passage.start, end: passage.end, text: passage.text}))} : {}),
         verifiedSources: input.sources.map((source, index) => ({
           sourceId: `s${index + 1}`,
           referencedSourceIds: referencedLegalSourceIds(source, input.sources)
