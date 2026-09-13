@@ -207,6 +207,15 @@ test("official research failures explain unavailability without claiming that no
   }
 });
 
+test("a completed answer does not display earlier research failure diagnostics as an unavailable answer", () => {
+  const value = result({responseKind: "answer", failureReason: "official_research_unavailable"});
+  for (const locale of ["ru", "uz", "en"] as const) {
+    const html = renderToStaticMarkup(createElement(LegalAnswerView, {result: JSON.parse(JSON.stringify(value)), locale}));
+    assert.doesNotMatch(html, /data-answer-kind="insufficient-evidence"/u);
+    assert.doesNotMatch(html, /не означает отсутствия применимых норм|tegishli normalar mavjud emasligini anglatmaydi|does not mean that no applicable law exists/u);
+  }
+});
+
 test("incomplete evidence displays found provisions and focused questions without a verified-answer badge", () => {
   const html = renderToStaticMarkup(createElement(LegalAnswerView, {
     result: result({ responseKind: "clarification_required", clarificationQuestions: ["Какой отпуск оформлен?"] }),

@@ -425,7 +425,7 @@ async function withTargetCoverage(
         },
     };
   }));
-  if (sources.length === 0) return null;
+  if (sources.length === 0 && !droppedCurrent) return null;
   const freshness = legalDatabaseFreshnessFromAsOf(checkedAt, now);
   const provisionsByRequirement = new Map<string, Set<string>>();
   for (const { statement } of answer.statements.filter((entry) =>
@@ -452,7 +452,7 @@ async function withTargetCoverage(
         ? [sources[index]!.id] : []),
     })),
     sourcesRetrievedAt: checkedAt,
-    sourceValidationStatus: "validated",
+    sourceValidationStatus: sources.length ? "validated" : "unavailable",
     errors: droppedCurrent ? [{ code: [...statuses.values()].includes("unavailable")
       ? "LEGAL_SOURCE_CURRENT_STATUS_UNAVAILABLE" : [...statuses.values()].includes("changed_revision")
         ? "LEGAL_SOURCE_REVISION_CHANGED" : "LEGAL_SOURCE_DOCUMENT_REPEALED" }] : [],
@@ -589,6 +589,7 @@ export async function retrieveCorpusAwareLegalSources(input: {
   const retrievalStartedAt = performance.now();
   let targetTelemetry: TargetAttemptTelemetry | undefined;
   let partialIndexed: LegalChatSourceRetrieval | null = null;
+  let rejectedIndexedErrors: LegalChatSourceRetrieval["errors"] = [];
   let discoveredOfficialUrls: string[] = [];
   let coverageRequirements: LegalChatRequest["coverageRequirements"] = [];
   const contextualPlanningStartedAt = performance.now();
@@ -665,10 +666,14 @@ export async function retrieveCorpusAwareLegalSources(input: {
       if (selectedRequirements?.length) coverageRequirements = selectedRequirements.map(requirement => ({
         ...requirement, priority: requirement.priority ?? "core", sourceIds: [],
       }));
-      const indexed = await withTargetCoverage(target, input.locale, input.now ?? new Date(),
+      let indexed = await withTargetCoverage(target, input.locale, input.now ?? new Date(),
         input.verifyCurrentSource ?? (input.targetService && input.targetEnvironment
           ? createSourceObservationClient({service: input.targetService, environment: input.targetEnvironment})
           : observeCurrentLexDocument), input.clock ?? Date.now);
+      if (indexed?.coverageStatus === "partial_coverage" && indexed.sources.length === 0) {
+        rejectedIndexedErrors = indexed.errors;
+        indexed = null;
+      }
       if (indexed) {
         indexed.retrievalTelemetry = {
           ...indexed.retrievalTelemetry!,
@@ -758,6 +763,9 @@ export async function retrieveCorpusAwareLegalSources(input: {
     discoverOfficialUrls: discoverySchedule?.discover ?? input.discoverOfficialUrls,
   });
   const live = withLiveCoverage(result, input.query, targetTelemetry);
+  // A live source may answer a different scope; only final answer validation
+  // establishes completeness. Failure notices are rendered for incomplete answers.
+  live.errors = [...rejectedIndexedErrors, ...live.errors];
   live.coverageRequirements = coverageRequirements;
   const complete = (retrieval: LegalChatSourceRetrieval) => completeArticleContexts(retrieval, {
     locale: input.locale, signal: input.signal, reader: input.articleContextReader,

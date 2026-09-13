@@ -10,6 +10,7 @@ import type { LiveLexRetrievalResult } from "../lib/legal/live-lex-retrieval";
 import { legalDatabaseFreshnessFromAsOf } from "../lib/legal/verified-retrieval";
 import { missingReferencedArticles, referencedArticleContextRequests, referencedLegalSourceIds, selectReferencedArticleContext } from "../lib/legal/referenced-article-context";
 import {recoverLegalSourceCoverage} from "../lib/legal-corpus/source-coverage-recovery";
+import {legalResearchFailureReason} from "../lib/ai/legal-answer-failure";
 import type {LegalChatRequest} from "../lib/ai/provider";
 
 const now = new Date("2026-08-15T00:00:00.000Z");
@@ -337,9 +338,9 @@ test("an operative reference is available only in the same instrument language a
 
 test("the chat adapter preserves observation time and rejects expired or changed pinned evidence", async () => {
   const url = "https://lex.uz/ru/docs/777";
-  for (const mode of ["fresh", "expired", "changed", "missing"] as const) {
+  for (const mode of ["fresh", "expired", "changed", "missing", "repealed"] as const) for (const replacement of [false, true]) {
     const observedAt = new Date(now.getTime() - (mode === "expired" ? 300_000 : 299_999)).toISOString();
-    const observation = {version: 2, officialUrl: url, observedAt, current: true,
+    const observation = {version: 2, officialUrl: url, observedAt, current: mode !== "repealed",
       normalizedTextSha256: mode === "changed" ? "b".repeat(64) : contentHash, rawContentSha256: contentHash};
     const targetService = {async fetch() {return Response.json({result: {kind: "legal_answer", sourceLadder: "indexed_official_corpus",
       mainPoint: "A selected rule", whatTheLawSays: [{requirementId: "rule", provisionConceptId: "concept",
@@ -353,16 +354,43 @@ test("the chat adapter preserves observation time and rejects expired or changed
     const result = await retrieveCorpusAwareLegalSources({query: "General rule", locale: "ru", now, targetService,
       targetEnvironment: "staging", targetQuestionId: `observation-${mode}`,
       verifyCurrentSource: async () => {refreshes++; throw new Error("Publisher refresh unavailable");},
-      liveSearch: async () => ({...liveResult(), sources: []})});
-    assert.equal(result.sources.length, mode === "fresh" ? 1 : 0);
+      liveSearch: async () => replacement ? liveResult() : {...liveResult(), sources: [], evidence: [], sourceValidationStatus: "unavailable"}});
+    assert.equal(result.sources.length, mode === "fresh" || replacement ? 1 : 0);
     if (mode === "fresh") {
       assert.equal(result.sources[0]!.verifiedAt, observedAt);
       assert.equal(result.sources[0]!.lastCheckedAt, observedAt);
       assert.equal(result.evidence[0]!.validatedAt, observedAt);
     }
     assert.equal(refreshes, mode === "expired" || mode === "missing" ? 1 : 0);
+    assert.equal(legalResearchFailureReason(result.errors), mode === "expired" || mode === "missing"
+      ? "official_research_unavailable" : undefined, `Publisher verification outcome: ${mode}, replacement: ${replacement}`);
+    assert.deepEqual(result.errors, mode === "fresh" ? [] : [{code: mode === "changed"
+      ? "LEGAL_SOURCE_REVISION_CHANGED" : mode === "repealed" ? "LEGAL_SOURCE_DOCUMENT_REPEALED" : "LEGAL_SOURCE_CURRENT_STATUS_UNAVAILABLE"}]);
     assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.id), ["rule"]);
   }
+});
+
+test("live evidence for one scope cannot erase failed publisher verification for another scope", async () => {
+  const requirements = [{id: "registration", statement: "Registration requirements", priority: "core"},
+    {id: "permission", statement: "Separate permission requirements", priority: "core"}];
+  const targetService = {async fetch() {return Response.json({result: {kind: "legal_answer",
+    sourceLadder: "indexed_official_corpus", mainPoint: "Both requirements apply.",
+    whatTheLawSays: requirements.map((requirement, index) => ({requirementId: requirement.id,
+      provisionConceptId: `concept-${index}`, provisionRenditionId: `rendition-${index}`,
+      proposition: requirement.statement, controllingQuotation: `Complete ${requirement.statement}.`,
+      officialCitations: [{label: "Law — Article 9", url: `https://lex.uz/ru/docs/${index ? "888" : "777"}`}],
+      evidenceSha256: contentHash, currentSourceStatus: {pinnedTextSha256: contentHash, observation: null}})),
+    whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
+    temporalEndpoint: {kind: "current"}, coverageRequirements: requirements}});},
+    connect() {throw new Error("No sockets");}} satisfies Fetcher;
+  const result = await retrieveCorpusAwareLegalSources({query: "Registration and separate permission", locale: "ru",
+    targetService, targetEnvironment: "staging", targetQuestionId: "partial-live-verification",
+    verifyCurrentSource: async () => {throw new Error("Publisher unavailable");},
+    liveSearch: async () => liveResult()});
+  assert.deepEqual(result.sources.map(source => source.officialUrl), ["https://lex.uz/ru/docs/777"]);
+  assert.deepEqual(result.coverageRequirements?.map(requirement => requirement.id), ["registration", "permission"]);
+  assert.notEqual(result.coverageStatus, "good_coverage");
+  assert.equal(legalResearchFailureReason(result.errors), "official_research_unavailable");
 });
 
 test("an indexed list introduction is completed from separately validated official article evidence", async () => {

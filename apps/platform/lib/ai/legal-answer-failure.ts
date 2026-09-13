@@ -4,7 +4,7 @@ export type LegalAnswerFailureReason = "question_interpretation_unavailable" | "
 
 export function legalResearchFailureReason(errors: readonly {code: string}[]): LegalAnswerFailureReason | undefined {
   if (errors.some(error => error.code === "QUESTION_INTERPRETATION_UNAVAILABLE")) return "question_interpretation_unavailable";
-  return errors.some(error => /^(?:LEGAL_SOURCE_(?:SEARCH_TIMEOUT|SEARCH_UNAVAILABLE|UPSTREAM_UNAVAILABLE|TIMEOUT|HTTP_\d+)|TARGET_RETRIEVAL_(?:TIMEOUT|FAILED))$/u.test(error.code))
+  return errors.some(error => /^(?:LEGAL_SOURCE_(?:SEARCH_TIMEOUT|SEARCH_UNAVAILABLE|UPSTREAM_UNAVAILABLE|CURRENT_STATUS_UNAVAILABLE|TIMEOUT|HTTP_\d+)|TARGET_RETRIEVAL_(?:TIMEOUT|FAILED))$/u.test(error.code))
     ? "official_research_unavailable" : undefined;
 }
 
