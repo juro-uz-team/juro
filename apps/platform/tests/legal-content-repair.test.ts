@@ -21,6 +21,20 @@ const input: LegalChatRequest = {question: "What must the buyer and seller do wh
     id: index ? "seller" : "buyer", statement, priority: "core", scopeKind: "general", sourceIds: [source.id],
   }))};
 
+function evidenceRoutingResponse(request: {text: {format: {name: string}}; input: string; model: string}) {
+  if (request.text.format.name !== "juro_legal_evidence_routing") return null;
+  const payload = JSON.parse(request.input);
+  const witnesses: Record<string, string[]> = {buyer: [buyer], seller: [seller], registry: [buyer, seller]};
+  assert.deepEqual(payload.sources[0].spans, source.spans);
+  const data = Object.fromEntries(payload.requirements.map((scope: {id: string}) => {
+    assert.ok(witnesses[scope.id], "the controlled registry fixture must name a known scope");
+    return [scope.id, {decision: "sufficient", support: witnesses[scope.id]!.map(quotation => ({sourceId: source.id, quotation})),
+      missingEvidenceQuestion: ""}];
+  }));
+  return Response.json({id: "registry-evidence-routing", model: request.model,
+    output: [{content: [{type: "output_text", text: JSON.stringify(data)}]}], usage: {input_tokens: 100, output_tokens: 20}});
+}
+
 function findingAssessmentResponse(request: {text: {format: {name: string}}; input: string; model: string}) {
   if (request.text.format.name !== "juro_legal_finding_support") return null;
   const payload: {findings: Array<{sourceIds: string[]; explanation: string}>; sources: Array<{id: string}>} = JSON.parse(request.input);
@@ -43,6 +57,8 @@ test("finding gaps reach one bounded repair even when practical guidance already
   let repaired = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_finding_support") {
@@ -84,6 +100,8 @@ for (const priorGuidanceComplete of [true, false]) for (const supportedReplaceme
   let repaired = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const payload = JSON.parse(request.input);
     let data: unknown;
     if (request.text.format.name === "juro_legal_finding_support") {
@@ -127,6 +145,8 @@ for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [
   const controller = new AbortController();
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const findingResponse = findingAssessmentResponse(request);
     if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
@@ -163,7 +183,7 @@ for (const reasoningMode of ["deep", "fast"] as const) for (const cancelled of [
   assert.equal(checked.run.data.responseKind, "clarification_required");
   assert.equal(checked.contentRepair?.outcome, "unavailable");
   assert.equal(checked.run.sourceFallback, undefined);
-  assert.equal(checked.run.usage.inputTokens, reasoningMode === "fast" ? 300 : 200);
+  assert.equal(checked.run.usage.inputTokens, reasoningMode === "fast" ? 400 : 300);
   assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
   assert.equal(repairRequested, true);
 });
@@ -176,6 +196,8 @@ test("bounded repair completes timed-out guidance while retaining the original f
   const outcomes: string[] = [];
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const findingResponse = findingAssessmentResponse(request);
     if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
@@ -208,8 +230,8 @@ test("bounded repair completes timed-out guidance while retaining the original f
   assert.equal(checked.contentRepair?.outcome, "repaired");
   assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.explanation), [buyer, seller]);
   assert.deepEqual(checked.run.data.actionPlan.map(action => action.description), [buyer, seller]);
-  assert.deepEqual(outcomes, ["completed", "completed", "failed", "completed", "completed", "completed"]);
-  assert.equal(checked.run.usage.inputTokens, 500);
+  assert.deepEqual(outcomes, ["completed", "completed", "failed", "completed", "completed", "completed", "completed"]);
+  assert.equal(checked.run.usage.inputTokens, 600);
   assert.deepEqual(checked.run.initialGuidanceAssessmentFailure, {code: "PROVIDER_TIMEOUT"});
 });
 
@@ -247,6 +269,8 @@ for (const initialFailure of ["omitted", "rejected"] as const) test(`sufficient 
   let repairRequested = false;
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const findingResponse = findingAssessmentResponse(request);
     if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);
@@ -306,6 +330,8 @@ test("unavailable content repair retains the validated partial answer and report
   context.after(() => {env.OPENAI_API_KEY = previous;});
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(String(init.body));
+    const routingResponse = evidenceRoutingResponse(request);
+    if (routingResponse) return routingResponse;
     const findingResponse = findingAssessmentResponse(request);
     if (findingResponse) return findingResponse;
     const payload = JSON.parse(request.input);

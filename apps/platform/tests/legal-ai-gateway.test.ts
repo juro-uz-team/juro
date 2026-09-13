@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {createAiExecutionBudget} from "../lib/ai/execution-budget";
 import { combineCoverageSynthesis } from "../lib/ai/coverage-synthesis";
 import {parseLegalGuidanceAssessment} from "../lib/ai/legal-guidance-assessment";
 import {parseLegalFindingAssessment} from "../lib/ai/legal-finding-assessment";
@@ -147,6 +148,157 @@ test("a scope without mapped authoritative evidence cannot be repaired by invent
   assert.equal(checked.coverageDiagnostics.missingGuidanceRequirementCount, 1);
 });
 
+for (const changed of ["question", "source", "scope"] as const) test(`routing cannot reuse a decision after its ${changed} context changes`, async () => {
+  let writers = 0;
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "bound-routing",
+    safetyIdentifier: "owner-a", coverageRequirements: [{id: "registration", statement: "Как зарегистрировать ООО?",
+      priority: "core", sourceIds: [source.id]}]};
+  const original = structuredClone(request);
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence(input) {
+      assert.notEqual(input, request);
+      if (changed === "question") input.question = "Another user question";
+      if (changed === "source") input.sources[0]!.spans![0]!.text = "Changed source text";
+      if (changed === "scope") input.coverageRequirements![0]!.statement = "Another scope";
+      return {...run, data: {registration: {decision: "sufficient",
+        support: [{sourceId: source.id, quotation: source.spans![0]!.text}], missingEvidenceQuestion: ""}}};
+    }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false});
+  assert.equal(writers, 1);
+  assert.equal(checked.contentRepair, undefined);
+  assert.equal(checked.evidenceRouting?.outcome, "unavailable");
+  assert.equal(checked.evidenceRouting?.safeErrorCode, "INVALID_AI_OUTPUT");
+  assert.equal(checked.run.usage.inputTokens, 200);
+  assert.deepEqual(request, original);
+});
+
+test("newly discovered core scopes need their own sufficient evidence before writer repair", async () => {
+  const permissionText = "The authority issues a permission after receiving the application.";
+  const permission: LegalSourceContext = {...source, id: "official:permission", spans: [{...source.spans![0]!, text: permissionText}]};
+  const request: LegalChatRequest = {question: "How is permission obtained?", locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "expanded-routing",
+    safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Permission requirements", priority: "core", sourceIds: [source.id]}]};
+  let assessments = 0;
+  let repaired: string[] = [];
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat(input) {
+    if (input.contentRepair) repaired = input.contentRepair.unresolved.map(scope => scope.requirementId);
+    return structuredClone(run);
+  }, async assessEvidence(input, ids): ReturnType<NonNullable<LegalAiProvider["assessEvidence"]>> {
+    assessments++;
+    if (input.sources.length === 1) return {...run, data: {permission: {decision: "missing_evidence", support: [],
+      missingEvidenceQuestion: "Which rule governs permission?"}}};
+    assert.deepEqual(ids, ["permission", "fee"]);
+    return {...run, data: {
+      permission: {decision: "sufficient", support: [{sourceId: permission.id, quotation: permissionText}], missingEvidenceQuestion: ""},
+      fee: {decision: "unsupported_relationship", support: [], missingEvidenceQuestion: "Does an independent fee obligation apply?"},
+    }};
+  }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async input => ({sources: [...input.sources, permission], legalDatabaseAsOf: source.verifiedAt,
+      coverageRequirements: [...input.coverageRequirements!, {id: "fee", statement: "Possible independent fee obligation",
+        priority: "core", sourceIds: [permission.id]}]})});
+  assert.equal(assessments, 2);
+  assert.deepEqual(repaired, ["permission"]);
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+});
+
+for (const missingReference of [false, true]) test(`sufficient evidence routing ${missingReference ? "cannot override a missing operative reference" : "does not require a discovery mapping"}`, async () => {
+  let writers = 0;
+  let research = 0;
+  const candidate: LegalSourceContext = {...source, spans: [{...source.spans![0]!, text: source.spans![0]!.text
+    + (missingReference ? " Исключения установлены статьей 27 настоящего Закона." : "")}]};
+  const request: LegalChatRequest = {question: "Как зарегистрировать ООО?", locale: "ru", answerMode: "detailed",
+    reasoningMode: "deep", sources: [candidate], legalDatabaseAsOf: source.verifiedAt, requestId: "routing-discovery-mapping",
+    safetyIdentifier: "test", coverageRequirements: [{id: "registration", statement: "Как зарегистрировать ООО?",
+      priority: "core", sourceIds: []}]};
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence() {return {...run, data: {registration: {decision: "sufficient",
+      support: [{sourceId: source.id, quotation: candidate.spans![0]!.text}], missingEvidenceQuestion: ""}}};}};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async () => {research++; throw new AiUnavailableError("Official research unavailable", "PROVIDER_UNAVAILABLE", false);}});
+  assert.equal(research, missingReference ? 1 : 0);
+  assert.equal(writers, missingReference ? 1 : 2);
+  assert.equal(checked.run.data.responseKind, "clarification_required", "routing does not approve the unassessed answer");
+  if (missingReference) assert.equal(checked.contentRepair, undefined);
+});
+
+for (const knownUsage of [true, false]) test(`unavailable evidence routing preserves ${knownUsage ? "known" : "unknown"} usage and the validated partial answer`, async () => {
+  let writers = 0;
+  let observations = 0;
+  const errorCode = knownUsage ? "INVALID_AI_OUTPUT" as const : "PROVIDER_TIMEOUT" as const;
+  const request: LegalChatRequest = {question: "What permission is required?", locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "failed-routing",
+    safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Permission requirements", priority: "core", sourceIds: [source.id]}]};
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence(_input, _ids, execution, options) {
+      await options?.onProviderAttemptFinished?.({provider: execution.provider, model: execution.model, part: "evidence_validation",
+        attempt: 1, elapsedMs: 20, httpStatus: knownUsage ? 200 : null, outcome: "failed", errorCode,
+        usage: knownUsage ? {inputTokens: 40, outputTokens: 20, cachedInputTokens: 0} : null});
+      throw new AiUnavailableError("Evidence routing unavailable", errorCode, false);
+    }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    onProviderAttemptFinished: () => {observations++;}});
+  assert.equal(writers, 1);
+  assert.equal(observations, 1);
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+  assert.equal(checked.contentRepair, undefined);
+  assert.equal(checked.run.usage.inputTokens, knownUsage ? 140 : 100);
+  assert.equal(checked.answer.providerMetadata.inputTokens, knownUsage ? 140 : 100);
+  assert.equal(checked.run.attempts, 2);
+  assert.deepEqual(checked.evidenceRouting, {outcome: "unavailable", requirementIndexes: [0], safeErrorCode: errorCode});
+});
+
+test("a fabricated sufficient-evidence quotation cannot authorize repair and its completed usage is retained", async () => {
+  let writers = 0;
+  const request: LegalChatRequest = {question: "What permission is required?", locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "invalid-routing-witness",
+    safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Permission requirements", priority: "core", sourceIds: [source.id]}]};
+  const provider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence() {return {...run, data: {permission: {decision: "sufficient" as const,
+      support: [{sourceId: source.id, quotation: "A fabricated permission rule."}], missingEvidenceQuestion: ""}}};}};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false});
+  assert.equal(writers, 1);
+  assert.equal(checked.contentRepair, undefined);
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+  assert.equal(checked.run.usage.inputTokens, 200);
+  assert.equal(checked.answer.providerMetadata.inputTokens, 200);
+  assert.equal(checked.run.attempts, 2);
+});
+
+test("mapped but incomplete evidence requests research and cannot authorize repair after research fails", async () => {
+  let writers = 0;
+  let research = 0;
+  let assessments = 0;
+  const request: LegalChatRequest = {question: "How do registration and permission work?", locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "partial-mapped-evidence",
+    safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Registration and permission requirements",
+      priority: "core", sourceIds: [source.id]}]};
+  const provider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence(input: LegalChatRequest, requirementIds: readonly string[]) {
+      assessments++;
+      assert.equal(input.question, request.question);
+      assert.deepEqual(input.sources, request.sources);
+      assert.deepEqual(requirementIds, ["permission"]);
+      return {...run, data: {permission: {decision: "missing_evidence" as const,
+        support: [{sourceId: source.id, quotation: source.spans![0]!.text}],
+        missingEvidenceQuestion: "What rule establishes the separate permission requirement?"}}};
+    }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(request, {fallbackEnabled: false,
+    recoverEvidence: async (input, missing) => {
+      research++;
+      assert.equal(input.question, request.question);
+      assert.deepEqual(missing, ["permission"]);
+      throw new AiUnavailableError("Official research unavailable", "PROVIDER_UNAVAILABLE", false);
+    }});
+  assert.equal(assessments, 1);
+  assert.equal(research, 1);
+  assert.equal(writers, 1, "mapped partial evidence cannot repair a rule that research did not retrieve");
+  assert.equal(checked.run.data.responseKind, "clarification_required");
+  assert.equal(checked.evidenceRecovery?.outcome, "unavailable");
+  assert.equal(checked.contentRepair, undefined);
+});
+
 test("missing support triggers one scoped evidence recovery before the combined answer is independently validated", async () => {
   const permissionText = "Для получения разрешения общество подаёт заявление в уполномоченный орган.";
   const permission: LegalSourceContext = {...source, id: "official:permission", article: "Статья 4",
@@ -191,6 +343,73 @@ test("missing support triggers one scoped evidence recovery before the combined 
   assert.equal(discoveries, 1);
   assert.equal(calls, 2);
   assert.equal(checked.run.data.responseKind, "answer");
+  assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.requirementIds), [["registration"], ["permission"]]);
+  assert.deepEqual(checked.recoveredEvidence?.sources.map(item => item.id), [source.id, permission.id]);
+  assert.deepEqual(input.sources, [source], "request input is not mutated");
+});
+
+for (const relevantRecovery of [true, false]) test(`semantic routing ${relevantRecovery ? "reassesses recovered support before repair" : "rejects unrelated recovered evidence"}`, async () => {
+  const permissionText = "Для получения разрешения общество подаёт заявление в уполномоченный орган.";
+  const permission: LegalSourceContext = {...source, id: "official:permission", article: "Статья 4",
+    contentSha256: "c".repeat(64), spans: [{...source.spans![0]!, id: "permission-span", article: "Статья 4",
+      text: permissionText, textSha256: "d".repeat(64)}]};
+  const input: LegalChatRequest = {question: "Как зарегистрировать общество и получить разрешение?", locale: "ru",
+    answerMode: "detailed", reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt,
+    requestId: "recover-permission", safetyIdentifier: "test", coverageRequirements: [
+      {id: "registration", statement: "Как зарегистрировать общество?", priority: "core", sourceIds: [source.id]},
+      {id: "permission", statement: "Как получить разрешение?", priority: "core", sourceIds: [source.id]},
+    ]};
+  let calls = 0;
+  let discoveries = 0;
+  let assessments = 0;
+  const provider: LegalAiProvider = {name: "openai", async assessEvidence(request, ids) {
+    assessments++;
+    assert.deepEqual(ids, ["permission"]);
+    const recovered = request.sources.some(item => item.id === permission.id && item.spans?.[0]?.text === permissionText);
+    return {...run, data: {permission: recovered
+      ? {decision: "sufficient", support: [{sourceId: permission.id, quotation: permissionText}], missingEvidenceQuestion: ""}
+      : {decision: "unsupported_relationship", support: [], missingEvidenceQuestion: "Как получить разрешение?"}}};
+  }, async runLegalChat(request) {
+    calls++;
+    const findings = [{...result.confirmedFindings[0]!, requirementIds: ["registration"], answerRole: "governing_rule" as const}];
+    if (request.contentRepair) {
+      assert.deepEqual(request.contentRepair.unresolved.map(scope => scope.requirementId), ["permission"]);
+      assert.equal(request.sources[0], source, "the original authenticated evidence is retained");
+      assert.deepEqual(request.contentRepair.retained.confirmedFindings, findings);
+      findings.push({title: "Получение разрешения", explanation: permissionText, sourceIds: [permission.id],
+        requirementIds: ["permission"], answerRole: "governing_rule"});
+    }
+    const data = {...result, summary: findings.map(finding => finding.explanation).join(" "),
+      summarySourceIds: findings.flatMap(finding => finding.sourceIds), confirmedFindings: findings,
+      actionPlan: findings.map(finding => ({title: finding.title, description: finding.explanation,
+        sourceIds: finding.sourceIds, requirementIds: finding.requirementIds}))};
+    return {...run, attempts: request.contentRepair ? 4 : 6, data, findingAssessments: [fixtureFindingAssessment({...request, result: data},
+      {r1: [0], r2: request.contentRepair ? [1] : []})],
+      guidanceAssessments: [parseLegalGuidanceAssessment({supportedActions: data.actionPlan.map((_, index) => index),
+      r1: [0], r2: request.contentRepair ? [1] : []}, request, data.actionPlan)]};
+  }};
+  const checked = await createLegalAiGateway(provider).generateGroundedAnswer(input, {fallbackEnabled: false,
+    recoverEvidence: async (request, missingRequirementIds) => {
+      discoveries++;
+      assert.equal(request.question, input.question);
+      assert.deepEqual(missingRequirementIds, ["permission"]);
+      return {sources: [source, relevantRecovery ? permission : {...permission, spans: [{...permission.spans![0]!, text: "The registry is open on weekdays."}]}], legalDatabaseAsOf: source.verifiedAt,
+        coverageRequirements: request.coverageRequirements!.map(scope => ({...scope,
+          sourceIds: scope.id === "permission" ? [...scope.sourceIds, permission.id] : scope.sourceIds}))};
+    }});
+  assert.equal(discoveries, 1);
+  assert.equal(assessments, 2);
+  assert.equal(calls, relevantRecovery ? 2 : 1);
+  if (!relevantRecovery) {
+    assert.equal(checked.run.data.responseKind, "clarification_required");
+    assert.equal(checked.contentRepair, undefined);
+    assert.equal(checked.recoveredEvidence, undefined);
+    assert.equal(checked.run.data.confirmedFindings.length, 1);
+    return;
+  }
+  assert.equal(checked.run.data.responseKind, "answer");
+  assert.equal(checked.run.attempts, 12);
+  assert.equal(legalGatewayAnswerSchema.parse(checked.answer).providerMetadata.attempts, 12);
   assert.deepEqual(checked.run.data.confirmedFindings.map(finding => finding.requirementIds), [["registration"], ["permission"]]);
   assert.deepEqual(checked.recoveredEvidence?.sources.map(item => item.id), [source.id, permission.id]);
   assert.deepEqual(input.sources, [source], "request input is not mutated");
@@ -1806,4 +2025,32 @@ test("a governing finding cannot hide absent, rejected or unrelated practical gu
   const complete = validate([action]);
   assert.equal(complete.responseKind, "answer");
   assert.deepEqual(complete.actionPlan[0]!.requirementIds, [requirement.id]);
+});
+
+for (const phase of ["routing", "recovery"] as const) test(`caller cancellation during ${phase} cannot adopt evidence or run repair`, async () => {
+  const caller = new AbortController();
+  const budget = createAiExecutionBudget({callerSignal: caller.signal, enforceOverallTimeout: false});
+  let writers = 0;
+  let routing = 0;
+  let research = 0;
+  const request: LegalChatRequest = {question: "What permission is required?", locale: "en", answerMode: "detailed",
+    reasoningMode: "deep", sources: [source], legalDatabaseAsOf: source.verifiedAt, requestId: "cancelled-recovery",
+    safetyIdentifier: "test", coverageRequirements: [{id: "permission", statement: "Permission requirements", priority: "core", sourceIds: [source.id]}]};
+  const provider: LegalAiProvider = {name: "openai", async runLegalChat() {writers++; return structuredClone(run);},
+    async assessEvidence() {
+      routing++;
+      if (phase === "routing") caller.abort();
+      return {...run, data: {permission: {decision: "missing_evidence", support: [], missingEvidenceQuestion: "Which permission rule applies?"}}};
+    }};
+  try {
+    await assert.rejects(createLegalAiGateway(provider).generateGroundedAnswer(request, {budget, fallbackEnabled: false,
+      recoverEvidence: async () => {
+        research++;
+        caller.abort();
+        return {sources: [source], coverageRequirements: request.coverageRequirements!, legalDatabaseAsOf: request.legalDatabaseAsOf};
+      }}));
+    assert.equal(writers, 1);
+    assert.equal(routing, 1);
+    assert.equal(research, phase === "recovery" ? 1 : 0);
+  } finally {budget.dispose();}
 });

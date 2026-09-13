@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {parseLegalEvidenceRouting} from "./legal-evidence-routing";
 import {assessedGuidanceActions, assessedGuidanceCoverage, assessedGuidanceGaps} from "./legal-guidance-assessment";
 import {assessedFindingSources, assessedFindingCoverage, assessedFindingGaps, assessedGoverningFindings, assessedMainPointSupported} from "./legal-finding-assessment";
 import { MAX_LEGAL_EVIDENCE_SOURCES } from "../legal/legal-evidence-budget";
@@ -46,6 +47,7 @@ import {
   aiProviderStatus,
   type AiProviderStatus,
   type LegalAiProvider,
+  type LegalEvidenceRoutingDecision,
   type LegalAiRunOptions,
   type LegalAiRunResult,
   type LegalChatRequest,
@@ -80,8 +82,8 @@ export const legalGatewayProviderMetadataSchema = z.object({
   provider: z.enum(["openai", "anthropic"]),
   model: z.string().trim().min(1).max(160),
   providerResponseId: z.string().trim().max(240).nullable(),
-  // Two writer attempts per part, plus each independent assessment.
-  attempts: z.number().int().min(1).max(10),
+  // Existing writer/answer assessments plus routing before and after source recovery.
+  attempts: z.number().int().min(1).max(12),
   latencyMs: z.number().int().nonnegative(),
   fallbackFromProvider: z.enum(["openai", "anthropic"]).nullable(),
   inputTokens: z.number().int().nonnegative(),
@@ -122,6 +124,7 @@ export type LegalAiGatewayRunOptions = LegalAiRunOptions & {
 };
 
 export type ValidatedLegalGatewayResult = {
+  evidenceRouting?: {outcome: "assessed" | "unavailable"; requirementIndexes: number[]; safeErrorCode: string | null};
   /** Final authenticated context, present only after revalidation with recovered evidence. */
   recoveredEvidence?: RecoveredLegalEvidence;
   evidenceRecovery?: {outcome: "adopted" | "not_adopted" | "unavailable"; requirementIndexes: number[]; safeErrorCode: string | null};
@@ -1348,14 +1351,70 @@ class DefaultLegalAiGateway implements LegalAiGateway {
         && sourceTier(source) === "authoritative" && source.spans?.some(span => span.quality === "high")));
     };
     const canRecover = !input.contentRepair && !options.signal?.aborted && (!options.budget || options.budget.remainingMs > 0);
+    let evidenceRouting: Record<string, LegalEvidenceRoutingDecision> | undefined;
+    let routingOutcome: ValidatedLegalGatewayResult["evidenceRouting"];
+    const assessRouting = async (context: LegalChatRequest, requirementIds: readonly string[]) => {
+      if (!this.provider.assessEvidence || !requirementIds.length) return;
+      evidenceRouting = {};
+      const request = structuredClone(context);
+      const identity = JSON.stringify(context);
+      const requirementIndexes = requirementIds.map(id => context.coverageRequirements!.findIndex(scope => scope.id === id));
+      let assessed: Awaited<ReturnType<NonNullable<LegalAiProvider["assessEvidence"]>>> | undefined;
+      let observedAttempts = 0;
+      const observedUsage = {inputTokens: 0, outputTokens: 0, cachedInputTokens: 0};
+      try {
+        assessed = await this.provider.assessEvidence(request, requirementIds, run, {...options,
+          onProviderAttemptFinished: async observation => {
+            observedAttempts++;
+            observedUsage.inputTokens += observation.usage?.inputTokens ?? 0;
+            observedUsage.outputTokens += observation.usage?.outputTokens ?? 0;
+            observedUsage.cachedInputTokens += observation.usage?.cachedInputTokens ?? 0;
+            await options.onProviderAttemptFinished?.(observation);
+          }});
+        options.signal?.throwIfAborted();
+        options.budget?.signal.throwIfAborted();
+        if (identity !== JSON.stringify(context) || identity !== JSON.stringify(request)
+          || assessed.provider !== run.provider || assessed.model !== run.model) {
+          throw new AiUnavailableError("Evidence routing context changed", "INVALID_AI_OUTPUT", false);
+        }
+        evidenceRouting = parseLegalEvidenceRouting(assessed.data, context, requirementIds);
+        routingOutcome = {outcome: "assessed", requirementIndexes, safeErrorCode: null};
+      } catch (error) {
+        if (options.signal?.aborted || options.budget?.signal.aborted) throw error;
+        evidenceRouting = {};
+        routingOutcome = {outcome: "unavailable", requirementIndexes,
+          safeErrorCode: error instanceof AiUnavailableError ? error.code : "INVALID_AI_OUTPUT"};
+      } finally {
+        const attempts = observedAttempts || assessed?.attempts || 0;
+        const usage = observedAttempts ? observedUsage : assessed?.usage;
+        if (attempts && usage && !options.signal?.aborted && !options.budget?.signal.aborted) {
+          run = {...run, attempts: run.attempts + attempts, latencyMs: Math.max(0, Date.now() - startedAt),
+            usage: {inputTokens: run.usage.inputTokens + usage.inputTokens,
+              outputTokens: run.usage.outputTokens + usage.outputTokens,
+              cachedInputTokens: run.usage.cachedInputTokens + usage.cachedInputTokens}};
+          validated = validate(run);
+        }
+      }
+    };
+    const routingRequirementIds = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
+      const requirement = input.coverageRequirements?.[item.requirementIndex];
+      return requirement?.priority === "core" ? [requirement.id] : [];
+    });
+    if (canRecover) await assessRouting(input, routingRequirementIds);
+    const hasMissingReference = (context: LegalChatRequest, requirement: NonNullable<LegalChatRequest["coverageRequirements"]>[number]) => {
+      const evidenceIds = new Set([...requirement.sourceIds,
+        ...(evidenceRouting?.[requirement.id]?.support.map(witness => witness.sourceId) ?? []),
+        ...validated.run.data.confirmedFindings.filter(finding => finding.requirementIds?.includes(requirement.id))
+          .flatMap(finding => finding.sourceIds)]);
+      return context.sources.some(source => evidenceIds.has(source.id)
+        && sourceTier(source) === "authoritative" && missingReferencedArticles(source, context.sources).length > 0);
+    };
     const missing = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
       const requirement = input.coverageRequirements?.[item.requirementIndex];
-      const evidenceIds = new Set([...(requirement?.sourceIds ?? []),
-        ...validated.run.data.confirmedFindings.filter(finding => finding.requirementIds?.includes(requirement?.id ?? ""))
-          .flatMap(finding => finding.sourceIds)]);
-      const missingReference = input.sources.some(source => evidenceIds.has(source.id)
-        && sourceTier(source) === "authoritative" && missingReferencedArticles(source, input.sources).length > 0);
-      return requirement?.priority === "core" && (!hasEvidence(input, requirement) || missingReference) ? [{...item, requirement}] : [];
+      if (requirement?.priority !== "core") return [];
+      const needsResearch = evidenceRouting === undefined ? !hasEvidence(input, requirement)
+        : Boolean(evidenceRouting[requirement.id] && evidenceRouting[requirement.id]!.decision !== "sufficient");
+      return needsResearch || hasMissingReference(input, requirement) ? [{...item, requirement}] : [];
     });
     let repairInput = input;
     let recoveredEvidence: RecoveredLegalEvidence | undefined;
@@ -1365,6 +1424,7 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       try {
         const recovered = await options.recoverEvidence(input, missing.map(item => item.requirement.id));
         options.signal?.throwIfAborted();
+        options.budget?.signal.throwIfAborted();
         recoveredEvidence = retainRecoveredLegalEvidence(input, recovered);
         // Newly retrieved text still needs independent claim and scope checks.
         // Its presence alone never establishes a support mapping or coverage.
@@ -1374,19 +1434,29 @@ class DefaultLegalAiGateway implements LegalAiGateway {
           recoveredEvidence!.coverageRequirements[item.requirementIndex]!))) repairInput = {...input, ...recoveredEvidence};
         evidenceRecovery = {outcome: "not_adopted", requirementIndexes, safeErrorCode: null};
       } catch (error) {
-        if (options.signal?.aborted) throw error;
+        if (options.signal?.aborted || options.budget?.signal.aborted) throw error;
         evidenceRecovery = {outcome: "unavailable", requirementIndexes,
           safeErrorCode: error instanceof AiUnavailableError ? error.code : "EVIDENCE_RECOVERY_FAILED"};
       }
     }
+    if (repairInput !== input && this.provider.assessEvidence) {
+      await assessRouting(repairInput, [...routingRequirementIds,
+        ...(repairInput.coverageRequirements ?? []).slice(input.coverageRequirements?.length ?? 0)
+          .filter(scope => scope.priority === "core").map(scope => scope.id)]);
+    }
     const unresolved = validated.coverageDiagnostics.unresolvedCoverage.flatMap(item => {
       const requirement = repairInput.coverageRequirements?.[item.requirementIndex];
-      return requirement?.priority === "core" && (hasEvidence(repairInput, requirement)
-        || (repairInput !== input && missing.some(scope => scope.requirement.id === requirement.id)))
+      return requirement?.priority === "core" && !hasMissingReference(repairInput, requirement) && (evidenceRouting !== undefined
+        ? evidenceRouting[requirement.id]?.decision === "sufficient"
+        : (hasEvidence(repairInput, requirement)
+          || (repairInput !== input && missing.some(scope => scope.requirement.id === requirement.id))))
         ? [{requirementId: requirement.id, finding: item.finding, guidanceMissing: item.guidanceMissing}] : [];
     });
     for (const requirement of (repairInput.coverageRequirements ?? []).slice(input.coverageRequirements?.length ?? 0)) {
-      if (requirement.priority === "core") unresolved.push({requirementId: requirement.id, finding: "omitted", guidanceMissing: true});
+      if (requirement.priority === "core" && !hasMissingReference(repairInput, requirement)
+        && (evidenceRouting === undefined || evidenceRouting[requirement.id]?.decision === "sufficient")) {
+        unresolved.push({requirementId: requirement.id, finding: "omitted", guidanceMissing: true});
+      }
     }
     if (unresolved.length && !input.contentRepair && !options.signal?.aborted
       && (!options.budget || options.budget.remainingMs > 0)) {
@@ -1453,6 +1523,7 @@ class DefaultLegalAiGateway implements LegalAiGateway {
       }
       console.info(JSON.stringify({event: "legal.content_repair_finished", ...validated.contentRepair}));
     }
+    if (routingOutcome) validated.evidenceRouting = routingOutcome;
     if (evidenceRecovery) validated.evidenceRecovery = evidenceRecovery;
     await emitPreliminary(preliminaryFromValidatedResult(validated, input.locale));
     return validated;

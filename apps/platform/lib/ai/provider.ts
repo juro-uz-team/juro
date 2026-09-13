@@ -1,3 +1,4 @@
+import {assessLegalEvidenceRouting} from "./legal-evidence-routing";
 import { hasAnthropicConfiguration } from "../document-builder/ai/anthropic";
 import { questionScopeSelection } from "../legal/question-interpretation";
 import type { UnresolvedQuestionDimensions, UserQuestionContext } from "../legal/question-interpretation";
@@ -214,7 +215,7 @@ export type LegalAiRunOptions = {
   }) => void | Promise<void>;
   onProviderAttemptFinished?: (observation: AiProviderAttemptObservation & {
     provider: "openai" | "anthropic";
-    part: "findings" | "guidance" | "answer" | "guidance_validation" | "finding_validation";
+    part: "findings" | "guidance" | "answer" | "guidance_validation" | "finding_validation" | "evidence_validation";
   }) => void | Promise<void>;
   /**
    * Internal-safe diagnostic metadata for a fallback decision. This must never
@@ -235,9 +236,19 @@ export type AiProviderStatus = {
   fallbackConfigured: boolean;
 };
 
+export type LegalEvidenceRoutingDecision = {
+  decision: "sufficient" | "missing_evidence" | "unsupported_relationship";
+  support: Array<{sourceId: string; quotation: string}>;
+  missingEvidenceQuestion: string;
+};
+
 export interface LegalAiProvider {
   readonly name: string;
   runLegalChat(input: LegalChatRequest, options?: LegalAiRunOptions): Promise<LegalAiRunResult>;
+  /** Request-local research routing; never finding, guidance or Main Point coverage. */
+  assessEvidence?(input: LegalChatRequest, requirementIds: readonly string[],
+    execution: Pick<LegalAiRunResult, "provider" | "model">, options?: LegalAiRunOptions):
+    Promise<AiStructuredResult<Record<string, LegalEvidenceRoutingDecision>>>;
 }
 
 class OpenAiLegalProvider implements LegalAiProvider {
@@ -482,6 +493,12 @@ class ResilientLegalProvider implements LegalAiProvider {
 
   constructor(private readonly primary: "openai" | "anthropic") {
     this.name = primary;
+  }
+
+  async assessEvidence(input: LegalChatRequest, requirementIds: readonly string[],
+    execution: Pick<LegalAiRunResult, "provider" | "model">, options: LegalAiRunOptions = {}) {
+    await assertAiProviderEnabled(execution.provider);
+    return assessLegalEvidenceRouting(input, requirementIds, execution, options);
   }
 
   async runLegalChat(input: LegalChatRequest, options: LegalAiRunOptions = {}): Promise<LegalAiRunResult> {

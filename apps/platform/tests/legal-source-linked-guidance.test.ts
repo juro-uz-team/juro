@@ -120,7 +120,10 @@ for (const repairAvailable of [true, false]) test(`oversized composition preserv
     const request = JSON.parse(String(init.body));
     const payload = JSON.parse(request.input);
     let data: unknown;
-    if (request.text.format.name === "juro_legal_finding_support") {
+    if (request.text.format.name === "juro_legal_evidence_routing") {
+      assert.deepEqual(payload.requirements.map((scope: {id: string}) => scope.id), ["permit"]);
+      data = {permit: {decision: "sufficient", support: [{sourceId: permit.id, quotation: permit.spans[0]!.text}], missingEvidenceQuestion: ""}};
+    } else if (request.text.format.name === "juro_legal_finding_support") {
       data = {f1: [source.id], f2: [permit.id], scopeCoverage: {r1: [0], r2: [1]}, scopeGoverning: {r1: [0], r2: [1]},
         scopeGaps: {r1: [], r2: []}, mainPoint: {supported: false, findingIndexes: [], scopeCoverage: {r1: false, r2: false}}};
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {
