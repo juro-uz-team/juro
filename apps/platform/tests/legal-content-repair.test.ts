@@ -106,7 +106,7 @@ for (const priorGuidanceComplete of [true, false]) for (const supportedReplaceme
         confirmedFindings: [{title: repaired ? "Seller duty" : "Buyer duty", explanation: repaired ? seller : buyer,
           sourceIds: ["s1"], answerRole: "governing_rule"}], coverage: {r1: [0]},
         actionPlan: repaired ? [{title: "Unassessed instruction", description: "Wait 365 days before filing.", sourceIds: ["s1"]}] : (priorGuidanceComplete ? [buyer, seller] : [buyer]).map((description, index) => ({title: index ? "Notify the registry" : "Submit the application",
-          description, sourceIds: ["s1"]})), guidanceCoverage: {r1: repaired || !priorGuidanceComplete ? [0] : [0, 1]},
+          description: `**${description}**`, sourceIds: ["s1"]})), guidanceCoverage: {r1: repaired || !priorGuidanceComplete ? [0] : [0, 1]},
         risks: [], deadlines: [], conditionalBranches: [], clarificationQuestions: [], urgency: "normal", suggestedDocument: null, suggestLawyer: false};
     }
     return Response.json({id: "finding-repair", model: request.model,

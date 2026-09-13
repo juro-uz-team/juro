@@ -1394,9 +1394,13 @@ class DefaultLegalAiGateway implements LegalAiGateway {
           // A later advice assessment timeout cannot erase findings that already
           // passed their independent assessment. Restore only the prior actions
           // and their exact assessment receipts; new unassessed advice stays out.
+          // Reuse original candidates so display formatting cannot break receipt
+          // identity. Every candidate passes the full citation validator again.
           // Evidence identity checks still reject receipts for a changed packet.
           const candidate = repaired.repairGuidanceAssessmentFailure ? {...repaired,
-            data: {...repaired.data, actionPlan: validated.run.data.actionPlan},
+            data: {...repaired.data, actionPlan: run.data.actionPlan.filter(action => validated.run.data.actionPlan.some(retained =>
+              retained.title === plainGroundedText(action.title) && retained.description === plainGroundedText(action.description)
+              && retained.sourceIds.every(id => action.sourceIds.includes(id))))},
             guidanceAssessments: run.guidanceAssessments ?? [],
           } : repaired;
           validated = validate({...candidate, attempts: run.attempts + repaired.attempts,
