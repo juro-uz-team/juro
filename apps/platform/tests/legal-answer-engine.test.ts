@@ -62,6 +62,22 @@ test("a whole answer is published only after independent verification and uses s
   assert.equal(outcome.result.sources[0]?.originalUrl, "https://lex.uz/docs/999999");
 });
 
+test("source-audit omissions reach correction without publishing their unverified legal premises", async () => {
+  let corrections=0;
+  const sourceGaps=[{sourceId:"official-fixture",passages:[{id:"p0",missingContent:["An invented twenty percent penalty is missing."]}]}];
+  const outcome=await answerFromEvidence(question,{
+    write:async({correction})=>{
+      if(correction){corrections++;assert.deepEqual(correction.verification.sourceGaps,sourceGaps);}
+      return draft;
+    },
+    verify:async()=>({...approval,sourceGaps}),
+  });
+  assert.equal(corrections,1);
+  assert.equal(outcome.kind,"partial");
+  assert.ok(outcome.result.coverageGaps!.length>0);
+  assert.ok(!JSON.stringify(outcome.result).includes("twenty percent"));
+});
+
 test("an approving verifier cannot authorize an invented citation identity", async () => {
   const forged = { ...draft, mainPoint: { ...draft.mainPoint, sourceIds: ["invented"] },
     findings: draft.findings.map(item => ({ ...item, sourceIds: ["invented"] })),

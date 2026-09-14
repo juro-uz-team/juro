@@ -15,7 +15,17 @@ export function legalClaimId(kind: LegalClaimKind, index = 0): string {
   return kind === "mainPoint" ? kind : `${kind}:${index}`;
 }
 
+export const MAX_LEGAL_SOURCE_PASSAGES = 160;
+export const legalSourceGapsSchema = z.array(z.object({
+  sourceId: z.string().min(1).max(160),
+  passages: z.array(z.object({
+    id: z.string().min(1).max(80),
+    missingContent: z.array(z.string().min(1).max(1000)).max(12),
+  }).strict()).max(MAX_LEGAL_SOURCE_PASSAGES),
+}).strict()).max(24);
+
 export const legalVerificationSchema = z.object({
+  sourceGaps: legalSourceGapsSchema.default([]),
   retention: z.array(z.object({priorId:z.string().min(1).max(80),currentIds:z.array(z.string().min(1).max(80)).max(16)}).strict()).max(97),
   coverage: z.array(z.object({
     issue: z.string().min(1).max(1000),

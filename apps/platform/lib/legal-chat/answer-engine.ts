@@ -71,7 +71,8 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
   const incompleteMessage = aiText(input.locale,"Не все существенные вопросы подтверждены; остальные части требуют проверки.",
     "Barcha muhim masalalar tasdiqlanmagan; qolgan qismlar tekshiruv talab qiladi.",
     "Not all material issues are supported; the remaining parts require verification.");
-  const verificationGaps = verification.gaps.length || verification.coverage.some(item=>item.gaps.length)
+  const hasSourceGaps = verification.sourceGaps.some(source=>source.passages.some(passage=>passage.missingContent.length));
+  const verificationGaps = verification.gaps.length || hasSourceGaps || verification.coverage.some(item=>item.gaps.length)
     ? [incompleteMessage] : [];
   const findings = draft.findings.filter((_, index) => accepted.has(legalClaimId("finding",index)));
   if (!findings.length) return { kind: "insufficient_evidence", verification, result: {
@@ -110,7 +111,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Ayrim rasmiy manbalar vaqtincha mavjud emas; javobning to‘liqligi tasdiqlanmagan.",
     "Some official sources are temporarily unavailable; the answer's completeness is not confirmed.")] : [];
   const complete = verification.complete && legalDraftClaims(draft).every(item => accepted.has(item.id))
-    && actions.length > 0 && !draft.unresolved.length && !verification.gaps.length && !input.unresolved.length
+    && actions.length > 0 && !draft.unresolved.length && !verification.gaps.length && !hasSourceGaps && !input.unresolved.length
     && !input.sourceUnavailable && !missingTime && completeCoverage;
   const partialSummary = aiText(input.locale, "Ниже — подтвержденная часть ответа; остальные вопросы требуют проверки.",
     "Quyida javobning tasdiqlangan qismi; qolgan masalalar tekshiruv talab qiladi.",
