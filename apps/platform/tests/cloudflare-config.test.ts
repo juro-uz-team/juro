@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   ATTACHED_PLATFORM_QUEUE_BINDINGS,
@@ -54,7 +56,29 @@ const source = JSON.parse(
 
 const environments = ["development", "staging", "production"] as const;
 const productionMigrationPattern =
-  "./drizzle/{0121,012[4-9],013[0-9],014[0-9]}_*.sql";
+  "./drizzle/{0121_*,012[4-9]_*,013[0-9]_*,014[0-5]_*,014[7-9]_*,0146_lawyer_profile_services,0155_citation_evidence_receipts,0156_provider_usage_observation}.sql";
+
+test("production migration discovery includes citation receipts without reviving retired corpus storage", () => {
+  const pattern = source.env.production.d1_databases[0]?.migrations_pattern;
+  assert.equal(typeof pattern, "string");
+  const migrations = new Set(globSync(String(pattern), {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+  }).map(path => basename(path)));
+  for (const name of [
+    "0121_fix_ai_quality_hash_constraints.sql",
+    "0146_lawyer_profile_services.sql",
+    "0147_signed_share_verification_hardening.sql",
+    "0155_citation_evidence_receipts.sql",
+    "0156_provider_usage_observation.sql",
+  ]) assert.ok(migrations.has(name), `Required production migration is hidden: ${name}`);
+  for (const name of [
+    "0146_versioned_legal_search_indexes.sql",
+    "0150_retire_legacy_official_corpus_storage.sql",
+    "0151_remove_legacy_official_corpus_schemas.sql",
+  ]) assert.ok(!migrations.has(name), `Retired corpus migration is exposed: ${name}`);
+  assert.ok([...migrations].every(name => !/^012[23]_/.test(name)),
+    "Staging review evidence migrations must remain excluded");
+});
 
 test("local development has no retired staging corpus mode or binding", () => {
   const viteConfig = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");

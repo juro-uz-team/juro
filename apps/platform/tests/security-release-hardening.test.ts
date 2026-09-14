@@ -55,10 +55,8 @@ test("profile, development authentication, and production configuration preserve
   assert.doesNotMatch(vite, /host: "0\.0\.0\.0"/u);
   assert.match(platformConfig, /"keep_vars": false/u);
   assert.match(adminConfig, /"keep_vars": false/u);
-  assert.match(
-    platformConfig,
-    /"migrations_pattern": "\.\/drizzle\/\{0121,012\[4-9\],013\[0-9\],014\[0-9\]\}_\*\.sql"/u,
-  );
+  assert.equal(typeof JSON.parse(platformConfig).env.production.d1_databases[0].migrations_pattern,
+    "string");
 });
 
 test("production workflow pins third-party actions and exposes Cloudflare credentials only to deploy steps", async () => {

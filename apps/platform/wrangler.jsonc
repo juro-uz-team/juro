@@ -564,7 +564,7 @@
           "database_name": "juro-production",
           "database_id": "4cce509b-0e02-4ca9-a3ba-a5ce1327aeda",
           "migrations_dir": "./drizzle",
-          "migrations_pattern": "./drizzle/{0121,012[4-9],013[0-9],014[0-9]}_*.sql"
+          "migrations_pattern": "./drizzle/{0121_*,012[4-9]_*,013[0-9]_*,014[0-5]_*,014[7-9]_*,0146_lawyer_profile_services,0155_citation_evidence_receipts,0156_provider_usage_observation}.sql"
         }
       ],
       "migrations": [
