@@ -95,6 +95,8 @@ const installInheritedEnvironmentKeys = new Set([
 ]);
 
 const coreTestFiles = [
+  "tests/legal-private-name-service.test.ts",
+  "tests/legal-reference-context.test.ts",
   "tests/document-builder.test.ts",
   "tests/signed-share-security.test.ts",
   "tests/pinfl-validation.test.ts",

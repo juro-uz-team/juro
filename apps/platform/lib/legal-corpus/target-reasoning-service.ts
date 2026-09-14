@@ -1,9 +1,13 @@
 import { z } from "zod";
-import { sha256Schema } from "./target-domain-schemas";
+import { legalEnvironmentSchema, sha256Schema } from "./target-domain-schemas";
+import { acceptsPrivateServiceRequest, declaredRequestBodyWithinLimit, privateServiceJson } from "./private-service-boundary";
 
 
 export const TARGET_PRIVATE_NAME_CLASSIFICATION_PATH =
   "/internal/legal-corpus/privacy/classify-private-names";
+
+const SERVICE_BINDING_MARKER = "target-retrieval-runtime-v1";
+const MAX_CLASSIFICATION_BYTES = 8_192;
 
 const classificationRequestSchema = z.object({
   text: z.string().trim().min(1).max(900),
@@ -82,4 +86,50 @@ export async function classifyTargetPrivateNames(input: z.input<typeof classific
     status: unique.length <= 24 ? "complete" : "uncertain",
     privateNameSpans: unique.slice(0, 24),
   });
+}
+
+export async function handleTargetReasoningServiceRequest(
+  request: Request,
+  env: { APP_ENV?: string },
+): Promise<Response> {
+  const environment = legalEnvironmentSchema.safeParse(env.APP_ENV);
+  if (!environment.success) return privateServiceJson({ code: "TARGET_REASONING_UNAVAILABLE" }, 503);
+  const path = new URL(request.url).pathname;
+  const maximumBytes = MAX_CLASSIFICATION_BYTES;
+  if (!acceptsPrivateServiceRequest(request, {
+    environment: environment.data,
+    marker: SERVICE_BINDING_MARKER,
+    method: "POST",
+    path,
+    requireJson: true,
+  }) || path !== TARGET_PRIVATE_NAME_CLASSIFICATION_PATH || !declaredRequestBodyWithinLimit(request, maximumBytes)) {
+    return privateServiceJson({ code: "TARGET_REASONING_PRIVATE_ROUTE_REJECTED" }, 404);
+  }
+  try {
+    const bodyText = await request.text();
+    if (new TextEncoder().encode(bodyText).byteLength > maximumBytes) {
+      return privateServiceJson({ code: "TARGET_REASONING_REQUEST_TOO_LARGE" }, 413);
+    }
+    const body = JSON.parse(bodyText) as unknown;
+    return privateServiceJson(await classifyTargetPrivateNames(
+      classificationRequestSchema.parse(body),
+    ));
+  } catch (error) {
+    const failure = error && typeof error === "object" ? error as {
+      name?: unknown; code?: unknown; providerStatus?: unknown; providerErrorType?: unknown;
+    } : {};
+    console.log(JSON.stringify({
+      event: "legal_target_reasoning_unavailable",
+      name: typeof failure.name === "string" ? failure.name : "unknown",
+      code: typeof failure.code === "string" ? failure.code : "unknown",
+      providerStatus: typeof failure.providerStatus === "number" ? failure.providerStatus : null,
+      providerErrorType: typeof failure.providerErrorType === "string"
+        ? failure.providerErrorType : null,
+      // Log only schema coordinates, never source text, prompts or rejected values.
+      validationIssues: error instanceof z.ZodError
+        ? error.issues.slice(0, 8).map((issue) => ({ code: issue.code, path: issue.path.join(".") }))
+        : [],
+    }));
+    return privateServiceJson({ code: "TARGET_REASONING_UNAVAILABLE" }, 503);
+  }
 }

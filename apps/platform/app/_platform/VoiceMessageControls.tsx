@@ -137,7 +137,7 @@ export function VoiceMessageControls(props: {
         <button type="button" onClick={cancel}><Trash2 />{t.cancel}</button>
       </>}
       {phase === "ready" && <button type="button" onClick={() => void clear()}><Trash2 />{t.removeAudio}</button>}
-      {phase === "error" && <button type="button" onClick={() => { setPhase("idle"); setError(""); }}><RotateCcw />{t.retry}</button>}
+      {phase === "error" && <button type="button" onClick={resetRecording}><RotateCcw />{t.retry}</button>}
     </div>
     {(phase === "listening" || phase === "paused") && <output>{formatElapsed(elapsedMs)} / 05:00</output>}
     <p role={phase === "error" ? "alert" : "status"} aria-live="polite">
@@ -160,7 +160,7 @@ export function AssistantSpeechControls(props: { locale: PlatformLocale; assista
         muted={muted}
         preload="metadata"
         onPlay={() => onPhaseChange?.("speaking")}
-        onPause={() => { if (audioRef.current && audioRef.current.currentTime > 0 && !audioRef.current.ended) onPhaseChange?.("paused"); }}
+        onPause={handleAudioPause}
         onEnded={() => onPhaseChange?.("completed")}
         onError={() => onPhaseChange?.("error")}
       />
