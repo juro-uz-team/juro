@@ -1,7 +1,7 @@
 import { requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
 import { requireD1, requireR2, runtimeEnv } from "../../../../../../lib/document-builder/storage/runtime";
 import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCitationEvidence } from "../../../../../../lib/legal-corpus/citation-evidence";
-import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/chat-retrieval";
+import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/environment";
 import { parsePrivateDocumentLocator } from "../../../../../../lib/document-analysis/private-document-locator";
 import { normalizeArticleNumber } from "../../../../../../lib/legal/legal-language";
 import { workspaceForUser } from "../../../../../../lib/platform/workspace";
