@@ -96,6 +96,10 @@ const installInheritedEnvironmentKeys = new Set([
 
 const coreTestFiles = [
   "tests/legal-chat-storage.test.ts",
+  "tests/legal-answer-engine.test.ts",
+  "tests/legal-answer-model.test.ts",
+  "tests/legal-conversation-context.test.ts",
+  "tests/legal-question-context.test.ts",
   "tests/legal-private-name-service.test.ts",
   "tests/legal-reference-context.test.ts",
   "tests/document-builder.test.ts",

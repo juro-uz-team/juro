@@ -7,10 +7,39 @@ import {
   deleteAiConversation,
   listAiAnswerVersions,
   listAiBranches,
-  parseAiMessageOperation,
-  resolveAiBranchInput,
 } from "../lib/ai/branch-store";
+import { conversationOperation as parseAiMessageOperation, readConversationContext } from "../lib/legal-chat/conversation-context";
 import { loadAiConversationTurns } from "../lib/ai/conversation-branch-reader";
+
+const resolveAiBranchInput = async (input: Parameters<typeof readConversationContext>[0]) => (await readConversationContext(input)).branch;
+
+test("legacy conversations without branch rows retain owner-scoped follow-up context", async () => {
+  const {sqlite,d1} = await branchDatabase();
+  seedInitialBranch(sqlite);
+  sqlite.exec("DELETE FROM message_versions; DELETE FROM message_branches;");
+  const input = {db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
+    requestedOperation:"follow_up",question:"What should I do next?"};
+  const selected = await readConversationContext(input);
+  assert.deepEqual(selected.turns.map(turn=>turn.question), ["Какой срок действует по договору?"]);
+  assert.equal(selected.branch.parentBranchId,null);
+  await assert.rejects(readConversationContext({...input,userId:"user-2"}), AiBranchInputError);
+  const regenerated=await readConversationContext({...input,requestedOperation:"regenerate",sourceMessageId:"response-1"});
+  assert.deepEqual(regenerated.turns,[]);
+  assert.equal(regenerated.branch.question,"Какой срок действует по договору?");
+  sqlite.exec(`
+    INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at)
+      VALUES ('request-next','conversation-1','user','I am the employer.','2026-08-01T00:00:00Z');
+    INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at)
+      VALUES ('response-next','conversation-1','assistant','Unverified response.','2026-08-01T00:00:01Z');
+    INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,forked_from_message_id,request_message_id,response_message_id,operation,created_at)
+      VALUES ('branch-next','conversation-1','workspace-1','user-1',NULL,'response-1','request-next','response-next','follow_up','2026-08-01T00:00:02Z');
+    INSERT INTO message_versions(id,conversation_id,branch_id,message_id,source_message_id,created_by_user_id,operation,version_number,content_sha256,created_at)
+      VALUES ('version-next','conversation-1','branch-next','request-next',NULL,'user-1','follow_up',1,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','2026-08-01T00:00:03Z');
+  `);
+  const continued=await readConversationContext({...input,sourceMessageId:"response-next"});
+  assert.deepEqual(continued.turns.map(turn=>turn.question),["Какой срок действует по договору?","I am the employer."]);
+  sqlite.close();
+});
 
 test("AI message operations reject impossible new/existing conversation combinations", () => {
   assert.equal(parseAiMessageOperation(undefined, false), "new");
