@@ -34,6 +34,14 @@ _Avoid_: assumption, best guess, generic disclaimer
 A dedicated non-answer identifying any relevant official provisions that were found, stating what was checked and what evidence is missing, and asking only the focused questions or next actions that could make a supported Legal Answer possible.
 _Avoid_: uncertain answer, likely answer, empty Legal Answer
 
+**Supported Partial Answer**:
+A Legal Answer that answers the supported parts of a question, explicitly identifies unresolved parts, and asks only for information that could materially change the result. It does not present unresolved legal propositions as conclusions.
+_Avoid_: complete answer, best guess, degraded success
+
+**Legal Risk**:
+A relevant adverse consequence or exposure explained with its severity and supporting evidence in the Important Considerations of a Legal Answer.
+_Avoid_: generic disclaimer, model confidence, source unavailability
+
 **Citation**:
 The visible connection between a legal proposition and the validated source evidence that supports it.
 _Avoid_: source link, bibliography entry, model reference
@@ -159,11 +167,11 @@ Request-scoped retrieval from validated online Lex.uz pages when the Indexed Off
 _Avoid_: web search, internet search, Lex fallback
 
 **Secondary Web Research**:
-Cited research from the wider internet included whenever live research is needed. It supplies supporting context, and answers using it visibly identify their internet provenance; it cannot establish a legal rule, deadline, calculation, or mandatory action.
+Cited research from the wider internet that supplies supporting context when useful. Answers using it visibly identify their internet provenance; it cannot establish a legal rule, deadline, calculation, or mandatory action.
 _Avoid_: official source, legal authority, general search
 
 **Source Ladder**:
-The evidence-priority order from Indexed Official Corpus to Live Official Search, with Secondary Web Research providing context whenever live research is needed. Independent discovery may overlap while official evidence retains priority.
+The evidence-priority order from Indexed Official Corpus to Live Official Search, with Secondary Web Research providing attributed context when useful. Official evidence retains priority over secondary context.
 _Avoid_: blended authority, interchangeable sources
 
 **Official Coverage**:
