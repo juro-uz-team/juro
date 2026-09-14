@@ -17,7 +17,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     payloads.push(body);
     return Response.json({ id: "response", model: body.model,
       output: [{ content: [{ type: "output_text", text: JSON.stringify({
-        sourceReview: [{ sourceId: "source", passageIds: ["p0"], materialRules:["Official provision"] }],
+        sourceReview: [{ sourceId: "source", passageIds: ["p0"] }],
         answer: {
         mainPoint: { text: "Supported result", sourceIds: ["source"] },
         issues: [{finding:{title:"Application",explanation:"A written application is required.",sourceIds:["source"]},
@@ -125,7 +125,7 @@ test("a fabricated source passage is rejected before a draft can reach verificat
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{sourceId:"source", passageIds:["p999"],materialRules:["A mandatory twenty percent penalty applies."]}],
+      sourceReview: [{sourceId:"source", passageIds:["p999"]}],
       answer: {mainPoint:{text:"Pay the penalty",sourceIds:["source"]}, issues:[],risks:[],questions:[],unresolved:[]},
     }) }] }], usage: {input_tokens:10,output_tokens:10},
   }));
