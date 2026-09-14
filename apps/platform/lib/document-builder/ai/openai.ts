@@ -168,6 +168,8 @@ export async function callOpenAiStructured<T>(options: {
   onOutputTextBuffer?: (input: { attempt: 1 | 2; text: string }) => void | Promise<void>;
   safetyIdentifier?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  /** Optional provider execution mode; omitted callers retain provider defaults. */
+  reasoningMode?: "standard" | "pro";
   textVerbosity?: "low" | "medium" | "high";
   /** Bound generated output for latency-sensitive structured interactions. */
   maxOutputTokens?: number;
@@ -223,7 +225,10 @@ export async function callOpenAiStructured<T>(options: {
             instructions: options.instructions,
             input: options.rawInput ? options.input : typeof options.input === "string" ? options.input : JSON.stringify(options.input),
             ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
-            ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
+            ...(options.reasoningEffort || options.reasoningMode ? { reasoning: {
+              ...(options.reasoningEffort ? {effort:options.reasoningEffort} : {}),
+              ...(options.reasoningMode ? {mode:options.reasoningMode} : {}),
+            } } : {}),
             ...(options.maxOutputTokens ? { max_output_tokens: options.maxOutputTokens } : {}),
             ...(options.webSearch ? {
               tools: [{

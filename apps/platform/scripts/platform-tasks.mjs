@@ -259,6 +259,7 @@ const coreTestFiles = [
   "tests/migration-0105-d1-builder-version-hash-guards.test.ts",
   "tests/monitoring-freshness.test.ts",
   "tests/openai-attempt-observability.test.ts",
+  "tests/openai-reasoning-mode.test.ts",
   "tests/anthropic-attempt-observability.test.ts",
   "tests/legal-answer-failure.test.ts",
   "tests/legal-answer-view.test.ts",

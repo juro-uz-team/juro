@@ -44,6 +44,7 @@ const writerInstructions = `${evidenceRules}
 Return sourceReview followed by ONE complete, coherent answer in answer. sourceReview is a factual source digest, not commentary or reasoning: for each supplied source, select the supplied passageIds material to the user's decision and state its materialRules in the requested locale, preserving the actors, conditions, exceptions, clocks, triggers and continuing rights in those passages. Read subsequent paragraphs that qualify a primary rule. Use empty passageIds and materialRules arrays for an irrelevant source. Do not copy long passages or invent passage IDs. Source presence alone does not make its subject relevant. This digest is internal, unverified, and never substitutes for the official evidence or any part of the public answer. Compose the answer against the full provisions and the extracted conditions, not merely article headings.
 Use the answer schema as follows:
 issues: compose each material issue's legal finding and its practical actions TOGETHER. Carry its conditions and time triggers into those actions before moving to the next issue. Do not write a comprehensive explanation followed by a shorter action summary that loses its operative details. Multiple actions may be needed for one issue; the entire answer may have at most 16 actions across all issues. Write mainPoint after the issues so it reflects their combined result. This is one whole answer, not independent answers to fragments.
+Separate materially distinct rules into separate issues when needed to retain their conditions. For a continuing right, practical guidance must identify its beneficiary, scope and any supplied period or conditions; a generic instruction to preserve the right is not a usable substitute.
 mainPoint: directly answer the user's practical decision, preserving decisive qualifications.
 findings: explain the applicable rules, their conditions, actors, exceptions, temporal triggers and consequences. Include every material part supported by the supplied evidence, including relevant cross-references supplied with it. Read each relevant provision to its end: qualifications, continuing entitlements, extension/expiry rules and procedural conditions are part of the answer, not optional details merely because they occur after the primary rule. Reconcile overlapping protections: a permission under one status must not override an independent prohibition under another applicable status. For broad or ambiguous questions explain the material supported branches instead of selecting one silently.
 actions: give a usable sequence of next steps for EACH material supported branch, with supported deadlines, triggers, conditions and who acts. Do not replace an operative sequence with 'check the procedure' or 'observe the deadlines' when the evidence supplies the actual steps and clocks. A rule stated in findings must still have its usable practical application in actions. Include actions for preserving continuing rights as well as obtaining or challenging an outcome. Use separate entries when needed, within the schema limit. Clearly distinguish a practical suggestion from a legal requirement; do not invent mandatory procedures or documentation.
@@ -52,9 +53,11 @@ Every main point, finding, action and risk must cite the supplied source IDs tha
 questions: ask only focused questions about facts that materially change the outcome; do not use a question to avoid stating a supported conditional answer.
 unresolved: describe material evidence gaps in plain language, without asserting the missing law. A factual ambiguity already covered by explicit conditional branches belongs in questions, not unresolved. Do not list missing evidence for a procedure that the applicable rule excludes in this case. Preserve useful supported parts when other parts cannot be answered.
 Scope matters: answer the decision the user actually asks about. Do not turn a question about whether an action is permitted into every possible procedure for performing it, or enumerate unrelated dispute routes just because their provisions are supplied. Fully qualify any procedural rule you do state. Unknown case facts are questions, never evidence gaps: explain the supported alternatives without requiring the user to choose one before receiving an answer. Missing rules for an unrequested alternative are not unresolved issues.
+For a permission question, naming a narrowly qualified permitted alternative is not a request for instructions to carry it out. Do not add such a workflow unless the user requests it or supplies facts that actually activate that alternative. Still explain all conditions that govern permission, independent protections, exceptions and concrete steps to preserve rights. If you do recommend or begin describing a procedure, you must substantiate its full material conditions; do not offer a procedural shortcut.
 When correction is supplied, revise the WHOLE answer once using the independent verification, including every material omission in both gaps and sourceGaps. Fix unsupported assertions and omissions without deleting previously supported material needed to answer the question. Verification is feedback, not new evidence.`;
 
 const verifierInstructions = `${evidenceRules}
+Scope precedes completeness. A permission question requires the applicable protections, narrowly qualified grounds, exceptions and usable rights-preservation steps; merely naming a permitted alternative does not activate an unrequested workflow for carrying it out. Such a workflow becomes material when requested, when the facts actually activate it, or when the draft recommends or starts explaining it. Do not require it merely because its full provisions are supplied. Materiality is sentence-specific: a relevant paragraph can contain other sentences about a different unrequested subject. Those do not become mandatory merely by sharing a paragraph, but any sentence qualifying an asserted rule remains material.
 Return sourceAudit first, then verification. In sourceAudit review EVERY supplied source and EVERY passage ID exactly once against the answer. Mark material true if any sentence in that passage governs the user's decision, a relevant conditional branch or a rule the answer actually asserts. For each material passage, check EVERY operative sentence and its conditions against both the legal findings and practical actions. Record precise missingContent for any omitted or misstated actor, condition, exception, consequence, continuing right, procedural step, deadline, trigger or time exclusion. Do not assume a generic reference to the rule carries the omitted condition. Use material false with empty missingContent for headings and passages outside the question's scope. Source presence alone does not make a passage material. This is an evidence-coverage audit, not private reasoning. The server carries every material missingContent item into correction as sourceGaps. Use verification.gaps for additional cross-issue omissions; do not repeat the passage omissions there.
 Begin with coverage: identify the material issues and conditional branches raised by the question against the COMPLETE relevant evidence, independently of the draft's chosen outline. For each issue, bind findingIds to actual finding:N claims and actionIds to actual action:N claims that fully explain its governing law and usable practical response. A rule mentioned in findings is not a substitute for its practical application in actions. An instruction to check a procedure is not a complete next step when the evidence supplies the material steps, conditions and time triggers. List omissions for each issue in its gaps, including any operative conditions or consequences missing from the relevant provision. Do not invent claim IDs. Do not split incidental supporting details into separate issues, but check them within the relevant issue. Review definitions, exceptions and subsequent paragraphs, not only the first sentence of each provision.
 Independently audit the proposed answer against the question and the supplied official evidence. Do not trust the writer's conclusions or citations. Check the actual cited text for every claim in claims. Return exactly one verdict for each supplied claim ID, with supported true only if ALL material legal content is entailed, the cited IDs exist, the conditions/actors/exceptions/numbers/temporal triggers are correct, and no unsupported certainty or mandatory procedure is added. Practical recommendations may be reasoned applications of the cited rule only when clearly phrased as recommendations. Explain rejection precisely; never approve a claim merely because it sounds plausible.
@@ -71,6 +74,17 @@ function sourcePassages(text: string) {
     passages.push({id:`p${passages.length}`,text:lines.slice(index,index+groupSize).join("\n")});
   }
   return passages;
+}
+
+function verificationResponseSchema(question: AnswerQuestion) {
+  const verdict = z.object({material:z.boolean(),
+    missingContent:z.array(z.string().min(1).max(1000)).max(12)}).strict();
+  return z.object({
+    sourceAudit:z.object(Object.fromEntries(question.evidence.map(item => [item.source.id,
+      z.object(Object.fromEntries(sourcePassages(item.text).map(passage => [passage.id,verdict]))).strict(),
+    ]))).strict(),
+    verification:legalVerificationSchema.omit({sourceGaps:true}),
+  }).strict();
 }
 
 function modelContext(question: AnswerQuestion) {
@@ -99,10 +113,11 @@ export function createLegalAnswerModel(options: {
   async function run<T>(question: AnswerQuestion, stage: "writing" | "verifying" | "correcting",
     instructions: string, input: unknown, schema: z.ZodType<T>, schemaName: string): Promise<T> {
     const result = await callOpenAiStructured({
-      instructions, input, schemaName, schema: z.toJSONSchema(schema), parse: value => schema.parse(value),
+      instructions, input, schemaName, schema: z.toJSONSchema(schema, {reused:"ref"}), parse: value => schema.parse(value),
       requestId: options.requestId, model: openAiChatModel(question.mode), maxAttempts: 1,
       textVerbosity: question.answerMode === "detailed" ? "high" : "medium",
-      reasoningEffort: "max",
+      reasoningEffort: "high",
+      reasoningMode: "pro",
       timeoutMs: legalChatProviderTimeoutMs({ reasoningMode: question.mode, providerTimeoutMs: WHOLE_ANSWER_PROVIDER_TIMEOUT_MS })!,
       deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       onProgress: options.onProgress,
@@ -133,12 +148,17 @@ export function createLegalAnswerModel(options: {
       });
     },
     verify: async ({ question, claims, previous }) => {
-      const audited = await run(question, "verifying", verifierInstructions, {
+      const response = await run(question, "verifying", verifierInstructions, {
         context: modelContext(question), claims,
         previousClaims: previous ? legalDraftClaims(previous.draft).filter(claim =>
           previous.verification.claims.filter(verdict => verdict.id === claim.id).length === 1
           && previous.verification.claims.some(verdict => verdict.id === claim.id && verdict.supported)) : [],
-      }, auditedVerificationSchema, "legal_verification");
+      }, verificationResponseSchema(question), "legal_verification");
+      const audited = auditedVerificationSchema.parse({
+        sourceAudit:Object.entries(response.sourceAudit).map(([sourceId,passages])=>({sourceId,
+          passages:Object.entries(passages).map(([id,verdict])=>({id,...verdict})),
+        })), verification:response.verification,
+      });
       await options.onVerificationProduced?.(audited);
       const reviewedSources = new Set<string>();
       const sourceGaps: LegalVerification["sourceGaps"] = [];
