@@ -206,8 +206,12 @@ for (const largePacket of [false, true]) for (const reasoningMode of ["deep", "f
         mainPoint: {supported: true, findingIndexes: [0], scopeCoverage: {r1: true}}};
     } else if (request.text.format.name === "juro_legal_guidance_coverage") {
       independentlyAssessed = true;
-      assert.equal(payload.sources[0].spans[0].text, fullText);
-      assert.deepEqual(payload.sources[0].spans, originalSources[0]!.spans);
+      assert.equal(payload.sources[0].spans[0].sentences.map((sentence: {text: string}) => sentence.text).join(""), fullText);
+      for (const [index, original] of originalSources.entries()) {
+        assert.deepEqual(payload.sources[index].spans.map(({sentences, ...span}: {
+          sentences?: Array<{text: string}>; [key: string]: unknown;
+        }) => sentences ? {...span, text: sentences.map(sentence => sentence.text).join("")} : span), original.spans);
+      }
       assert.equal(payload.actions[0].description, "File the application with the registry.\n\n" +
         "The buyer must apply within 6 days after receiving a copy of the notice. \n\nThe period is suspended during mediation." + (largePacket ? " " : ""));
       assert.deepEqual(payload.actions[0].sourceIds, [source.id]);

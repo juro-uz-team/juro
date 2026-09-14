@@ -33,6 +33,40 @@ const run: LegalAiRunResult = {data, provider: "openai", model: "gpt-5.6-terra",
   findingAssessments: [parseLegalFindingAssessment({f1: [source.id], f2: [source.id],
     scopeCoverage: {r1: [0], r2: [1]}, scopeGoverning: {r1: [0], r2: [1]}, scopeGaps: {r1: [], r2: []}}, input, data.confirmedFindings)]};
 
+test("gap references preserve disjoint exact witnesses and their selected span through repair", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const text = "An ordinary rule applies. A separate rule intervenes. An exception qualifies the ordinary rule.";
+  const request: LegalChatRequest = {...input, locale: "en", sources: [{...source, locale: "en", spans: [
+    {...source.spans![0]!, text}, {...source.spans![0]!, id: "duplicate", text},
+  ]}]};
+  let passageIds = ["s1-2:p0", "s1-2:p2"];
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const payload = JSON.parse(JSON.parse(String(init?.body)).input);
+    assert.equal(payload.sources[0].spans[1].sentences.map((sentence: {text: string}) => sentence.text).join(""), text);
+    return Response.json({id: "gap-references", model: run.model,
+      output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [0],
+        sourceSupport: {a0: [source.id]}, scopeGaps: {r1: [], r2: [{passageIds, reason: "Missing rule and exception"}]}})}]}],
+      usage: {input_tokens: 100, output_tokens: 30}});
+  });
+  const assessed = await assessLegalGuidance(request, run, {}, Date.now() + 12_000);
+  const gaps = assessedGuidanceGaps({...request, assessments: assessed.guidanceAssessments!});
+  assert.deepEqual(gaps.map(gap => [gap.sourceSpanId, gap.quotation]), [
+    ["duplicate", "An ordinary rule applies. "], ["duplicate", "An exception qualifies the ordinary rule."],
+  ]);
+  const {legalContentRepairPayload} = await import("../lib/ai/legal-content-repair");
+  const repair = legalContentRepairPayload({...request, contentRepair: {
+    unresolved: [{requirementId: "seller", finding: null, guidanceMissing: true}], retained: run.data, materialGaps: gaps,
+  }});
+  assert.deepEqual(repair!.materialGaps.map(gap => gap.sourceSpanId), ["s1-2", "s1-2"]);
+  passageIds = ["s1-2:p0", "s1-2:p0"];
+  const invalid = await assessLegalGuidance(request, run, {}, Date.now() + 12_000);
+  assert.deepEqual(assessedGuidanceGaps({...request, assessments: invalid.guidanceAssessments!}), []);
+  assert.deepEqual([...assessedGuidanceCoverage({...request, actions: invalid.data.actionPlan,
+    assessments: invalid.guidanceAssessments!}).values()], [["buyer"]]);
+});
+
 test("expired assessment window preserves candidates without inventing a dispatched attempt", async () => {
   let attempts = 0;
   const recovered = await assessLegalGuidance(input, run, {beforeProviderCall: () => {attempts += 1;}}, Date.now() - 1);
@@ -42,6 +76,62 @@ test("expired assessment window preserves candidates without inventing a dispatc
   assert.deepEqual(recovered.usage, run.usage);
   assert.equal(recovered.attempts, run.attempts);
 });
+
+for (const variant of ["foreign", "cyrillic", "oversized", "unverified"] as const) {
+  test(`guidance gap quotation fallback preserves complete ${variant} evidence without admitting unauthenticated gaps`, async context => {
+    const previous = env.OPENAI_API_KEY;
+    env.OPENAI_API_KEY = "test-only-key";
+    context.after(() => {env.OPENAI_API_KEY = previous;});
+    const text = variant === "oversized" ? `${seller} ${"x".repeat(32_001)}` : seller;
+    const request: LegalChatRequest = {...input, locale: variant === "cyrillic" ? "uz" : "en", sources: [{...source,
+      locale: variant === "foreign" ? "ru" : variant === "cyrillic" ? "uz" : "en",
+      ...(variant === "unverified" ? {status: "unverified" as const} : {}),
+      spans: [{...source.spans![0]!, text}],
+    }]};
+    context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+      const payload = JSON.parse(JSON.parse(String(init?.body)).input);
+      assert.equal(payload.sources[0].spans[0].text, text);
+      return Response.json({id: "fallback-gap", model: run.model,
+        output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [0],
+          sourceSupport: {a0: [source.id]}, scopeGaps: {r1: [], r2: [{quotation: seller, sourceId: source.id, reason: "Missing"}]}})}]}],
+        usage: {input_tokens: 100, output_tokens: 30}});
+    });
+    const assessed = await assessLegalGuidance(request, run, {}, Date.now() + 12_000);
+    const gaps = assessedGuidanceGaps({...request, assessments: assessed.guidanceAssessments!});
+    assert.deepEqual(gaps.map(gap => gap.quotation), variant === "unverified" ? [] : [seller]);
+    assert.deepEqual([...assessedGuidanceCoverage({...request, actions: assessed.data.actionPlan,
+      assessments: assessed.guidanceAssessments!}).values()], [["buyer"]]);
+  });
+}
+
+for (const variant of ["long", "many", "unknown", "mutated"] as const) {
+  test(`guidance gap references reject ${variant} evidence without supplying complete coverage`, async context => {
+    const previous = env.OPENAI_API_KEY;
+    env.OPENAI_API_KEY = "test-only-key";
+    context.after(() => {env.OPENAI_API_KEY = previous;});
+    const request: LegalChatRequest = {...input, locale: "en", sources: [{...source, locale: "en", spans:
+      Array.from({length: variant === "many" ? 21 : 1}, (_, index) => ({...source.spans![0]!, id: `span${index}`,
+        text: variant === "long" ? "A".repeat(2_001) : "An ordinary rule applies."})),
+    }]};
+    context.mock.method(globalThis, "fetch", async () => {
+      const passageIds = variant === "unknown" ? ["s9-9:p9"] : request.sources[0]!.spans!.map((_, index) => `s1-${index + 1}:p0`);
+      if (variant === "mutated") request.sources[0]!.spans![0]!.text = "A changed rule applies.";
+      return Response.json({id: "bounded-gap", model: run.model,
+        output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [0],
+          sourceSupport: {a0: [source.id]}, scopeGaps: {r1: [], r2: [{passageIds, reason: "Missing"}]}})}]}],
+        usage: {input_tokens: 100, output_tokens: 30}});
+    });
+    if (variant === "unknown") {
+      await assert.rejects(assessLegalGuidance(request, run, {}, Date.now() + 12_000),
+        (error: unknown) => error instanceof AiUnavailableError && error.code === "INVALID_AI_OUTPUT");
+      return;
+    }
+    const assessed = await assessLegalGuidance(request, run, {}, Date.now() + 12_000);
+    assert.deepEqual(assessedGuidanceGaps({...request, assessments: assessed.guidanceAssessments!}), []);
+    assert.deepEqual([...assessedGuidanceCoverage({...request, actions: assessed.data.actionPlan,
+      assessments: assessed.guidanceAssessments!}).values()], [variant === "mutated" ? [] : ["buyer"]]);
+  });
+}
 
 for (const duringRepair of [false, true]) for (const reason of ["cancelled", "exhausted"] as const) test(`${duringRepair ? "repair" : "initial"} ${reason} shared budget prevents assessment timeout recovery`, async () => {
   const controller = new AbortController();
@@ -168,7 +258,7 @@ test("a separately assessed buyer step cannot cover the seller merely by sharing
     assert.equal(request.reasoning.effort, "low");
     const assessment = JSON.parse(request.input);
     assert.equal("requirementIds" in assessment.actions[0], false, "do not anchor the independent decision on generated mappings");
-    assert.equal(assessment.sources[0].spans[0].text, source.spans![0]!.text);
+    assert.equal(assessment.sources[0].spans[0].sentences.map((sentence: {text: string}) => sentence.text).join(""), source.spans![0]!.text);
     return Response.json({id: "independent-assessment", model: run.model,
       output: [{content: [{type: "output_text", text: JSON.stringify({supportedActions: [0], r1: [0], r2: [], sourceSupport: {a0: [source.id]},
         scopeGaps: {r1: [], r2: [{quotation: seller, sourceId: source.id, reason: "Seller guidance is absent."}]}})}]}],
