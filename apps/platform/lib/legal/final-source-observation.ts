@@ -1,4 +1,4 @@
-import type {LegalSourceContext} from "../ai/provider";
+import type {LegalSourceContext} from "../legal/source-context";
 import {isCurrentSourceObservation, isFreshSourceObservation, SOURCE_OBSERVATION_MAX_AGE_MS, type SourceObservation} from "./source-observation";
 
 /** Synthesis can outlive an observation. Recheck referenced current evidence

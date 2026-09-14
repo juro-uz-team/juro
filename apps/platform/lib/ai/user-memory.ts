@@ -124,56 +124,6 @@ function capture(text: string, pattern: RegExp): string | null {
   return value.length >= 2 ? value : null;
 }
 
-export function extractAutomaticMemoryCandidates(
-  question: string,
-  locale: AiOutputLocale,
-): MemoryCandidate[] {
-  const text = question.normalize("NFKC").slice(0, 8_000);
-  const candidates: MemoryCandidate[] = [];
-  const add = (
-    category: MemoryCategory,
-    statement: string | null,
-    scope: MemoryScope = "global",
-  ) => {
-    if (!statement) return;
-    const compact = compactStatement(statement);
-    if (compact.length < 2 || classifyMemorySensitivity(compact) !== "none") return;
-    if (!candidates.some((candidate) => candidate.category === category && candidate.statement.toLocaleLowerCase() === compact.toLocaleLowerCase())) {
-      candidates.push({ category, statement: compact, scope });
-    }
-  };
-
-  if (locale === "ru") {
-    const name = capture(text, /(?:^|[.!?]\s*)(?:меня зовут|мо[её] имя)\s+([^.!?\n]{2,80})/iu);
-    add("profile_name", name ? `Имя пользователя: ${name}` : null);
-    const company = capture(text, /(?:^|[.!?]\s*)(?:моя компания|компания называется)\s+([^.!?\n]{2,160})/iu);
-    add("company", company ? `Компания пользователя: ${company}` : null, "workspace");
-    if (/(?:предпочитаю\s+(?:кратк|коротк))/iu.test(text)) add("answer_style", "Пользователь предпочитает краткие ответы.");
-    if (/(?:предпочитаю\s+(?:подробн|детальн))/iu.test(text)) add("answer_style", "Пользователь предпочитает подробные ответы.");
-    const instruction = capture(text, /(?:^|[.!?]\s*)(?:запомни|учитывай всегда)\s*[:—-]?\s*([^\n]{2,300})/iu);
-    add("user_instruction", instruction ? `Инструкция пользователя: ${instruction}` : null);
-  } else if (locale === "uz") {
-    const name = capture(text, /(?:^|[.!?]\s*)(?:mening ismim|ismim)\s+([^.!?\n]{2,80})/iu);
-    add("profile_name", name ? `Foydalanuvchining ismi: ${name}` : null);
-    const company = capture(text, /(?:^|[.!?]\s*)(?:mening kompaniyam|kompaniyam)\s+([^.!?\n]{2,160})/iu);
-    add("company", company ? `Foydalanuvchi kompaniyasi: ${company}` : null, "workspace");
-    if (/\bqisqa\s+javob(?:larni)?\s+afzal\s+ko['‘’ʻʼ]?raman/iu.test(text)) add("answer_style", "Foydalanuvchi qisqa javoblarni afzal ko‘radi.");
-    if (/\bbatafsil\s+javob(?:larni)?\s+afzal\s+ko['‘’ʻʼ]?raman/iu.test(text)) add("answer_style", "Foydalanuvchi batafsil javoblarni afzal ko‘radi.");
-    const instruction = capture(text, /(?:^|[.!?]\s*)(?:eslab qol|har doim hisobga ol)\s*[:—-]?\s*([^\n]{2,300})/iu);
-    add("user_instruction", instruction ? `Foydalanuvchi ko‘rsatmasi: ${instruction}` : null);
-  } else {
-    const name = capture(text, /(?:^|[.!?]\s*)(?:my name is|call me)\s+([^.!?\n]{2,80})/iu);
-    add("profile_name", name ? `User name: ${name}` : null);
-    const company = capture(text, /(?:^|[.!?]\s*)(?:my company is|my company is called)\s+([^.!?\n]{2,160})/iu);
-    add("company", company ? `User company: ${company}` : null, "workspace");
-    if (/\b(?:i prefer|please use)\s+(?:concise|short)\s+answers?\b/iu.test(text)) add("answer_style", "The user prefers concise answers.");
-    if (/\b(?:i prefer|please use)\s+(?:detailed|thorough)\s+answers?\b/iu.test(text)) add("answer_style", "The user prefers detailed answers.");
-    const instruction = capture(text, /(?:^|[.!?]\s*)(?:remember|always take into account)\s*[:—-]?\s*([^\n]{2,300})/iu);
-    add("user_instruction", instruction ? `User instruction: ${instruction}` : null);
-  }
-  return candidates.slice(0, 4);
-}
-
 export function memoryKeyring(raw: string | null | undefined): IdentityKeyring {
   try {
     return parseIdentityKeyring(raw);
@@ -514,33 +464,4 @@ export async function purgeDueDeletedUserMemories(input: {
     eligible: due.results.length,
     purged: results.reduce((total, result) => total + Number(result.meta.changes ?? 0), 0),
   };
-}
-
-export async function persistAutomaticMemories(input: {
-  db: D1Database;
-  keyring: IdentityKeyring;
-  userId: string;
-  workspaceId: string;
-  conversationId: string;
-  messageId: string;
-  question: string;
-  locale: AiOutputLocale;
-}): Promise<number> {
-  if (!(await memorySettings(input.db, input.userId)).automaticEnabled) return 0;
-  const candidates = extractAutomaticMemoryCandidates(input.question, input.locale);
-  let created = 0;
-  for (const candidate of candidates) {
-    const saved = await saveUserMemory({
-      ...input,
-      ...candidate,
-      scope: candidate.scope,
-      sourceKind: "automatic",
-      sourceType: "chat",
-      sourceConversationId: input.conversationId,
-      sourceMessageId: input.messageId,
-      confirmSensitive: false,
-    });
-    if (saved.created) created += 1;
-  }
-  return created;
 }

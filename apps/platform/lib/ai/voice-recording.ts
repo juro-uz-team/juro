@@ -258,88 +258,6 @@ export async function finalizeVoiceRecording(input: {
   return updated;
 }
 
-export async function transcribeVoiceRecording(input: {
-  db: D1Database;
-  bucket: R2Bucket;
-  keyring: IdentityKeyring;
-  apiKey: string | null | undefined;
-  model: string | null | undefined;
-  recording: VoiceRecordingRow;
-  fetcher?: typeof fetch;
-  now?: string;
-}): Promise<{ recording: VoiceRecordingRow; transcript: string }> {
-  if (input.recording.status === "transcribed" || input.recording.status === "submitted") {
-    return { recording: input.recording, transcript: await revealTranscript(input.keyring, input.recording) };
-  }
-  if (!input.apiKey) {
-    throw new VoiceRecordingError("VOICE_TRANSCRIPTION_UNAVAILABLE", 503, "Распознавание речи временно недоступно.");
-  }
-  if (!new Set(["ready", "failed"]).has(input.recording.status)) {
-    throw new VoiceRecordingError(
-      input.recording.status === "transcribing" ? "VOICE_TRANSCRIPTION_BUSY" : "VOICE_UPLOAD_STATE_INVALID",
-      409,
-      input.recording.status === "transcribing" ? "Аудио уже распознаётся." : "Аудио ещё не готово к распознаванию.",
-    );
-  }
-  const now = input.now ?? new Date().toISOString();
-  const claimed = await input.db.prepare(`UPDATE voice_recordings SET status='transcribing',error_code=NULL,updated_at=?
-    WHERE id=? AND workspace_id=? AND user_id=? AND status IN ('ready','failed')`)
-    .bind(now, input.recording.id, input.recording.workspaceId, input.recording.userId).run();
-  if (Number(claimed.meta?.changes ?? 0) !== 1) {
-    throw new VoiceRecordingError("VOICE_TRANSCRIPTION_BUSY", 409, "Аудио уже распознаётся.");
-  }
-  const object = await input.bucket.get(input.recording.objectKey);
-  if (!object) {
-    await markTranscriptionFailed(input.db, input.recording, "VOICE_OBJECT_MISSING", now);
-    throw new VoiceRecordingError("VOICE_TRANSCRIPTION_UNAVAILABLE", 503, "Аудио недоступно для распознавания.");
-  }
-  const form = new FormData();
-  form.append("file", new Blob([await object.arrayBuffer()], { type: input.recording.mimeType }), `recording.${extensionForMime(input.recording.mimeType)}`);
-  form.append("model", input.model?.trim() || "gpt-4o-transcribe");
-  form.append("response_format", "json");
-  form.append("language", input.recording.locale);
-  form.append("prompt", {
-    ru: "Юридический вопрос по законодательству Республики Узбекистан. Сохраняй имена и юридические термины точно.",
-    uz: "O‘zbekiston Respublikasi qonunchiligiga oid yuridik savol. Ismlar va yuridik atamalarni aniq saqla.",
-    en: "A legal question about the laws of the Republic of Uzbekistan. Preserve names and legal terminology accurately.",
-  }[input.recording.locale]);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-  try {
-    const providerResponse = await (input.fetcher ?? fetch)("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { authorization: `Bearer ${input.apiKey}` },
-      body: form,
-      signal: controller.signal,
-    });
-    const body = await providerResponse.json().catch(() => null) as { text?: unknown } | null;
-    const transcript = typeof body?.text === "string" ? body.text.trim() : "";
-    if (!providerResponse.ok || !transcript || transcript.length > 8_000) {
-      await markTranscriptionFailed(input.db, input.recording, providerResponse.ok ? "VOICE_TRANSCRIPT_INVALID" : "PROVIDER_UNAVAILABLE", now);
-      throw new VoiceRecordingError("VOICE_TRANSCRIPTION_UNAVAILABLE", 503, "Распознавание речи не завершено. Попробуйте ещё раз.");
-    }
-    const protectedTranscript = await protectIdentityValue(input.keyring, transcript, transcriptContext(input.recording));
-    const completedAt = new Date().toISOString();
-    await input.db.prepare(`UPDATE voice_recordings SET
-      status='transcribed',transcript_ciphertext=?,transcript_iv=?,transcript_key_version=?,
-      provider='openai',model=?,error_code=NULL,transcribed_at=?,updated_at=?
-      WHERE id=? AND workspace_id=? AND user_id=? AND status='transcribing'`).bind(
-      protectedTranscript.ciphertext, protectedTranscript.iv, protectedTranscript.keyVersion,
-      input.model?.trim() || "gpt-4o-transcribe", completedAt, completedAt,
-      input.recording.id, input.recording.workspaceId, input.recording.userId,
-    ).run();
-    const updated = await voiceRecordingForUser(input.db, input.recording.id, input.recording.workspaceId, input.recording.userId);
-    if (!updated || updated.status !== "transcribed") throw new TypeError("VOICE_TRANSCRIPTION_NOT_COMPLETED");
-    return { recording: updated, transcript };
-  } catch (error) {
-    if (error instanceof VoiceRecordingError) throw error;
-    await markTranscriptionFailed(input.db, input.recording, error instanceof DOMException && error.name === "AbortError" ? "PROVIDER_TIMEOUT" : "PROVIDER_UNAVAILABLE", now);
-    throw new VoiceRecordingError("VOICE_TRANSCRIPTION_UNAVAILABLE", 503, "Распознавание речи не завершено. Попробуйте ещё раз.");
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function saveEditedVoiceTranscript(input: {
   db: D1Database;
   keyring: IdentityKeyring;
@@ -441,42 +359,6 @@ export async function purgeExpiredVoiceRecordings(input: {
     purged += Number(result.meta?.changes ?? 0);
   }
   return { eligible: rows.results.length, purged };
-}
-
-export async function synthesizeAssistantSpeech(input: {
-  apiKey: string | null | undefined;
-  model: string | null | undefined;
-  voice: "marin" | "cedar";
-  text: string;
-  locale: PlatformLocale;
-  fetcher?: typeof fetch;
-  signal?: AbortSignal;
-}): Promise<Response> {
-  if (!input.apiKey) {
-    throw new VoiceRecordingError("VOICE_SPEECH_UNAVAILABLE", 503, "Озвучивание временно недоступно.");
-  }
-  const text = input.text.trim().slice(0, 4_000);
-  if (!text) throw new VoiceRecordingError("VOICE_TRANSCRIPT_INVALID", 400, "Нет текста для озвучивания.");
-  const response = await (input.fetcher ?? fetch)("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: { authorization: `Bearer ${input.apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: input.model?.trim() || "gpt-4o-mini-tts",
-      voice: input.voice,
-      input: text,
-      instructions: {
-        ru: "Говори спокойно, профессионально и ясно. Это AI-озвучивание юридического ответа JURO.",
-        uz: "Tinch, professional va aniq gapir. Bu JURO yuridik javobining AI ovozidir.",
-        en: "Speak calmly, professionally and clearly. This is an AI narration of a JURO legal response.",
-      }[input.locale],
-      response_format: "mp3",
-    }),
-    signal: input.signal,
-  });
-  if (!response.ok || !response.body) {
-    throw new VoiceRecordingError("VOICE_SPEECH_UNAVAILABLE", 503, "Озвучивание временно недоступно.");
-  }
-  return response;
 }
 
 async function byIdempotency(db: D1Database, userId: string, key: string) {

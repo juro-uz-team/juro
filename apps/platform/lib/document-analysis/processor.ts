@@ -280,7 +280,7 @@ export type DocumentAnalysisProcessorDependencies = {
     locale: "ru" | "uz",
     limit?: number,
   ) => Promise<{
-    sources: import("../ai/provider").LegalSourceContext[];
+    sources: import("../legal/source-context").LegalSourceContext[];
     freshness: LegalDatabaseFreshness;
     legalDatabaseAsOf: string;
   }>;
@@ -294,7 +294,7 @@ export type DocumentAnalysisProcessorDependencies = {
     locale: "ru" | "uz";
     mode: "quick" | "full" | "expert";
     userSide: string | null;
-    sources: import("../ai/provider").LegalSourceContext[];
+    sources: import("../legal/source-context").LegalSourceContext[];
     legalDatabaseAsOf: string;
     requestId: string;
     beforeProviderCall?: (input: {

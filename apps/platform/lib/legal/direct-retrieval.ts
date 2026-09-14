@@ -1,4 +1,4 @@
-import type { LegalSourceContext, LegalSourceSpan } from "../ai/provider";
+import type { LegalSourceContext, LegalSourceSpan } from "../legal/source-context";
 import { detectArticleNumbers } from "./legal-language";
 import { completeArticleText } from "./article-context";
 import { legalDatabaseFreshnessFromAsOf, type LegalDatabaseFreshness } from "./verified-retrieval";

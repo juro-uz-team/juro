@@ -1,4 +1,4 @@
-import type { LegalSourceContext } from "../ai/provider";
+import type { LegalSourceContext } from "../legal/source-context";
 import {
   legalDatabaseFreshnessFromAsOf,
   retrieveVerifiedLegalSources,

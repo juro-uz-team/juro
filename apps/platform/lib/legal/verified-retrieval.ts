@@ -1,4 +1,4 @@
-import type { LegalSourceContext } from "../ai/provider";
+import type { LegalSourceContext } from "../legal/source-context";
 import { legalSourceLifecycleEvidenceSchema } from "./source-lifecycle";
 import { legalSourcePublicationEvidenceSchema } from "./source-publication";
 import { legalSourceApplicabilityEvidenceSchema } from "./source-review";

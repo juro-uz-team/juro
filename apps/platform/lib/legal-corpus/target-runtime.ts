@@ -31,14 +31,14 @@ import { createNormalizedArticleEvidenceReader } from "./normalized-article-evid
 import { createRuntimeReferenceDiscovery } from "./runtime-reference-discovery";
 import { createReleaseLifecycle, resolveStagingHistoryComparisonEvaluationSet } from "./target-release";
 import {
-  createTargetLegalAnswerRetriever,
-  parseQuestionInterpretationPlan,
+
+
   parseRevalidatedCandidates,
-  parseSelectionDecision,
-  type QuestionInterpretationPlan,
+
+
   type RevalidatedCandidate,
-  type SelectionDecision,
-  type TargetLegalAnswerRetriever,
+
+
 } from "./target-retrieval";
 
 const environmentSchema = z.enum(["development", "staging", "production"]);
@@ -592,11 +592,11 @@ function createRuntimeCandidateIndex(provider: LegalCandidateProvider) {
   });
 }
 
-function createRuntimeRetriever(
+function createRuntimeEvidenceServices(
   dependencies: RuntimeDependencies,
   candidateIndex: ReturnType<typeof createRuntimeCandidateIndex>,
   releaseResolver: RuntimeReleaseResolver,
-): TargetLegalAnswerRetriever {
+) {
   const { environment, db, evidenceBucket, historyEvidenceBucket,
     customArtifactBucket, reasoningService } = dependencies;
   const r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>();
@@ -605,32 +605,20 @@ function createRuntimeRetriever(
     ? createNormalizedArticleEvidenceReader(historyEvidenceBucket) : currentArticleContext;
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
     {membershipProofsEnabled: dependencies.membershipProofsEnabled});
-  return createTargetLegalAnswerRetriever({
-    onReleaseResolved: dependencies.onReleaseResolved,
-    verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket,
+  return {
+onReleaseResolved: dependencies.onReleaseResolved,
+verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket,
       observe: dependencies.sharedSourceObservationsEnabled
         ? createSharedLexDocumentObservationReader(db) : observeCurrentLexDocument}),
-    environment,
-    interpreter: {
-      async interpret(input): Promise<QuestionInterpretationPlan> {
-        const body = await serviceJson(
-          reasoningService,
-          environment,
-          "/internal/legal-corpus/reasoning/interpret",
-          input,
-        );
-        const response = z.object({ result: z.unknown() }).strict().parse(body);
-        return parseQuestionInterpretationPlan(response.result);
-      },
-    },
-    releaseResolver,
-    candidateIndex,
-    candidateCatalog,
-    referenceDiscovery: customArtifactBucket ? createRuntimeReferenceDiscovery({db, bucket: customArtifactBucket,
+environment,
+releaseResolver,
+candidateIndex,
+candidateCatalog,
+referenceDiscovery: customArtifactBucket ? createRuntimeReferenceDiscovery({db, bucket: customArtifactBucket,
       identities: r2IdentityByRendition, revalidate: candidateCatalog.revalidate,
       preparePacket: candidateCatalog.prepareReferencePacket}) : undefined,
-    evidenceResolver: {
-      async resolveControlling(provisionRenditionId, endpoint, context) {
+evidenceResolver: {
+      async resolveControlling(provisionRenditionId: string, endpoint: TemporalEndpoint, context: {release: PinnedCandidateRelease; currentAt: string}) {
         if (context.release.instances.some((instance) =>
           instance.id === customInstanceId("current", environment)
           || instance.id === customInstanceId("history", environment))) {
@@ -655,32 +643,20 @@ function createRuntimeRetriever(
         );
       },
     },
-    provisionSelector: {
-      async select(input): Promise<SelectionDecision> {
-        const body = await serviceJson(
-          reasoningService,
-          environment,
-          "/internal/legal-corpus/reasoning/select",
-          input,
-        );
-        const response = z.object({ result: z.unknown() }).strict().parse(body);
-        return parseSelectionDecision(response.result);
-      },
-    },
-    lineageResolver: {
-      resolve: (leftConceptIds, rightConceptIds) => resolveProvisionLineage(
+lineageResolver: {
+      resolve: (leftConceptIds: string[], rightConceptIds: string[]) => resolveProvisionLineage(
         { db },
         leftConceptIds,
         rightConceptIds,
       ),
-    },
-  });
+    }
+};
 }
 
-export function createRuntimeTargetLegalAnswerRetriever(
+export function createRuntimeLegalEvidenceServices(
   env: TargetRetrievalRuntimeEnv,
   observation: {onReleaseResolved?: (releaseId: string) => void} = {},
-): TargetLegalAnswerRetriever {
+) {
   const environment = environmentSchema.parse(env.APP_ENV);
   if (!env.LEGAL_DB || !env.LEGAL_EVIDENCE_BUCKET
     || !env.LEGAL_CORPUS_REASONING_SERVICE) {
@@ -791,7 +767,7 @@ export function createRuntimeTargetLegalAnswerRetriever(
         }
         return null;
   };
-  return createRuntimeRetriever(dependencies, candidateIndex, {
+  return createRuntimeEvidenceServices(dependencies, candidateIndex, {
       async resolve(endpoint) {
         const capability = endpoint.kind === "current" ? "current" : "as_of";
         const resolution = await releaseLifecycle.resolveActiveCapability(capability, environment);
@@ -827,112 +803,3 @@ export type TargetActivationSetEvaluationObservation = {
     rightReleaseId?: string;
   }>;
 };
-
-/** Opens one explicit off-side current/history pair for staging-only target evaluation. */
-export async function createRuntimeTargetActivationSetEvaluation(input: {
-  env: TargetRetrievalRuntimeEnv;
-  activationSetId: string;
-  historyReconciliationRunId: string;
-  historyReportSha256: string;
-}): Promise<{
-  answer(question: Parameters<TargetLegalAnswerRetriever["answer"]>[0]): Promise<{
-    result: Awaited<ReturnType<TargetLegalAnswerRetriever["answer"]>>;
-    observation: TargetActivationSetEvaluationObservation;
-  }>;
-}> {
-  const { env } = input;
-  if (env.APP_ENV !== "staging" || env.LEGAL_CORPUS_SHADOW_MODE !== "true"
-    || !env.LEGAL_DB || !env.LEGAL_EVIDENCE_BUCKET
-    || !env.LEGAL_CUSTOM_ARTIFACT_BUCKET
-    || !env.LEGAL_CORPUS_REASONING_SERVICE || !env.LEGAL_CUSTOM_SEARCH_SERVICE
-    || !env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE || !env.LEGAL_AI_GATEWAY_ID
-    || !env.LEGAL_AI_PROVIDER_PROJECT_ID) {
-    throw new TypeError("TARGET_ACTIVATION_SET_EVALUATION_UNAVAILABLE");
-  }
-  const selected = await resolveStagingHistoryComparisonEvaluationSet(env.LEGAL_DB, {
-    activationSetId: input.activationSetId,
-    historyReconciliationRunId: input.historyReconciliationRunId,
-    historyReportSha256: input.historyReportSha256,
-  });
-  const dependencies: RuntimeDependencies = {
-    environment: "staging", db: env.LEGAL_DB, evidenceBucket: env.LEGAL_EVIDENCE_BUCKET,
-    membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
-    sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
-    customArtifactBucket: env.LEGAL_CUSTOM_ARTIFACT_BUCKET,
-    reasoningService: env.LEGAL_CORPUS_REASONING_SERVICE,
-  };
-  const providers = new Map<CustomSearchCapability, LegalCandidateProvider>([
-    ["current", createRuntimeEvaluationCustomSearchProvider({
-      releaseId: selected.current.id, configurationIdentity: selected.current.configurationIdentity,
-      service: env.LEGAL_CUSTOM_SEARCH_SERVICE, capability: "current",
-      gatewayIdentity: env.LEGAL_AI_GATEWAY_ID, projectIdentity: env.LEGAL_AI_PROVIDER_PROJECT_ID,
-    })],
-    ["history", createRuntimeEvaluationCustomSearchProvider({
-      releaseId: selected.history.id, configurationIdentity: selected.history.configurationIdentity,
-      service: env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE, capability: "history",
-      gatewayIdentity: env.LEGAL_AI_GATEWAY_ID, projectIdentity: env.LEGAL_AI_PROVIDER_PROJECT_ID,
-    })],
-  ]);
-  const providerForInstance = (instanceId: string) =>
-    (["current", "history"] as const).find(capability =>
-      instanceId === customInstanceId(capability, "staging"));
-  const provider: LegalCandidateProvider = {
-    attest(instanceId, releaseId) {
-      const capability = providerForInstance(instanceId);
-      return capability
-        ? providers.get(capability)!.attest(instanceId, releaseId)
-        : Promise.reject(new TypeError("TARGET_CANDIDATE_PROVIDER_UNAVAILABLE"));
-    },
-    search(searchInput) {
-      const capability = searchInput.instanceIds.length === 1
-        ? providerForInstance(searchInput.instanceIds[0]!) : undefined;
-      return capability
-        ? providers.get(capability)!.search(searchInput)
-        : Promise.reject(new TypeError("TARGET_CANDIDATE_PROVIDER_UNAVAILABLE"));
-    },
-    searchMany(searchInput) {
-      const capability = searchInput.instanceIds.length === 1
-        ? providerForInstance(searchInput.instanceIds[0]!) : undefined;
-      const selected = capability ? providers.get(capability) : undefined;
-      return selected?.searchMany
-        ? selected.searchMany(searchInput)
-        : Promise.reject(new TypeError("TARGET_CANDIDATE_PROVIDER_UNAVAILABLE"));
-    },
-  };
-  const pinned = (release: typeof selected.current) => parsePinnedCandidateRelease({
-    id: release.id, environment: "staging", capability: release.capability,
-    instances: [{ id: customInstanceId(release.capability, "staging"),
-      shardId: customShardId(release.capability) }],
-    configuration: customPinnedConfiguration(release.configurationIdentity,
-      env.LEGAL_AI_GATEWAY_ID!, env.LEGAL_AI_PROVIDER_PROJECT_ID!),
-  });
-  const current = pinned(selected.current);
-  const history = pinned(selected.history);
-  return {
-    async answer(question) {
-      const observation: TargetActivationSetEvaluationObservation = {
-        activationSetId: selected.id,
-        historyReconciliationRunId: selected.historyReconciliationRunId,
-        historyReportSha256: selected.historyReportSha256,
-        resolutions: [],
-      };
-      const releaseResolver: RuntimeReleaseResolver = {
-        async resolve(endpoint) {
-          const release = endpoint.kind === "current" ? current : history;
-          observation.resolutions.push({ kind: "endpoint", endpoint, releaseId: release.id });
-          return release;
-        },
-        async resolveComparison(left, right) {
-          const leftRelease = left.kind === "current" ? current : history;
-          const rightRelease = right.kind === "current" ? current : history;
-          observation.resolutions.push({ kind: "comparison", left, right,
-            leftReleaseId: leftRelease.id, rightReleaseId: rightRelease.id });
-          return { left: leftRelease, right: rightRelease };
-        },
-      };
-      const retriever = createRuntimeRetriever(dependencies,
-        createRuntimeCandidateIndex(provider), releaseResolver);
-      return { result: await retriever.answer(question), observation };
-    },
-  };
-}

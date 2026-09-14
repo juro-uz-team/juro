@@ -1,4 +1,4 @@
-import type { LegalSourceContext } from "../ai/provider";
+import type { LegalSourceContext } from "../legal/source-context";
 import { parsePrivateDocumentLocator } from "../document-analysis/private-document-locator";
 import { canonicalSecondaryInternetUrl } from "./secondary-internet-url";
 import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema } from "../legal-corpus/citation-evidence";
