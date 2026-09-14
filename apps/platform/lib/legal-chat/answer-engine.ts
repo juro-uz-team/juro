@@ -1,7 +1,7 @@
 import { legalChatResponseSchema, type LegalChatResponse } from "../ai/legal-chat-schema";
 import { aiText } from "../ai/localization";
 import type { LegalSourceContext } from "../legal/source-context";
-import { legalDraftClaims, legalDraftSchema, legalVerificationSchema, type LegalDraft, type LegalVerification } from "./answer-contract";
+import { legalClaimId, legalDraftClaims, legalDraftSchema, legalVerificationSchema, type LegalDraft, type LegalVerification } from "./answer-contract";
 import { assertAnswerEvidence, timeIdentity } from "./evidence-boundary";
 
 export type LegalTime = { kind: "current" } | { kind: "timestamp"; instant: string };
@@ -54,21 +54,32 @@ function emptyAnswer(input: AnswerQuestion): LegalChatResponse {
   };
 }
 
-function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verification: LegalVerification): AnswerOutcome {
+function acceptedClaims(input: AnswerQuestion, draft: LegalDraft, verification: LegalVerification) {
   const evidenceIds = new Set(input.evidence.map(item => item.source.id));
   const claims = legalDraftClaims(draft);
-  const accepted = new Set(claims.filter(claim => {
+  return claims.filter(claim => {
     const verdicts = verification.claims.filter(item => item.id === claim.id);
-    return verdicts.length === 1 && verdicts[0]!.supported && claim.sourceIds.length > 0
-      && claim.sourceIds.every(id => evidenceIds.has(id));
-  }).map(item => item.id));
-  const findings = draft.findings.filter((_, index) => accepted.has(`finding:${index}`));
+    return verdicts.length === 1 && verdicts[0]!.supported && (claim.kind === "question" || claim.kind === "gap"
+      || (claim.sourceIds.length > 0 && claim.sourceIds.every(id => evidenceIds.has(id))));
+  });
+}
+
+function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verification: LegalVerification): AnswerOutcome {
+  const accepted = new Map(acceptedClaims(input,draft,verification).map(claim=>[claim.id,claim]));
+  const questions = draft.questions.filter((_,index)=>accepted.has(legalClaimId("question",index)));
+  const reviewedGaps = draft.unresolved.filter((_,index)=>accepted.has(legalClaimId("gap",index)));
+  const incompleteMessage = aiText(input.locale,"Не все существенные вопросы подтверждены; остальные части требуют проверки.",
+    "Barcha muhim masalalar tasdiqlanmagan; qolgan qismlar tekshiruv talab qiladi.",
+    "Not all material issues are supported; the remaining parts require verification.");
+  const verificationGaps = verification.gaps.length || verification.coverage.some(item=>item.gaps.length)
+    ? [incompleteMessage] : [];
+  const findings = draft.findings.filter((_, index) => accepted.has(legalClaimId("finding",index)));
   if (!findings.length) return { kind: "insufficient_evidence", verification, result: {
-    ...emptyAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...draft.unresolved, ...verification.gaps])],
-    clarificationQuestions: [...new Set([...draft.questions, ...verification.questions])].slice(0, 8),
+    ...emptyAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps])],
+    clarificationQuestions: questions,
   } };
-  const actions = draft.actions.filter((_, index) => accepted.has(`action:${index}`));
-  const risks = draft.risks.filter((_, index) => accepted.has(`risk:${index}`));
+  const actions = draft.actions.filter((_, index) => accepted.has(legalClaimId("action",index)));
+  const risks = draft.risks.filter((_, index) => accepted.has(legalClaimId("risk",index)));
   const sourceIds = new Set([
     ...(accepted.has("mainPoint") ? draft.mainPoint.sourceIds : []),
     ...findings.flatMap(item => item.sourceIds), ...actions.flatMap(item => item.sourceIds), ...risks.flatMap(item => item.sourceIds),
@@ -88,8 +99,8 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "The answer does not have supported legal findings for every requested time period.")] : [];
   const completeCoverage = verification.coverage.length > 0 && verification.coverage.every(item =>
     !item.gaps.length && item.findingIds.length > 0 && item.actionIds.length > 0
-    && item.findingIds.every(id => id.startsWith("finding:") && accepted.has(id))
-    && item.actionIds.every(id => id.startsWith("action:") && accepted.has(id)));
+    && item.findingIds.every(id => accepted.get(id)?.kind === "finding")
+    && item.actionIds.every(id => accepted.get(id)?.kind === "action"));
   const coverageGaps = completeCoverage ? [] : [aiText(input.locale,
     "Не для каждого существенного вопроса подтверждены правовое объяснение и практические шаги.",
     "Har bir muhim masala uchun huquqiy tushuntirish va amaliy qadamlar tasdiqlanmagan.",
@@ -110,9 +121,9 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     summarySourceIds: accepted.has("mainPoint") ? draft.mainPoint.sourceIds : [],
     answer: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
     confirmedFindings: findings, actionPlan: actions, risks, sources,
-    clarificationQuestions: [...new Set([...draft.questions, ...verification.questions])].slice(0, 8),
-    coverageGaps: [...new Set([...input.unresolved, ...draft.unresolved, ...verification.gaps,
-      ...verification.coverage.flatMap(item => item.gaps), ...identityGaps, ...coverageGaps, ...outageGaps])],
+    clarificationQuestions: questions,
+    coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps,
+      ...identityGaps, ...coverageGaps, ...outageGaps])],
     evidenceMode: findings.length ? "official" : "none", coverageStatus: complete ? "good_coverage" : findings.length ? "partial_coverage" : "no_coverage",
     legalDatabaseAsOf: input.evidence.map(item => item.source.verifiedAt).sort()[0] ?? "unavailable",
     sourceAccessMode: input.evidence.every(item => item.origin === "indexed") ? "approved_package"
@@ -160,6 +171,13 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     const checked = legalVerificationSchema.parse(await model.verify({ question: input, draft: corrected, claims: legalDraftClaims(corrected), previous: correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     const final = projectVerifiedAnswer(input, corrected, checked);
+    const acceptedCorrection = new Map(acceptedClaims(input,corrected,checked).map(claim=>[claim.id,claim]));
+    const retained = acceptedClaims(input,draft,verification).filter(claim=>claim.kind!=="question"&&claim.kind!=="gap").every(prior=>{
+      const mappings=checked.retention.filter(item=>item.priorId===prior.id);
+      return mappings.length===1 && mappings[0]!.currentIds.length>0
+        && mappings[0]!.currentIds.every(id=>acceptedCorrection.get(id)?.kind===prior.kind);
+    });
+    if(!retained && first.kind==="partial") return {...first,errorCode:"ANSWER_CORRECTION_REGRESSED"};
     return final.kind === "insufficient_evidence" && first.kind === "partial" ? first : final;
   } catch {
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");

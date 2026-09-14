@@ -23,6 +23,7 @@ const draft = {
   risks: [], questions: [], unresolved: [],
 };
 const approval = {
+  retention: [],
   coverage: [{issue: "Filing deadline", findingIds: ["finding:0"], actionIds: ["action:0"], gaps: []}],
   claims: ["mainPoint", "finding:0", "action:0"].map(id => ({ id, supported: true, reason: "The complete fixture supports this claim." })),
   complete: true, gaps: [], questions: [],
@@ -157,4 +158,33 @@ test("an official-source outage is distinct from no evidence and cannot yield a 
   assert.equal(partial.kind,"partial");
   assert.equal(partial.result.confirmedFindings.length,1);
   assert.ok(partial.result.coverageGaps!.length>0);
+});
+
+test("rejected legal premises in questions and gap prose cannot escape verification", async () => {
+  const unsafe={...draft,questions:["Have you paid the legally required 20% penalty?"],unresolved:["You must pay a 20% penalty."]};
+  const outcome=await answerFromEvidence(question,{write:async()=>unsafe,verify:async()=>({...approval,complete:false,
+    claims:[...approval.claims,{id:"question:0",supported:false,reason:"Invented legal premise"},{id:"gap:0",supported:false,reason:"Invented penalty"}],
+    gaps:["The draft asserts an unsupported 20% penalty."],questions:["Have you paid that 20% penalty?"]})});
+  assert.equal(outcome.kind,"partial");
+  assert.ok(!JSON.stringify(outcome.result).includes("20%"));
+});
+
+test("a correction that loses supported issues preserves the earlier verified partial answer", async () => {
+  const initial={...draft,findings:[...draft.findings,{title:"Separate issue",explanation:"The notice must be filed.",sourceIds:["official-fixture"]}]};
+  let writes=0,checks=0;
+  const outcome=await answerFromEvidence(question,{write:async()=>++writes===1?initial:draft,
+    verify:async()=>++checks===1?{...approval,complete:false,gaps:["A question remains"],
+      claims:[...approval.claims,{id:"finding:1",supported:true,reason:"The text supports filing"}]}:
+      {...approval,complete:false,gaps:["A supported issue was lost"],retention:[]}});
+  assert.equal(outcome.kind,"partial");
+  assert.equal(outcome.result.confirmedFindings.length,2);
+});
+
+test("a supported correction can complete the answer while retaining its verified findings", async () => {
+  let writes=0,checks=0;
+  const outcome=await answerFromEvidence(question,{write:async()=>++writes===1?{...draft,actions:[]}:draft,
+    verify:async()=>++checks===1?{...approval,complete:false,gaps:["The practical action is missing"],claims:approval.claims.slice(0,2)}:
+      {...approval,retention:[{priorId:"mainPoint",currentIds:["mainPoint"]},{priorId:"finding:0",currentIds:["finding:0"]}]}});
+  assert.equal(outcome.kind,"complete");
+  assert.equal(outcome.result.actionPlan.length,1);
 });

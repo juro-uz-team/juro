@@ -66,8 +66,10 @@ export async function listAiAnswerVersions(input: {
   workspaceId: string;
   userId: string;
   branchId: string | null;
+  /** A legacy root request may predate immutable branch/version records. */
+  requestMessageId?: string;
 }): Promise<AiBranchSummary[]> {
-  if (!input.branchId) return [];
+  if (!input.branchId && !input.requestMessageId) return [];
   const rows = await input.db.prepare(
     `WITH RECURSIVE lineage(branchId,messageId,currentMessageId,sourceMessageId,depth) AS (
        SELECT mv.branch_id,mv.message_id,mv.message_id,mv.source_message_id,0
@@ -82,9 +84,16 @@ export async function listAiAnswerVersions(input: {
      ),
      roots(branchId,messageId,rootMessageId) AS (
        SELECT branchId,messageId,currentMessageId FROM lineage WHERE sourceMessageId IS NULL
+       UNION
+       SELECT branchId,messageId,sourceMessageId FROM lineage
+       WHERE sourceMessageId IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM message_versions parent WHERE parent.message_id=lineage.sourceMessageId AND parent.conversation_id=?
+       )
      ),
      selectedRoot(rootMessageId) AS (
-       SELECT rootMessageId FROM roots WHERE branchId=? LIMIT 1
+       SELECT rootMessageId FROM roots WHERE branchId=?
+       UNION
+       SELECT ? WHERE ? IS NULL AND ? IS NOT NULL
      )
      SELECT b.id AS branchId,b.parent_branch_id AS parentBranchId,b.request_message_id AS requestMessageId,
        b.response_message_id AS responseMessageId,b.operation,mv.version_number AS versionNumber,
@@ -101,7 +110,11 @@ export async function listAiAnswerVersions(input: {
   ).bind(
     input.conversationId,
     input.conversationId,
+    input.conversationId,
     input.branchId,
+    input.requestMessageId ?? null,
+    input.branchId,
+    input.requestMessageId ?? null,
     input.conversationId,
     input.workspaceId,
     input.userId,
@@ -205,12 +218,3 @@ export async function deleteAiConversation(input: {
   return remaining.busy ? "busy" : "unavailable";
 }
 
-async function latestBranchId(db: D1Database, conversationId: string, workspaceId: string, userId: string) {
-  const row = await db.prepare(
-    `SELECT b.id FROM message_branches b JOIN conversations c ON c.id=b.conversation_id
-     WHERE b.conversation_id=? AND c.workspace_id=? AND c.owner_user_id=?
-       AND b.workspace_id=c.workspace_id AND b.owner_user_id=c.owner_user_id
-     ORDER BY b.created_at DESC,b.id DESC LIMIT 1`,
-  ).bind(conversationId, workspaceId, userId).first<{ id: string }>();
-  return row?.id ?? null;
-}

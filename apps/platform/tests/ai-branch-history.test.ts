@@ -13,6 +13,29 @@ import { loadAiConversationTurns } from "../lib/ai/conversation-branch-reader";
 
 const resolveAiBranchInput = async (input: Parameters<typeof readConversationContext>[0]) => (await readConversationContext(input)).branch;
 
+test("legacy-root regeneration advances versions across sibling and descendant selections", async () => {
+  const {sqlite,d1}=await branchDatabase();
+  seedInitialBranch(sqlite);
+  sqlite.exec("DELETE FROM message_versions; DELETE FROM message_branches;");
+  const owner={db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1"};
+  for(const version of [2,3]) {
+    const selected=await readConversationContext({...owner,requestedOperation:"regenerate",sourceMessageId:"response-1"});
+    assert.equal(selected.branch.versionNumber,version);
+    for(const [id,author] of [[`request-${version}`,"user"],[`response-${version}`,"assistant"]]) {
+      sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,'conversation-1',?,?,'2026-08-01')").run(id,author,"Version content");
+    }
+    sqlite.prepare(`INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,forked_from_message_id,request_message_id,response_message_id,operation,created_at)
+      VALUES (?,'conversation-1','workspace-1','user-1',NULL,'response-1',?,?,'regenerate','2026-08-01')`).run(`branch-${version}`,`request-${version}`,`response-${version}`);
+    sqlite.prepare(`INSERT INTO message_versions(id,conversation_id,branch_id,message_id,source_message_id,created_by_user_id,operation,version_number,content_sha256,created_at)
+      VALUES (?,'conversation-1',?,?,'request-1','user-1','regenerate',?,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','2026-08-01')`).run(`version-${version}`,`branch-${version}`,`request-${version}`,version);
+  }
+  assert.deepEqual((await listAiAnswerVersions({...owner,branchId:"branch-2"})).map(row=>row.versionNumber),[2,3]);
+  const next=await readConversationContext({...owner,requestedOperation:"regenerate",sourceMessageId:"response-2"});
+  assert.equal(next.branch.versionNumber,4);
+  assert.deepEqual(next.turns,[]);
+  sqlite.close();
+});
+
 test("legacy conversations without branch rows retain owner-scoped follow-up context", async () => {
   const {sqlite,d1} = await branchDatabase();
   seedInitialBranch(sqlite);

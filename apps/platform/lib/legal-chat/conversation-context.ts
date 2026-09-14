@@ -104,7 +104,7 @@ export async function readConversationContext(input: ConversationOwner & {
     }
   }
   const versions = operation === "edit" || operation === "regenerate"
-    ? await listAiAnswerVersions({ ...owner, branchId: selected.branchId }) : [];
+    ? await listAiAnswerVersions({ ...owner, branchId: selected.branchId, requestMessageId: selected.requestMessageId }) : [];
   return { branch: { operation, question,
     sourceMessageId: operation === "follow_up" ? null : selected.requestMessageId,
     forkedFromMessageId: input.sourceMessageId ?? (selected.branchId ? null : selected.responseMessageId), parentBranchId: selected.branchId,

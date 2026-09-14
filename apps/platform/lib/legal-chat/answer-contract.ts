@@ -10,8 +10,13 @@ export const legalDraftSchema = z.object({
   unresolved: z.array(z.string().min(1).max(1000)).max(40),
 }).strict();
 export type LegalDraft = z.infer<typeof legalDraftSchema>;
+export type LegalClaimKind = "mainPoint" | "finding" | "action" | "risk" | "question" | "gap";
+export function legalClaimId(kind: LegalClaimKind, index = 0): string {
+  return kind === "mainPoint" ? kind : `${kind}:${index}`;
+}
 
 export const legalVerificationSchema = z.object({
+  retention: z.array(z.object({priorId:z.string().min(1).max(80),currentIds:z.array(z.string().min(1).max(80)).max(16)}).strict()).max(97),
   coverage: z.array(z.object({
     issue: z.string().min(1).max(1000),
     findingIds: z.array(z.string().min(1).max(80)).max(16),
@@ -20,17 +25,20 @@ export const legalVerificationSchema = z.object({
   }).strict()).max(24),
   claims: z.array(z.object({
     id: z.string().min(1).max(80), supported: z.boolean(), reason: z.string().min(1).max(1500),
-  }).strict()).max(49),
+  }).strict()).max(97),
   complete: z.boolean(), gaps: z.array(z.string().min(1).max(1000)).max(40),
   questions: z.array(z.string().min(1).max(500)).max(8),
 }).strict();
 export type LegalVerification = z.infer<typeof legalVerificationSchema>;
 
 export function legalDraftClaims(draft: LegalDraft) {
+  const claim = (kind:LegalClaimKind,index:number,text:string,sourceIds:string[]) => ({kind,id:legalClaimId(kind,index),text,sourceIds});
   return [
-    { id: "mainPoint", text: draft.mainPoint.text, sourceIds: draft.mainPoint.sourceIds },
-    ...draft.findings.map((item, index) => ({ id: `finding:${index}`, text: `${item.title}\n${item.explanation}`, sourceIds: item.sourceIds })),
-    ...draft.actions.map((item, index) => ({ id: `action:${index}`, text: `${item.title}\n${item.description}`, sourceIds: item.sourceIds })),
-    ...draft.risks.map((item, index) => ({ id: `risk:${index}`, text: `${item.level}\n${item.title}\n${item.explanation}`, sourceIds: item.sourceIds })),
+    claim("mainPoint",0,draft.mainPoint.text,draft.mainPoint.sourceIds),
+    ...draft.findings.map((item,index)=>claim("finding",index,`${item.title}\n${item.explanation}`,item.sourceIds)),
+    ...draft.actions.map((item,index)=>claim("action",index,`${item.title}\n${item.description}`,item.sourceIds)),
+    ...draft.risks.map((item,index)=>claim("risk",index,`${item.level}\n${item.title}\n${item.explanation}`,item.sourceIds)),
+    ...draft.questions.map((text,index)=>claim("question",index,text,[])),
+    ...draft.unresolved.map((text,index)=>claim("gap",index,text,[])),
   ];
 }
