@@ -31,6 +31,35 @@ function evidenceCharacters(sources: readonly LegalPassageSource[]) {
     + (source.spans ?? []).reduce((sum, span) => sum + span.text.length, 0), 0);
 }
 
+/** Complete span text with request-local labels, preserving all original metadata. */
+export function legalSourceSentenceView<Source extends LegalPassageSource>(sources: readonly Source[],
+  passages: ReturnType<typeof legalSourcePassages>) {
+  return sources.map(source => ({...source, spans: source.spans?.map(span => {
+    const parts = passages.filter(part => part.sourceId === source.id && part.sourceSpanId === span.id);
+    if (!parts.length) return span;
+    const {text, ...metadata} = span;
+    if (parts.map(part => part.text).join("") !== text) throw new TypeError("LEGAL_PASSAGE_CONTEXT_UNAVAILABLE");
+    return {...metadata, sentences: parts.map(part => ({sourcePassageId: part.id, text: part.text}))};
+  })}));
+}
+
+/** Disjoint selections remain separate quotations; omitted text is never inserted. */
+export function legalSourcePassageWitnesses(passages: ReturnType<typeof legalSourcePassages>, selectedIds: readonly string[]) {
+  if (!selectedIds.length || new Set(selectedIds).size !== selectedIds.length) return null;
+  const catalog = new Map(passages.map(part => [part.id, part]));
+  const runs: Array<Array<(typeof passages)[number]>> = [];
+  for (const id of selectedIds) {
+    const part = catalog.get(id);
+    if (!part) return null;
+    const last = runs.at(-1)?.at(-1);
+    if (last && last.sourceId === part.sourceId && last.sourceSpanId === part.sourceSpanId && last.end === part.start) {
+      runs.at(-1)!.push(part);
+    } else runs.push([part]);
+  }
+  return runs.map(parts => ({sourceId: parts[0]!.sourceId, sourceSpanId: parts[0]!.sourceSpanId,
+    quotation: parts.map(part => part.text).join("")}));
+}
+
 /** Navigation into complete source spans; omit duplicated text when it cannot fit. */
 export function legalSourcePassageView(sources: readonly LegalPassageSource[], passages: ReturnType<typeof legalSourcePassages>) {
   const includeText = evidenceCharacters(sources) + passages.reduce((total, passage) => total + passage.text.length, 0)

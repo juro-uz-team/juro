@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {legalSourcePassages, legalSourceSentenceView, legalSourcePassageWitnesses} from "./legal-source-passages";
 import {callAnthropicStructured} from "../document-builder/ai/anthropic";
 import {questionScopeSelection} from "../legal/question-interpretation";
 import {openAiChatModel} from "./provider-models";
@@ -99,6 +100,7 @@ const REFERENCE_APPLICABILITY_RULE = "Assess whether each identified missing sam
 export async function assessLegalEvidenceRouting(input: LegalChatRequest, requirementIds: readonly string[],
   execution: Pick<LegalAiRunResult, "provider" | "model">, options: LegalAiRunOptions):
   Promise<AiStructuredResult<Record<string, LegalEvidenceRoutingDecision>>> {
+  input = structuredClone(input);
   const requirements = (input.coverageRequirements ?? []).filter(scope => requirementIds.includes(scope.id));
   if (!requirements.length || requirements.length !== requirementIds.length
     || new Set(requirementIds).size !== requirementIds.length
@@ -117,17 +119,17 @@ export async function assessLegalEvidenceRouting(input: LegalChatRequest, requir
     + references.reduce((total, reference) => total + reference.exactReferringSentence.length, 0) <= MAX_LEGAL_EVIDENCE_CHARACTERS;
   const referenceView = references.map(({exactReferringSentence, ...reference}) => ({...reference,
     ...(includeReferenceText ? {exactReferringSentence} : {})}));
+  const supportEvidence = routingSupportEvidence(input, requirementIds, references.map(reference => reference.id));
   const request = {...(references.length ? {missingReferences: referenceView} : {}), question: input.question, applicableAt: input.applicableAt, temporalComparison: input.temporalComparison,
     requirements: requirements.map(scope => ({id: scope.id, statement: scope.statement, priority: scope.priority,
       scopeKind: scope.scopeKind, origin: scope.origin, questionContext: scope.questionContext,
       questionSelection: questionScopeSelection(scope), unresolvedDimensions: scope.unresolvedDimensions})),
-    sources: input.sources.map(source => ({id: source.id, title: source.actTitle, article: source.article,
+    sources: supportEvidence.sources.map(source => ({id: source.id, title: source.actTitle, article: source.article,
       sourceClass: source.sourceClass, locale: source.locale, revisionDate: source.revisionDate,
       effectiveDate: source.effectiveDate, applicabilityStatus: source.applicabilityStatus, spans: source.spans}))};
-  const common = {instructions: EVIDENCE_ROUTING_RULE + (references.length ? " " + REFERENCE_APPLICABILITY_RULE : ""), input: request,
-    schema: z.toJSONSchema(legalEvidenceRoutingSchema(requirementIds,
-      input.sources.filter(source => supportsEvidenceRouting(source, input)).map(source => source.id), references.map(reference => reference.id))),
-    parse: (value: unknown) => parseLegalEvidenceRouting(value, input, requirementIds), model: execution.model,
+  const common = {instructions: EVIDENCE_ROUTING_RULE + (references.length ? " " + REFERENCE_APPLICABILITY_RULE : "") + " " + ROUTING_SUPPORT_REFERENCE_RULE, input: request,
+    schema: z.toJSONSchema(supportEvidence.schema),
+    parse: (value: unknown) => parseLegalEvidenceRouting(supportEvidence.resolve(value), input, requirementIds), model: execution.model,
     maxAttempts: 1 as const, firstByteTimeoutMs: Math.min(10_000, remaining), totalResponseTimeoutMs: remaining,
     deadlineAt: Date.now() + remaining, requestId: input.requestId, signal};
   await options.beforeProviderCall?.({provider: execution.provider, model: execution.model, attempt: 1});
@@ -140,4 +142,29 @@ export async function assessLegalEvidenceRouting(input: LegalChatRequest, requir
     : callAnthropicStructured({...common, maxTokens: 1_600,
       onAttemptFinished: observation => options.onProviderAttemptFinished?.({...observation,
         provider: "anthropic", part: "evidence_validation"})});
+}
+
+
+const ROUTING_SUPPORT_REFERENCE_RULE = "For support in labeled span.sentences, select passageIds instead of copying sourceId/quotation. Adjacent same-span selections become one exact quotation; disjoint selections become separate exact quotations. They never include unselected text. Read complete provisions including all conditions and cross-references; sentence labels are navigation, not independent rules or support approval. Concatenating ordered sentence texts reconstructs the complete original span. For unlabeled evidence, use exact sourceId/quotation; copied exact substrings remain accepted. Support must still collectively establish the scope; reference binding alone is not evidence sufficiency.";
+
+/** Routing keeps its own eligibility and decision contract after resolving witnesses. */
+function routingSupportEvidence(input: LegalChatRequest, requirementIds: readonly string[], referenceIds: readonly string[]) {
+  const eligible = new Set(input.sources.filter(source => supportsEvidenceRouting(source, input)).map(source => source.id));
+  const passages = legalSourcePassages(input.sources, input.locale).filter(part => eligible.has(part.sourceId));
+  const copied = z.object({sourceId: eligible.size ? z.enum([...eligible]) : z.string().length(0), quotation: z.string()}).strict();
+  const support = passages.length ? z.union([
+    z.object({passageIds: z.array(z.enum(passages.map(part => part.id))).min(1)}).strict(), copied,
+  ]) : copied;
+  const normal = legalEvidenceRoutingSchema(requirementIds, [...eligible], referenceIds);
+  const schema = z.object(Object.fromEntries(requirementIds.map(id => [id, normal.shape[id]!.extend({support: z.array(support)})]))).strict();
+  return {schema, sources: legalSourceSentenceView(input.sources, passages), resolve(value: unknown) {
+    return Object.fromEntries(Object.entries(schema.parse(value)).map(([id, decision]) => [id, {...decision,
+      support: decision.support.flatMap(witness => {
+        if ("quotation" in witness) return [witness];
+        const resolved = legalSourcePassageWitnesses(passages, witness.passageIds);
+        if (!resolved) throw new AiUnavailableError("Evidence routing reference unavailable", "INVALID_AI_OUTPUT", false);
+        return resolved.map(({sourceId, quotation}) => ({sourceId, quotation}));
+      }),
+    }]));
+  }};
 }

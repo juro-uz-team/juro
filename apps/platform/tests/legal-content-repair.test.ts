@@ -117,7 +117,9 @@ function evidenceRoutingResponse(request: {text: {format: {name: string}}; input
   if (request.text.format.name !== "juro_legal_evidence_routing") return null;
   const payload = JSON.parse(request.input);
   const witnesses: Record<string, string[]> = {buyer: [buyer], seller: [seller], registry: [buyer, seller]};
-  assert.deepEqual(payload.sources[0].spans, source.spans);
+  assert.deepEqual(payload.sources[0].spans.map(({sentences, ...span}: {
+    sentences?: Array<{text: string}>; [key: string]: unknown;
+  }) => sentences ? {...span, text: sentences.map(part => part.text).join("")} : span), source.spans);
   const data = Object.fromEntries(payload.requirements.map((scope: {id: string}) => {
     assert.ok(witnesses[scope.id], "the controlled registry fixture must name a known scope");
     return [scope.id, {decision: "sufficient", support: witnesses[scope.id]!.map(quotation => ({sourceId: source.id, quotation})),

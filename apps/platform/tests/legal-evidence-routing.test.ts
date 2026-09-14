@@ -3,6 +3,10 @@ import test from "node:test";
 import {env} from "cloudflare:workers";
 import {createAiExecutionBudget} from "../lib/ai/execution-budget";
 import {legalAiProvider, type LegalChatRequest, type LegalSourceContext} from "../lib/ai/provider";
+import {hasRequiredEvidenceReference} from "../lib/ai/legal-evidence-routing";
+
+const completeSpans = (spans: Array<{sentences?: Array<{text: string}>; [key: string]: unknown}>) =>
+  spans.map(({sentences, ...span}) => sentences ? {...span, text: sentences.map(part => part.text).join("")} : span);
 
 const rule = "The buyer must register ownership. The seller must submit the transfer notice.";
 const source: LegalSourceContext = {id: "official:registration", actTitle: "Registration rules", article: "1",
@@ -12,6 +16,67 @@ const source: LegalSourceContext = {id: "official:registration", actTitle: "Regi
   applicabilityStatus: "current", sourceClass: "OFFICIAL_LEGISLATION",
   sourceQuality: {passed: true, title: true, sufficientText: true, clean: true, locale: true, canonicalUrl: true, structured: true},
   spans: [{id: "complete", article: "1", paragraph: null, text: rule, textSha256: "b".repeat(64), quality: "high"}]};
+
+test("routing resolves separated support references before normal evidence validation", async context => {
+  const previous = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-only-key";
+  context.after(() => {env.OPENAI_API_KEY = previous;});
+  const text = "An ordinary rule applies. A separate rule intervenes. An exception qualifies the ordinary rule.";
+  const input: LegalChatRequest = {question: "Which rules apply?", sources: [{...source, spans: [{...source.spans![0]!, text}]}],
+    locale: "en", answerMode: "detailed", reasoningMode: "fast", legalDatabaseAsOf: source.verifiedAt,
+    requestId: "routing-references", safetyIdentifier: "test", coverageRequirements: [
+      {id: "rule", statement: "The ordinary rule and its exception", priority: "core", sourceIds: []},
+    ]};
+  let passageIds = ["s1-1:p0", "s1-1:p2"];
+  context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    const payload = JSON.parse(request.input);
+    assert.equal(payload.sources[0].spans[0].sentences.map((part: {text: string}) => part.text).join(""), text);
+    assert.equal(request.max_output_tokens, 1_600);
+    return Response.json({id: "routing-reference", model: request.model, output: [{content: [{type: "output_text", text: JSON.stringify({
+      rule: {decision: "sufficient", support: [{passageIds}], missingEvidenceQuestion: ""},
+    })}]}], usage: {input_tokens: 40, output_tokens: 20}});
+  });
+  const execution = {provider: "openai" as const, model: "gpt-5.6-luna"};
+  const assessed = await legalAiProvider()!.assessEvidence!(input, ["rule"], execution);
+  assert.deepEqual(assessed.data.rule!.support, [
+    {sourceId: source.id, quotation: "An ordinary rule applies. "},
+    {sourceId: source.id, quotation: "An exception qualifies the ordinary rule."},
+  ]);
+  for (passageIds of [["s1-1:p0", "s1-1:p0"], ["foreign"]]) {
+    await assert.rejects(legalAiProvider()!.assessEvidence!(input, ["rule"], execution),
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "INVALID_AI_OUTPUT");
+  }
+});
+
+for (const variant of ["long", "foreign", "mutation", "dependency"] as const) {
+  test(`routing reference transport preserves ${variant} evidence semantics`, async context => {
+    const previous = env.OPENAI_API_KEY;
+    env.OPENAI_API_KEY = "test-only-key";
+    context.after(() => {env.OPENAI_API_KEY = previous;});
+    const text = variant === "long" ? "A".repeat(2_001)
+      : variant === "dependency" ? "Применяются условия статьи 147 настоящего Кодекса." : rule;
+    const input: LegalChatRequest = {question: "Which rule applies?", sources: [{...structuredClone(source),
+      locale: variant === "dependency" ? "ru" : "en", spans: [{...source.spans![0]!, text}]}],
+      locale: variant === "foreign" || variant === "dependency" ? "ru" : "en", answerMode: "detailed", reasoningMode: "fast",
+      legalDatabaseAsOf: source.verifiedAt, requestId: "routing-reference-boundary", safetyIdentifier: "test",
+      coverageRequirements: [{id: "rule", statement: "Applicable rule", priority: "core", sourceIds: []}]};
+    context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)), payload = JSON.parse(request.input);
+      const span = payload.sources[0].spans[0];
+      assert.equal(variant === "foreign" ? span.text : span.sentences.map((part: {text: string}) => part.text).join(""), text);
+      if (variant === "mutation") input.sources[0]!.spans![0]!.text = "Changed after dispatch.";
+      return Response.json({id: "routing-reference-boundary", model: request.model, output: [{content: [{type: "output_text", text: JSON.stringify({
+        rule: {decision: "sufficient", support: [variant === "foreign" ? {sourceId: source.id, quotation: text}
+          : {passageIds: span.sentences.map((part: {sourcePassageId: string}) => part.sourcePassageId)}], missingEvidenceQuestion: "",
+        ...(variant === "dependency" ? {referenceApplicability: {[payload.missingReferences[0].id]: "outside"}} : {})},
+      })}]}], usage: {input_tokens: 40, output_tokens: 20}});
+    });
+    const assessed = await legalAiProvider()!.assessEvidence!(input, ["rule"], {provider: "openai", model: "gpt-5.6-luna"});
+    assert.deepEqual(assessed.data.rule!.support, [{sourceId: source.id, quotation: text}]);
+    if (variant === "dependency") assert.equal(hasRequiredEvidenceReference(input, input.sources[0]!, assessed.data.rule), true);
+  });
+}
 
 for (const mode of ["fast", "deep"] as const) test(`${mode} evidence routing preserves full question and sources at the provider boundary`, async context => {
   const previous = env.OPENAI_API_KEY;
@@ -32,12 +97,12 @@ for (const mode of ["fast", "deep"] as const) test(`${mode} evidence routing pre
     const payload = JSON.parse(request.input);
     assert.equal(request.model, model);
     assert.equal(request.text.format.name, "juro_legal_evidence_routing");
-    assert.deepEqual(request.text.format.schema.properties.seller.properties.support.items.properties.sourceId.enum, [source.id]);
+    assert.deepEqual(request.text.format.schema.properties.seller.properties.support.items.anyOf.find((option: {properties: {sourceId?: unknown}}) => option.properties.sourceId).properties.sourceId.enum, [source.id]);
     assert.equal(payload.question, input.question);
     assert.deepEqual(payload.requirements.map((scope: {id: string}) => scope.id), ["seller"]);
     assert.equal(payload.requirements[0].statement, input.coverageRequirements![1]!.statement);
     assert.equal(payload.requirements[0].sourceIds, undefined, "discovery mappings cannot supply a sufficiency verdict");
-    assert.deepEqual(payload.sources[0].spans, source.spans);
+    assert.deepEqual(completeSpans(payload.sources[0].spans), source.spans);
     assert.equal(payload.safetyIdentifier, undefined);
     assert.equal(payload.sources[0].citationEvidenceReceipt, undefined);
     return Response.json({id: "routing-response", model, output: [{content: [{type: "output_text", text: JSON.stringify({
@@ -208,7 +273,7 @@ test("evidence routing assesses every missing reference with full scope and sour
     const request = JSON.parse(String(init.body));
     const payload = JSON.parse(request.input);
     assert.equal(payload.question, input.question);
-    assert.deepEqual(payload.sources[0].spans, candidate.spans);
+    assert.deepEqual(completeSpans(payload.sources[0].spans), candidate.spans);
     assert.deepEqual(payload.missingReferences, [{id: "ref-1", sourceId: source.id, sourceSpanId: source.spans![0]!.id,
       sourceSpanTextSha256: source.spans![0]!.textSha256, referencedArticle: "147", exactReferringSentence: referring,
       startUtf16: rule.length + 1, endUtf16: candidate.spans[0]!.text.length}]);
@@ -232,7 +297,7 @@ test("long repeated reference contexts retain complete sources without exceeding
     coverageRequirements: [{id: "seller", statement: "Seller duty", priority: "core", sourceIds: [source.id]}]};
   context.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const payload = JSON.parse(JSON.parse(String(init.body)).input);
-    assert.deepEqual(payload.sources[0].spans, candidate.spans);
+    assert.deepEqual(completeSpans(payload.sources[0].spans), candidate.spans);
     assert.equal(payload.missingReferences.length, 2);
     for (const reference of payload.missingReferences) {
       assert.equal(reference.exactReferringSentence, undefined, "full source text already supplies this long reference context");
