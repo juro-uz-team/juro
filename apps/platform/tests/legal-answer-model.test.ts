@@ -21,7 +21,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
         answer: {
         mainPoint: { text: "Supported result", sourceIds: ["source"] },
         issues: [{finding:{title:"Application",explanation:"A written application is required.",sourceIds:["source"]},
-          actions:[{title:"Apply",description:"Submit the written application.",sourceIds:["source"]}]}],
+          actions:[{title:"Apply",instruction:"Submit the application and keep a copy.",sourceIds:["source"]}]}],
         risks: [], questions: [], unresolved: [],
         },
       }) }] }], usage: { input_tokens: 12, output_tokens: 9 } });
@@ -39,7 +39,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     const draft = legalDraftSchema.parse(await model.write({ question, correction: null }));
     assert.equal(draft.mainPoint.text, "Supported result");
     assert.equal(draft.findings[0]?.explanation,"A written application is required.");
-    assert.equal(draft.actions[0]?.description,"Submit the written application.");
+    assert.equal(draft.actions[0]?.description,"A written application is required.\n\nSubmit the application and keep a copy.");
     assert.ok(!("sourceReview" in draft));
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-5.6-luna", "gpt-5.6-terra"]);
@@ -290,7 +290,7 @@ test("one whole correction can reuse approved claims without rewriting their con
       sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [issueIndex], unresolvedIndices: [] }] }],
       answer: { mainPoint: { reuse: "mainPoint" },
         issues: [{ finding: { reuse: findingReuse }, actions: [{ title: "Request review",
-          description: "Record the written-notice date and request review within ten days after it.", sourceIds: [actionSource] }] }],
+          instruction: "Record the written-notice date and request review within ten days after it.", sourceIds: [actionSource] }] }],
         risks: [], questions: [], unresolved: [],
       },
     }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
@@ -300,10 +300,12 @@ test("one whole correction can reuse approved claims without rewriting their con
   assert.deepEqual(corrected.mainPoint, draft.mainPoint);
   assert.deepEqual(corrected.findings, draft.findings);
   assert.match(corrected.actions[0]!.description, /within ten days after it/);
+  assert.ok(corrected.actions[0]!.description.startsWith(`${draft.findings[0]!.explanation}\n\n`));
   assert.ok(!("reuse" in corrected.findings[0]!));
   actionSource = "unrelated-source";
   // Source support can be complementary: the finding still cites this source.
-  await model.write({ question, correction: { draft, verification } });
+  const combined = legalDraftSchema.parse(await model.write({ question, correction: { draft, verification } }));
+  assert.deepEqual(combined.actions[0]!.sourceIds, ["source", "unrelated-source"]);
   draft.findings[0]!.sourceIds = ["unrelated-source"];
   // Planning metadata is not approval. The independent verifier evaluates
   // actual claims/citations even when the writer's internal map is mistaken.
@@ -351,4 +353,59 @@ test("a material passage can remain explicitly unresolved without inventing pair
   assert.deepEqual(draft.findings, []);
   assert.deepEqual(draft.actions, []);
   assert.deepEqual(draft.unresolved, [gap]);
+});
+
+test("shared operative law respects composed limits and leaves reused actions exact", async context => {
+  const previousKey = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-key";
+  context.after(() => { env.OPENAI_API_KEY = previousKey; });
+  const question: AnswerQuestion = { question: "How do I apply?", locale: "en", mode: "fast", answerMode: "detailed",
+    temporalScope: { kind: "current" }, unresolved: [], evidence: [] };
+  let explanation = "Workers may apply within ten days after written notice.";
+  let instruction = "Record the notice date and submit your application.";
+  let findingSources = ["rule"];
+  let instructionSources = ["rule", "procedure"];
+  let reuseAction = false;
+  let hasAction = true;
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
+      sourceReview: [], answer: {
+        mainPoint: { text: "Application guidance", sourceIds: [] },
+        issues: [{ finding: { title: "Application", explanation, sourceIds: findingSources },
+          actions: hasAction ? [reuseAction ? { reuse: "action:0" }
+            : { title: "Apply", instruction, sourceIds: instructionSources }] : [] }],
+        risks: [], questions: [], unresolved: [],
+      },
+    }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
+  }));
+  const model = createLegalAnswerModel({ requestId: "composed-limits" });
+  const write = () => model.write({ question, correction: null });
+  const initial = legalDraftSchema.parse(await write());
+  assert.equal(initial.actions[0]!.description, `${explanation}\n\n${instruction}`);
+  assert.deepEqual(initial.actions[0]!.sourceIds, ["rule", "procedure"]);
+  explanation = "x".repeat(2000 - 2 - instruction.length);
+  assert.equal(legalDraftSchema.parse(await write()).actions[0]!.description.length, 2000);
+  explanation += "x";
+  await assert.rejects(write(), "Composition must reject overflow without dropping legal text");
+  hasAction = false;
+  explanation = "x".repeat(4000);
+  assert.equal(legalDraftSchema.parse(await write()).findings[0]!.explanation.length, 4000);
+  hasAction = true;
+  explanation = "A supported rule.";
+  findingSources = Array.from({ length: 12 }, (_, index) => `source-${index}`);
+  instructionSources = ["additional-source"];
+  await assert.rejects(write(), "Citation union must not silently discard a thirteenth source");
+  findingSources = ["rule"];
+  instructionSources = ["procedure"];
+  reuseAction = true;
+  const verification = legalVerificationSchema.parse({
+    claims: [{ id: "action:0", supported: true, reason: "Supported earlier." }],
+    complete: false, gaps: [], coverage: [], retention: [], questions: [],
+  });
+  const reused = legalDraftSchema.parse(await model.write({ question, correction: { draft: initial, verification } }));
+  assert.deepEqual(reused.actions, initial.actions, "A changed finding must not prefix or otherwise edit an explicitly reused action");
+  verification.claims[0]!.supported = false;
+  await assert.rejects(model.write({ question, correction: { draft: initial, verification } }));
+  instruction = "Changed instruction";
+  await assert.rejects(write(), "Initial writing cannot reuse prior claims");
 });

@@ -30,6 +30,10 @@ const reviewedDraftSchema = z.object({
   }).strict(),
 }).strict();
 
+const practicalInstructionSchema = legalDraftSchema.shape.actions.element.omit({ description: true }).extend({
+  instruction: z.string().min(1).max(1997).describe("Concrete practical step following this issue's complete finding. The server prefixes the finding explanation verbatim and combines citations. The final explanation, two newline characters and instruction together must fit 2000 characters; never omit operative law to save space."),
+}).strict();
+
 function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correction"]) {
   const originals = new Map<string, object>();
   if (correction) {
@@ -51,7 +55,7 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
     mainPoint: reusable(legalDraftSchema.shape.mainPoint, "mainPoint"),
     issues: z.array(issue.extend({
       finding: reusable(issue.shape.finding, "finding"),
-      actions: z.array(reusable(issue.shape.actions.element, "action")).max(4),
+      actions: z.array(reusable(practicalInstructionSchema, "action")).max(4),
     })).max(16),
     risks: z.array(reusable(legalDraftSchema.shape.risks.element, "risk")).max(16),
   }) });
@@ -59,7 +63,14 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
     ? originals.get(value.reuse) : value;
   return { schema, materialize: (wire: z.infer<typeof schema>) => reviewedDraftSchema.parse({
     ...wire, answer: { ...wire.answer, mainPoint: resolve(wire.answer.mainPoint),
-      issues: wire.answer.issues.map(item => ({ finding: resolve(item.finding), actions: item.actions.map(resolve) })),
+      issues: wire.answer.issues.map(item => {
+        const finding = issue.shape.finding.parse(resolve(item.finding));
+        return { finding, actions: item.actions.map(action => "reuse" in action ? resolve(action) : ({
+          title: action.title,
+          description: `${finding.explanation}\n\n${action.instruction}`,
+          sourceIds: [...new Set([...finding.sourceIds, ...action.sourceIds])],
+        })) };
+      }),
       risks: wire.answer.risks.map(resolve),
     },
   }) };
@@ -120,7 +131,7 @@ Use the exact schema:
 - sourceReview: one entry per source, containing sourceId and coverage. For every passage with a rule material to this decision, coverage contains its original passageId, the zero-based issueIndices that explain AND apply its supported content, and unresolvedIndices pointing to answer.unresolved for material content that cannot be answered from the supplied evidence. Include later qualifications and cross-cutting rules, not just the first operative paragraph. An irrelevant source has empty coverage. Headings and background need no separate entry. Plan these bindings together with the answer. Each referenced issue must cite this source in its finding or an action. Several sources may jointly support an issue: complete legal explanation and usable guidance remain required, but their source lists need not be identical. A material but insufficient passage may have only unresolvedIndices; never invent an issue or action to satisfy a mapping. Bind the actual actor, forum, status and trigger: a rule for one forum cannot be counted as covered by an issue about another forum merely because the topics resemble each other. If an answerable selected rule has no matching issue, supply the missing issue instead of a nominal binding to an unrelated one. Do not invent IDs or add legal prose here. Unresolved descriptions still undergo independent verification and cannot hide answerable rules.
 - answer.issues: each issue has a finding AND its practical actions. Put materially distinct rules in separate issues when otherwise their conditions would be lost. The finding must explain the governing law completely; its actions must independently preserve the operative conditions and time triggers needed to use that rule. A legal rule stated only in an action is missing from the legal explanation; a deadline stated only in a finding is missing from the practical guidance. There may be at most16issues and16actions in total. These are bounds, not targets.
 - Each finding: explain the supported rule and its material qualifications in explanation. Use a clear title, not an article heading alone.
-- Each action: give a concrete, usable next step in description. State who acts, required conditions, clock and trigger in that action. For a continuing entitlement, identify its beneficiary, scope and supplied period. Do not replace available details with 'check the rule', 'observe the procedure', or 'retain the benefit'. Distinguish a practical recommendation from a mandatory legal step. Do not invent a filing, document or deadline.
+- Each new action: supply title, instruction and sourceIds. The server constructs its public description from this issue's complete finding explanation, two newline characters, then instruction; it combines finding and instruction citations. Write the operative rule once in the finding, including actor, scope, eligibility, exceptions, each duration and starting event. Write a concrete usable next step in instruction. Do not repeat the rule unnecessarily or contradict it. Distinguish a practical recommendation from a mandatory legal step. Do not invent a filing, document or deadline. The complete constructed description must fit 2000 characters. If several rules do not fit with useful instructions, organize them into distinct self-contained issues without losing qualifications. Explanatory findings without actions may use their full 4000-character allowance. Reused actions are copied exactly and receive no finding prefix.
 - answer.risks: only actual relevant risks with supported legal consequences, level, title and explanation; otherwise empty.
 - answer.questions: focused missing facts that change the answer. Do not embed an unsupported legal premise or ask instead of giving a supported conditional answer.
 - answer.unresolved: only genuinely missing applicable legal evidence required for the user's decision. Unknown facts belong in questions. An unrequested procedure or excluded ground is not a missing-law problem. Do not enumerate other possible legal routes as gaps merely because the supplied evidence does not describe them. A conditional answer can be complete within the requested decision without a disclaimer about every alternative transaction or procedure.
