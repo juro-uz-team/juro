@@ -4,7 +4,9 @@ import { actionStepSchema, legalFindingSchema, legalRiskSchema } from "../ai/leg
 export const legalDraftSchema = z.object({
   mainPoint: z.object({ text: z.string().min(1).max(1500), sourceIds: z.array(z.string().min(1).max(160)).max(12) }).strict(),
   findings: z.array(legalFindingSchema.omit({ requirementIds: true, answerRole: true })).max(16),
-  actions: z.array(actionStepSchema.omit({ requirementIds: true })).max(16),
+  actions: z.array(actionStepSchema.omit({ requirementIds: true }).extend({
+    description: actionStepSchema.shape.description.describe("Usable practical guidance with the actor, eligibility, exceptions and each applicable duration paired with its own starting event. A trigger alone is not a deadline; details in a finding do not supply missing action content."),
+  })).max(16),
   risks: z.array(legalRiskSchema).max(16),
   questions: z.array(z.string().min(1).max(500)).max(8),
   unresolved: z.array(z.string().min(1).max(1000)).max(40),
@@ -26,6 +28,12 @@ export const legalSourceGapsSchema = z.array(z.object({
 }).strict()).max(24);
 
 export const legalVerificationSchema = z.object({
+  claims: z.array(z.object({
+    id: z.string().min(1).max(80),
+    reason: z.string().min(1).max(1500).describe("Brief comparison of this claim with its cited rule: actor, eligibility, exclusions, each duration and its starting event. Identify essential qualifications supplied by other claims in its section; do not infer missing content from a citation or topic."),
+    dependsOn: z.array(z.string().min(1).max(80)).max(16).describe("IDs of other same-section claims supplying essential qualifications. Required even when those claims are all supported. Empty only if this claim remains correctly qualified without them.").default([]),
+    supported: z.boolean(),
+  }).strict()).max(97),
   sourceGaps: legalSourceGapsSchema.default([]),
   retention: z.array(z.object({priorId:z.string().min(1).max(80),priorSupported:z.boolean(),currentIds:z.array(z.string().min(1).max(80)).max(16)}).strict()).max(97),
   coverage: z.array(z.object({
@@ -34,12 +42,6 @@ export const legalVerificationSchema = z.object({
     actionIds: z.array(z.string().min(1).max(80)).max(16),
     gaps: z.array(z.string().min(1).max(1000)).max(16),
   }).strict()).max(24),
-  claims: z.array(z.object({
-    id: z.string().min(1).max(80),
-    reason: z.string().min(1).max(1500).describe("Brief source-backed support assessment, including whether essential qualifications are in this claim or supplied by other claims in its section."),
-    dependsOn: z.array(z.string().min(1).max(80)).max(16).describe("IDs of other same-section claims supplying essential qualifications. Required even when those claims are all supported. Empty only if this claim remains correctly qualified without them.").default([]),
-    supported: z.boolean(),
-  }).strict()).max(97),
   complete: z.boolean(), gaps: z.array(z.string().min(1).max(1000)).max(40),
   questions: z.array(z.string().min(1).max(500)).max(8),
 }).strict();
