@@ -17,7 +17,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     payloads.push(body);
     return Response.json({ id: "response", model: body.model,
       output: [{ content: [{ type: "output_text", text: JSON.stringify({
-        sourceReview: [{ sourceId: "source", passageIds: ["p0"] }],
+        sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [0], unresolvedIndices: [] }] }],
         answer: {
         mainPoint: { text: "Supported result", sourceIds: ["source"] },
         issues: [{finding:{title:"Application",explanation:"A written application is required.",sourceIds:["source"]},
@@ -125,7 +125,7 @@ test("a fabricated source passage is rejected before a draft can reach verificat
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{sourceId:"source", passageIds:["p999"]}],
+      sourceReview: [{sourceId:"source", coverage:[{passageId:"p999",issueIndices:[0],unresolvedIndices:[]}]}],
       answer: {mainPoint:{text:"Pay the penalty",sourceIds:["source"]}, issues:[],risks:[],questions:[],unresolved:[]},
     }) }] }], usage: {input_tokens:10,output_tokens:10},
   }));
@@ -200,12 +200,14 @@ test("one whole correction can reuse approved claims without rewriting their con
     complete: false, gaps: ["Practical guidance is missing."], questions: [],
   });
   let findingReuse = "finding:0";
+  let actionSource = "source";
+  let issueIndex = 0;
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{ sourceId: "source", passageIds: ["p0"] }],
+      sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [issueIndex], unresolvedIndices: [] }] }],
       answer: { mainPoint: { reuse: "mainPoint" },
         issues: [{ finding: { reuse: findingReuse }, actions: [{ title: "Request review",
-          description: "Record the written-notice date and request review within ten days after it.", sourceIds: ["source"] }] }],
+          description: "Record the written-notice date and request review within ten days after it.", sourceIds: [actionSource] }] }],
         risks: [], questions: [], unresolved: [],
       },
     }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
@@ -216,6 +218,12 @@ test("one whole correction can reuse approved claims without rewriting their con
   assert.deepEqual(corrected.findings, draft.findings);
   assert.match(corrected.actions[0]!.description, /within ten days after it/);
   assert.ok(!("reuse" in corrected.findings[0]!));
+  actionSource = "unrelated-source";
+  await assert.rejects(model.write({ question, correction: { draft, verification } }), /paired legal and practical coverage/);
+  actionSource = "source";
+  issueIndex = 1;
+  await assert.rejects(model.write({ question, correction: { draft, verification } }), /paired legal and practical coverage/);
+  issueIndex = 0;
   findingReuse = "mainPoint";
   await assert.rejects(model.write({ question, correction: { draft, verification } }));
   findingReuse = "finding:0";
@@ -225,4 +233,33 @@ test("one whole correction can reuse approved claims without rewriting their con
   verification.claims.find(claim => claim.id === "finding:0")!.supported = false;
   await assert.rejects(model.write({ question, correction: { draft, verification } }));
   await assert.rejects(model.write({ question, correction: null }));
+});
+
+test("a material passage can remain explicitly unresolved without inventing paired guidance", async context => {
+  const previousKey = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-key";
+  context.after(() => { env.OPENAI_API_KEY = previousKey; });
+  const question: AnswerQuestion = {
+    question: "Am I eligible?", locale: "en", mode: "fast", answerMode: "detailed",
+    temporalScope: { kind: "current" }, unresolved: [], evidence: [{
+      source: { id: "source", actTitle: "Official fixture", actIdentifier: null,
+        officialUrl: "https://lex.uz/docs/123", revisionDate: null, lastCheckedAt: "2026-09-19",
+        locale: "en", publishedAt: null, sourceType: "lex", status: "current",
+        verificationState: "verified", verifiedAt: "2026-09-19", contentSha256: "parent" },
+      text: "Eligibility is subject to the exceptions in a separate provision.", textSha256: "text",
+      endpoint: { kind: "current" }, origin: "indexed",
+    }],
+  };
+  const gap = "The referenced exceptions are not supplied, so eligibility remains unresolved.";
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
+      sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [], unresolvedIndices: [0] }] }],
+      answer: { mainPoint: { text: "There is insufficient evidence for an eligibility conclusion.", sourceIds: [] },
+        issues: [], risks: [], questions: [], unresolved: [gap] },
+    }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
+  }));
+  const draft = legalDraftSchema.parse(await createLegalAnswerModel({ requestId: "unresolved-passage" }).write({ question, correction: null }));
+  assert.deepEqual(draft.findings, []);
+  assert.deepEqual(draft.actions, []);
+  assert.deepEqual(draft.unresolved, [gap]);
 });
