@@ -46,7 +46,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   assert.equal(observations.length, 2);
   for (const body of payloads) {
     assert.equal(body.text.format.strict, true);
-    assert.equal(body.reasoning.effort,"high");
+    assert.equal(body.reasoning.effort,"max");
     assert.equal(body.reasoning.mode,"pro");
     assert.ok(!body.input.includes("fingerprint"));
     assert.ok(!body.input.includes("https://lex.uz"));
@@ -219,10 +219,14 @@ test("one whole correction can reuse approved claims without rewriting their con
   assert.match(corrected.actions[0]!.description, /within ten days after it/);
   assert.ok(!("reuse" in corrected.findings[0]!));
   actionSource = "unrelated-source";
-  await assert.rejects(model.write({ question, correction: { draft, verification } }), /paired legal and practical coverage/);
+  // Source support can be complementary: the finding still cites this source.
+  await model.write({ question, correction: { draft, verification } });
+  draft.findings[0]!.sourceIds = ["unrelated-source"];
+  await assert.rejects(model.write({ question, correction: { draft, verification } }), /source attribution/);
+  draft.findings[0]!.sourceIds = ["source"];
   actionSource = "source";
   issueIndex = 1;
-  await assert.rejects(model.write({ question, correction: { draft, verification } }), /paired legal and practical coverage/);
+  await assert.rejects(model.write({ question, correction: { draft, verification } }), /source attribution/);
   issueIndex = 0;
   findingReuse = "mainPoint";
   await assert.rejects(model.write({ question, correction: { draft, verification } }));
