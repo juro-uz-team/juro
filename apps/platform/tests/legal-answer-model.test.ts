@@ -71,12 +71,17 @@ test("maximum evidence audit fits provider schema limits without losing passages
   }));
   const question:AnswerQuestion={question:"What applies?",locale:"en",mode:"fast",answerMode:"detailed",
     temporalScope:{kind:"current"},unresolved:[],evidence};
-  let propertyCount=0; let schemaStrings=0; let nesting=0;
+  let propertyCount=0; let schemaStrings=0; let nesting=0; let explicitPracticalRelevance=false;
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     const schema=body.text.format.schema;
     function inspect(value:unknown) {
       if(!value||typeof value!=="object")return;
+      if ("properties" in value && value.properties && typeof value.properties === "object"
+        && "actionRequired" in value.properties) {
+        assert.ok("required" in value && Array.isArray(value.required) && value.required.includes("actionRequired"));
+        explicitPracticalRelevance=true;
+      }
       for(const [key,nested] of Object.entries(value)) {
         if((key==="properties"||key==="$defs")&&nested&&typeof nested==="object") {
           const names=Object.keys(nested);
@@ -113,6 +118,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
   const draft=legalDraftSchema.parse({mainPoint:{text:"No conclusion",sourceIds:[]},findings:[],actions:[],risks:[],questions:[],unresolved:[]});
   await model.verify({question,draft,claims:[],previous:null});
   assert.equal(auditedPassages,24*160);
+  assert.equal(explicitPracticalRelevance,true);
   assert.ok(propertyCount<=5000,`Provider schema contains ${propertyCount} object properties`);
   assert.ok(schemaStrings<=120000,`Provider schema contains ${schemaStrings} name/value characters`);
   assert.ok(nesting<=10,`Provider schema contains ${nesting} nesting levels`);
@@ -189,16 +195,19 @@ test("a material passage needs separately supported legal and practical coverage
       source:{id:"source",actTitle:"Official fixture",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
         revisionDate:null,lastCheckedAt:"2026-09-19",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
         verificationState:"verified",verifiedAt:"2026-09-19",contentSha256:"parent"},
-      text:"Review may be requested within ten days after written notice.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed",
+      text:"Review may be requested within ten days after written notice.\nReview means reconsideration of the decision.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed",
     }]};
   const draft=legalDraftSchema.parse({mainPoint:{text:"You may request review.",sourceIds:["source"]},
-    findings:[{title:"Review",explanation:"Review is available within ten days after written notice.",sourceIds:["source"]}],
+    findings:[{title:"Review",explanation:"Review means reconsideration of the decision and is available within ten days after written notice.",sourceIds:["source"]}],
     actions:[{title:"Request review",description:"Request review within ten days after written notice.",sourceIds:["source"]}],
     risks:[],questions:[],unresolved:[]});
-  let findingIds=["finding:0"];let actionIds:string[]=[];let actionSupported=true;
+  let findingIds=["finding:0"];let actionIds:string[]=[];let actionSupported=true;let definitionActionRequired=false;
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
     output:[{content:[{type:"output_text",text:JSON.stringify({
-      sourceAudit:{source:{p0:{material:true,findingIds,actionIds,missingContent:[]}}},
+      sourceAudit:{source:{
+        p0:{material:true,actionRequired:true,findingIds,actionIds,missingContent:[]},
+        p1:{material:true,actionRequired:definitionActionRequired,findingIds:["finding:0"],actionIds:[],missingContent:[]},
+      }},
       verification:{retention:[],coverage:[],claims:legalDraftClaims(draft).map(claim=>({
         id:claim.id,supported:claim.id!=="action:0"||actionSupported,reason:"Fixture verdict",
       })),complete:true,gaps:[],questions:[]},
@@ -210,6 +219,9 @@ test("a material passage needs separately supported legal and practical coverage
   assert.match(missingAction.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/practical/i);
   actionIds=["action:0"];
   assert.equal((await verify()).complete,true);
+  definitionActionRequired=true;
+  assert.equal((await verify()).complete,false);
+  definitionActionRequired=false;
   actionSupported=false;
   assert.equal((await verify()).complete,false);
   actionSupported=true;findingIds=[];
