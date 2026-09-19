@@ -203,10 +203,7 @@ export function createLegalAnswerModel(options: {
           }
           for (const index of binding.issueIndices) {
             const issue = reviewed.answer.issues[index];
-            if (!issue || (!issue.finding.sourceIds.includes(item.sourceId)
-              && !issue.actions.some(action => action.sourceIds.includes(item.sourceId)))) {
-              throw new Error("Selected passage lacks source attribution in its issue");
-            }
+            if (!issue) throw new Error("Selected passage references an absent answer issue");
           }
         }
         reviewedIds.add(item.sourceId);

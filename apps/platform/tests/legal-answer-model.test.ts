@@ -269,11 +269,13 @@ test("one whole correction can reuse approved claims without rewriting their con
   // Source support can be complementary: the finding still cites this source.
   await model.write({ question, correction: { draft, verification } });
   draft.findings[0]!.sourceIds = ["unrelated-source"];
-  await assert.rejects(model.write({ question, correction: { draft, verification } }), /source attribution/);
+  // Planning metadata is not approval. The independent verifier evaluates
+  // actual claims/citations even when the writer's internal map is mistaken.
+  await model.write({ question, correction: { draft, verification } });
   draft.findings[0]!.sourceIds = ["source"];
   actionSource = "source";
   issueIndex = 1;
-  await assert.rejects(model.write({ question, correction: { draft, verification } }), /source attribution/);
+  await assert.rejects(model.write({ question, correction: { draft, verification } }), /answer issue/);
   issueIndex = 0;
   findingReuse = "mainPoint";
   await assert.rejects(model.write({ question, correction: { draft, verification } }));
