@@ -65,6 +65,23 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
   }) };
 }
 
+function containsClaimExcerpt(body: string | undefined, quotation: string) {
+  // A quoted phrase may end a sentence where the original continues. Only its
+  // terminal punctuation may differ; words, numbers and internal marks stay exact.
+  const excerpt = quotation.trim().replace(/[.;,:!?]+$/u, "");
+  if (!body || !excerpt) return false;
+  for (let index = body.indexOf(excerpt); index >= 0; index = body.indexOf(excerpt, index + 1)) {
+    const before = body.slice(0, index);
+    const after = body.slice(index + excerpt.length);
+    if (/^[\p{L}\p{N}]/u.test(excerpt) && /[\p{L}\p{N}]$/u.test(before)) continue;
+    if (/[\p{L}\p{N}]$/u.test(excerpt) && /^[\p{L}\p{N}]/u.test(after)) continue;
+    if (/^\p{N}/u.test(excerpt) && /\p{N}[.,/:\-–—\s]+$/u.test(before)) continue;
+    if (/\p{N}$/u.test(excerpt) && /^[.,/:\-–—\s]+\p{N}/u.test(after)) continue;
+    return true;
+  }
+  return false;
+}
+
 const passageClaimSupportSchema = z.object({
   claimId: z.string().min(1).max(80),
   excerpt: z.string().min(1).max(4000).describe("Exact words from this claim's explanation or action description that supply the passage's operative content. Include the applicable conditions, duration and starting event. Do not quote a title, another section, or the source itself."),
@@ -264,7 +281,7 @@ export function createLegalAnswerModel(options: {
             if (passage.material && (kind === "finding" || passage.actionRequired) && (!support.length || support.some(binding => {
               const verdicts = audited.verification.claims.filter(claim => claim.id === binding.claimId);
               return verdicts.length !== 1 || !verdicts[0]!.supported
-                || !binding.excerpt.trim() || !claimBodies.get(binding.claimId)?.includes(binding.excerpt);
+                || !containsClaimExcerpt(claimBodies.get(binding.claimId), binding.excerpt);
             }))) missingSections.push(`This material passage lacks independently supported ${label}; identify and supply its missing operative content in that section.`);
           }
           passage.missingContent.push(...missingSections);

@@ -221,6 +221,17 @@ test("a material passage needs separately supported legal and practical coverage
   actionIds=["action:0"];
   assert.equal((await verify()).complete,true);
   const originalAction=draft.actions[0]!.description;
+  actionExcerpt=originalAction.replace(/\.$/u,";");
+  assert.equal((await verify()).complete,true, "Terminal quotation punctuation does not change the quoted operative words");
+  actionExcerpt="12.";
+  for (const period of ["120", "12.5", "12/25", "12:30", "12–15", "12 000"]) {
+    draft.actions[0]!.description=`Request review within ${period} days after written notice.`;
+    assert.equal((await verify()).complete,false, "Removing terminal punctuation cannot match part of a number");
+  }
+  draft.actions[0]!.description=originalAction;
+  actionExcerpt="view.";
+  assert.equal((await verify()).complete,false, "Removing terminal punctuation cannot match part of a word");
+  actionExcerpt=originalAction;
   draft.actions[0]!.description="Request review after written notice.";
   const fabricatedSupport=await verify();
   assert.equal(fabricatedSupport.complete,false);
