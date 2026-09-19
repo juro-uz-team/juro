@@ -36,6 +36,7 @@ export const legalVerificationSchema = z.object({
   }).strict()).max(24),
   claims: z.array(z.object({
     id: z.string().min(1).max(80), supported: z.boolean(), reason: z.string().min(1).max(1500),
+    dependsOn: z.array(z.string().min(1).max(80)).max(16).default([]),
   }).strict()).max(97),
   complete: z.boolean(), gaps: z.array(z.string().min(1).max(1000)).max(40),
   questions: z.array(z.string().min(1).max(500)).max(8),

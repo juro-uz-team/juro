@@ -29,6 +29,51 @@ const approval = {
   complete: true, gaps: [], questions: [],
 };
 
+test("same-section qualifications survive together and are withheld together when support is lost", async () => {
+  const qualified = {...draft, findings: [...draft.findings,
+    {title:"General rule", explanation:"The filing period applies subject to the following exception.",sourceIds:["official-fixture"]},
+    {title:"Exception", explanation:"The exception limits the preceding rule.",sourceIds:["official-fixture"]}],
+  };
+  for (const failure of ["none", "rejected", "citation", "unknown", "cross-section", "self"] as const) {
+    const candidate = failure === "citation" ? {...qualified, findings:qualified.findings.map((item,index)=>index===2?{...item,sourceIds:["invented"]}:item)} : qualified;
+    const dependency = failure === "unknown" ? "finding:9" : failure === "cross-section" ? "action:0" : failure === "self" ? "finding:1" : "finding:2";
+    const outcome = await answerFromEvidence(question, {
+      write:async({correction})=>{if(correction)throw new Error("Correction unavailable");return candidate;},
+      verify:async()=>({...approval,claims:[...approval.claims,
+        {id:"finding:1",supported:true,reason:"Qualified general rule.",dependsOn:[dependency]},
+        {id:"finding:2",supported:failure!=="rejected",reason:"Qualification reviewed.",dependsOn:[]}]}),
+    });
+    assert.equal(outcome.kind, failure === "none" ? "complete" : "partial", failure);
+    assert.equal(outcome.result.confirmedFindings.some(item=>item.title==="General rule"),failure==="none",failure);
+    assert.equal(outcome.result.confirmedFindings[0]?.title,"Filing period");
+  }
+});
+
+test("losing a qualification removes transitive conclusions, including after correction reassessment", async () => {
+  const initial = {...draft, findings:[...draft.findings,
+    ...["Dependent conclusion", "Intermediate qualification", "Essential exception"].map(title=>({
+      title,explanation:title,sourceIds:["official-fixture"],
+    }))]};
+  for (const reassessment of [false,true]) {
+    let checks=0;
+    const outcome=await answerFromEvidence(question,{
+      write:async({correction})=>{
+        if(correction && !reassessment)throw new Error("Correction unavailable");
+        return correction ? draft : initial;
+      },
+      verify:async()=>++checks===1 ? {...approval,complete:false,gaps:["Review remaining material issue."],
+        claims:[...approval.claims,
+          {id:"finding:1",supported:true,reason:"Depends on qualification.",dependsOn:["finding:2"]},
+          {id:"finding:2",supported:true,reason:"Depends on exception.",dependsOn:["finding:3"]},
+          {id:"finding:3",supported:reassessment,reason:"Exception reviewed.",dependsOn:[]}],
+      } : {...approval,retention:[{priorId:"finding:3",priorSupported:false,currentIds:[]}]},
+    });
+    assert.equal(outcome.kind,"partial");
+    assert.deepEqual(outcome.result.confirmedFindings.map(item=>item.title),["Filing period"]);
+    assert.equal(outcome.errorCode,reassessment?"ANSWER_CORRECTION_REGRESSED":"ANSWER_CORRECTION_UNAVAILABLE");
+  }
+});
+
 test("no official evidence yields a non-answer without invoking a writer or inventing law", async () => {
   const result = await answerFromEvidence({
     question: "Which deadline applies?", locale: "en", mode: "fast", answerMode: "detailed",

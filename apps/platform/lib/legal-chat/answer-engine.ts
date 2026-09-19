@@ -57,11 +57,25 @@ function emptyAnswer(input: AnswerQuestion): LegalChatResponse {
 function acceptedClaims(input: AnswerQuestion, draft: LegalDraft, verification: LegalVerification) {
   const evidenceIds = new Set(input.evidence.map(item => item.source.id));
   const claims = legalDraftClaims(draft);
-  return claims.filter(claim => {
+  const accepted = new Map(claims.filter(claim => {
     const verdicts = verification.claims.filter(item => item.id === claim.id);
     return verdicts.length === 1 && verdicts[0]!.supported && (claim.kind === "question" || claim.kind === "gap"
       || (claim.sourceIds.length > 0 && claim.sourceIds.every(id => evidenceIds.has(id))));
-  });
+  }).map(claim => [claim.id, claim]));
+  // Removing a qualification must also remove every conclusion that needs it,
+  // including when a later correction reassesses the original answer.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const claim of accepted.values()) {
+      const dependencies = verification.claims.find(item => item.id === claim.id)!.dependsOn;
+      const invalid = new Set(dependencies).size !== dependencies.length || dependencies.some(id =>
+        id === claim.id || !["finding", "action", "risk"].includes(claim.kind)
+        || accepted.get(id)?.kind !== claim.kind);
+      if (invalid) { accepted.delete(claim.id); changed = true; }
+    }
+  }
+  return [...accepted.values()];
 }
 
 function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verification: LegalVerification): AnswerOutcome {
