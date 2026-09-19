@@ -35,8 +35,10 @@ export const legalVerificationSchema = z.object({
     gaps: z.array(z.string().min(1).max(1000)).max(16),
   }).strict()).max(24),
   claims: z.array(z.object({
-    id: z.string().min(1).max(80), supported: z.boolean(), reason: z.string().min(1).max(1500),
-    dependsOn: z.array(z.string().min(1).max(80)).max(16).default([]),
+    id: z.string().min(1).max(80),
+    reason: z.string().min(1).max(1500).describe("Brief source-backed support assessment, including whether essential qualifications are in this claim or supplied by other claims in its section."),
+    dependsOn: z.array(z.string().min(1).max(80)).max(16).describe("IDs of other same-section claims supplying essential qualifications. Required even when those claims are all supported. Empty only if this claim remains correctly qualified without them.").default([]),
+    supported: z.boolean(),
   }).strict()).max(97),
   complete: z.boolean(), gaps: z.array(z.string().min(1).max(1000)).max(40),
   questions: z.array(z.string().min(1).max(500)).max(8),

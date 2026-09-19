@@ -77,6 +77,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
     const schema=body.text.format.schema;
     function inspect(value:unknown) {
       if(!value||typeof value!=="object")return;
+      if ("$ref" in value) assert.deepEqual(Object.keys(value), ["$ref"], "Provider references cannot have sibling keywords");
       if ("properties" in value && value.properties && typeof value.properties === "object"
         && "actionRequired" in value.properties) {
         assert.ok("required" in value && Array.isArray(value.required) && value.required.includes("actionRequired"));
