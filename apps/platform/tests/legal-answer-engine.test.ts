@@ -200,7 +200,50 @@ test("a supported correction can complete the answer while retaining its verifie
   let writes=0,checks=0;
   const outcome=await answerFromEvidence(question,{write:async()=>++writes===1?{...draft,actions:[]}:draft,
     verify:async()=>++checks===1?{...approval,complete:false,gaps:["The practical action is missing"],claims:approval.claims.slice(0,2)}:
-      {...approval,retention:[{priorId:"mainPoint",currentIds:["mainPoint"]},{priorId:"finding:0",currentIds:["finding:0"]}]}});
+      {...approval,retention:[{priorId:"mainPoint",priorSupported:true,currentIds:["mainPoint"]},{priorId:"finding:0",priorSupported:true,currentIds:["finding:0"]}]}});
   assert.equal(outcome.kind,"complete");
   assert.equal(outcome.result.actionPlan.length,1);
+});
+
+test("a later rejection of an original claim prevents restoring it after correction loses another issue", async () => {
+  const initial = { ...draft, actions: [{ ...draft.actions[0]!, description: "File within eleven days after delivery." }] };
+  let writes = 0;
+  let checks = 0;
+  const outcome = await answerFromEvidence(question, {
+    write: async () => ++writes === 1 ? initial : { ...draft, findings: [] },
+    verify: async () => ++checks === 1
+      ? { ...approval, complete: false, gaps: ["Another material issue needs correction."] }
+      : { ...approval, complete: false, gaps: ["The corrected draft lost the legal explanation."],
+          claims: approval.claims.filter(claim => claim.id !== "finding:0"),
+          retention: [
+            { priorId: "mainPoint", priorSupported: true, currentIds: ["mainPoint"] },
+            { priorId: "finding:0", priorSupported: true, currentIds: [] },
+            { priorId: "action:0", priorSupported: false, currentIds: [] },
+          ],
+        },
+  });
+  assert.equal(outcome.kind, "partial");
+  assert.equal(outcome.result.confirmedFindings.length, 1);
+  assert.deepEqual(outcome.result.actionPlan, []);
+  assert.doesNotMatch(JSON.stringify(outcome.result), /eleven/);
+});
+
+test("a supported correction can replace a claim the later verifier discovers was wrongly approved", async () => {
+  let writes = 0;
+  let checks = 0;
+  const outcome = await answerFromEvidence(question, {
+    write: async () => ++writes === 1
+      ? { ...draft, actions: [{ ...draft.actions[0]!, description: "File within eleven days after delivery." }] }
+      : draft,
+    verify: async () => ++checks === 1
+      ? { ...approval, complete: false, gaps: ["Check the practical deadline."] }
+      : { ...approval, retention: [
+          { priorId: "mainPoint", priorSupported: true, currentIds: ["mainPoint"] },
+          { priorId: "finding:0", priorSupported: true, currentIds: ["finding:0"] },
+          { priorId: "action:0", priorSupported: false, currentIds: [] },
+        ] },
+  });
+  assert.equal(outcome.kind, "complete");
+  assert.equal(outcome.result.actionPlan[0]?.description, draft.actions[0]!.description);
+  assert.doesNotMatch(JSON.stringify(outcome.result), /eleven/);
 });

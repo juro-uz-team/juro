@@ -172,14 +172,19 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     const checked = legalVerificationSchema.parse(await model.verify({ question: input, draft: corrected, claims: legalDraftClaims(corrected), previous: correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     const final = projectVerifiedAnswer(input, corrected, checked);
+    const rejectedPriorIds = new Set(checked.retention.filter(item => !item.priorSupported).map(item => item.priorId));
+    const recheckedFirst = projectVerifiedAnswer(input, draft, { ...verification,
+      claims: verification.claims.map(claim => rejectedPriorIds.has(claim.id)
+        ? { ...claim, supported: false, reason: "The later verification rejected this original claim." } : claim),
+    });
     const acceptedCorrection = new Map(acceptedClaims(input,corrected,checked).map(claim=>[claim.id,claim]));
     const retained = acceptedClaims(input,draft,verification).filter(claim=>claim.kind!=="question"&&claim.kind!=="gap").every(prior=>{
       const mappings=checked.retention.filter(item=>item.priorId===prior.id);
-      return mappings.length===1 && mappings[0]!.currentIds.length>0
-        && mappings[0]!.currentIds.every(id=>acceptedCorrection.get(id)?.kind===prior.kind);
+      return mappings.length===1 && (!mappings[0]!.priorSupported || (mappings[0]!.currentIds.length>0
+        && mappings[0]!.currentIds.every(id=>acceptedCorrection.get(id)?.kind===prior.kind)));
     });
-    if(!retained && first.kind==="partial") return {...first,errorCode:"ANSWER_CORRECTION_REGRESSED"};
-    return final.kind === "insufficient_evidence" && first.kind === "partial" ? first : final;
+    if(!retained && first.kind==="partial") return {...recheckedFirst,errorCode:"ANSWER_CORRECTION_REGRESSED"};
+    return final.kind === "insufficient_evidence" && recheckedFirst.kind === "partial" ? recheckedFirst : final;
   } catch {
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     if (first.kind !== "partial") return unavailableAnswer(input, "ANSWER_CORRECTION_UNAVAILABLE");
