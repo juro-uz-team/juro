@@ -3,7 +3,7 @@ import test from "node:test";
 import { env } from "cloudflare:workers";
 import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
 import type { AnswerQuestion } from "../lib/legal-chat/answer-engine";
-import { legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";
+import { legalDraftClaims, legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";
 
 test("legal model transport pins each mode and keeps source locators out of provider context", async context => {
   const previousKey = env.OPENAI_API_KEY;
@@ -100,7 +100,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
     }
     nesting=depth(schema);
     const sourceAudit=Object.fromEntries(evidence.map(item=>[item.source.id,Object.fromEntries(
-      Array.from({length:160},(_,index)=>[`p${index}`,{material:false,missingContent:[]}]),
+      Array.from({length:160},(_,index)=>[`p${index}`,{material:false,findingIds:[],actionIds:[],missingContent:[]}]),
     )]));
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify({
       sourceAudit,verification:{retention:[],coverage:[],claims:[],complete:true,gaps:[],questions:[]},
@@ -143,8 +143,8 @@ test("verification cannot discard a material omission found in its source audit"
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
-  let sourceAudit:Record<string,Record<string,{material:boolean;missingContent:string[]}>> = {
-    source:{p0:{material:true,missingContent:["The required written application is missing.",
+  let sourceAudit:Record<string,Record<string,{material:boolean;findingIds:string[];actionIds:string[];missingContent:string[]}>> = {
+    source:{p0:{material:true,findingIds:[],actionIds:[],missingContent:["The required written application is missing.",
       ...Array.from({length:10},(_,index)=>`Missing condition ${index}.`)]}},
   };
   context.mock.method(globalThis, "fetch", async () => Response.json({
@@ -164,15 +164,62 @@ test("verification cannot discard a material omission found in its source audit"
   const checked=legalVerificationSchema.parse(await createLegalAnswerModel({requestId:"audit-gap"}).verify({question,draft,claims:[],previous:null}));
   assert.equal(checked.complete,false);
   assert.equal(checked.gaps.length,30);
-  assert.equal(checked.sourceGaps[0]?.passages[0]?.missingContent.length,11);
+  assert.equal(checked.sourceGaps[0]?.passages[0]?.missingContent.length,13);
   assert.ok(checked.sourceGaps[0]?.passages[0]?.missingContent.some(gap=>gap.includes("written application")));
+  assert.ok(checked.sourceGaps[0]?.passages[0]?.missingContent.some(gap=>gap.includes("practical guidance")));
+  assert.ok(checked.sourceGaps[0]?.passages[0]?.missingContent.some(gap=>gap.includes("legal explanation")));
   const invalidAudits:Array<typeof sourceAudit> = [
-    {source:{}},{},{source:{p0:{material:false,missingContent:[]},p999:{material:false,missingContent:[]}}},
+    {source:{}},{},{source:{
+      p0:{material:false,findingIds:[],actionIds:[],missingContent:[]},
+      p999:{material:false,findingIds:[],actionIds:[],missingContent:[]},
+    }},
   ];
   for (const invalidAudit of invalidAudits) {
     sourceAudit=invalidAudit;
     await assert.rejects(createLegalAnswerModel({requestId:"incomplete-audit"}).verify({question,draft,claims:[],previous:null}));
   }
+});
+
+test("a material passage needs separately supported legal and practical coverage", async context => {
+  const previousKey=env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=previousKey;});
+  const question:AnswerQuestion={question:"When should I request review?",locale:"en",mode:"fast",answerMode:"detailed",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[{
+      source:{id:"source",actTitle:"Official fixture",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
+        revisionDate:null,lastCheckedAt:"2026-09-19",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
+        verificationState:"verified",verifiedAt:"2026-09-19",contentSha256:"parent"},
+      text:"Review may be requested within ten days after written notice.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed",
+    }]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:"You may request review.",sourceIds:["source"]},
+    findings:[{title:"Review",explanation:"Review is available within ten days after written notice.",sourceIds:["source"]}],
+    actions:[{title:"Request review",description:"Request review within ten days after written notice.",sourceIds:["source"]}],
+    risks:[],questions:[],unresolved:[]});
+  let findingIds=["finding:0"];let actionIds:string[]=[];let actionSupported=true;
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
+    output:[{content:[{type:"output_text",text:JSON.stringify({
+      sourceAudit:{source:{p0:{material:true,findingIds,actionIds,missingContent:[]}}},
+      verification:{retention:[],coverage:[],claims:legalDraftClaims(draft).map(claim=>({
+        id:claim.id,supported:claim.id!=="action:0"||actionSupported,reason:"Fixture verdict",
+      })),complete:true,gaps:[],questions:[]},
+    })}]}],usage:{input_tokens:10,output_tokens:10}}));
+  const model=createLegalAnswerModel({requestId:"passage-coverage"});
+  const verify=async()=>legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  const missingAction=await verify();
+  assert.equal(missingAction.complete,false);
+  assert.match(missingAction.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/practical/i);
+  actionIds=["action:0"];
+  assert.equal((await verify()).complete,true);
+  actionSupported=false;
+  assert.equal((await verify()).complete,false);
+  actionSupported=true;findingIds=[];
+  const missingFinding=await verify();
+  assert.equal(missingFinding.complete,false);
+  assert.match(missingFinding.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/legal explanation/i);
+  findingIds=["action:0"];
+  await assert.rejects(verify(),/audit.*claim/i);
+  findingIds=["finding:99"];
+  await assert.rejects(verify(),/audit.*claim/i);
 });
 
 test("one whole correction can reuse approved claims without rewriting their conditions", async context => {

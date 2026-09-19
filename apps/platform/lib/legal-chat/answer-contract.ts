@@ -20,7 +20,8 @@ export const legalSourceGapsSchema = z.array(z.object({
   sourceId: z.string().min(1).max(160),
   passages: z.array(z.object({
     id: z.string().min(1).max(80),
-    missingContent: z.array(z.string().min(1).max(1000)).max(12),
+    // Twelve semantic omissions plus the two independently checked sections.
+    missingContent: z.array(z.string().min(1).max(1000)).max(14),
   }).strict()).max(MAX_LEGAL_SOURCE_PASSAGES),
 }).strict()).max(24);
 

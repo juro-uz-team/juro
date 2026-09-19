@@ -65,13 +65,19 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
   }) };
 }
 
+const passageVerdictSchema = z.object({
+  material: z.boolean(),
+  findingIds: z.array(z.string().min(1).max(80)).max(16),
+  actionIds: z.array(z.string().min(1).max(80)).max(16),
+  missingContent: z.array(z.string().min(1).max(1000)).max(12),
+}).strict();
+
 const auditedVerificationSchema = z.object({
   sourceAudit: z.array(z.object({
     sourceId: z.string().min(1).max(160),
-    passages: z.array(z.object({
-      id: z.string().min(1).max(80), material: z.boolean(),
-      missingContent: z.array(z.string().min(1).max(1000)).max(12),
-    }).strict()).max(MAX_LEGAL_SOURCE_PASSAGES),
+    passages: z.array(passageVerdictSchema.extend({
+      id: z.string().min(1).max(80),
+    })).max(MAX_LEGAL_SOURCE_PASSAGES),
   }).strict()).max(24),
   verification: legalVerificationSchema.omit({sourceGaps:true}),
 }).strict();
@@ -107,7 +113,7 @@ Determine scope from the question and actual facts before auditing. A rule is ma
 
 Return sourceAudit and verification in the required schema.
 
-sourceAudit: inspect every supplied source and passage using its required key. Mark material false with empty missingContent when no rule in the passage meets the scope above. For a material passage, compare its RELEVANT rules against the public legal findings and practical actions. Record precise missingContent when an omitted or misstated actor, condition, exception, continuing right, consequence, clock or trigger would change the answer's legal meaning or make its practical guidance incomplete for this question. Read later qualifying paragraphs and supplied cross-references. Do not mark missing content for unrelated sentences sharing that passage, general background already implicit in a correctly qualified rule, optional adjacent topics, or an unrequested workflow. The audit must neither overlook operative qualifications nor invent extra requirements. The server forwards each material omission as sourceGaps; do not duplicate it in generic gaps.
+sourceAudit: inspect every supplied source and passage using its required key. Mark material false with empty findingIds, actionIds and missingContent when no rule in the passage meets the scope above. For a material passage, separately identify the actual findingIds that explain its relevant rules and actionIds that apply them. Each list must identify independently supported claims of that section; a main point, question, risk or claim from the other section cannot substitute. Read the identified claim text: a topical reference or a citation does not establish that its actors, operative conditions, periods and triggers are present. If a section omits material content, leave its list empty or list only the claims that provide partial coverage, and explain the precise deficit in missingContent. Never borrow content from another section to approve coverage. Record precise missingContent when an omitted or misstated actor, condition, exception, continuing right, consequence, clock or trigger would change the answer's legal meaning or make its practical guidance incomplete for this question. Read later qualifying paragraphs and supplied cross-references. Do not mark missing content for unrelated sentences sharing that passage, general background already implicit in a correctly qualified rule, optional adjacent topics, or an unrequested workflow. The audit must neither overlook operative qualifications nor invent extra requirements. The server forwards each material omission as sourceGaps; do not duplicate it in generic gaps.
 
 verification.claims: return exactly one verdict for EVERY supplied claim ID. supported is true only if its legal substance is entailed by the actual cited evidence, IDs exist, and its actors, conditions, exceptions, legal numbers, triggers and temporal scope are correct. Reconcile independent protections rather than allowing one permission to override another prohibition. Reject an unsupported assertion even if the rest of that claim is correct. Practical suggestions may be reasonable applications of the cited rule when clearly recommendations; do not demand a statute that literally recites every sensible recommendation. A mandatory step or purported legal obligation needs official support. Assess semantic equivalence, not a requirement to repeat a particular phrase.
 
@@ -129,8 +135,7 @@ function sourcePassages(text: string) {
 }
 
 function verificationResponseSchema(question: AnswerQuestion) {
-  const verdict = z.object({material:z.boolean(),
-    missingContent:z.array(z.string().min(1).max(1000)).max(12)}).strict();
+  const verdict = passageVerdictSchema;
   return z.object({
     sourceAudit:z.object(Object.fromEntries(question.evidence.map(item => [item.source.id,
       z.object(Object.fromEntries(sourcePassages(item.text).map(passage => [passage.id,verdict]))).strict(),
@@ -235,7 +240,23 @@ export function createLegalAnswerModel(options: {
         const expected = new Set(sourcePassages(evidence.text).map(passage => passage.id));
         for (const passage of source.passages) {
           if (!expected.delete(passage.id)) throw new Error("Invalid audited passage");
-          if (!passage.material && passage.missingContent.length) throw new Error("Inconsistent source audit");
+          if (!passage.material && (passage.missingContent.length || passage.findingIds.length || passage.actionIds.length)) {
+            throw new Error("Inconsistent source audit");
+          }
+          const missingSections: string[] = [];
+          for (const [kind, ids, label] of [
+            ["finding", passage.findingIds, "legal explanation"],
+            ["action", passage.actionIds, "practical guidance"],
+          ] as const) {
+            if (new Set(ids).size !== ids.length || ids.some(id => !claims.some(claim => claim.id === id && claim.kind === kind))) {
+              throw new Error("Invalid audited claim binding");
+            }
+            if (passage.material && (!ids.length || ids.some(id => {
+              const verdicts = audited.verification.claims.filter(claim => claim.id === id);
+              return verdicts.length !== 1 || !verdicts[0]!.supported;
+            }))) missingSections.push(`This material passage lacks independently supported ${label}; identify and supply its missing operative content in that section.`);
+          }
+          passage.missingContent.push(...missingSections);
         }
         if (expected.size) throw new Error("Incomplete passage audit");
         const passages = source.passages.filter(passage => passage.material && passage.missingContent.length)
