@@ -106,7 +106,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
     }
     nesting=depth(schema);
     const sourceAudit=Object.fromEntries(evidence.map(item=>[item.source.id,Object.fromEntries(
-      Array.from({length:160},(_,index)=>[`p${index}`,{material:false,findingIds:[],actionIds:[],missingContent:[]}]),
+      Array.from({length:160},(_,index)=>[`p${index}`,{material:false,findingSupport:[],actionSupport:[],missingContent:[]}]),
     )]));
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify({
       sourceAudit,verification:{retention:[],coverage:[],claims:[],complete:true,gaps:[],questions:[]},
@@ -150,8 +150,8 @@ test("verification cannot discard a material omission found in its source audit"
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
-  let sourceAudit:Record<string,Record<string,{material:boolean;findingIds:string[];actionIds:string[];missingContent:string[]}>> = {
-    source:{p0:{material:true,findingIds:[],actionIds:[],missingContent:["The required written application is missing.",
+  let sourceAudit:Record<string,Record<string,{material:boolean;findingSupport:Array<{claimId:string;excerpt:string}>;actionSupport:Array<{claimId:string;excerpt:string}>;missingContent:string[]}>> = {
+    source:{p0:{material:true,findingSupport:[],actionSupport:[],missingContent:["The required written application is missing.",
       ...Array.from({length:10},(_,index)=>`Missing condition ${index}.`)]}},
   };
   context.mock.method(globalThis, "fetch", async () => Response.json({
@@ -177,8 +177,8 @@ test("verification cannot discard a material omission found in its source audit"
   assert.ok(checked.sourceGaps[0]?.passages[0]?.missingContent.some(gap=>gap.includes("legal explanation")));
   const invalidAudits:Array<typeof sourceAudit> = [
     {source:{}},{},{source:{
-      p0:{material:false,findingIds:[],actionIds:[],missingContent:[]},
-      p999:{material:false,findingIds:[],actionIds:[],missingContent:[]},
+      p0:{material:false,findingSupport:[],actionSupport:[],missingContent:[]},
+      p999:{material:false,findingSupport:[],actionSupport:[],missingContent:[]},
     }},
   ];
   for (const invalidAudit of invalidAudits) {
@@ -200,14 +200,14 @@ test("a material passage needs separately supported legal and practical coverage
     }]};
   const draft=legalDraftSchema.parse({mainPoint:{text:"You may request review.",sourceIds:["source"]},
     findings:[{title:"Review",explanation:"Review means reconsideration of the decision and is available within ten days after written notice.",sourceIds:["source"]}],
-    actions:[{title:"Request review",description:"Request review within ten days after written notice.",sourceIds:["source"]}],
+    actions:[{title:"Review request",description:"Request review within ten days after written notice.",sourceIds:["source"]}],
     risks:[],questions:[],unresolved:[]});
-  let findingIds=["finding:0"];let actionIds:string[]=[];let actionSupported=true;let definitionActionRequired=false;
+  let findingIds=["finding:0"];let actionIds:string[]=[];let actionExcerpt=draft.actions[0]!.description;let actionSupported=true;let definitionActionRequired=false;
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
     output:[{content:[{type:"output_text",text:JSON.stringify({
       sourceAudit:{source:{
-        p0:{material:true,actionRequired:true,findingIds,actionIds,missingContent:[]},
-        p1:{material:true,actionRequired:definitionActionRequired,findingIds:["finding:0"],actionIds:[],missingContent:[]},
+        p0:{material:true,actionRequired:true,findingSupport:findingIds.map(claimId=>({claimId,excerpt:draft.findings[0]!.explanation})),actionSupport:actionIds.map(claimId=>({claimId,excerpt:actionExcerpt})),missingContent:[]},
+        p1:{material:true,actionRequired:definitionActionRequired,findingSupport:[{claimId:"finding:0",excerpt:draft.findings[0]!.explanation}],actionSupport:[],missingContent:[]},
       }},
       verification:{retention:[],coverage:[],claims:legalDraftClaims(draft).map(claim=>({
         id:claim.id,supported:claim.id!=="action:0"||actionSupported,reason:"Fixture verdict",
@@ -219,6 +219,18 @@ test("a material passage needs separately supported legal and practical coverage
   assert.equal(missingAction.complete,false);
   assert.match(missingAction.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/practical/i);
   actionIds=["action:0"];
+  assert.equal((await verify()).complete,true);
+  const originalAction=draft.actions[0]!.description;
+  draft.actions[0]!.description="Request review after written notice.";
+  const fabricatedSupport=await verify();
+  assert.equal(fabricatedSupport.complete,false);
+  assert.match(fabricatedSupport.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/practical/i);
+  draft.actions[0]!.description=originalAction;
+  actionExcerpt=draft.findings[0]!.explanation;
+  assert.equal((await verify()).complete,false, "A finding cannot supply an action excerpt");
+  actionExcerpt=draft.actions[0]!.title;
+  assert.equal((await verify()).complete,false, "A title alone cannot supply practical support");
+  actionExcerpt=originalAction;
   assert.equal((await verify()).complete,true);
   definitionActionRequired=true;
   assert.equal((await verify()).complete,false);

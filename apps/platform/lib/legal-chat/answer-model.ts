@@ -2,7 +2,7 @@ import { z } from "zod";
 import { callOpenAiStructured, type AiProviderAttemptObservation, type AiStructuredProgress } from "../document-builder/ai/openai";
 import { openAiChatModel } from "../ai/provider-models";
 import { legalChatProviderTimeoutMs } from "../ai/legal-chat-timeout";
-import { legalDraftClaims, legalDraftSchema, legalVerificationSchema, MAX_LEGAL_SOURCE_PASSAGES, type LegalVerification } from "./answer-contract";
+import { legalClaimId, legalDraftClaims, legalDraftSchema, legalVerificationSchema, MAX_LEGAL_SOURCE_PASSAGES, type LegalVerification } from "./answer-contract";
 import type { AnswerModel, AnswerQuestion } from "./answer-engine";
 
 // Whole-answer writing and independent verification share a bounded quality
@@ -65,12 +65,17 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
   }) };
 }
 
+const passageClaimSupportSchema = z.object({
+  claimId: z.string().min(1).max(80),
+  excerpt: z.string().min(1).max(4000).describe("Exact words from this claim's explanation or action description that supply the passage's operative content. Include the applicable conditions, duration and starting event. Do not quote a title, another section, or the source itself."),
+}).strict();
+
 const passageVerdictSchema = z.object({
   material: z.boolean(),
   actionRequired: z.boolean().default(true),
   missingContent: z.array(z.string().min(1).max(1000)).max(12).describe("Material source content absent or incorrect in the actual findings or actions. Compare each duration and its starting event separately; a cited source or a trigger without its duration does not cover a deadline."),
-  findingIds: z.array(z.string().min(1).max(80)).max(16),
-  actionIds: z.array(z.string().min(1).max(80)).max(16),
+  findingSupport: z.array(passageClaimSupportSchema).max(16),
+  actionSupport: z.array(passageClaimSupportSchema).max(16),
 }).strict();
 
 const auditedVerificationSchema = z.object({
@@ -114,7 +119,7 @@ Determine scope from the question and actual facts before auditing. A rule is ma
 
 Return sourceAudit and verification in the required schema.
 
-sourceAudit: inspect every supplied source and passage using its required key. Mark material and actionRequired false with empty findingIds, actionIds and missingContent when no rule in the passage meets the scope above. For a material passage, identify the actual findingIds that explain its relevant rules. Independently set actionRequired according to practical relevance to the requested decision, not whether the provision uses an imperative. Set it true for deadlines and triggers, eligible actors, exceptions and other conditions qualifying a recommended action, continuing benefits and steps needed to preserve rights. Explanatory definitions or merely possible grounds can have actionRequired false when no corresponding practical requirement is activated by the question, facts or answer. Missing evidence, insufficient drafting, or another passage stating the primary rule cannot justify false. When true, identify actionIds that apply the relevant content; when false, no separate action binding is required. The answer still needs usable practical guidance for every material decision. Each list must identify independently supported claims of that section; a main point, question, risk or claim from the other section cannot substitute. Read the identified claim text: a topical reference or a citation does not establish that its actors, operative conditions, periods and triggers are present. If a section omits material content, leave its list empty or list only the claims that provide partial coverage, and explain the precise deficit in missingContent. Never borrow content from another section to approve coverage. Record precise missingContent when an omitted or misstated actor, condition, exception, continuing right, consequence, clock or trigger would change the answer's legal meaning or make its practical guidance incomplete for this question. Read later qualifying paragraphs and supplied cross-references. Do not mark missing content for unrelated sentences sharing that passage, general background already implicit in a correctly qualified rule, optional adjacent topics, or an unrequested workflow. The audit must neither overlook operative qualifications nor invent extra requirements. The server forwards each material omission as sourceGaps; do not duplicate it in generic gaps.
+sourceAudit: inspect every supplied source and passage using its required key. Mark material and actionRequired false with empty findingSupport, actionSupport and missingContent when no rule in the passage meets the scope above. For a material passage, identify findingSupport entries that explain its relevant rules. Each entry names its claimId and quotes an exact excerpt from that finding explanation; titles do not supply coverage. Independently set actionRequired according to practical relevance to the requested decision, not whether the provision uses an imperative. Set it true for deadlines and triggers, eligible actors, exceptions and other conditions qualifying a recommended action, continuing benefits and steps needed to preserve rights. Explanatory definitions or merely possible grounds can have actionRequired false when no corresponding practical requirement is activated by the question, facts or answer. Missing evidence, insufficient drafting, or another passage stating the primary rule cannot justify false. When true, identify actionSupport entries quoting exact words from the action descriptions that apply the relevant content; when false, no separate action binding is required. The answer still needs usable practical guidance for every material decision. Compare the quoted words with the source rule before approving coverage: a starting event without its duration is incomplete, and a different starting event changes the rule. Several entries may jointly supply connected qualifications, but the excerpts must actually contain them. Each list must identify independently supported claims of that section; a main point, question, risk or claim from the other section cannot substitute. Read the identified claim text: a topical reference or a citation does not establish that its actors, operative conditions, periods and triggers are present. If a section omits material content, leave its list empty or list only the claims that provide partial coverage, and explain the precise deficit in missingContent. Never borrow content from another section to approve coverage. Record precise missingContent when an omitted or misstated actor, condition, exception, continuing right, consequence, clock or trigger would change the answer's legal meaning or make its practical guidance incomplete for this question. Read later qualifying paragraphs and supplied cross-references. Do not mark missing content for unrelated sentences sharing that passage, general background already implicit in a correctly qualified rule, optional adjacent topics, or an unrequested workflow. The audit must neither overlook operative qualifications nor invent extra requirements. The server forwards each material omission as sourceGaps; do not duplicate it in generic gaps.
 
 verification.claims: return exactly one verdict for EVERY supplied claim ID. supported is true only if its legal substance is entailed by the actual cited evidence, IDs exist, and its actors, conditions, exceptions, legal numbers, triggers and temporal scope are correct. Before approving an operative claim, compare each entitlement, permission, prohibition and consequence with its cited provision: who qualifies, under which conditions, and with which exceptions? In reason, identify any material difference between the draft's scope and the source's scope, rather than just confirming their shared topic. Test whether the draft would also cover a person or event excluded by the source. Check every member of a list separately: a shared introductory noun does not erase different eligibility restrictions on its members. Preserve the scope of modifiers when translating; neither drop a restriction nor extend it to neighboring categories without source support. A practical recommendation may still contain a false legal premise or an overbroad promise of protection; its advisory wording does not make that premise supported. Reconcile independent protections rather than allowing one permission to override another prohibition. Reject an unsupported assertion even if the rest of that claim is correct. Practical suggestions may be reasonable applications of the cited rule when clearly recommendations; do not demand a statute that literally recites every sensible recommendation. A mandatory step or purported legal obligation needs official support. Assess semantic equivalence, not a requirement to repeat a particular phrase.
 
@@ -218,7 +223,11 @@ export function createLegalAnswerModel(options: {
         actions: issues.flatMap(issue => issue.actions),
       });
     },
-    verify: async ({ question, claims, previous }) => {
+    verify: async ({ question, draft, claims, previous }) => {
+      const claimBodies = new Map([
+        ...draft.findings.map((claim, index) => [legalClaimId("finding", index), claim.explanation] as const),
+        ...draft.actions.map((claim, index) => [legalClaimId("action", index), claim.description] as const),
+      ]);
       const response = await run(question, "verifying", verifierInstructions, {
         context: modelContext(question), claims,
         previousClaims: previous ? legalDraftClaims(previous.draft).filter(claim =>
@@ -240,20 +249,22 @@ export function createLegalAnswerModel(options: {
         const expected = new Set(sourcePassages(evidence.text).map(passage => passage.id));
         for (const passage of source.passages) {
           if (!expected.delete(passage.id)) throw new Error("Invalid audited passage");
-          if (!passage.material && (passage.missingContent.length || passage.findingIds.length || passage.actionIds.length)) {
+          if (!passage.material && (passage.missingContent.length || passage.findingSupport.length || passage.actionSupport.length)) {
             throw new Error("Inconsistent source audit");
           }
           const missingSections: string[] = [];
-          for (const [kind, ids, label] of [
-            ["finding", passage.findingIds, "legal explanation"],
-            ["action", passage.actionIds, "practical guidance"],
+          for (const [kind, support, label] of [
+            ["finding", passage.findingSupport, "legal explanation"],
+            ["action", passage.actionSupport, "practical guidance"],
           ] as const) {
+            const ids = support.map(binding => binding.claimId);
             if (new Set(ids).size !== ids.length || ids.some(id => !claims.some(claim => claim.id === id && claim.kind === kind))) {
               throw new Error("Invalid audited claim binding");
             }
-            if (passage.material && (kind === "finding" || passage.actionRequired) && (!ids.length || ids.some(id => {
-              const verdicts = audited.verification.claims.filter(claim => claim.id === id);
-              return verdicts.length !== 1 || !verdicts[0]!.supported;
+            if (passage.material && (kind === "finding" || passage.actionRequired) && (!support.length || support.some(binding => {
+              const verdicts = audited.verification.claims.filter(claim => claim.id === binding.claimId);
+              return verdicts.length !== 1 || !verdicts[0]!.supported
+                || !binding.excerpt.trim() || !claimBodies.get(binding.claimId)?.includes(binding.excerpt);
             }))) missingSections.push(`This material passage lacks independently supported ${label}; identify and supply its missing operative content in that section.`);
           }
           passage.missingContent.push(...missingSections);
