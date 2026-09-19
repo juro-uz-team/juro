@@ -117,14 +117,14 @@ test("assessment partitions complete short provisions and rejects oversized conn
   const long = short.map(item => ({...item, provisionText: "Complete paragraph. ".repeat(600)}));
   const batches = selectionAssessmentBatches(long, 8);
   assert.equal(batches.flat().length, 13);
-  assert.ok(batches.every(batch => batch.reduce((total, item) => total + item.provisionText.length, 0) <= 32_000));
+  assert.ok(batches.every(batch => batch.reduce((total, item) => total + item.provisionText.length, 0) <= 64_000));
   const source = selectionCandidate("oversized-source", ["requirement-one"], 0.8);
-  source.provisionText = "Complete verified material. ".repeat(2000);
+  source.provisionText = "Complete verified material. ".repeat(3000);
   assert.throws(() => selectionAssessmentBatches([source], 8), /INDEXED_EVIDENCE_CONTEXT_EXCEEDED/u);
   const pair = long.slice(0, 2).map((item, index) => ({...item,
     candidate: {...item.candidate, textRevisionId: "shared-revision"},
     citationLabel: `Example Act — Article ${700 + index}`,
-    provisionText: `See Article ${index === 0 ? 701 : 700} of this Act. ${"Operative condition. ".repeat(900)}`,
+    provisionText: `See Article ${index === 0 ? 701 : 700} of this Act. ${"Operative condition. ".repeat(1700)}`,
   }));
   assert.throws(() => selectionAssessmentBatches(pair, 8), /INDEXED_EVIDENCE_CONTEXT_EXCEEDED/u);
 });

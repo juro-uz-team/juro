@@ -135,6 +135,24 @@ test("an approving verifier cannot authorize an invented citation identity", asy
   assert.deepEqual(outcome.result.sources, []);
 });
 
+test("complete evidence up to the context limit reaches generation unchanged and larger inputs are refused", async () => {
+  for (const size of [48_000, 64_000, 64_001]) {
+    const text = provision.padEnd(size, " ");
+    const evidence = { ...question.evidence[0]!, text, textSha256: createHash("sha256").update(text).digest("hex") };
+    let writes = 0;
+    const outcome = await answerFromEvidence({ ...question, evidence: [evidence] }, {
+      write: async ({ question: received }) => {
+        writes++;
+        assert.equal(received.evidence[0]?.text, text);
+        return draft;
+      },
+      verify: async () => approval,
+    });
+    assert.equal(outcome.kind, size <= 64_000 ? "complete" : "unavailable");
+    assert.equal(writes, size <= 64_000 ? 1 : 0);
+  }
+});
+
 test("corrupted, private or temporally mismatched evidence cannot enter legal generation", async () => {
   const first = question.evidence[0]!;
   for (const evidence of [
