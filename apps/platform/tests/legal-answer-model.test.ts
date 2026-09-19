@@ -187,6 +187,56 @@ test("verification cannot discard a material omission found in its source audit"
   }
 });
 
+test("separate excerpts of one claim are all checked without rejecting a repeated claim reference", async context => {
+  const previousKey=env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=previousKey;});
+  const period="Request review within ten days after written notice.";
+  const qualification="A late request may be accepted for a justified reason.";
+  const body=`${period} ${qualification}`;
+  const question:AnswerQuestion={question:"When can I request review?",locale:"en",mode:"fast",answerMode:"detailed",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[{
+      source:{id:"source",actTitle:"Synthetic fixture",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
+        revisionDate:null,lastCheckedAt:"2026-09-19",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
+        verificationState:"verified",verifiedAt:"2026-09-19",contentSha256:"parent"},
+      text:body,textSha256:"fixture",endpoint:{kind:"current"},origin:"indexed",
+    }]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:body,sourceIds:["source"]},
+    findings:[{title:"Review",explanation:body,sourceIds:["source"]}],
+    actions:[{title:"Request review",description:body,sourceIds:["source"]}],risks:[],questions:[],unresolved:[]});
+  const findingSupport=[period,qualification].map(excerpt=>({claimId:"finding:0",excerpt}));
+  const actionSupport=[period,qualification].map(excerpt=>({claimId:"action:0",excerpt}));
+  let actionSupported=true;let duplicateActionVerdict=false;
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
+    output:[{content:[{type:"output_text",text:JSON.stringify({
+      sourceAudit:{source:{p0:{material:true,actionRequired:true,findingSupport,actionSupport,missingContent:[]}}},
+      verification:{retention:[],coverage:[],claims:[...legalDraftClaims(draft).map(claim=>({
+        id:claim.id,supported:claim.id!=="action:0"||actionSupported,reason:"Fixture verdict",
+      })),...(duplicateActionVerdict?[{id:"action:0",supported:true,reason:"Duplicate verdict"}]:[])],complete:true,gaps:[],questions:[]},
+    })}]}],usage:{input_tokens:10,output_tokens:10}}));
+  const model=createLegalAnswerModel({requestId:"multiple-excerpts"});
+  const verify=async()=>legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  assert.equal((await verify()).complete,true);
+  actionSupport[1]!.excerpt="Late requests are always accepted.";
+  assert.equal((await verify()).complete,false,"A valid first fragment cannot hide a fabricated second fragment");
+  actionSupport[1]!.excerpt=qualification;
+  for(const claimId of ["action:9","finding:0"]) {
+    actionSupport[1]!.claimId=claimId;
+    await assert.rejects(verify(),/Invalid audited claim binding/);
+  }
+  actionSupport[1]!.claimId="action:0";
+  actionSupported=false;
+  assert.equal((await verify()).complete,false,"Exact excerpts cannot approve an unsupported claim");
+  actionSupported=true;
+  duplicateActionVerdict=true;
+  assert.equal((await verify()).complete,false,"Repeated excerpts cannot legitimize duplicate verdicts");
+  duplicateActionVerdict=false;
+  findingSupport[1]!.excerpt="A late request must always be accepted.";
+  assert.equal((await verify()).complete,false,"Every finding fragment must also be grounded");
+  findingSupport[1]!.excerpt=qualification;
+  assert.equal((await verify()).complete,true);
+});
+
 test("a material passage needs separately supported legal and practical coverage", async context => {
   const previousKey=env.OPENAI_API_KEY;
   env.OPENAI_API_KEY="test-key";

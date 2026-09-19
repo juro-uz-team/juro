@@ -286,7 +286,7 @@ export function createLegalAnswerModel(options: {
             ["action", passage.actionSupport, "practical guidance"],
           ] as const) {
             const ids = support.map(binding => binding.claimId);
-            if (new Set(ids).size !== ids.length || ids.some(id => !claims.some(claim => claim.id === id && claim.kind === kind))) {
+            if (ids.some(id => !claims.some(claim => claim.id === id && claim.kind === kind))) {
               throw new Error("Invalid audited claim binding");
             }
             if (passage.material && (kind === "finding" || passage.actionRequired) && (!support.length || support.some(binding => {
