@@ -26,6 +26,41 @@ const reviewedDraftSchema = z.object({
   }).strict(),
 }).strict();
 
+function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correction"]) {
+  const originals = new Map<string, object>();
+  if (correction) {
+    originals.set("mainPoint", correction.draft.mainPoint);
+    for (const [kind, items] of [
+      ["finding", correction.draft.findings], ["action", correction.draft.actions], ["risk", correction.draft.risks],
+    ] as const) items.forEach((item, index) => originals.set(`${kind}:${index}`, item));
+    for (const id of originals.keys()) {
+      const verdicts = correction.verification.claims.filter(claim => claim.id === id);
+      if (verdicts.length !== 1 || !verdicts[0]!.supported) originals.delete(id);
+    }
+  }
+  function reusable<T extends object>(schema: z.ZodType<T>, kind: string): z.ZodType<T | { reuse: string }> {
+    const ids = [...originals.keys()].filter(id => id === kind || id.startsWith(`${kind}:`));
+    return ids.length ? z.union([schema, z.object({ reuse: z.enum(ids) }).strict()]) : schema;
+  }
+  const issue = reviewedDraftSchema.shape.answer.shape.issues.element;
+  const schema = reviewedDraftSchema.extend({ answer: reviewedDraftSchema.shape.answer.extend({
+    mainPoint: reusable(legalDraftSchema.shape.mainPoint, "mainPoint"),
+    issues: z.array(issue.extend({
+      finding: reusable(issue.shape.finding, "finding"),
+      actions: z.array(reusable(issue.shape.actions.element, "action")).max(4),
+    })).max(16),
+    risks: z.array(reusable(legalDraftSchema.shape.risks.element, "risk")).max(16),
+  }) });
+  const resolve = (value: object) => "reuse" in value && typeof value.reuse === "string"
+    ? originals.get(value.reuse) : value;
+  return { schema, materialize: (wire: z.infer<typeof schema>) => reviewedDraftSchema.parse({
+    ...wire, answer: { ...wire.answer, mainPoint: resolve(wire.answer.mainPoint),
+      issues: wire.answer.issues.map(item => ({ finding: resolve(item.finding), actions: item.actions.map(resolve) })),
+      risks: wire.answer.risks.map(resolve),
+    },
+  }) };
+}
+
 const auditedVerificationSchema = z.object({
   sourceAudit: z.array(z.object({
     sourceId: z.string().min(1).max(160),
@@ -60,7 +95,7 @@ Use the exact schema:
 
 Every main point, finding, action and risk must cite the actual supplied source IDs supporting all its legal content. Put IDs only in sourceIds, not in prose; citation metadata is attached by the server. No section can rely on another section to supply a condition essential to its own assertion. Short format compresses wording, not material law or usable next steps.
 
-If correction is supplied, revise the WHOLE answer once against the original evidence. Address every material omission and rejection in verification, including sourceGaps. Retain previously supported material and its conditions in the same kind of public section, especially practical deadlines and continuing rights. Do not move an action's operative details only into a finding. Recheck feedback against the question and sources: a rejected procedural assertion that is unnecessary for the requested decision can be removed instead of expanding an unrequested workflow. Previously approved legal claims must retain their supported content in the same kind of public section. Do not retain an irrelevant missing-law disclaimer merely because a verifier repeated it. Verification is feedback, never new evidence.`;
+If correction is supplied, revise the WHOLE answer once against the original evidence. Address every material omission and rejection in verification, including sourceGaps. Retain previously supported material and its conditions in the same kind of public section, especially practical deadlines and continuing rights. The correction schema allows {"reuse":"claim ID"} in place of an approved mainPoint, finding, action or risk. Prefer that reference for an unchanged approved claim; the server copies its original text and citations exactly. Include every retained claim in the complete answer, alongside all additions or replacements. To repair a claim's omission, supply its full revised content preserving existing supported details instead of a reuse reference. The complete assembled answer is independently verified, including reused claims. Do not move an action's operative details only into a finding. Recheck feedback against the question and sources: a rejected procedural assertion that is unnecessary for the requested decision can be removed instead of expanding an unrequested workflow. Previously approved legal claims must retain their supported content in the same kind of public section. Do not retain an irrelevant missing-law disclaimer merely because a verifier repeated it. Verification is feedback, never new evidence.`;
 const verifierInstructions = `${evidenceRules}
 Independently assess whether this whole answer is legally supported AND complete for the user's actual decision. Evaluate substance, not keyword repetition or the number of provisions cited. A correct but materially incomplete subset is not complete. Equally, a complete answer does not need to reproduce every rule in the evidence.
 
@@ -141,8 +176,9 @@ export function createLegalAnswerModel(options: {
   }
   return {
     write: async ({ question, correction }) => {
-      const reviewed = await run(question, correction ? "correcting" : "writing",
-        writerInstructions, { context: modelContext(question), correction }, reviewedDraftSchema, "legal_answer");
+      const response = writerResponse(correction);
+      const reviewed = response.materialize(await run(question, correction ? "correcting" : "writing",
+        writerInstructions, { context: modelContext(question), correction }, response.schema, "legal_answer"));
       await options.onDraftProduced?.(reviewed);
       const sources = new Map(question.evidence.map(item => [item.source.id, item.text]));
       const reviewedIds = new Set<string>();

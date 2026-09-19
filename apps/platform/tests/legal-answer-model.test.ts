@@ -174,3 +174,55 @@ test("verification cannot discard a material omission found in its source audit"
     await assert.rejects(createLegalAnswerModel({requestId:"incomplete-audit"}).verify({question,draft,claims:[],previous:null}));
   }
 });
+
+test("one whole correction can reuse approved claims without rewriting their conditions", async context => {
+  const previousKey = env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY = "test-key";
+  context.after(() => { env.OPENAI_API_KEY = previousKey; });
+  const question: AnswerQuestion = {
+    question: "When can I request review?", locale: "en", mode: "fast", answerMode: "detailed",
+    temporalScope: { kind: "current" }, unresolved: [], evidence: [{
+      source: { id: "source", actTitle: "Official fixture", actIdentifier: null,
+        officialUrl: "https://lex.uz/docs/123", revisionDate: null, lastCheckedAt: "2026-09-19",
+        locale: "en", publishedAt: null, sourceType: "lex", status: "current",
+        verificationState: "verified", verifiedAt: "2026-09-19", contentSha256: "parent" },
+      text: "A person may request review within ten days after written notice.", textSha256: "text",
+      endpoint: { kind: "current" }, origin: "indexed",
+    }],
+  };
+  const draft = legalDraftSchema.parse({
+    mainPoint: { text: "Request review within ten days after written notice.", sourceIds: ["source"] },
+    findings: [{ title: "Review period", explanation: "The ten-day period starts with written notice.", sourceIds: ["source"] }],
+    actions: [], risks: [], questions: [], unresolved: [],
+  });
+  const verification = legalVerificationSchema.parse({ retention: [], coverage: [],
+    claims: ["mainPoint", "finding:0"].map(id => ({ id, supported: true, reason: "Supported by the fixture." })),
+    complete: false, gaps: ["Practical guidance is missing."], questions: [],
+  });
+  let findingReuse = "finding:0";
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
+      sourceReview: [{ sourceId: "source", passageIds: ["p0"] }],
+      answer: { mainPoint: { reuse: "mainPoint" },
+        issues: [{ finding: { reuse: findingReuse }, actions: [{ title: "Request review",
+          description: "Record the written-notice date and request review within ten days after it.", sourceIds: ["source"] }] }],
+        risks: [], questions: [], unresolved: [],
+      },
+    }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
+  }));
+  const model = createLegalAnswerModel({ requestId: "reuse-supported-claims" });
+  const corrected = legalDraftSchema.parse(await model.write({ question, correction: { draft, verification } }));
+  assert.deepEqual(corrected.mainPoint, draft.mainPoint);
+  assert.deepEqual(corrected.findings, draft.findings);
+  assert.match(corrected.actions[0]!.description, /within ten days after it/);
+  assert.ok(!("reuse" in corrected.findings[0]!));
+  findingReuse = "mainPoint";
+  await assert.rejects(model.write({ question, correction: { draft, verification } }));
+  findingReuse = "finding:0";
+  verification.claims.push({ ...verification.claims.find(claim => claim.id === "finding:0")! });
+  await assert.rejects(model.write({ question, correction: { draft, verification } }));
+  verification.claims.pop();
+  verification.claims.find(claim => claim.id === "finding:0")!.supported = false;
+  await assert.rejects(model.write({ question, correction: { draft, verification } }));
+  await assert.rejects(model.write({ question, correction: null }));
+});
