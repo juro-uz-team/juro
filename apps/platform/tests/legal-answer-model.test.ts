@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { env } from "cloudflare:workers";
 import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
-import type { AnswerQuestion } from "../lib/legal-chat/answer-engine";
+import { answerFromEvidence, type AnswerQuestion } from "../lib/legal-chat/answer-engine";
 import { legalDraftClaims, legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";
 
 test("legal model transport pins each mode and keeps source locators out of provider context", async context => {
@@ -218,7 +219,9 @@ test("separate excerpts of one claim are all checked without rejecting a repeate
   const verify=async()=>legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
   assert.equal((await verify()).complete,true);
   actionSupport[1]!.excerpt="Late requests are always accepted.";
-  assert.equal((await verify()).complete,false,"A valid first fragment cannot hide a fabricated second fragment");
+  const mixedFragments=await verify();
+  assert.equal(mixedFragments.complete,false,"A valid first fragment cannot hide a fabricated second fragment");
+  assert.equal(mixedFragments.claims.find(claim=>claim.id==="action:0")?.supported,false);
   actionSupport[1]!.excerpt=qualification;
   for(const claimId of ["action:9","finding:0"]) {
     actionSupport[1]!.claimId=claimId;
@@ -232,9 +235,61 @@ test("separate excerpts of one claim are all checked without rejecting a repeate
   assert.equal((await verify()).complete,false,"Repeated excerpts cannot legitimize duplicate verdicts");
   duplicateActionVerdict=false;
   findingSupport[1]!.excerpt="A late request must always be accepted.";
-  assert.equal((await verify()).complete,false,"Every finding fragment must also be grounded");
+  const unconfirmedFinding=await verify();
+  assert.equal(unconfirmedFinding.complete,false,"Every finding fragment must also be grounded");
+  assert.equal(unconfirmedFinding.claims.find(claim=>claim.id==="finding:0")?.supported,false);
   findingSupport[1]!.excerpt=qualification;
   assert.equal((await verify()).complete,true);
+});
+
+test("unconfirmed action evidence cannot survive correction failure alongside supported findings", async context => {
+  const previousKey=env.OPENAI_API_KEY;
+  env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=previousKey;});
+  const text="File within ten days after actual or constructive knowledge.";
+  const question:AnswerQuestion={question:"When must I file?",locale:"en",mode:"fast",answerMode:"detailed",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[{
+      source:{id:"source",actTitle:"Synthetic rule",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
+        revisionDate:null,lastCheckedAt:"2026-09-19",locale:"en",publishedAt:null,sourceType:"lex",
+        sourceClass:"OFFICIAL_LEGISLATION",status:"current",verificationState:"verified",verifiedAt:"2026-09-19",contentSha256:"a".repeat(64)},
+      text,textSha256:createHash("sha256").update(text).digest("hex"),endpoint:{kind:"current"},origin:"indexed",
+    }]};
+  const draft=legalDraftSchema.parse({mainPoint:{text,sourceIds:["source"]},
+    findings:[{title:"Period",explanation:text,sourceIds:["source"]}],
+    actions:[{title:"File",description:"File within ten days after actual knowledge.",sourceIds:["source"]},
+      {title:"Check the trigger",description:text,sourceIds:["source"]},
+      {title:"Use that period",description:"Follow the filing period above.",sourceIds:["source"]}],risks:[],questions:[],unresolved:[]});
+  let retention:Array<{priorId:string;priorSupported:boolean;currentIds:string[]}>=[];
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
+    output:[{content:[{type:"output_text",text:JSON.stringify({
+      sourceAudit:{source:{p0:{material:true,actionRequired:true,missingContent:[],
+        findingSupport:[{claimId:"finding:0",excerpt:text}],
+        actionSupport:[{claimId:"action:0",excerpt:text},{claimId:"action:1",excerpt:text}]} }},
+      verification:{retention,coverage:[{issue:"Filing",findingIds:["finding:0"],actionIds:["action:0","action:1"],gaps:[]}],
+        claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Approved",dependsOn:claim.id==="action:2"?["action:0"]:[]})),
+        complete:true,gaps:[],questions:[]},
+    })}]}],usage:{input_tokens:10,output_tokens:10}}));
+  const model=createLegalAnswerModel({requestId:"unconfirmed-action"});
+  let writes=0;
+  let correctionSupported:boolean|undefined;
+  const outcome=await answerFromEvidence(question,{
+    write:async input=>{
+      if(++writes===1)return draft;
+      correctionSupported=input.correction?.verification.claims.find(claim=>claim.id==="action:0")?.supported;
+      throw Error("Correction unavailable");
+    },verify:model.verify,
+  });
+  assert.equal(writes,2);
+  assert.equal(correctionSupported,false);
+  assert.equal(outcome.errorCode,"ANSWER_CORRECTION_UNAVAILABLE");
+  assert.deepEqual(outcome.result.confirmedFindings,draft.findings);
+  assert.deepEqual(outcome.result.actionPlan,[draft.actions[1]]);
+  const original={...draft,actions:[draft.actions[1]!]};
+  const originalVerification=legalVerificationSchema.parse({claims:legalDraftClaims(original).map(claim=>({id:claim.id,supported:true,reason:"Original approval"})),coverage:[],retention:[],complete:true,gaps:[],questions:[]});
+  retention=[{priorId:"action:0",priorSupported:true,currentIds:["action:1"]}];
+  const corrected=legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:{draft:original,verification:originalVerification}}));
+  assert.equal(corrected.claims.find(claim=>claim.id==="action:0")?.supported,false);
+  assert.deepEqual(corrected.retention,retention,"A current binding failure cannot reject a different original body sharing its ID");
 });
 
 test("a material passage needs separately supported legal and practical coverage", async context => {
@@ -252,11 +307,11 @@ test("a material passage needs separately supported legal and practical coverage
     findings:[{title:"Review",explanation:"Review means reconsideration of the decision and is available within ten days after written notice.",sourceIds:["source"]}],
     actions:[{title:"Review request",description:"Request review within ten days after written notice.",sourceIds:["source"]}],
     risks:[],questions:[],unresolved:[]});
-  let findingIds=["finding:0"];let actionIds:string[]=[];let actionExcerpt=draft.actions[0]!.description;let actionSupported=true;let definitionActionRequired=false;
+  let findingIds=["finding:0"];let actionIds:string[]=[];let actionExcerpt=draft.actions[0]!.description;let actionSupported=true;let definitionActionRequired=false;let operativeActionRequired=true;
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",
     output:[{content:[{type:"output_text",text:JSON.stringify({
       sourceAudit:{source:{
-        p0:{material:true,actionRequired:true,findingSupport:findingIds.map(claimId=>({claimId,excerpt:draft.findings[0]!.explanation})),actionSupport:actionIds.map(claimId=>({claimId,excerpt:actionExcerpt})),missingContent:[]},
+        p0:{material:true,actionRequired:operativeActionRequired,findingSupport:findingIds.map(claimId=>({claimId,excerpt:draft.findings[0]!.explanation})),actionSupport:actionIds.map(claimId=>({claimId,excerpt:actionExcerpt})),missingContent:[]},
         p1:{material:true,actionRequired:definitionActionRequired,findingSupport:[{claimId:"finding:0",excerpt:draft.findings[0]!.explanation}],actionSupport:[],missingContent:[]},
       }},
       verification:{retention:[],coverage:[],claims:legalDraftClaims(draft).map(claim=>({
@@ -286,6 +341,14 @@ test("a material passage needs separately supported legal and practical coverage
   const fabricatedSupport=await verify();
   assert.equal(fabricatedSupport.complete,false);
   assert.match(fabricatedSupport.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/practical/i);
+  operativeActionRequired=false;
+  const optionalButInvalid=await verify();
+  assert.equal(optionalButInvalid.claims.find(claim=>claim.id==="action:0")?.supported,false,"Optional supplied bindings still need actual claim text");
+  assert.equal(optionalButInvalid.complete,false);
+  actionIds=[];
+  assert.equal((await verify()).complete,true,"An omitted optional binding alone cannot retract a claim");
+  operativeActionRequired=true;
+  actionIds=["action:0"];
   draft.actions[0]!.description=originalAction;
   actionExcerpt=draft.findings[0]!.explanation;
   assert.equal((await verify()).complete,false, "A finding cannot supply an action excerpt");

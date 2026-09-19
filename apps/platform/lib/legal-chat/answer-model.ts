@@ -272,6 +272,27 @@ export function createLegalAnswerModel(options: {
         })), verification:response.verification,
       });
       await options.onVerificationProduced?.(audited);
+      // Reconcile claim support before checking coverage, so a later invalid
+      // fragment cannot leave an earlier passage relying on that claim's approval.
+      const unconfirmedClaims = new Set<string>();
+      for (const source of audited.sourceAudit) {
+        for (const passage of source.passages) {
+          for (const [kind, support] of [["finding", passage.findingSupport], ["action", passage.actionSupport]] as const) {
+            for (const binding of support) {
+              if (!claims.some(claim => claim.id === binding.claimId && claim.kind === kind)) {
+                throw new Error("Invalid audited claim binding");
+              }
+              if (!containsClaimExcerpt(claimBodies.get(binding.claimId), binding.excerpt)) {
+                unconfirmedClaims.add(binding.claimId);
+              }
+            }
+          }
+        }
+      }
+      audited.verification.claims = audited.verification.claims.map(claim =>
+        claim.supported && unconfirmedClaims.has(claim.id) ? { ...claim, supported: false,
+          reason: "Support is unconfirmed: a source-audit quotation does not occur in this claim's own body. Recheck its operative content against the cited source and supply an exact binding.",
+        } : claim);
       const reviewedSources = new Set<string>();
       const sourceGaps: LegalVerification["sourceGaps"] = [];
       for (const source of audited.sourceAudit) {
@@ -289,11 +310,7 @@ export function createLegalAnswerModel(options: {
             ["finding", passage.findingSupport, "legal explanation"],
             ["action", passage.actionSupport, "practical guidance"],
           ] as const) {
-            const ids = support.map(binding => binding.claimId);
-            if (ids.some(id => !claims.some(claim => claim.id === id && claim.kind === kind))) {
-              throw new Error("Invalid audited claim binding");
-            }
-            if (passage.material && (kind === "finding" || passage.actionRequired) && (!support.length || support.some(binding => {
+            if (passage.material && (kind === "finding" || passage.actionRequired || support.length > 0) && (!support.length || support.some(binding => {
               const verdicts = audited.verification.claims.filter(claim => claim.id === binding.claimId);
               return verdicts.length !== 1 || !verdicts[0]!.supported
                 || !containsClaimExcerpt(claimBodies.get(binding.claimId), binding.excerpt);
