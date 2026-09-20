@@ -8,7 +8,7 @@ import {
   listAiAnswerVersions,
   listAiBranches,
 } from "../lib/ai/branch-store";
-import { conversationOperation as parseAiMessageOperation, readConversationContext } from "../lib/legal-chat/conversation-context";
+import { conversationOperation as parseAiMessageOperation, readConversationContext, readSavedConversationTurns } from "../lib/legal-chat/conversation-context";
 import { loadAiConversationTurns } from "../lib/ai/conversation-branch-reader";
 
 const resolveAiBranchInput = async (input: Parameters<typeof readConversationContext>[0]) => (await readConversationContext(input)).branch;
@@ -34,13 +34,17 @@ test("long follow-ups retain early facts and edits across context read pages",as
   assert.equal(selected.turns.at(-1)?.question,"Turn 70");
   await assert.rejects(readConversationContext({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
     requestedOperation:"follow_up",sourceMessageId:"response-201",question:"What next?"}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
+  const history=await readSavedConversationTurns({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",responseMessageId:"response-201"});
+  assert.equal(history.length,200,"Stored history remains readable beyond the model's raw branch capacity");
+  assert.equal(history[0]?.question,"Какой срок действует по договору?");
+  assert.equal(history.at(-1)?.responseMessageId,"response-201");
 });
 
 test("legacy follow-up context does not silently discard turns beyond the old display page",async context=>{
   const {sqlite,d1}=await branchDatabase();context.after(()=>sqlite.close());
   seedInitialBranch(sqlite);
   sqlite.exec("DELETE FROM message_versions; DELETE FROM message_branches;");
-  for(let index=2;index<=26;index++) {
+  for(let index=2;index<=201;index++) {
     const time=new Date(Date.parse("2026-08-01T00:00:00Z")+index*1000).toISOString();
     for(const author of ["user","assistant"]) {
       sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,'conversation-1',?,?,?)")
@@ -54,6 +58,12 @@ test("legacy follow-up context does not silently discard turns beyond the old di
   assert.equal(selected.turns.length,26);
   assert.equal(selected.turns[0]?.question,"Какой срок действует по договору?");
   assert.equal(selected.turns.at(-1)?.question,"Legacy 26");
+  const history=await readSavedConversationTurns({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",responseMessageId:"response-201"});
+  assert.equal(history.length,201);
+  assert.equal(history[0]?.question,"Какой срок действует по договору?");
+  assert.equal(history.at(-1)?.question,"Legacy 201");
+  await assert.rejects(readConversationContext({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
+    requestedOperation:"follow_up",sourceMessageId:"response-201",question:"What next?"}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
 });
 
 test("legacy-root regeneration advances versions across sibling and descendant selections", async () => {
