@@ -41,6 +41,26 @@ test("signed-in clarification persists, accounts once, and replays without anoth
   assert.equal(run?.status,"completed");assert.equal(run?.input_tokens,20);assert.equal(run?.output_tokens,10);assert.equal(run?.attempt_count,1);
   await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,question:"Changed request"}}),{code:"IDEMPOTENCY_CONFLICT"});
   assert.equal(models.length,1);
+
+  const followUp={...input,request:{...input.request,conversationId:saved.conversationId!,operation:"follow_up" as const,idempotencyKey:"follow-up-request"}};
+  const followed=await deliverSignedInLegalChat(followUp);
+  let parent=followed.branchId!;
+  for(let index=3;index<=201;index++) {
+    const requestId=crypto.randomUUID(),responseId=crypto.randomUUID(),branchId=crypto.randomUUID();
+    const time=new Date(Date.now()+index*1000).toISOString();
+    for(const [id,author] of [[requestId,"user"],[responseId,"assistant"]]) {
+      sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,?,?,?,?)")
+        .run(id!,saved.conversationId!,author!,`Later turn ${index}`,time);
+    }
+    sqlite.prepare(`INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,request_message_id,response_message_id,operation,created_at)
+      VALUES (?,?,'workspace','owner',?,?,?,'follow_up',?)`).run(branchId,saved.conversationId!,parent,requestId,responseId,time);
+    parent=branchId;
+  }
+  assert.deepEqual(await deliverSignedInLegalChat({...followUp,configured:false,service:undefined}),followed,
+    "Completed replay does not reread generation context after the conversation grows");
+  await assert.rejects(deliverSignedInLegalChat({...followUp,request:{...followUp.request,idempotencyKey:"oversized-context"}}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
+  assert.equal(models.length,2,"Oversized new context fails before any provider attempt");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage_ledger WHERE idempotency_key='oversized-context'").get()?.n,0);
 });
 
 test("missing configuration releases an owned reservation and pre-cancelled requests reserve nothing",async context=>{
@@ -50,4 +70,8 @@ test("missing configuration releases an owned reservation and pre-cancelled requ
   assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
   await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,idempotencyKey:"cancelled-request"},signal:AbortSignal.abort()}));
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_runs").get()?.n,1);
+  await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,conversationId:crypto.randomUUID(),
+    operation:"follow_up",idempotencyKey:"missing-conversation"}}),{code:"SOURCE_MESSAGE_NOT_FOUND"});
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM idempotency_keys WHERE key LIKE '%missing-conversation'").get()?.n,0,
+    "A nonexistent conversation cannot leave a dangling processing reservation");
 });

@@ -1,6 +1,6 @@
 import {readLegalUserContext} from "./user-context";
 import type {IdentityKeyring} from "../auth/keyring";
-import {reserveAiRun,renewAiRunReservation,failAiRun,sha256Json} from "../ai/run-store";
+import {reserveAiRun,renewAiRunReservation,failAiRun,readAiRunStatus,sha256Json} from "../ai/run-store";
 import {openAiChatModel} from "../ai/provider-models";
 import type {AiRuntimeSettings} from "../ai/runtime-settings";
 import {readConversationContext} from "./conversation-context";
@@ -26,8 +26,12 @@ export async function deliverSignedInLegalChat(input:{
   input.signal?.throwIfAborted();
   const owner={db:input.db,workspaceId:input.workspaceId,userId:input.userId};
   const request=input.request;
-  const selected=await readConversationContext({...owner,conversationId:request.conversationId,
+  const readContext=()=>readConversationContext({...owner,conversationId:request.conversationId,
     requestedOperation:request.operation,sourceMessageId:request.sourceMessageId,question:request.question});
+  const prior=await readAiRunStatus({...owner,idempotencyKey:request.idempotencyKey});
+  // Fresh input is checked before creating durable reservation state. Existing
+  // keys go through hash validation/replay without rereading mutable context.
+  let selected=prior.kind==="missing"?await readContext():null;
   const model=openAiChatModel(request.reasoningMode);
   const safetyIdentifier=await sha256Json({userId:input.userId});
   const reservation=await reserveAiRun({...owner,idempotencyKey:request.idempotencyKey,
@@ -50,6 +54,8 @@ export async function deliverSignedInLegalChat(input:{
     await failAiRun({...run,errorCode:"LEGAL_CHAT_UNAVAILABLE"});
     throw new LegalChatDeliveryError("LEGAL_CHAT_UNAVAILABLE",503,reservation.runId);
   }
+  selected??=await readContext()
+    .catch(async error=>{await failAiRun({...run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
   const userContext=await readLegalUserContext({...owner,conversationId:request.conversationId,keyring:input.memoryKeyring??null})
     .catch(async error=>{await failAiRun({...run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
   const started=Date.now();
