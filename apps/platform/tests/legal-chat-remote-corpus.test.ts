@@ -28,7 +28,7 @@ test("a failed local formulation does not strand subsequent bounded research rou
   await remote.close();
 });
 
-test("one remote capability is reused and only scrubbed formulations cross the boundary",async()=>{
+test("one remote capability carries unchanged formulations without the separate conversation payload",async()=>{
   const opened:CorpusSessionInput[]=[];
   const searches:CorpusSearchInput[]=[];
   let disposed=0;
@@ -41,7 +41,8 @@ test("one remote capability is reused and only scrubbed formulations cross the b
   await remote.indexed({...request,round:1});
   assert.equal(opened.length,1);
   assert.deepEqual(opened[0],{requestId:"one",environment:"staging",temporalScope:{kind:"current"}});
-  assert.doesNotMatch(JSON.stringify(searches),/private@|Private case|Private facts|Private history|Old answer/);
+  assert.doesNotMatch(JSON.stringify(searches),/Private case|Private facts|Private history|Old answer/);
+  assert.deepEqual(searches.map(item=>item.plan),[plan,plan]);
   assert.deepEqual(searches.map(item=>item.round),[0,1]);
   await assert.rejects(remote.indexed({...request,question:{...request.question,question:"another"}}),/MISMATCH/);
   await remote.close();await remote.close();

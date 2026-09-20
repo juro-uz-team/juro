@@ -1,7 +1,6 @@
 import type {CorpusSessionInput, CorpusSearchInput} from "./corpus-session";
 import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
 import type {ResearchPacket,ResearchRequest} from "./research";
-import {privateResearchQueries} from "./research-query";
 
 type RemoteSession={
   search(input:CorpusSearchInput):PromiseLike<ResearchPacket>;
@@ -65,7 +64,7 @@ export function createRemoteCorpusResearch(input:{
         void pending.catch(()=>{if(opening===pending&&!session)opening=undefined;});
       }
       const active=await opening;
-      const plan=await privateResearchQueries(await input.formulate(request),[]);
+      const plan=await input.formulate(request);
       signal?.throwIfAborted();
       if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
       const packet=await active.search({round:request.round,plan});
