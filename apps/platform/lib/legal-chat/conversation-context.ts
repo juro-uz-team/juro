@@ -1,6 +1,7 @@
 import { AI_MESSAGE_OPERATIONS, AiBranchInputError, listAiAnswerVersions,
   type AiBranchInput, type AiMessageOperation } from "../ai/branch-store";
 import { loadAiConversationTurns, type AiConversationTurn } from "../ai/conversation-branch-reader";
+import {decodeSavedLegalAnswer, legalAnswerConversationText} from "./saved-answer";
 
 export function conversationOperation(value: unknown, existing: boolean): AiMessageOperation {
   const operation = value === undefined ? existing ? "follow_up" : "new" : value;
@@ -127,5 +128,9 @@ export async function readConversationContext(input: ConversationOwner & {
     sourceMessageId: operation === "follow_up" ? null : selected.requestMessageId,
     forkedFromMessageId: input.sourceMessageId ?? (selected.branchId ? null : selected.responseMessageId), parentBranchId: selected.branchId,
     versionNumber: operation === "follow_up" ? 1 : Math.max(1, ...versions.map(version => version.versionNumber)) + 1,
-  }, turns };
+  }, turns: turns.map(turn => {
+    if (!turn.structuredJson) return turn;
+    try {return {...turn, answer: legalAnswerConversationText(decodeSavedLegalAnswer(turn.structuredJson))};}
+    catch {return turn;} // Legacy unstructured messages keep their original text.
+  }) };
 }

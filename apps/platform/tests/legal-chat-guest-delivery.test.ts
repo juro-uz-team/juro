@@ -26,6 +26,8 @@ test("guest clarifications retain every user turn, stay encrypted and replay wit
   const second=await deliverGuestLegalChat({...input,request:{...input.request,question:"Private second guest clarification",idempotencyKey:"guest-second"}});
   assert.equal(second.result.responseKind,"clarification_required");
   assert.match(requests[1]!,/Private original guest question/);
+  const followup=JSON.parse(JSON.parse(requests[1]!).input);
+  assert.deepEqual(JSON.parse(followup.priorTurns[0].answer).questions,["Which date applies?"]);
   assert.equal(requests.length,2);
   assert.deepEqual(await deliverGuestLegalChat({...input,configured:false,service:undefined}),first);
   assert.equal(requests.length,2);

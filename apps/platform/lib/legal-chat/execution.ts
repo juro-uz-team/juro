@@ -5,7 +5,7 @@ import { runReservedLegalChat } from "./reserved-execution";
 import { aiText } from "../ai/localization";
 import type {LegalSourceContext} from "../legal/source-context";
 
-export type LegalChatTerminal = (AnswerOutcome & {research:{
+export type LegalChatTerminal = (AnswerOutcome & {caseFacts?:readonly string[];research:{
   needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
 }}) | Exclude<QuestionContext,{kind:"ready"}>;
 export type LegalChatStage="interpreting"|"researching"|"writing"|"verifying"|"correcting"|"saving";
@@ -45,7 +45,7 @@ export function executeLegalChat<Saved>(input:{
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model);
       const published=new Set(answer.result.sources.map(source=>source.sourceId));
-      return {terminal:{...answer,research:{needs:research.needs,rounds:research.rounds,
+      return {terminal:{...answer,caseFacts:context.caseFacts,research:{needs:research.needs,rounds:research.rounds,
         sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},
         // Authenticated spans are ephemeral inputs to receipt persistence, not
         // part of the serializable terminal answer or its diagnostics.

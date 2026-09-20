@@ -36,8 +36,13 @@ export async function saveSignedInLegalAnswer(input:Completion&{
   branch:AiBranchInput;
   result:LegalChatResponse;
   sources:readonly LegalSourceContext[];
+  proposedFacts?:readonly string[];
 }) {
   const result=legalChatResponseSchema.parse(input.result);
+  const facts=[...new Set(input.proposedFacts??[])];
+  if(facts.length>40||facts.some(fact=>!fact.trim()||fact.length>2000||!input.branch.question.includes(fact))) {
+    throw new Error("LEGAL_FACT_PROVENANCE_INVALID");
+  }
   if((input.conversationId===null)!==(input.branch.operation==="new"))throw new Error("INVALID_BRANCH_OPERATION");
   const conversationId=input.conversationId??crypto.randomUUID();
   const requestMessageId=crypto.randomUUID(),messageId=crypto.randomUUID(),branchId=crypto.randomUUID();
@@ -79,6 +84,13 @@ export async function saveSignedInLegalAnswer(input:Completion&{
     ...completeAiRunStatements({...input,conversationId,requestMessageId,responseMessageId:messageId,
       chargeable:result.responseKind==="answer"&&!result.failureReason,sourceVersionHash,legalDatabaseAsOf:result.legalDatabaseAsOf}),
   );
+  for(const statement of facts){
+    statements.push(input.db.prepare(`INSERT INTO confirmed_facts
+      (id,conversation_id,statement,status,created_at,updated_at)
+      SELECT ?,?,?,'proposed',?,? WHERE NOT EXISTS(
+        SELECT 1 FROM confirmed_facts WHERE conversation_id=? AND statement=?)`)
+      .bind(crypto.randomUUID(),conversationId,statement,now,now,conversationId,statement));
+  }
   if(!await beginAiRunFinalization(input))throw new Error("AI_RUN_FINALIZATION_CLAIM_FAILED");
   await input.db.batch(statements);
   return {runId:input.runId,conversationId,requestMessageId,messageId,branchId,result};

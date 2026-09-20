@@ -5,6 +5,23 @@ export function decodeSavedLegalAnswer(structuredJson: string): LegalChatRespons
   return parseLegalChatResponse(JSON.parse(structuredJson));
 }
 
+/** Public content is conversation context, never fresh official evidence.
+ * Preserve ordered options and questions so a follow-up can refer to them;
+ * omit citation receipts and internal research/verification metadata. */
+export function legalAnswerConversationText(result: LegalChatResponse): string {
+  return JSON.stringify({
+    mainPoint: result.summary, answer: result.answer,
+    findings: result.confirmedFindings.map(({title, explanation}) => ({title, explanation})),
+    actions: result.actionPlan.map(({title, description}) => ({title, description})),
+    risks: result.risks.map(({level, title, explanation}) => ({level, title, explanation})),
+    questions: result.clarificationQuestions, unresolved: result.coverageGaps ?? [],
+    conditionalBranches: result.conditionalBranches ?? [], assumptions: result.assumptions,
+    requiredDocuments: result.requiredDocuments, deadlines: result.deadlines,
+    referenceNotes: result.referenceNotes?.map(({title, note}) => ({title, note})) ?? [],
+    suggestedDocument: result.suggestedDocument,
+  });
+}
+
 export async function readSavedLegalAnswer(input: {
   db: D1Database;
   userId: string;

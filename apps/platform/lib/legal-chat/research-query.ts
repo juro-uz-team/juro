@@ -1,7 +1,8 @@
 import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
 import {classifyTargetPrivateNames} from "../legal-corpus/target-reasoning-service";
 
-/** Search receives legal research language, not private case identifiers.
+/** Public-site discovery receives legal research language, not private case identifiers.
+ * Indexed sparse/dense retrieval deliberately does not use this transform.
  * Model-declared public titles only survive when the pinned corpus attests
  * them independently. The local classifier makes no provider request. */
 export async function privateResearchQueries(plan:QuestionInterpretation, trustedTitles:readonly string[]):Promise<QuestionInterpretation> {

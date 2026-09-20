@@ -60,6 +60,17 @@ test("bounded repair searches reuse the pinned release, time filter and authenti
   assert.deepEqual(calls.times,[instant,instant]);
 });
 
+test("the indexed corpus receives the exact request-local formulation without content redaction",async()=>{
+  const {services}=fixture();
+  const plan:QuestionInterpretation={...interpretation,formulations:[{...interpretation.formulations[0]!,
+    text:"Alice Example account 123456789012 record access",privateNameSpans:["Alice Example"]}]};
+  let received:QuestionInterpretation|undefined;
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{received=args[0];return retrieve(...args);};
+  await createCorpusResearch({services,formulate:async()=>plan})(request);
+  assert.deepEqual(received,plan);
+});
+
 test("comparison resolves its release pair atomically and retains evidence at both endpoints",async()=>{
   const {search,calls}=fixture();
   const result=await search({...request,question:{...request.question,temporalScope:{kind:"comparison",

@@ -6,7 +6,6 @@ import type {LegalEvidence, LegalTime} from "./answer-engine";
 import {corpusAnswerEvidence} from "./corpus-evidence";
 import {timeIdentity} from "./evidence-boundary";
 import type {ResearchRequest, ResearchPacket, ResearchNeed, ResearchObservation} from "./research";
-import {privateResearchQueries} from "./research-query";
 import type {LegalReferenceQuery} from "../legal-corpus/custom-reference-lookup";
 import {sameInstrumentArticleReferences} from "../legal/referenced-article-context";
 
@@ -24,7 +23,6 @@ const RESERVED_REFERENCE_READS = 12;
 export function createCorpusResearch(input: {
   services:CorpusServices;
   formulate:(request:ResearchRequest)=>Promise<QuestionInterpretation>;
-  trustedLegalTitles?:(release:PinnedCandidateRelease)=>Promise<readonly string[]>;
   now?:()=>number;
 }):(request:ResearchRequest)=>Promise<ResearchPacket> {
   const now=input.now??Date.now;
@@ -57,10 +55,9 @@ export function createCorpusResearch(input: {
     })();
     const releases=await pinned;
     check();
-    const plan=await input.formulate(request);
-    const trustedTitles=input.trustedLegalTitles
-      ?(await Promise.all(releases.map(({release})=>input.trustedLegalTitles!(release)))).flat():[];
-    const interpretation=await privateResearchQueries(plan,trustedTitles);
+    // ADR 0007: both indexed candidate lanes receive the same unmodified
+    // request-local formulation. Public-site discovery has a separate policy.
+    const interpretation=await input.formulate(request);
     check();
     const needs:ResearchNeed[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];

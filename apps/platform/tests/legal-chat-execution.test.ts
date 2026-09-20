@@ -43,6 +43,7 @@ test("one execution preserves chronological facts and saves only the verified te
   assert.deepEqual(result,{id:"saved-result"});
   assert.equal(saved?.kind,"complete");
   if(saved&&"research" in saved) {
+    assert.deepEqual(saved.caseFacts,["I need my record."]);
     assert.deepEqual(saved.research.observations,observations);
     assert.doesNotMatch(JSON.stringify(saved.result),/candidate_read_limit/);
   }

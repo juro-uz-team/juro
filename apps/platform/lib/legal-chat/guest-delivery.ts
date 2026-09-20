@@ -5,7 +5,7 @@ import {sha256Json} from "../ai/run-store";
 import {openAiChatModel} from "../ai/provider-models";
 import type {AiRuntimeSettings} from "../ai/runtime-settings";
 import type {IdentityKeyring} from "../auth/keyring";
-import {decodeSavedLegalAnswer} from "./saved-answer";
+import {decodeSavedLegalAnswer,legalAnswerConversationText} from "./saved-answer";
 import {executeRuntimeLegalChat} from "./runtime-execution";
 import {createLegalChatAccounting} from "./provider-accounting";
 import {saveGuestLegalAnswer} from "./answer-persistence";
@@ -33,7 +33,7 @@ export async function deliverGuestLegalChat(input:{
   const previous=await guestAiClarificationRuns(input.db,input.session);
   const priorTurns=await Promise.all(previous.map(async run=>({
     question:await revealGuestAiRunQuestion({keyring:input.keyring,run}),
-    answer:decodeSavedLegalAnswer(await revealGuestAiRunResult({keyring:input.keyring,run})).answer,
+    answer:legalAnswerConversationText(decodeSavedLegalAnswer(await revealGuestAiRunResult({keyring:input.keyring,run}))),
   })));
   const reservation=await reserveGuestAiRun({...input,idempotencyKey:request.idempotencyKey,
     requestHash:await sha256Json(request),question:request.question,provider:"openai",model,legalDatabaseAsOf:"unavailable",

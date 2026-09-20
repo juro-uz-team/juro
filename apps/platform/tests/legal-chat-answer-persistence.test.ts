@@ -161,6 +161,44 @@ test("edited answers keep version ancestry and follow-ups use the active facts",
   } finally {sqlite.close();}
 });
 
+test("follow-ups retain the saved explanation, practical options and questions beyond the Main Point",async()=>{
+  const {sqlite,d1,input}=await fixture();
+  try {
+    const saved=await saveSignedInLegalAnswer({...input,result:{...result,
+      confirmedFindings:[{title:"Representative",explanation:"An authorized representative may request the record.",sourceIds:["source"]}],
+      actionPlan:[{title:"Second option",description:"Ask your representative to file the request.",sourceIds:["source"]}],
+      clarificationQuestions:["Has a representative been authorized?"],
+    }});
+    const context=await readConversationContext({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId,
+      sourceMessageId:saved.messageId,requestedOperation:"follow_up",question:"Yes. How do I use the second option?"});
+    assert.match(context.turns[0]!.answer,/An authorized representative may request the record/);
+    assert.match(context.turns[0]!.answer,/Ask your representative to file the request/);
+    assert.match(context.turns[0]!.answer,/Has a representative been authorized/);
+    assert.doesNotMatch(context.turns[0]!.answer,/exact\/provision|ephemeral source/);
+    const display=await readSavedConversationTurns({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId,responseMessageId:saved.messageId});
+    assert.equal(display[0]!.answer,result.answer);
+  } finally {sqlite.close();}
+});
+
+test("exact user facts are proposed atomically and a rejected fact is not proposed again",async()=>{
+  const {sqlite,d1,input,reservation}=await fixture();
+  try {
+    const question="I am an applicant. May I request a record?";
+    const first=await saveSignedInLegalAnswer({...input,branch:{...input.branch,question},proposedFacts:["I am an applicant."]});
+    const facts=sqlite.prepare("SELECT statement,status FROM confirmed_facts WHERE conversation_id=?").all(first.conversationId);
+    assert.deepEqual(facts.map(row=>({...row})),[{statement:"I am an applicant.",status:"proposed"}]);
+    sqlite.prepare("UPDATE confirmed_facts SET status='rejected' WHERE conversation_id=?").run(first.conversationId);
+    const next=await readConversationContext({db:d1,userId:"owner",workspaceId:"workspace",conversationId:first.conversationId,
+      sourceMessageId:first.messageId,requestedOperation:"follow_up",question});
+    const reserved=await reserveAiRun({...reservation,idempotencyKey:"fact-followup",requestHash:"fact-followup",conversationId:first.conversationId});
+    if(reserved.kind!=="reserved")throw Error("Expected reservation");
+    await saveSignedInLegalAnswer({...input,runId:reserved.runId,ledgerId:reserved.ledgerId,idempotencyKey:"fact-followup",
+      conversationId:first.conversationId,branch:next.branch,proposedFacts:["I am an applicant."]});
+    assert.deepEqual(sqlite.prepare("SELECT statement,status FROM confirmed_facts").all().map(row=>({...row})),
+      [{statement:"I am an applicant.",status:"rejected"}]);
+  } finally {sqlite.close();}
+});
+
 test("unsupported source locales fail before finalization rather than being relabeled",async()=>{
   const {sqlite,input}=await fixture();
   try {
