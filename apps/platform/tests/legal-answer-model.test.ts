@@ -6,6 +6,18 @@ import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
 import { answerFromEvidence, type AnswerQuestion } from "../lib/legal-chat/answer-engine";
 import { legalDraftClaims, legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";
 
+function assertStrictProviderObjects(value: unknown): void {
+  if (Array.isArray(value)) {value.forEach(assertStrictProviderObjects); return;}
+  if (!value || typeof value !== "object") return;
+  const node = value as Record<string, unknown>;
+  if (node.properties && typeof node.properties === "object") {
+    assert.equal(node.additionalProperties, false, "Provider objects reject undeclared fields");
+    assert.deepEqual(Array.isArray(node.required) ? [...node.required].sort() : [],
+      Object.keys(node.properties).sort(), "Every provider property is required");
+  }
+  Object.values(node).forEach(assertStrictProviderObjects);
+}
+
 test("legal model transport pins each mode and keeps source locators out of provider context", async context => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
@@ -15,6 +27,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   const payloads: Array<{model:string;input:string;reasoning:{effort:string;mode:string};text:{format:{strict:boolean}}}> = [];
   context.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
+    assertStrictProviderObjects(body.text.format.schema);
     payloads.push(body);
     return Response.json({ id: "response", model: body.model,
       output: [{ content: [{ type: "output_text", text: JSON.stringify({
@@ -76,6 +89,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     const schema=body.text.format.schema;
+    assertStrictProviderObjects(schema);
     function inspect(value:unknown) {
       if(!value||typeof value!=="object")return;
       if ("$ref" in value) assert.deepEqual(Object.keys(value), ["$ref"], "Provider references cannot have sibling keywords");
