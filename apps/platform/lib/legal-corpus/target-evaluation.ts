@@ -5,10 +5,7 @@ import {
   declaredRequestBodyWithinLimit,
   privateServiceJson,
 } from "./private-service-boundary";
-import {
-  createRuntimeTargetActivationSetEvaluation,
-  type TargetRetrievalRuntimeEnv,
-} from "./target-runtime";
+import type {TargetRetrievalRuntimeEnv} from "./target-runtime";
 
 export const TARGET_ACTIVATION_SET_EVALUATION_PATH =
   "/internal/legal-corpus/target/evaluation/activation-set/answer";
@@ -49,12 +46,11 @@ export async function handleTargetActivationSetEvaluationRequest(
     if (new TextEncoder().encode(bodyText).byteLength > MAXIMUM_REQUEST_BYTES) {
       throw new TypeError("TARGET_ACTIVATION_SET_EVALUATION_REQUEST_TOO_LARGE");
     }
-    const input = activationSetRequestSchema.parse(JSON.parse(bodyText) as unknown);
-    const evaluation = await createRuntimeTargetActivationSetEvaluation({ env,
-      activationSetId: input.activationSetId,
-      historyReconciliationRunId: input.historyReconciliationRunId,
-      historyReportSha256: input.historyReportSha256 });
-    return privateServiceJson(await evaluation.answer(input.question));
+    activationSetRequestSchema.parse(JSON.parse(bodyText) as unknown);
+    // This endpoint belonged to the retired answer engine. Preserve its private
+    // boundary and explicit unavailability until replacement release evaluation
+    // exists; never qualify a candidate by silently using the active release.
+    return privateServiceJson({ code: "TARGET_ACTIVATION_SET_EVALUATION_UNAVAILABLE" }, 503);
   } catch {
     return privateServiceJson({ code: "TARGET_ACTIVATION_SET_EVALUATION_UNAVAILABLE" }, 503);
   }

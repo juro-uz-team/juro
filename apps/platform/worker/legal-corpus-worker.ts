@@ -1,3 +1,7 @@
+import {WorkerEntrypoint} from "cloudflare:workers";
+import {corpusSessionSchema, type CorpusSessionInput} from "../lib/legal-chat/corpus-session";
+import {LegalResearchSession} from "./legal-research-session";
+import {createCorpusResearch} from "../lib/legal-chat/corpus-research";
 import { CITATION_EVIDENCE_PATH, handleCitationEvidenceRequest } from "../lib/legal-corpus/citation-evidence";
 import {SOURCE_OBSERVATION_PATH, handleSourceObservationRequest} from "../lib/legal-corpus/source-observation-service";
 import {
@@ -11,12 +15,7 @@ import {
   type ReleaseLifecycleEnv,
 } from "../lib/legal-corpus/target-release";
 import {
-  handleTargetLegalAnswerRequest,
-  TARGET_LEGAL_ANSWER_PATH,
-} from "../lib/legal-corpus/target-retrieval";
-import {
-  createRuntimeTargetLegalAnswerRetriever,
-  type TargetRetrievalRuntimeEnv,
+  createRuntimeLegalEvidenceServices, type TargetRetrievalRuntimeEnv,
 } from "../lib/legal-corpus/target-runtime";
 import {
   handleTargetActivationSetEvaluationRequest,
@@ -54,8 +53,17 @@ export function rejectDisabledLegacyCorpusWrite(
     : null;
 }
 
-const worker = {
-  async fetch(request: Request, env: LegalCorpusWorkerEnv): Promise<Response> {
+export default class LegalCorpusWorker extends WorkerEntrypoint<LegalCorpusWorkerEnv> {
+  openLegalResearch(input:CorpusSessionInput) {
+    const scope=corpusSessionSchema.parse(input);
+    if(scope.environment!==this.env.APP_ENV)throw new Error("CORPUS_RESEARCH_ENVIRONMENT_MISMATCH");
+    return new LegalResearchSession(scope,formulate=>createCorpusResearch({
+      services:createRuntimeLegalEvidenceServices(this.env),formulate,
+    }));
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const env=this.env;
     const url = new URL(request.url);
     const legacyWriteRejection = rejectDisabledLegacyCorpusWrite(request, env);
     if (legacyWriteRejection) return legacyWriteRejection;
@@ -66,19 +74,6 @@ const worker = {
     }
     if (url.pathname === RELEASE_LIFECYCLE_RESOLVE_PATH) {
       return handleReleaseLifecycleRequest(request, env);
-    }
-    if (url.pathname === TARGET_LEGAL_ANSWER_PATH) {
-      try {
-        const releaseIds = new Set<string>();
-        return handleTargetLegalAnswerRequest(request, {
-          environment: env.APP_ENV,
-          versionId: env.WORKER_VERSION?.id ?? env.LEGAL_RUNTIME_BUILD_ID,
-          releaseIds: () => [...releaseIds],
-          retriever: createRuntimeTargetLegalAnswerRetriever(env, {onReleaseResolved: releaseId => {releaseIds.add(releaseId);}}),
-        });
-      } catch {
-        return response({ code: "TARGET_LEGAL_ANSWER_UNAVAILABLE" }, 503);
-      }
     }
     if (url.pathname === TARGET_ACTIVATION_SET_EVALUATION_PATH) {
       return handleTargetActivationSetEvaluationRequest(request, env);
@@ -104,7 +99,5 @@ const worker = {
       }
     }
     return response({ code: "NOT_FOUND" }, 404);
-  },
-} satisfies ExportedHandler<LegalCorpusWorkerEnv>;
-
-export default worker;
+  }
+}

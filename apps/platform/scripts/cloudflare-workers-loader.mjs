@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === "cloudflare:workers") {
     return {
-      url: "data:text/javascript,export const env = {}; export class WorkerEntrypoint {}; export class DurableObject {}; export class WorkflowEntrypoint {};",
+      url: "data:text/javascript,export const env = {}; export class RpcTarget {}; export class WorkerEntrypoint { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }; export class DurableObject {}; export class WorkflowEntrypoint {};",
       shortCircuit: true,
     };
   }

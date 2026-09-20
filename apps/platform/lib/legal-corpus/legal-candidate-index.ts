@@ -25,7 +25,7 @@ const formulationSchema = z.object({
   readingIds: z.array(legalIdentifierSchema).min(1),
   requirementIds: z.array(legalIdentifierSchema).min(1),
 }).strict();
-const interpretationSchema = z.object({
+export const interpretationSchema = z.object({
   id: legalIdentifierSchema,
   formulations: z.array(formulationSchema).min(1).max(LEGAL_INTERPRETATION_FORMULATION_LIMIT),
 }).strict();
