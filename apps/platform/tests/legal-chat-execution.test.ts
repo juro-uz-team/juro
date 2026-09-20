@@ -93,7 +93,7 @@ test("one stale source withholds dependent claims while preserving an independen
   assert.deepEqual(result.result.confirmedFindings,draft.findings);
   assert.deepEqual(result.result.actionPlan,draft.actions);
   assert.notEqual(result.result.summary,mixed.mainPoint.text);
-  assert.ok(result.result.coverageGaps.length);
+  assert.ok(result.result.coverageGaps?.length);
 });
 
 test("one execution preserves chronological facts and saves only the verified terminal answer",async()=>{

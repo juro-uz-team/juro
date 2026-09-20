@@ -32,6 +32,38 @@ test("an explicit date selection cannot silently become current law", async () =
   assert.equal(invalid.kind,"clarification_required");
 });
 
+test("case-fact quotations preserve whole words, amounts and dates",async()=>{
+  const interpret=async(question:string,quotation:string)=>interpretLegalQuestion({...input,question,priorTurns:[]},async()=>({
+    topics:["Employment"],facts:[{turn:0,quotation}],temporal:{kind:"current"},questions:[],
+  }));
+  for(const [question,quotation] of [
+    ["I am unemployed.","employed"],
+    ["Мне 27 лет.","7 лет."],
+    ["The amount is 10,500.","500"],
+    ["The amount is 10,500.","10"],
+    ["The date was 2020-01-01.","01-01"],
+    ["The date was 2020-01-01.","2020"],
+    ["The date was 2020-01-01.","-01-01"],
+    ["The amount is 10,500.",",500"],
+    ["The balance is -500.","500"],
+    ["The balance is −500.25.","500.25"],
+    ["The balance is +500.","500"],
+    ["The amount is 10 500."," 500"],
+    ["The amount is 10 500.","10 "],
+    ["I am 27.","I am 27!"],
+  ]) assert.equal((await interpret(question!,quotation!)).kind,"unavailable",`${quotation} is not a complete exact span`);
+  for(const [question,quotation] of [
+    ["I am unemployed. My spouse is employed.","employed"],
+    ["The amount is 10,500.","10,500"],
+    ["The date was 2020-01-01.","2020-01-01"],
+    ["The balance is -500.","-500"],
+    ["The balance is −500.25.","−500.25"],
+    ["The balance is +500.","+500"],
+    ["The amount is 10 500 and unchanged."," 10 500 "],
+    ["Мне 27 лет.","Мне 27 лет."],
+  ]) assert.equal((await interpret(question!,quotation!)).kind,"ready",`${quotation} remains an exact quotation`);
+});
+
 test("unresolved temporal intent and interpretation failures remain explicit", async () => {
   const unresolved=await interpretLegalQuestion(input,async()=>({topics:["Employment"],facts:[],
     temporal:{kind:"unresolved"},questions:["Which date applies?"]}));

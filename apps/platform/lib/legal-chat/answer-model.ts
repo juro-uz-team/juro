@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {containsExactQuotation} from "./quoted-text";
 import { callOpenAiStructured, type AiProviderAttemptObservation, type AiStructuredProgress } from "../document-builder/ai/openai";
 import { openAiChatModel } from "../ai/provider-models";
 import { legalChatProviderTimeoutMs } from "../ai/legal-chat-timeout";
@@ -81,17 +82,7 @@ function containsClaimExcerpt(body: string | undefined, quotation: string) {
   // A quoted phrase may end a sentence where the original continues. Only its
   // terminal punctuation may differ; words, numbers and internal marks stay exact.
   const excerpt = quotation.trim().replace(/[.;,:!?]+$/u, "");
-  if (!body || !excerpt) return false;
-  for (let index = body.indexOf(excerpt); index >= 0; index = body.indexOf(excerpt, index + 1)) {
-    const before = body.slice(0, index);
-    const after = body.slice(index + excerpt.length);
-    if (/^[\p{L}\p{N}]/u.test(excerpt) && /[\p{L}\p{N}]$/u.test(before)) continue;
-    if (/[\p{L}\p{N}]$/u.test(excerpt) && /^[\p{L}\p{N}]/u.test(after)) continue;
-    if (/^\p{N}/u.test(excerpt) && /\p{N}[.,/:\-–—\s]+$/u.test(before)) continue;
-    if (/\p{N}$/u.test(excerpt) && /^[.,/:\-–—\s]+\p{N}/u.test(after)) continue;
-    return true;
-  }
-  return false;
+  return containsExactQuotation(body,excerpt);
 }
 
 const passageClaimSupportSchema = z.object({

@@ -1,4 +1,5 @@
 import type {LegalUserContext} from "./user-context";
+import {containsExactQuotation} from "./quoted-text";
 import { z } from "zod";
 import { parseLegalApplicabilityDate } from "../legal/applicability-date";
 import { aiText } from "../ai/localization";
@@ -47,7 +48,7 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
     }
     const userContext=input.userContext?{...input.userContext,memories:input.userContext.memories.filter(memory=>selectedIds.has(memory.id))}:undefined;
     const userMessages=[...input.priorTurns.map(turn=>turn.question),input.question];
-    if(value.facts.some(fact=>!userMessages[fact.turn]?.includes(fact.quotation))) {
+    if(value.facts.some(fact=>!containsExactQuotation(userMessages[fact.turn],fact.quotation))) {
       return {kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"};
     }
     if(value.temporal.kind==="unresolved") return value.questions.length
