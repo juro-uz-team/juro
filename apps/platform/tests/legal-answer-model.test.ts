@@ -242,6 +242,30 @@ test("separate excerpts of one claim are all checked without rejecting a repeate
   assert.equal((await verify()).complete,true);
 });
 
+test("source-audit support cannot approve a claim that does not cite that source",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const text="Applicants may request their record.";
+  const question:AnswerQuestion={question:"May I request my record?",locale:"en",mode:"fast",answerMode:"detailed",
+    temporalScope:{kind:"current"},unresolved:[],evidence:["cited","uncited"].map(id=>({
+      source:{id,actTitle:"Synthetic source",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",revisionDate:null,
+        lastCheckedAt:"2026-09-20",locale:"en",publishedAt:null,sourceType:"lex",status:"current",verificationState:"verified",
+        verifiedAt:"2026-09-20",contentSha256:"parent"},text,textSha256:"fixture",endpoint:{kind:"current"},origin:"indexed"}))};
+  const draft=legalDraftSchema.parse({mainPoint:{text,sourceIds:["cited"]},
+    findings:[{title:"Record access",explanation:text,sourceIds:["cited"]}],
+    actions:[{title:"Request a record",description:text,sourceIds:["cited"]}],risks:[],questions:[],unresolved:[]});
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",output:[{content:[{type:"output_text",text:JSON.stringify({
+    verification:{claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Approved"})),retention:[],coverage:[],complete:true,gaps:[],questions:[]},
+    sourceAudit:{cited:{p0:{material:false,actionRequired:false,findingSupport:[],actionSupport:[],missingContent:[]}},
+      uncited:{p0:{material:true,actionRequired:true,findingSupport:[{claimId:"finding:0",excerpt:text}],
+        actionSupport:[{claimId:"action:0",excerpt:text}],missingContent:[]}}},
+  })}]}]}));
+  const checked=legalVerificationSchema.parse(await createLegalAnswerModel({requestId:"citation-binding"}).verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  assert.equal(checked.complete,false);
+  assert.equal(checked.claims.find(claim=>claim.id==="finding:0")?.supported,false);
+  assert.equal(checked.claims.find(claim=>claim.id==="action:0")?.supported,false);
+  assert.equal(checked.sourceGaps[0]?.sourceId,"uncited");
+});
+
 test("unconfirmed action evidence cannot survive correction failure alongside supported findings", async context => {
   const previousKey=env.OPENAI_API_KEY;
   env.OPENAI_API_KEY="test-key";

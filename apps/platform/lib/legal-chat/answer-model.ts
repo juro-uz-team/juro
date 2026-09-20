@@ -292,10 +292,12 @@ export function createLegalAnswerModel(options: {
         for (const passage of source.passages) {
           for (const [kind, support] of [["finding", passage.findingSupport], ["action", passage.actionSupport]] as const) {
             for (const binding of support) {
-              if (!claims.some(claim => claim.id === binding.claimId && claim.kind === kind)) {
+              const claim = claims.find(claim => claim.id === binding.claimId && claim.kind === kind);
+              if (!claim) {
                 throw new Error("Invalid audited claim binding");
               }
-              if (!containsClaimExcerpt(claimBodies.get(binding.claimId), binding.excerpt)) {
+              if (!claim.sourceIds.includes(source.sourceId)
+                || !containsClaimExcerpt(claimBodies.get(binding.claimId), binding.excerpt)) {
                 unconfirmedClaims.add(binding.claimId);
               }
             }
@@ -304,7 +306,7 @@ export function createLegalAnswerModel(options: {
       }
       audited.verification.claims = audited.verification.claims.map(claim =>
         claim.supported && unconfirmedClaims.has(claim.id) ? { ...claim, supported: false,
-          reason: "Support is unconfirmed: a source-audit quotation does not occur in this claim's own body. Recheck its operative content against the cited source and supply an exact binding.",
+          reason: "Support is unconfirmed: a source-audit binding does not match this claim's own citation or body. Recheck its operative content against the cited source and supply an exact binding.",
         } : claim);
       const reviewedSources = new Set<string>();
       const sourceGaps: LegalVerification["sourceGaps"] = [];
