@@ -113,6 +113,7 @@ const coreTestFiles = [
   "tests/legal-chat-runtime-execution.test.ts",
   "tests/legal-chat-signed-in-delivery.test.ts",
   "tests/legal-chat-user-context.test.ts",
+  "tests/legal-chat-memory-route.test.ts",
   "tests/legal-chat-storage.test.ts",
   "tests/legal-answer-engine.test.ts",
   "tests/legal-answer-model.test.ts",

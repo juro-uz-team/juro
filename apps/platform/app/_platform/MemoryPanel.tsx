@@ -4,6 +4,7 @@ import { Brain, CircleAlert, LoaderCircle, Plus, Save, ShieldCheck, Trash2 } fro
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { PlatformLocale } from "../../lib/platform/routing";
+import { usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 type Category = "profile_name" | "language" | "company" | "answer_style" | "user_instruction" | "counterparty" | "legal_context" | "typical_requisite";
 type Memory = {
@@ -137,6 +138,11 @@ const memoryCopy = {
 } as const;
 
 export function MemoryPanel({ locale }: { locale: PlatformLocale }) {
+  const workspaceId=usePlatformWorkspaceId();
+  return <WorkspaceMemoryPanel key={workspaceId} locale={locale} workspaceId={workspaceId}/>;
+}
+
+function WorkspaceMemoryPanel({locale,workspaceId}:{locale:PlatformLocale;workspaceId:string}) {
   const t = memoryCopy[locale];
   const [data, setData] = useState<MemoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,6 +161,7 @@ export function MemoryPanel({ locale }: { locale: PlatformLocale }) {
   const requestMemory = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`/api/platform/ai/memory?locale=${locale}`, {
       cache: "no-store",
+      headers: { "x-juro-workspace-id": workspaceId },
       signal,
     });
     const body = await response.json() as MemoryResponse;
@@ -162,7 +169,7 @@ export function MemoryPanel({ locale }: { locale: PlatformLocale }) {
       throw new Error(body.error || t.loadError);
     }
     return body;
-  }, [locale, t.loadError]);
+  }, [locale, workspaceId, t.loadError]);
 
   const load = useCallback(async () => {
     try {
@@ -197,7 +204,7 @@ export function MemoryPanel({ locale }: { locale: PlatformLocale }) {
     try {
       const response = await fetch("/api/platform/ai/memory", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ ...body, locale }),
       });
       const result = await response.json() as { error?: string };
