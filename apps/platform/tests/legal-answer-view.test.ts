@@ -53,6 +53,7 @@ function result(overrides: Partial<LegalAnswerViewResult> = {}): LegalAnswerView
 
 test("Russian Legal Answer uses the product-owned structure and delegates section Markdown", () => {
   const value = result({
+    clarificationQuestions: ["Когда вы получили приказ?"],
     sources: [
       ...result().sources,
       {
@@ -75,7 +76,11 @@ test("Russian Legal Answer uses the product-owned structure and delegates sectio
   const law = html.indexOf(">Что говорит закон<");
   const next = html.indexOf(">Что делать дальше<");
   const mainCitation = html.indexOf("Ст. 163 — Трудовой кодекс РУз", main);
-  assert.ok(main >= 0 && law > main && next > law);
+  const additional = html.indexOf(">Дополнительные материалы<");
+  const questions = html.indexOf(">Что нужно уточнить<");
+  assert.ok(main >= 0 && law > main && next > law && additional > next && questions > additional);
+  assert.match(html, /Эти материалы поясняют контекст, но не устанавливают правовые нормы, сроки, расчёты или обязательные действия\./u);
+  assert.match(html.slice(questions), /Когда вы получили приказ\?/u);
   assert.ok(mainCitation > main && mainCitation < law, "the Main Point should carry its supporting citation");
   assert.match(html, /Проверьте основание увольнения/u);
   assert.match(html, /href="https:\/\/lex\.uz\/ru\/docs\/6257288"[^>]*>Ст\. 163 — Трудовой кодекс РУз/u);
