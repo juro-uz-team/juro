@@ -553,7 +553,7 @@ function metadataNumber(metadata: Record<string, VectorizeVectorMetadata> | unde
 
 export async function searchUserDocumentEvidence(
   env: UserDocumentVectorEnv,
-  input: { workspaceId: string; userId: string; query: string; limit?: number },
+  input: { workspaceId: string; userId: string; query: string; limit?: number; caseId?: string | null },
   options: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<UserDocumentSearchEvidence[]> {
   const query = input.query.normalize("NFKC").trim().slice(0, 500);
@@ -600,10 +600,11 @@ export async function searchUserDocumentEvidence(
      WHERE chunk.vector_id IN (${placeholders}) AND chunk.status='submitted'
        AND job.workspace_id=? AND analysis.status='completed'
        AND (job.access_scope='workspace' OR (job.access_scope='owner' AND job.owner_user_id=?))
+       AND (? IS NULL OR analysis.case_id=?)
        AND version.version=(SELECT max(latest.version) FROM analysis_document_versions latest
          WHERE latest.analysis_id=job.analysis_id AND latest.workspace_id=job.workspace_id)
      LIMIT 80`,
-  ).bind(...ids, input.workspaceId, input.userId).all<SearchLedgerRow>();
+  ).bind(...ids, input.workspaceId, input.userId, input.caseId ?? null, input.caseId ?? null).all<SearchLedgerRow>();
   const byVector = new Map(ledger.results.map((row) => [row.vectorId, row]));
   const textCache = new Map<string, string>();
   const results: UserDocumentSearchEvidence[] = [];

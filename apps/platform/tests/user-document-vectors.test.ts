@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
+import { changeAnalysisCaseLink } from "../lib/document-analysis/analysis-case-link";
 import {
   chunkUserDocument,
   deleteUserDocumentVectorsForAnalysis,
@@ -12,8 +13,8 @@ import {
   searchUserDocuments,
 } from "../lib/document-analysis/user-document-vectors";
 import {
-  retrieveTrustedUserDocumentSources,
-} from "../lib/document-analysis/user-document-chat-sources";
+  readLegalDocumentContext,
+} from "../lib/legal-chat/document-context";
 import { parsePrivateDocumentLocator } from "../lib/document-analysis/private-document-locator";
 
 const now = "2026-08-04T12:00:00.000Z";
@@ -225,6 +226,33 @@ test("vector IDs are durable before an ambiguous upsert and analysis deletion ve
   }
 });
 
+test("case context selects authorized matches before the document result limit", async () => {
+  const { sqlite, d1 } = sqliteD1Fixture();
+  const bucket = new FakeBucket(), vectorize = new FakeVectorize();
+  try {
+    seedIdentity(sqlite, "user-a", "workspace-a");
+    sqlite.prepare("INSERT INTO cases (id,workspace_id,owner_user_id,account_type,locale,title,legal_area,status,current_revision,created_at,updated_at) VALUES ('selected-case','workspace-a','user-a','individual','ru','Case','contracts','open',1,?,?)").run(now, now);
+    sqlite.prepare("INSERT INTO conversations (id,workspace_id,owner_user_id,case_id,title,locale,status,created_at,updated_at) VALUES ('selected-chat','workspace-a','user-a','selected-case','Private','ru','active',?,?)").run(now, now);
+    const env = { APP_ENV: "development" as const, DB: d1, BUCKET: bucket as unknown as R2Bucket,
+      USER_DOCUMENTS_INDEX: vectorize as unknown as VectorizeIndex, OPENAI_API_KEY: "test-only-key" };
+    for (let index = 0; index < 11; index++) {
+      const analysisId = `ranked-analysis-${index}`, versionId = `ranked-version-${index}`, r2Key = `analysis-versions/workspace-a/${analysisId}/1-source.md`;
+      const text = `Document ${index}. Payment is due on the tenth day.`;
+      const sourceHash = await bucket.putText(r2Key, text);
+      seedAnalysis(sqlite, { userId: "user-a", workspaceId: "workspace-a", analysisId, versionId, r2Key, text, sha256: sourceHash });
+      if (index === 10) await changeAnalysisCaseLink({ db: d1, workspaceId: "workspace-a", userId: "user-a", analysisId,
+        caseId: "selected-case", idempotencyKey: "selected-ranked-case-link" });
+      await d1.batch(scheduleUserDocumentIndexStatements(d1, { analysisId, documentVersionId: versionId,
+        workspaceId: "workspace-a", ownerUserId: "user-a", sourceHash, language: "ru", now }));
+      await executeUserDocumentIndexJob(env, `user-document-index-${versionId}`, "workspace-a", { now: new Date(now), fetchImpl: embeddingFetch() });
+    }
+    const result = await readLegalDocumentContext(env, { workspaceId: "workspace-a", userId: "user-a",
+      conversationId: "selected-chat", query: "payment deadline" }, { fetchImpl: embeddingFetch() });
+    assert.equal(result.length, 1);
+    assert.match(result[0]!.text, /^Document 10\./);
+  } finally { sqlite.close(); }
+});
+
 test("0080 indexes immutable text and search fails closed across tenants and tampered metadata", async () => {
   const { sqlite, d1 } = sqliteD1Fixture();
   const bucket = new FakeBucket();
@@ -294,15 +322,31 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
     assert.equal(evidence[0]?.sourceHash, sourceHash);
     assert.equal(evidence[0]?.workspaceId, "workspace-a");
     assert.equal(evidence[0]?.ownerUserId, "user-a");
-    const chatSources = await retrieveTrustedUserDocumentSources(env, {
-      workspaceId: "workspace-a", userId: "user-a", query: "срок оплаты", locale: "ru",
+    sqlite.prepare("INSERT INTO conversations (id,workspace_id,owner_user_id,title,locale,status,created_at,updated_at) VALUES ('private-chat','workspace-a','user-a','Private','ru','active',?,?)").run(now, now);
+    const noFetch: typeof fetch = async () => { throw new Error("Unauthorized conversation must not trigger embedding"); };
+    for (const scope of [{ userId: "user-b", workspaceId: "workspace-a" }, { userId: "user-a", workspaceId: "workspace-b" }]) {
+      assert.deepEqual(await readLegalDocumentContext(env, { ...scope, conversationId: "private-chat", query: "срок оплаты" }, { fetchImpl: noFetch }), []);
+    }
+    const chatSources = await readLegalDocumentContext(env, {
+      workspaceId: "workspace-a", userId: "user-a", conversationId: "private-chat", query: "срок оплаты",
     }, { fetchImpl: embeddingFetch(), now: new Date(now) });
-    assert.equal(chatSources.sources.length, 1);
-    assert.equal(chatSources.sources[0]?.sourceClass, "USER_TRUSTED_PRIVATE");
-    assert.equal(chatSources.sources[0]?.sourceType, "internal");
-    assert.equal(chatSources.sources[0]?.verificationState, "user_supplied");
-    assert.equal(parsePrivateDocumentLocator(chatSources.sources[0]!.officialUrl), evidence[0]?.id);
-    assert.equal(chatSources.sources[0]?.spans?.[0]?.textSha256.length, 64);
+    assert.equal(chatSources.length, 1);
+    assert.equal(chatSources[0]?.kind, "private_document");
+    assert.equal(chatSources[0]?.source.sourceClass, "USER_TRUSTED_PRIVATE");
+    assert.equal(chatSources[0]?.source.sourceType, "internal");
+    assert.equal(chatSources[0]?.source.verificationState, "user_supplied");
+    assert.equal(parsePrivateDocumentLocator(chatSources[0]!.source.officialUrl), evidence[0]?.id);
+    assert.equal(chatSources[0]?.source.spans?.[0]?.textSha256.length, 64);
+    assert.equal(chatSources[0]?.text, evidence[0]?.snippet);
+    assert.equal(chatSources[0]?.textSha256, chatSources[0]?.source.spans?.[0]?.textSha256);
+    assert.equal("endpoint" in chatSources[0]!, false, "Private text has no legal applicability endpoint");
+    sqlite.prepare("INSERT INTO cases (id,workspace_id,owner_user_id,account_type,locale,title,legal_area,status,current_revision,created_at,updated_at) VALUES ('private-case','workspace-a','user-a','individual','ru','Case','contracts','open',1,?,?)").run(now, now);
+    sqlite.prepare("UPDATE conversations SET case_id='private-case' WHERE id='private-chat'").run();
+    const caseContext = () => readLegalDocumentContext(env, { workspaceId: "workspace-a", userId: "user-a", conversationId: "private-chat", query: "срок оплаты" }, { fetchImpl: embeddingFetch() });
+    assert.deepEqual(await caseContext(), [], "An unrelated document cannot enter a case-linked conversation");
+    await changeAnalysisCaseLink({ db: d1, workspaceId: "workspace-a", userId: "user-a", analysisId: "analysis-a",
+      caseId: "private-case", idempotencyKey: "link-private-document-case" });
+    assert.equal((await caseContext()).length, 1);
     const memberResults = await searchUserDocuments(env, {
       workspaceId: "workspace-a", userId: "user-b", query: "срок оплаты",
     }, { fetchImpl: embeddingFetch() });
@@ -335,9 +379,9 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
         provider_request_id AS providerRequestId,price_version_id AS priceVersionId
        FROM ai_provider_usage_events ORDER BY created_at,id`,
     ).all() as Array<Record<string, unknown>>;
-    assert.equal(usage.length, 7);
+    assert.equal(usage.length, 9);
     assert.equal(usage.filter((event) => event.feature === "document_indexing").length, 1);
-    assert.equal(usage.filter((event) => event.feature === "document_search").length, 6);
+    assert.equal(usage.filter((event) => event.feature === "document_search").length, 8);
     assert.ok(usage.every((event) => event.status === "succeeded"));
     assert.ok(usage.every((event) => event.provider === "openai"));
     assert.ok(usage.every((event) => event.model === "text-embedding-3-large"));
@@ -348,8 +392,8 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
       `SELECT sum(request_count) AS requests,sum(unpriced_request_count) AS unpriced
        FROM ai_cost_daily_aggregates`,
     ).get() as { requests: number; unpriced: number };
-    assert.equal(aggregate.requests, 7);
-    assert.equal(aggregate.unpriced, 7);
+    assert.equal(aggregate.requests, 9);
+    assert.equal(aggregate.unpriced, 9);
   } finally {
     sqlite.close();
   }
