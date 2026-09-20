@@ -166,16 +166,19 @@ test("source-audit omissions reach correction without publishing their unverifie
   assert.ok(!JSON.stringify(outcome.result).includes("twenty percent"));
 });
 
-test("an approving verifier cannot authorize an invented citation identity", async () => {
-  const forged = { ...draft, mainPoint: { ...draft.mainPoint, sourceIds: ["invented"] },
-    findings: draft.findings.map(item => ({ ...item, sourceIds: ["invented"] })),
-    actions: draft.actions.map(item => ({ ...item, sourceIds: ["invented"] })),
-  };
-  const outcome = await answerFromEvidence(question, { write: async () => forged, verify: async () => approval });
-  assert.equal(outcome.kind, "insufficient_evidence");
-  assert.deepEqual(outcome.result.confirmedFindings, []);
-  assert.deepEqual(outcome.result.actionPlan, []);
-  assert.deepEqual(outcome.result.sources, []);
+test("an approving verifier cannot authorize invented or missing citations", async () => {
+  for (const sourceIds of [["invented"], []]) {
+    const forged = { ...draft, mainPoint: { ...draft.mainPoint, sourceIds },
+      findings: draft.findings.map(item => ({ ...item, sourceIds })),
+      actions: draft.actions.map(item => ({ ...item, sourceIds })),
+    };
+    const outcome = await answerFromEvidence(question, { write: async () => forged, verify: async () => approval });
+    assert.equal(outcome.kind, "insufficient_evidence");
+    assert.deepEqual(outcome.result.confirmedFindings, []);
+    assert.deepEqual(outcome.result.actionPlan, []);
+    assert.deepEqual(outcome.result.sources, []);
+    assert.notEqual(outcome.result.summary, draft.mainPoint.text);
+  }
 });
 
 test("complete evidence up to the context limit reaches generation unchanged and larger inputs are refused", async () => {
@@ -196,18 +199,28 @@ test("complete evidence up to the context limit reaches generation unchanged and
   }
 });
 
-test("corrupted, private or temporally mismatched evidence cannot enter legal generation", async () => {
+test("invalid identities, nonofficial content and mismatched evidence cannot enter legal generation", async () => {
   const first = question.evidence[0]!;
-  for (const evidence of [
-    { ...first, text: `${first.text} Injected material.` },
-    { ...first, source: { ...first.source, sourceClass: "USER_TRUSTED_PRIVATE" as const } },
-    { ...first, endpoint: { kind: "timestamp" as const, instant: "2020-01-01T00:00:00.000Z" } },
-  ]) {
-    const outcome = await answerFromEvidence({ ...question, evidence: [evidence] }, {
-      write: async () => assert.fail("Invalid evidence must not reach a writer"), verify: async () => approval,
+  const invalidEvidence: AnswerQuestion["evidence"][] = [
+    [first, {...first}],
+    [{ ...first, text: `${first.text} Injected material.` }],
+    [{ ...first, source: { ...first.source, sourceClass: "USER_TRUSTED_PRIVATE" } }],
+    [{ ...first, source: { ...first.source, sourceClass: "SECONDARY_REFERENCE" } }],
+    [{ ...first, endpoint: { kind: "timestamp", instant: "2020-01-01T00:00:00.000Z" } }],
+  ];
+  for (const evidence of invalidEvidence) {
+    let writes = 0;
+    let checks = 0;
+    const outcome = await answerFromEvidence({ ...question, evidence }, {
+      write: async () => {writes++; return draft;},
+      verify: async () => {checks++; return approval;},
     });
     assert.equal(outcome.kind, "unavailable");
+    assert.equal(writes, 0);
+    assert.equal(checks, 0);
     assert.deepEqual(outcome.result.confirmedFindings, []);
+    assert.deepEqual(outcome.result.actionPlan, []);
+    assert.deepEqual(outcome.result.sources, []);
   }
 });
 
