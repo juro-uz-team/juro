@@ -12,7 +12,7 @@ import {AiRunConflictError,readAiRunStatus} from "../../../../lib/ai/run-store";
 import {AiBranchInputError,listAiBranches,deleteAiConversation} from "../../../../lib/ai/branch-store";
 import {legalChatRequestSchema} from "../../../../lib/legal-chat/request-schema";
 import {deliverSignedInLegalChat} from "../../../../lib/legal-chat/signed-in-delivery";
-import {readSavedLegalAnswer} from "../../../../lib/legal-chat/saved-answer";
+import {readSavedLegalAnswer,publicConversationTurn} from "../../../../lib/legal-chat/saved-answer";
 import {readSavedConversationTurns} from "../../../../lib/legal-chat/conversation-context";
 import {legalChatStream,LegalChatDeliveryError} from "../../../../lib/legal-chat/delivery-stream";
 import {legalRetrievalEnvironment} from "../../../../lib/legal-corpus/environment";
@@ -46,7 +46,7 @@ export const GET=withApiErrors(async(request:Request)=>{
       readSavedConversationTurns({...scope,conversationId,responseMessageId:saved.messageId}),
     ]);
     return response({...saved,branches,facts:facts.results,
-      turns:storedTurns});
+      turns:storedTurns.map(publicConversationTurn)});
   }
   const now=new Date();
   const periodStart=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)).toISOString();
@@ -55,7 +55,7 @@ export const GET=withApiErrors(async(request:Request)=>{
   if((before||beforeId)&&(!z.iso.datetime().safeParse(before).success||!z.string().uuid().safeParse(beforeId).success)) {
     return response({code:"INVALID_REQUEST"},400);
   }
-  const [entitlements,usage,conversations]=await Promise.all([
+  const [entitlements,usage,conversations,cases]=await Promise.all([
     workspaceEntitlements(scope.db,scope.workspaceId),
     scope.db.prepare(`SELECT COALESCE(SUM(units),0) AS used FROM ai_usage_ledger
       WHERE workspace_id=? AND user_id=? AND feature='legal_chat' AND period_start=? AND status IN ('reserved','consumed')`)
@@ -67,11 +67,13 @@ export const GET=withApiErrors(async(request:Request)=>{
         AND (? IS NULL OR c.updated_at<? OR (c.updated_at=? AND c.id<?))
       ORDER BY c.updated_at DESC,c.id DESC LIMIT 51`).bind(scope.workspaceId,scope.userId,before,before,before,beforeId)
       .all<{id:string;title:string;locale:string;status:string;updatedAt:string;lastAnswer:string|null}>(),
+    scope.db.prepare("SELECT id,title,status,updated_at AS updatedAt FROM cases WHERE workspace_id=? AND archived_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 100")
+      .bind(scope.workspaceId).all(),
   ]);
   const page=conversations.results.slice(0,50),last=page.at(-1);
-  return response({provider:{configured:hasAiConfiguration(),provider:"openai",model:openAiChatModel("fast"),fallbackConfigured:false},
+  return response({provider:{configured:hasAiConfiguration()&&Boolean(runtimeEnv().LEGAL_RETRIEVAL_SERVICE),provider:"openai",model:openAiChatModel("fast"),fallbackConfigured:false},
     usage:{used:Number(usage?.used??0),limit:resolveAiAnswerCycleLimit(runtimeEnv().APP_ENV,entitlements.aiAnswerCyclesMonthly),periodEnd},
-    conversations:page,next:conversations.results.length>50&&last?{before:last.updatedAt,beforeId:last.id}:null});
+    conversations:page,cases:cases.results,next:conversations.results.length>50&&last?{before:last.updatedAt,beforeId:last.id}:null});
 });
 
 export const POST=withApiErrors(async(request:Request)=>{

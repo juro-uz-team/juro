@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decodeSavedLegalAnswer, readSavedLegalAnswer } from "../lib/legal-chat/saved-answer";
+import { decodeSavedLegalAnswer, publicConversationTurn, readSavedLegalAnswer } from "../lib/legal-chat/saved-answer";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const historical = {
@@ -11,6 +11,23 @@ const historical = {
     deadlines: [], successOutlook: null, urgency: "normal", suggestedDocument: null, suggestLawyer: false,
     legalDatabaseAsOf: "unavailable",
 };
+
+test("history keeps legacy display text while withholding raw stored metadata", () => {
+  const turn = {
+    branchId: "branch", parentBranchId: null, requestMessageId: "question", responseMessageId: "answer",
+    question: "Question", answer: "Stored answer", createdAt: "2026-09-14T00:00:00.000Z",
+    structuredJson: JSON.stringify({ privateDiagnostics: "not public" }),
+  };
+  const projected = publicConversationTurn(turn);
+  assert.equal(projected.answer, turn.answer);
+  assert.equal(projected.result, null);
+  assert.equal("structuredJson" in projected, false);
+  assert.equal("parentBranchId" in projected, false);
+  assert.equal(JSON.stringify(projected).includes("not public"), false);
+  assert.deepEqual(publicConversationTurn({ ...turn, structuredJson: JSON.stringify(historical) }).result, historical);
+  assert.equal(publicConversationTurn({ ...turn, structuredJson: "{invalid" }).result, null);
+  assert.equal(publicConversationTurn({ ...turn, structuredJson: null }).result, null);
+});
 
 test("historical saved answers decode without inventing evidence or rewriting their content", () => {
   assert.deepEqual(decodeSavedLegalAnswer(JSON.stringify(historical)), historical);
