@@ -14,13 +14,44 @@ import {
   documentAnalysisProbeFailureCode,
   productionDependencyProbesEnabled,
   productionDocumentAnalysisProbeOptions,
-  productionOpenAiProbeOptions,
   providerDiagnosticSafeErrorCode,
   runAnthropicProductionProbe,
   runProductionDependencyProbes,
   safeProviderFailureReason,
 } from "../worker/production-dependency-probes";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
+import {env} from "cloudflare:workers";
+import {probeProviderContract} from "../worker/provider-contract-probe";
+
+test("provider connectivity uses the retained structured transports and rejects invalid output without retry",async context=>{
+  const oldOpenAi=env.OPENAI_API_KEY,oldAnthropic=env.ANTHROPIC_API_KEY;
+  env.OPENAI_API_KEY="test-key";env.ANTHROPIC_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldOpenAi;env.ANTHROPIC_API_KEY=oldAnthropic;});
+  const requests:Array<{url:string;body:Record<string,unknown>}>=[];
+  let invalid=false;
+  context.mock.method(globalThis,"fetch",async(url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));requests.push({url:String(url),body});
+    const output={status:invalid?"wrong":"ok"};
+    return String(url).includes("anthropic")?Response.json({id:"probe",model:body.model,
+      content:[{type:"text",text:JSON.stringify(output)}],usage:{input_tokens:1,output_tokens:1}}):
+      Response.json({id:"probe",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}],usage:{input_tokens:1,output_tokens:1}});
+  });
+  for(const provider of ["openai","anthropic"] as const){
+    assert.deepEqual(await probeProviderContract(provider,{timeoutMs:20000}),{provider,fallbackFromProvider:null,status:"ok"});
+  }
+  assert.equal(requests.length,2);
+  assert.equal(requests[0].body.model,"gpt-5.6-luna");
+  assert.equal(requests[0].body.max_output_tokens,256);
+  assert.equal(requests[1].body.max_tokens,256);
+  assert(!JSON.stringify(requests).includes("legalDatabaseAsOf"));
+  invalid=true;
+  await assert.rejects(()=>probeProviderContract("openai",{timeoutMs:20000}));
+  assert.equal(requests.length,3,"Invalid output must not trigger a second paid call or fallback");
+  await assert.rejects(()=>probeProviderContract("anthropic",{timeoutMs:20000}));
+  assert.equal(requests.length,4,"Each provider must reject invalid output without retry");
+  await assert.rejects(()=>probeProviderContract("anthropic",{timeoutMs:20000,deadlineAt:Date.now()-1}));
+  assert.equal(requests.length,4,"An exhausted shared deadline must prevent another HTTP call");
+});
 
 const probedKeys = [
   "private_r2",
@@ -132,10 +163,6 @@ test("production provider probes stay bounded and isolate OpenAI from fallback",
   assert.equal(PRODUCTION_ANTHROPIC_CONNECTIVITY_TIMEOUT_MS, 5_000);
   assert.ok(PRODUCTION_ANTHROPIC_MODEL_ACCESS_TIMEOUT_MS < PRODUCTION_ANTHROPIC_CONNECTIVITY_TIMEOUT_MS);
   assert.ok(PRODUCTION_ANTHROPIC_CONNECTIVITY_TIMEOUT_MS < PRODUCTION_PROVIDER_PROBE_TIMEOUT_MS);
-  assert.deepEqual(productionOpenAiProbeOptions(), {
-    providerTimeoutMs: 20_000,
-    fallbackEnabled: false,
-  });
 });
 
 test("the document-analysis feature probe reserves time for real provider fallback", () => {
@@ -172,65 +199,65 @@ test("document-analysis probe failures preserve only exact safe provider causes"
   assert.equal(documentAnalysisProbeFailureCode(new Error("private response")), "ANALYSIS_JOB_FAILED");
 });
 
-test("Anthropic production probe runs model access, connectivity, then the legal-chat contract", async () => {
+test("Anthropic production probe runs model access, connectivity, then the structured-output contract", async () => {
   const calls: string[] = [];
   const result = await runAnthropicProductionProbe({
     modelAccess: async () => { calls.push("model-access"); },
     connectivity: async () => { calls.push("connectivity"); },
-    legalChat: async () => {
-      calls.push("legal-chat");
+    structuredOutput: async () => {
+      calls.push("structured-output");
       return {
         provider: "anthropic",
         fallbackFromProvider: null,
-        responseKind: "clarification_required",
+        status: "ok",
       };
     },
   });
-  assert.deepEqual(calls, ["model-access", "connectivity", "legal-chat"]);
+  assert.deepEqual(calls, ["model-access", "connectivity", "structured-output"]);
   assert.deepEqual(result, {
     provider: "anthropic",
     fallbackFromProvider: null,
-    responseKind: "clarification_required",
+    status: "ok",
   });
 });
 
 test("Anthropic production probe stops at model-access failure and tags the stage", async () => {
   let connectivityCalled = false;
-  let legalChatCalled = false;
+  let structuredOutputCalled = false;
   await assert.rejects(() => runAnthropicProductionProbe({
     modelAccess: async () => { throw new Error("private model-access detail"); },
     connectivity: async () => { connectivityCalled = true; },
-    legalChat: async () => {
-      legalChatCalled = true;
+    structuredOutput: async () => {
+      structuredOutputCalled = true;
       throw new Error("must not run");
     },
   }), (error: unknown) => error instanceof Error
     && (error as Error & { providerProbeStage?: unknown }).providerProbeStage === "anthropic_model_access");
   assert.equal(connectivityCalled, false);
-  assert.equal(legalChatCalled, false);
+  assert.equal(structuredOutputCalled, false);
 });
 
 test("Anthropic production probe stops at connectivity failure and tags the stage", async () => {
-  let legalChatCalled = false;
+  let structuredOutputCalled = false;
   await assert.rejects(() => runAnthropicProductionProbe({
     modelAccess: async () => undefined,
     connectivity: async () => { throw new Error("private connectivity detail"); },
-    legalChat: async () => {
-      legalChatCalled = true;
+    structuredOutput: async () => {
+      structuredOutputCalled = true;
       throw new Error("must not run");
     },
   }), (error: unknown) => error instanceof Error
     && (error as Error & { providerProbeStage?: unknown }).providerProbeStage === "anthropic_connectivity");
-  assert.equal(legalChatCalled, false);
+  assert.equal(structuredOutputCalled, false);
 });
 
-test("Anthropic production probe tags a legal-chat contract failure after connectivity succeeds", async () => {
+test("Anthropic production probe tags a structured-output contract failure after connectivity succeeds", async () => {
   await assert.rejects(() => runAnthropicProductionProbe({
     modelAccess: async () => undefined,
     connectivity: async () => undefined,
-    legalChat: async () => { throw new Error("private legal-chat detail"); },
+    structuredOutput: async () => { throw new Error("private structured-output detail"); },
   }), (error: unknown) => error instanceof Error
-    && (error as Error & { providerProbeStage?: unknown }).providerProbeStage === "anthropic_legal_chat_contract");
+    && (error as Error & { providerProbeStage?: unknown }).providerProbeStage === "anthropic_structured_output_contract");
 });
 
 test("Anthropic probe diagnostics classify only documented content-free 400 causes", () => {
@@ -397,12 +424,12 @@ test("provider probes publish operational evidence only for exact non-fallback r
       openai: async () => ({
         provider: "openai",
         fallbackFromProvider: null,
-        responseKind: "clarification_required",
+        status: "ok",
       }),
       anthropic: async () => ({
         provider: "anthropic",
         fallbackFromProvider: null,
-        responseKind: "clarification_required",
+        status: "ok",
       }),
     });
     assert.equal(summary?.openai, "succeeded");

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {probeProviderContract} from "./provider-contract-probe";
 import { createDefaultAnswers } from "../lib/document-builder/defaults";
 import { generateDocx } from "../lib/document-builder/generation/docx";
 import { generatePdf } from "../lib/document-builder/generation/pdf";
@@ -58,13 +59,14 @@ export type ProductionDependencyProbeSummary = {
 export type ProviderProbeResult = {
   provider: "openai" | "anthropic";
   fallbackFromProvider: "openai" | "anthropic" | null;
-  responseKind: string;
+  status: string;
 };
 
 export type AnthropicProductionProbeStage =
   | "anthropic_model_access"
   | "anthropic_connectivity"
-  | "anthropic_legal_chat_contract";
+  | "anthropic_legal_chat_contract"
+  | "anthropic_structured_output_contract";
 
 export type ProductionDependencyProbeHooks = {
   fetchImpl?: typeof fetch;
@@ -278,18 +280,6 @@ async function runDocumentBuilderProbe(env: PlatformJobEnv): Promise<ProbeOutcom
   }
 }
 
-function providerRequest() {
-  return {
-    question: "Synthetic production dependency check. Ask for clarification only.",
-    locale: "ru" as const,
-    answerMode: "short" as const,
-    reasoningMode: "fast" as const,
-    sources: [],
-    legalDatabaseAsOf: "unavailable",
-    requestId: crypto.randomUUID(),
-    safetyIdentifier: "production-synthetic-provider-probe",
-  };
-}
 
 function safeProviderCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -443,30 +433,14 @@ function safeProviderFailureDetails(error: unknown): {
   const providerProbeStage = candidate.providerProbeStage === "anthropic_model_access"
     || candidate.providerProbeStage === "anthropic_connectivity"
     || candidate.providerProbeStage === "anthropic_legal_chat_contract"
+    || candidate.providerProbeStage === "anthropic_structured_output_contract"
     ? candidate.providerProbeStage
     : null;
   return { errorName, providerStatus, providerErrorType, providerRequestId, providerProbeStage };
 }
 
-export function productionOpenAiProbeOptions() {
-  return {
-    providerTimeoutMs: PRODUCTION_PROVIDER_PROBE_TIMEOUT_MS,
-    // This probe measures OpenAI only. A fallback result or failure must never
-    // be attributed to the OpenAI dependency-health row.
-    fallbackEnabled: false,
-  } as const;
-}
-
 async function defaultOpenAiProbe(): Promise<ProviderProbeResult> {
-  const { legalAiProvider } = await import("../lib/ai/provider");
-  const provider = legalAiProvider();
-  if (!provider) throw Object.assign(new Error("OPENAI_NOT_CONFIGURED"), { code: "PROBE_CONFIGURATION_ERROR" });
-  const result = await provider.runLegalChat(providerRequest(), productionOpenAiProbeOptions());
-  return {
-    provider: result.provider,
-    fallbackFromProvider: result.fallbackFromProvider,
-    responseKind: result.data.responseKind,
-  };
+  return probeProviderContract("openai",{timeoutMs:PRODUCTION_PROVIDER_PROBE_TIMEOUT_MS});
 }
 
 function withAnthropicProbeStage(
@@ -483,7 +457,7 @@ function withAnthropicProbeStage(
 export async function runAnthropicProductionProbe(hooks: {
   modelAccess?: () => Promise<void>;
   connectivity?: () => Promise<void>;
-  legalChat?: () => Promise<ProviderProbeResult>;
+  structuredOutput?: () => Promise<ProviderProbeResult>;
 } = {}): Promise<ProviderProbeResult> {
   const deadlineAt = Date.now() + PRODUCTION_PROVIDER_PROBE_TIMEOUT_MS;
   try {
@@ -521,20 +495,12 @@ export async function runAnthropicProductionProbe(hooks: {
   }
 
   try {
-    if (hooks.legalChat) return await hooks.legalChat();
-    const remainingMs = Math.max(1, deadlineAt - Date.now());
-    const { runAnthropicLegalChat } = await import("../lib/ai/anthropic-provider");
-    const result = await runAnthropicLegalChat(providerRequest(), {
-      providerTimeoutMs: remainingMs,
-      nonStreamingResponseStartTimeoutMs: remainingMs,
+    if (hooks.structuredOutput) return await hooks.structuredOutput();
+    return await probeProviderContract("anthropic",{
+      timeoutMs:Math.max(1,deadlineAt-Date.now()),deadlineAt,
     });
-    return {
-      provider: result.provider,
-      fallbackFromProvider: result.fallbackFromProvider,
-      responseKind: result.data.responseKind,
-    };
   } catch (error) {
-    throw withAnthropicProbeStage(error, "anthropic_legal_chat_contract");
+    throw withAnthropicProbeStage(error, "anthropic_structured_output_contract");
   }
 }
 
@@ -548,7 +514,7 @@ async function runOneProviderProbe(
   try {
     const result = await (hook ?? (provider === "openai" ? defaultOpenAiProbe : runAnthropicProductionProbe))();
     if (result.provider !== provider || result.fallbackFromProvider !== null
-      || result.responseKind !== "clarification_required") {
+      || result.status !== "ok") {
       throw Object.assign(new Error("PROVIDER_PROBE_BOUNDARY_FAILED"), { code: "PROVIDER_UNAVAILABLE" });
     }
     await recordOperational(env, provider, startedAt);
