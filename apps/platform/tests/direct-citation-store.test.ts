@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { legalCitationStatements } from "../lib/legal/direct-citation-store";
-import type { LegalSourceContext } from "../lib/ai/provider";
+import type { LegalSourceContext } from "../lib/legal/source-context";
 
 test("citation persistence accepts only an exact validated span excerpt", () => {
   const bindings: unknown[][] = [];

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {validateFinalSourceObservations} from "../lib/legal/final-source-observation";
-import type {LegalSourceContext} from "../lib/ai/provider";
+import type {LegalSourceContext} from "../lib/legal/source-context";
 
 test("a source expiring during synthesis must be refreshed against the same pinned text before delivery", async () => {
   const initial = Date.parse("2026-09-11T00:00:00.000Z");
