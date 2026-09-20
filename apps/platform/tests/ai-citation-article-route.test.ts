@@ -17,8 +17,7 @@ test("citation endpoint is private, ownership-scoped and revalidates Lex or priv
     new URL("../app/api/platform/ai/citations/[messageId]/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(route, /requireApiUser\(\)/);
-  assert.match(route, /workspaceForUser\(user\)/);
+  assert.match(route, /legalChatOwner\(request\)/);
   assert.match(route, /conversation\.workspace_id=\? AND conversation\.owner_user_id=\?/);
   assert.match(route, /citation_validation_status='validated'/);
   assert.match(route, /searchParams\.get\("article"\)/);

@@ -47,7 +47,7 @@ export function createRemoteCorpusResearch(input:{
       request.question.signal?.throwIfAborted();
       if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
       const identity=JSON.stringify([request.question.question,request.question.topics,
-        request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[]]);
+        request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null]);
       if(owner!==undefined&&owner!==identity)throw new Error("CORPUS_RESEARCH_REQUEST_MISMATCH");
       owner=identity;
       if(!opening){

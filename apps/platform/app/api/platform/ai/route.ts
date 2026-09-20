@@ -1,8 +1,8 @@
+import {runtimeIdentityProtection} from "../../../../lib/auth/identity-runtime";
+import {legalChatOwner} from "../../../../lib/legal-chat/http-owner";
 import {z} from "zod";
-import {requireApiUser,withApiErrors,assertSafeWrite} from "../../../../lib/document-builder/auth/api";
-import {requireD1,runtimeEnv} from "../../../../lib/document-builder/storage/runtime";
-import {workspaceForUser,workspaceForUserById} from "../../../../lib/platform/workspace";
-import {isWorkspaceId} from "../../../../lib/platform/routing";
+import {withApiErrors,assertSafeWrite} from "../../../../lib/document-builder/auth/api";
+import {runtimeEnv} from "../../../../lib/document-builder/storage/runtime";
 import {parseJsonRequest} from "../../../../lib/auth/input";
 import {hasAiConfiguration} from "../../../../lib/document-builder/ai/openai";
 import {workspaceEntitlements,resolveAiAnswerCycleLimit} from "../../../../lib/billing/entitlements";
@@ -18,15 +18,10 @@ import {legalChatStream,LegalChatDeliveryError} from "../../../../lib/legal-chat
 import {legalRetrievalEnvironment} from "../../../../lib/legal-corpus/environment";
 
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache"}});
-async function owner(request:Request){
-  const user=await requireApiUser(request);
-  const selected=request.headers.get("x-juro-workspace-id");
-  const workspace=selected?(isWorkspaceId(selected)?await workspaceForUserById(user.id,selected):null):await workspaceForUser(user);
-  return workspace?{db:requireD1(),workspaceId:workspace.id,userId:user.id}:null;
-}
+
 
 export const GET=withApiErrors(async(request:Request)=>{
-  const scope=await owner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
+  const scope=await legalChatOwner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
   const query=new URL(request.url).searchParams;
   const idempotencyKey=query.get("idempotencyKey");
   if(idempotencyKey){
@@ -81,14 +76,14 @@ export const GET=withApiErrors(async(request:Request)=>{
 
 export const POST=withApiErrors(async(request:Request)=>{
   assertSafeWrite(request);
-  const scope=await owner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
+  const scope=await legalChatOwner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
   const parsed=await parseJsonRequest(request,legalChatRequestSchema,40_960);
   if(!parsed.ok)return response({code:parsed.error==="payload_too_large"?"AI_PAYLOAD_TOO_LARGE":"INVALID_REQUEST"},parsed.error==="payload_too_large"?413:400);
   const env=runtimeEnv();
   const [settings,entitlements]=await Promise.all([resolveAiRuntimeSettings({db:scope.db,env}),workspaceEntitlements(scope.db,scope.workspaceId)]);
   const work:Parameters<typeof legalChatStream>[0]["work"]=async(signal,onStage)=>{
     try {
-      return await deliverSignedInLegalChat({...scope,request:parsed.data,settings,
+      return await deliverSignedInLegalChat({...scope,request:parsed.data,settings,memoryKeyring:runtimeIdentityProtection().keyring,
         monthlyLimit:resolveAiAnswerCycleLimit(env.APP_ENV,entitlements.aiAnswerCyclesMonthly),configured:hasAiConfiguration(),
         service:env.LEGAL_RETRIEVAL_SERVICE,retrievalEnvironment:legalRetrievalEnvironment(env),signal,onStage});
     } catch(error){
@@ -105,7 +100,7 @@ export const POST=withApiErrors(async(request:Request)=>{
 
 export const DELETE=withApiErrors(async(request:Request)=>{
   assertSafeWrite(request);
-  const scope=await owner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
+  const scope=await legalChatOwner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
   const parsed=await parseJsonRequest(request,z.object({conversationId:z.string().uuid()}).strict(),2_048);
   if(!parsed.ok)return response({code:"INVALID_REQUEST"},400);
   const deleted=await deleteAiConversation({...scope,conversationId:parsed.data.conversationId});

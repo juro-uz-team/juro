@@ -1,10 +1,10 @@
-import { requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
-import { requireD1, requireR2, runtimeEnv } from "../../../../../../lib/document-builder/storage/runtime";
+import { withApiErrors } from "../../../../../../lib/document-builder/auth/api";
+import { requireR2, runtimeEnv } from "../../../../../../lib/document-builder/storage/runtime";
 import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCitationEvidence } from "../../../../../../lib/legal-corpus/citation-evidence";
 import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/environment";
 import { parsePrivateDocumentLocator } from "../../../../../../lib/document-analysis/private-document-locator";
 import { normalizeArticleNumber } from "../../../../../../lib/legal/legal-language";
-import { workspaceForUser } from "../../../../../../lib/platform/workspace";
+import {legalChatOwner} from "../../../../../../lib/legal-chat/http-owner";
 
 type Context = { params: Promise<{ messageId: string }> };
 
@@ -79,8 +79,8 @@ function normalizedArticle(value: string | null): string | null {
 }
 
 export const GET = withApiErrors(async function GET(request: Request, context: Context) {
-  const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const owner=await legalChatOwner(request);
+  if(!owner)return response({code:"CITATION_UNAVAILABLE"},404);
   const { messageId } = await context.params;
   const searchParams = new URL(request.url).searchParams;
   const sourceUrl = searchParams.get("sourceUrl") ?? "";
@@ -95,7 +95,7 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
   ) {
     return response({ code: "CITATION_UNAVAILABLE" }, 404);
   }
-  const db = requireD1();
+  const db = owner.db;
   const citations = await db.prepare(`SELECT reference.title,
       reference.article_reference AS articleReference,reference.excerpt,
       reference.document_status AS documentStatus,reference.effective_date AS effectiveDate,
@@ -108,7 +108,7 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
       AND reference.citation_validation_status='validated'
       AND conversation.workspace_id=? AND conversation.owner_user_id=?
     ORDER BY reference.created_at ASC LIMIT 64`).bind(
-    messageId, sourceUrl, workspace.id, user.id,
+    messageId, sourceUrl, owner.workspaceId, owner.userId,
   ).all<CitationRow>();
   const citation = requestedArticle
     ? citations.results.find((candidate) => normalizedArticle(candidate.articleReference) === requestedArticle)
@@ -135,7 +135,7 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
         AND version.version=(SELECT max(latest.version) FROM analysis_document_versions latest
           WHERE latest.analysis_id=job.analysis_id AND latest.workspace_id=job.workspace_id)
       LIMIT 1`).bind(
-      privateVectorId, workspace.id, citation.contentSha256, user.id,
+      privateVectorId, owner.workspaceId, citation.contentSha256, owner.userId,
     ).first<PrivateDocumentRow>();
     if (!privateDocument) return response({ code: "CITATION_UNAVAILABLE" }, 404);
     const object = await requireR2().get(privateDocument.r2Key);

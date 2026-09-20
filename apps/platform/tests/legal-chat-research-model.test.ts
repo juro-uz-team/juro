@@ -76,3 +76,20 @@ test("the model cannot invent a source outage or budget exhaustion",async contex
     type:"output_text",text:JSON.stringify({needs:[{reason:"source_unavailable",detail:"Invented outage."}],resolved:[],queries:[query]})}]}]}));
   await assert.rejects(createLegalResearchModel({requestId:"request"}).assess({...request,evidence:[evidence]}));
 });
+
+
+test("research planning and coverage receive the selected private context with rejection labels",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const userContext={confirmedFacts:["A material confirmed circumstance"],rejectedFacts:["A rejected older circumstance"],
+    memories:[{id:"selected",category:"legal_context" as const,statement:"A selected relevant private memory"}]};
+  const payloads:unknown[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);payloads.push(input.userContext);
+    const output=input.evidence.length?{needs:[],resolved:[],queries:[query]}:{queries:[query]};
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const model=createLegalResearchModel({requestId:"context"}),input={...request,question:{...request.question,userContext}};
+  await model.formulate(input);await model.assess({...input,evidence:[evidence]});
+  assert.deepEqual(payloads,[userContext,userContext]);
+  await assert.rejects(model.formulate({...input,question:{...input.question,userContext:{...userContext,rejectedFacts:[]}}}),/RESEARCH_MODEL_REQUEST_MISMATCH/);
+});

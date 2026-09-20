@@ -33,7 +33,7 @@ export function executeLegalChat<Saved>(input:{
       if(context.kind!=="ready") return {terminal:context,sources:[]};
       const question={question:context.question,topics:context.topics,locale:input.context.locale,
         mode:input.mode,answerMode:input.answerMode,temporalScope:context.temporalScope,
-        caseFacts:context.caseFacts,priorTurns:context.priorTurns,signal};
+        caseFacts:context.caseFacts,userContext:context.userContext,priorTurns:context.priorTurns,signal};
       input.onStage?.("researching");
       const research=await researchLegalQuestion(question,input.research);
       // Research feedback is not approved public legal prose. Keep detailed

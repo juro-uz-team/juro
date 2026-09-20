@@ -1,3 +1,5 @@
+import {readLegalUserContext} from "./user-context";
+import type {IdentityKeyring} from "../auth/keyring";
 import {reserveAiRun,renewAiRunReservation,failAiRun,sha256Json} from "../ai/run-store";
 import {openAiChatModel} from "../ai/provider-models";
 import type {AiRuntimeSettings} from "../ai/runtime-settings";
@@ -17,7 +19,7 @@ import {LegalChatDeliveryError,type LegalChatDelivery} from "./delivery-stream";
  * replay never becomes a fresh model invocation after the first save. */
 export async function deliverSignedInLegalChat(input:{
   db:D1Database;workspaceId:string;userId:string;request:LegalChatRequest;
-  settings:AiRuntimeSettings;monthlyLimit:number|null;configured:boolean;
+  settings:AiRuntimeSettings;memoryKeyring?:IdentityKeyring|null;monthlyLimit:number|null;configured:boolean;
   service?:CorpusResearchService;retrievalEnvironment:AiRuntimeSettings["environment"];
   signal?:AbortSignal;onStage?:(stage:LegalChatStage)=>void;
 }):Promise<LegalChatDelivery> {
@@ -48,11 +50,13 @@ export async function deliverSignedInLegalChat(input:{
     await failAiRun({...run,errorCode:"LEGAL_CHAT_UNAVAILABLE"});
     throw new LegalChatDeliveryError("LEGAL_CHAT_UNAVAILABLE",503,reservation.runId);
   }
+  const userContext=await readLegalUserContext({...owner,conversationId:request.conversationId,keyring:input.memoryKeyring??null})
+    .catch(async error=>{await failAiRun({...run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
   const started=Date.now();
   const accounting=createLegalChatAccounting({...owner,environment:input.settings.environment,feature:"legal_chat"});
   return executeRuntimeLegalChat({service:input.service,environment:input.retrievalEnvironment,requestId:reservation.runId,
     safetyIdentifier,responseTone:input.settings.responseTone,
-    context:{question:selected.branch.question,locale:request.locale,
+    context:{question:selected.branch.question,locale:request.locale,userContext,
       priorTurns:selected.turns.map(turn=>({question:turn.question,answer:turn.answer})),
       legalContextDate:request.legalContextDate,signal:input.signal},mode:request.reasoningMode,answerMode:request.answerMode,
     onStage:input.onStage,onAttempt:accounting.onAttempt,onAttemptFinished:accounting.onAttemptFinished,

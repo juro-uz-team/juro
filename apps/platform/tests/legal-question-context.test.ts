@@ -49,3 +49,19 @@ test("prior user statements retain their chronology instead of becoming current 
     assert.deepEqual(result.priorTurns,input.priorTurns);
   }
 });
+
+
+test("memory selection cannot invent identities or promote private context into official evidence",async()=>{
+  const userContext={confirmedFacts:["A confirmed case circumstance"],rejectedFacts:["An explicitly rejected circumstance"],
+    memories:[{id:"relevant",category:"answer_style" as const,statement:"Prefer plain language"},
+      {id:"unrelated",category:"company" as const,statement:"An unrelated private company"}]};
+  const interpreted={topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[],selectedMemoryIds:["relevant"]};
+  const result=await interpretLegalQuestion({...input,userContext},async()=>interpreted);
+  assert.equal(result.kind,"ready");
+  if(result.kind!=="ready")throw new Error("Expected ready");
+  assert.deepEqual(result.userContext?.memories,[userContext.memories[0]]);
+  assert.deepEqual(result.userContext?.rejectedFacts,userContext.rejectedFacts);
+  assert.deepEqual(result.caseFacts,[]);
+  const invented=await interpretLegalQuestion({...input,userContext},async()=>({...interpreted,selectedMemoryIds:["invented"]}));
+  assert.equal(invented.kind,"unavailable");
+});

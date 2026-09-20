@@ -42,6 +42,7 @@ mock.module(new URL("lib/document-builder/auth/api.ts", root).href, {namedExport
 }});
 mock.module(new URL("lib/platform/workspace.ts", root).href, {namedExports: {
   workspaceForUser: async () => ({id: workspaceId}),
+  workspaceForUserById: async (_user:string,id:string) => id==="workspace"?{id}:null,
 }});
 mock.module(new URL("lib/document-builder/storage/runtime.ts", root).href, {namedExports: {
   requireD1: () => ({prepare: (sql: string) => ({bind: (...values: SQLInputValue[]) => ({
@@ -125,6 +126,14 @@ try {
       assert.deepEqual(await response.json(), {code: "CITATION_UNAVAILABLE"});
       assert.equal(serviceCalls, 0);
     }
+  });
+  await test("an explicitly selected member workspace determines citation scope", async () => {
+    seed(JSON.stringify(receipt));workspaceId="other-default";
+    const request=new Request(`https://example.com/api/citation?${new URLSearchParams({sourceUrl:officialUrl,article:"7"})}`,
+      {headers:{"x-juro-workspace-id":"workspace"}});
+    assert.equal((await GET(request,{params:Promise.resolve({messageId})})).status,200);
+    const denied=new Request(request,{headers:{"x-juro-workspace-id":"not-a-member"}});
+    assert.equal((await GET(denied,{params:Promise.resolve({messageId})})).status,404);
   });
   await test("an unsaved article cannot select another citation from the same document", async () => {
     seed(JSON.stringify(receipt));

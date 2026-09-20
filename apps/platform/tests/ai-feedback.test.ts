@@ -67,14 +67,19 @@ test("AI feedback does not reveal another workspace answer or accept invalid fee
 test("AI feedback route requires a safe write, authenticated tenant scope and never sends content to analytics", () => {
   const route = source("app/api/platform/ai/feedback/route.ts");
   const service = source("lib/ai/feedback.ts");
-  const client = source("app/_platform/AiLawyerClient.tsx");
   assert.match(route, /assertSafeWrite\(request\)/);
-  assert.match(route, /requireApiUser\(\)/);
-  assert.match(route, /workspaceForUser\(user\)/);
+  assert.match(route, /legalChatOwner\(request\)/);
+  const owner=source("lib/legal-chat/http-owner.ts");
+  assert.match(owner,/requireApiUser\(request\)/);
+  assert.match(owner,/workspaceForUserById\(user.id,selected\)/);
   assert.match(service, /run\.workspace_id=\?\s+AND run\.user_id=\?/);
   assert.match(service, /conversation\.workspace_id=\?\s+AND conversation\.owner_user_id=\?/);
   assert.match(service, /ai_feedback_saved/);
   assert.doesNotMatch(service, /track[A-Z]|analytics/);
+});
+
+test("AI feedback remains connected to its saved answer in the browser",()=>{
+  const client=source("app/_platform/AiLawyerClient.tsx");
   assert.match(client, /\/api\/platform\/ai\/feedback/);
   assert.match(client, /assistantMessageId: answer\.messageId/);
 });
