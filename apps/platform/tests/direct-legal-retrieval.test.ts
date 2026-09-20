@@ -59,18 +59,38 @@ test("explicit complete-article evidence retains every list continuation and sto
   for (let index=1; index<=12; index++) assert.ok(text.includes(`Условие перечня ${index}:`));
   assert.doesNotMatch(text, /Другая норма|Не относящееся/u);
   assert.ok(source.spans!.every(span => span.article?.startsWith("Статья 17.")));
-  assert.ok(source.spans!.length > 1);
-  await assert.rejects(fetchDirectOfficialLexDocument("https://lex.uz/ru/docs/777", "ru", {
+  assert.equal(source.spans!.length,1);
+  const long=await fetchDirectOfficialLexDocument("https://lex.uz/ru/docs/777", "ru", {
     query: "Article 17", completeArticle: true,
     fetchImpl: async input => String(input).endsWith("/robots.txt")
       ? new Response("User-agent: *\nAllow: /", {headers: {"content-type":"text/plain"}})
       : responseHtml(`<main class="page-document-content"><h1>Закон о договорах</h1><h2>Статья 17. Основания</h2><p>${"длинное условие ".repeat(250)}</p></main>`),
-  }), /LEGAL_SOURCE_PROVISION_CONTEXT_LIMIT/u, "complete-article evidence must never silently truncate a long sentence");
+  });
+  assert.equal(long.source.spans![0]!.text.match(/длинное условие/gu)?.length,250,
+    "Complete-article evidence preserves a long sentence rather than clipping it into ranked snippets");
 });
 
 function responseHtml(body: string): Response {
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
+
+test("complete official articles preserve English and Cyrillic Uzbek publication identity",async()=>{
+  for(const locale of ["en","uzc"] as const) {
+    const heading=locale==="en"?"Article 17. Records":"17-модда. Маълумотлар";
+    const body=locale==="en"?"An applicant may obtain the requested official record under the conditions stated in this article. ":
+      "Ариза берувчи қонун ҳужжатларида белгиланган шартларга мувофиқ сўралган маълумотларни олиши мумкин. ";
+    const next=locale==="en"?"Article 18. Other rules":"18-модда. Бошқа қоидалар";
+    const fetched=await fetchDirectOfficialLexDocument(`https://lex.uz/${locale}/docs/777`,locale,{
+      query:"Article 17",completeArticle:true,fetchImpl:async input=>String(input).endsWith("/robots.txt")
+        ?new Response("User-agent: *\nAllow: /",{headers:{"content-type":"text/plain"}})
+        :responseHtml(`<main class="page-document-content"><h1>${locale==="en"?"Official record rules":"Маълумотларни бериш қоидалари"}</h1><h2>${heading}</h2><p>${body.repeat(5)}</p><h2>${next}</h2><p>${body}</p></main>`),
+    });
+    assert.equal(fetched.source.locale,locale);
+    assert.equal(fetched.source.officialUrl,locale==="uzc"?"https://lex.uz/docs/777":"https://lex.uz/en/docs/777");
+    assert.ok(fetched.source.spans![0]!.text.startsWith(heading));
+    assert.ok(!fetched.source.spans![0]!.text.includes(next));
+  }
+});
 
 function officialDocument(title: string, heading: string): string {
   return `<!doctype html><html><head><title>${title}</title></head><body><main class="page-document-content"><h1>${title}</h1><h2>${heading}</h2><p>${"Официальный текст нормы и правовое регулирование договора. ".repeat(10)}</p></main></body></html>`;

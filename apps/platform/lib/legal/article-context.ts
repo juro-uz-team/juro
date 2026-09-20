@@ -2,7 +2,7 @@ import { detectArticleNumbers } from "./legal-language";
 import { MAX_LEGAL_EVIDENCE_CHARACTERS } from "./legal-evidence-budget";
 import type { NormalizedLegalSourceSnapshot } from "./source-parser";
 
-const ARTICLE_HEADING = /^(?:(?:статья|модда|modda|article)\s+\d+(?:[.-]\d+)?|\d+(?:[.-]\d+)?\s*(?:-\s*)?modda\b)/iu;
+const ARTICLE_HEADING = /^(?:(?:статья|модда|modda|article)\s+\d+(?:[.-]\d+)?|\d+(?:[.-]\d+)?\s*(?:-\s*)?(?:modda|модда)(?!\p{L}))/iu;
 const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
 
 /** Extract an unambiguous article without mistaking numbered list items for

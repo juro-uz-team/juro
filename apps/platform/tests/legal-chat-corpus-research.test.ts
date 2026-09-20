@@ -1,0 +1,216 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {createCorpusResearch} from "../lib/legal-chat/corpus-research";
+import {parsePinnedCandidateRelease, type QuestionInterpretation} from "../lib/legal-corpus/legal-candidate-index";
+import {parseRevalidatedCandidates} from "../lib/legal-corpus/target-retrieval";
+import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
+import type {ResearchRequest} from "../lib/legal-chat/research";
+import {researchLegalQuestion} from "../lib/legal-chat/research";
+
+const instant="2026-09-20T10:00:00.000Z";
+const release=(capability:"current"|"history")=>parsePinnedCandidateRelease({id:`release:${capability}`,
+  environment:"development",capability,instances:[{id:"instance:one",shardId:"shard:one"}],
+  configuration:{identity:"config:one",embeddingModel:"openai/text-embedding-3-large",dimensions:1536,
+    keywordTokenizer:"porter",metadataSchema:["language","document_type","valid_from","valid_to"],
+    gatewayIdentity:"gateway:one",providerProjectIdentity:"project:one",gatewayPayloadLogging:false,
+    gatewayCaching:false,similarityCaching:false}});
+const interpretation:QuestionInterpretation={id:"request:one",formulations:[{id:"query:one",text:"Synthetic record request",
+  privateNameSpans:[],readingIds:["reading:one"],requirementIds:["need:one"]}]};
+const request:ResearchRequest={round:0,needs:[],question:{question:"How can a record be requested?",
+  topics:["Record requests"],locale:"en",mode:"fast",answerMode:"detailed",temporalScope:{kind:"current"}}};
+const candidate=parseRevalidatedCandidates([{candidate:{itemKey:"item:one",instanceId:"instance:one",shardId:"shard:one",
+  formulationIds:["query:one"],readingIds:["reading:one"],retrievalRequirementIds:["need:one"],
+  vectorRank:1,vectorScore:1,keywordRank:1,keywordScore:1,fusionScore:1},
+  canonicalChunkId:"chunk:one",provisionRenditionId:"rendition:one",textRevisionId:"revision:one",
+  provisionConceptId:"concept:one",languageFamily:"en",textualAuthority:"controlling"}])[0]!;
+const controlling=parseResolvedOfficialEvidence({legalInstrumentId:"instrument:one",officialExpressionId:"expression:one",
+  textRevisionId:"revision:one",provisionConceptId:"concept:one",provisionRenditionId:"rendition:one",
+  languageTag:"en",script:"Latn",textualAuthority:"controlling",provisionText:"Synthetic rule: a record may be requested.",
+  officialCitation:{label:"Synthetic record rule",url:"https://lex.uz/docs/777"},
+  evidence:{provisionRenditionId:"rendition:one",r2Key:"provision:one",byteCount:100,
+    sha256:"a".repeat(64),sourceNormalizedSha256:"b".repeat(64),schemaVersion:1}});
+function fixture() {
+  const calls:{releases:number;comparisons:number;reads:number;searches:string[];times:string[]}=
+    {releases:0,comparisons:0,reads:0,searches:[],times:[]};
+  const services:Parameters<typeof createCorpusResearch>[0]["services"]={
+    releaseResolver:{resolve:async endpoint=>{calls.releases++;return release(endpoint.kind==="current"?"current":"history");},
+      resolveComparison:async(left,right)=>{calls.comparisons++;return {left:release(left.kind==="current"?"current":"history"),
+        right:release(right.kind==="current"?"current":"history")};}},
+    candidateIndex:{retrieve:async(_plan,endpoint,pinned,context)=>{
+      calls.searches.push(pinned.id);calls.times.push(context!.currentAt);
+      return {availability:"available",releaseId:pinned.id,endpoint,requiredInstanceIds:[pinned.instances[0]!.id],
+        candidates:[candidate.candidate],partialErrors:[]};}},
+    candidateCatalog:{revalidate:async()=>[candidate]},
+    evidenceResolver:{resolveControlling:async()=>{calls.reads++;return {controlling,materialCitation:controlling.officialCitation};}},
+    referenceDiscovery:async()=>({candidates:[],unresolved:[]}),
+    verifyCurrentSource:async()=>({pinnedTextSha256:"b".repeat(64),observation:{version:2,observedAt:instant,
+      officialUrl:controlling.officialCitation.url,current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}}),
+  };
+  return {services,calls,search:createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant)})};
+}
+
+test("bounded repair searches reuse the pinned release, time filter and authenticated evidence",async()=>{
+  const {search,calls}=fixture();
+  const first=await search(request);
+  const second=await search({...request,round:1,needs:[{reason:"missing_rule",detail:"A qualification is missing."}]});
+  assert.equal(calls.releases,1);
+  assert.equal(calls.reads,1);
+  assert.deepEqual(first,second);
+  assert.equal(first.evidence.length,1);
+  assert.deepEqual(calls.times,[instant,instant]);
+});
+
+test("comparison resolves its release pair atomically and retains evidence at both endpoints",async()=>{
+  const {search,calls}=fixture();
+  const result=await search({...request,question:{...request.question,temporalScope:{kind:"comparison",
+    left:{kind:"timestamp",instant:"2025-01-01T00:00:00.000Z"},right:{kind:"current"}}}});
+  assert.equal(calls.comparisons,1);
+  assert.equal(calls.releases,0);
+  assert.equal(result.evidence.length,2);
+  assert.notEqual(result.evidence[0]!.source.id,result.evidence[1]!.source.id);
+  assert.deepEqual(calls.searches,["release:history","release:current"]);
+});
+
+test("partial retrieval cannot reach the source reader or masquerade as evidence",async()=>{
+  const {services,search,calls}=fixture();
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>({...await retrieve(...args),partialErrors:[{code:"CANDIDATE_PARTIAL_RESPONSE"}]});
+  const result=await search(request);
+  assert.equal(calls.reads,0);
+  assert.equal(result.evidence.length,0);
+  assert.ok(result.needs.some(need=>need.reason==="source_unavailable"));
+});
+
+test("unresolved explicit references survive even when the referring rule was retrieved",async()=>{
+  const {services,search}=fixture();
+  services.referenceDiscovery=async()=>({candidates:[],unresolved:[{reason:"member_budget",
+    query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
+  const result=await search(request);
+  assert.equal(result.evidence.length,1);
+  assert.match(result.needs[0]!.detail,/Article 12/);
+  assert.equal(result.needs[0]!.reason,"unresolved_reference");
+});
+
+test("request-local caches cannot be reused by a different question",async()=>{
+  const {search,calls}=fixture();
+  await search(request);
+  await assert.rejects(search({...request,question:{...request.question,question:"A different dispute"}}),/REQUEST_MISMATCH/);
+  assert.equal(calls.searches.length,1);
+});
+
+test("cancellation after retrieval prevents authentication, source reads and publication",async()=>{
+  const {services,search,calls}=fixture();
+  const controller=new AbortController();
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{const packet=await retrieve(...args);controller.abort();return packet;};
+  await assert.rejects(search({...request,question:{...request.question,signal:controller.signal}}),{name:"AbortError"});
+  assert.equal(calls.reads,0);
+});
+
+const anotherCandidate=(id:string)=>parseRevalidatedCandidates([{...candidate,
+  provisionRenditionId:id,canonicalChunkId:`chunk:${id}`,provisionConceptId:`concept:${id}`,
+  candidate:{...candidate.candidate,itemKey:`item:${id}`}}])[0]!;
+function articleResolution(id:string,article="7") {
+  const original=parseResolvedOfficialEvidence({...controlling,provisionRenditionId:id,
+    provisionText:"An applicant may request a record.",officialCitation:{...controlling.officialCitation,label:`Synthetic rules — Article ${article}`},
+    evidence:{...controlling.evidence,provisionRenditionId:id}});
+  return {controlling:original,materialCitation:original.officialCitation,articleContext:{...original,
+    provisionText:`Article ${article}. Records. An applicant may request a record. The application must identify the record.`,
+    evidence:{...original.evidence,r2Key:`corpus/normalized/${article}`,sha256:original.evidence.sourceNormalizedSha256}}};
+}
+
+test("rediscovering an article in a later round preserves canonical metadata despite a later clock",async()=>{
+  const {services}=fixture();
+  let time=Date.parse(instant),round=0;
+  services.candidateCatalog.revalidate=async()=>[anotherCandidate(`rendition:${round++}`)];
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id);
+  const search=createCorpusResearch({services,formulate:async()=>interpretation,now:()=>time});
+  const gap={reason:"missing_rule" as const,detail:"A different issue still needs a source."};
+  let assessment=0;
+  const result=await researchLegalQuestion(request.question,{indexed:async input=>{
+    time+=1000;return search(input);
+  },official:async()=>({evidence:[],needs:[]}),assess:async()=>++assessment<3?[gap]:
+    {needs:[],resolved:assessment===3?[{need:gap,sourceIds:[(await search({...request,round:1})).evidence[0]!.source.id]}]:[]}});
+  assert.equal(result.evidence.length,1);
+  assert.equal(result.rounds,2);
+  assert.deepEqual(result.needs,[]);
+});
+
+test("a retried authenticated article read closes its original gap through the research coordinator",async()=>{
+  const {services,search}=fixture();
+  let reads=0;
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id);
+    return ++reads===1?{...resolution,articleContext:undefined}:resolution;
+  };
+  const result=await researchLegalQuestion(request.question,{indexed:search,
+    official:async()=>({evidence:[],needs:[]}),assess:async()=>[]});
+  assert.equal(result.rounds,2);
+  assert.equal(result.evidence.length,1);
+  assert.deepEqual(result.needs,[]);
+});
+
+test("recovered explicit reference clears only the matching revision, language and endpoint gap",async()=>{
+  const {services,search}=fixture();
+  let calls=0;
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id==="rendition:reference"?"12":"7");
+  services.referenceDiscovery=async()=>++calls===1?{candidates:[],unresolved:[{reason:"reference_not_found",
+    query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]}:
+    {candidates:[anotherCandidate("rendition:reference")],unresolved:[]};
+  const result=await researchLegalQuestion(request.question,{indexed:search,
+    official:async()=>({evidence:[],needs:[]}),assess:async()=>[]});
+  assert.equal(result.rounds,2);
+  assert.equal(result.evidence.length,2);
+  assert.deepEqual(result.needs,[]);
+});
+
+test("a large ranked pool cannot consume the read and context capacity reserved for explicit references",async()=>{
+  const {services,search}=fixture();
+  const readIds:string[]=[];
+  services.candidateCatalog.revalidate=async()=>Array.from({length:48},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>{readIds.push(id);return articleResolution(id,id.split(":")[1]!);};
+  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
+  const result=await search(request);
+  assert.equal(readIds.length,37);
+  assert.ok(readIds.includes("rendition:99"));
+  assert.ok(result.evidence.some(item=>item.source.article==="99"));
+  assert.ok(result.observations?.some(item=>item.kind==="candidate_read_limit"));
+  assert.ok(result.observations?.some(item=>item.kind==="candidate_context_limit"));
+});
+
+test("ordinary candidate saturation is visible to assessment without manufacturing a missing legal rule",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:48},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id.split(":")[1]!);
+  const result=await researchLegalQuestion(request.question,{indexed:search,
+    official:async()=>assert.fail("No missing coverage was assessed"),assess:async input=>{
+      assert.ok(input.observations?.some(item=>item.kind==="candidate_read_limit"));return [];
+    }});
+  assert.equal(result.rounds,1);
+  assert.deepEqual(result.needs,[]);
+  assert.equal(result.evidence.length,24);
+});
+
+test("a required reference denied the bounded read allowance remains an explicit unresolved need",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:36},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id.split(":")[1]!);
+  services.referenceDiscovery=async()=>({candidates:Array.from({length:13},(_,index)=>anotherCandidate(`rendition:${index+50}`)),unresolved:[]});
+  const result=await search(request);
+  assert.ok(result.needs.some(need=>need.reason==="unresolved_reference"&&need.detail.includes("rendition:62")));
+  assert.ok(!result.evidence.some(item=>item.source.article==="62"));
+});
+
+test("a reference target already in the ranked pool retains priority before context admission",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:36},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id.split(":")[1]!);
+    if(id==="rendition:0")resolution.articleContext.provisionText+=" Eligibility is governed by article 35 of this Act.";
+    return resolution;
+  };
+  // The retained discovery service skips targets already found in this pool.
+  services.referenceDiscovery=async()=>({candidates:[],unresolved:[]});
+  const result=await search(request);
+  assert.ok(result.evidence.some(item=>item.source.article==="35"));
+});

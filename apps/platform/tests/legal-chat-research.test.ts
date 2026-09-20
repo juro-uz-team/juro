@@ -15,6 +15,54 @@ const question:ResearchQuestion={question:"How can I request a record?",topics:[
   locale:"en",mode:"fast",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
 
+test("assessment can explicitly close a known substantive gap using admitted evidence",async()=>{
+  const result=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence:[evidence("eligibility")],needs:[missing]}),
+    official:async()=>{throw Error("Should not run");},
+    assess:async()=>({needs:[],resolved:[{need:missing,sourceIds:["eligibility"]}]}),
+  });
+  assert.deepEqual(result.needs,[]);
+  assert.equal(result.rounds,1);
+  assert.equal(result.sourceUnavailable,false);
+});
+
+test("semantic assessment cannot certify away a source outage or invent resolution evidence",async()=>{
+  for(const structural of [true,false]) {
+    const need:ResearchNeed=structural?{reason:"source_unavailable",detail:"The publisher could not be reached."}:missing;
+    await assert.rejects(researchLegalQuestion(question,{
+      indexed:async()=>({evidence:[evidence("eligibility")],needs:[need]}),
+      official:async()=>({evidence:[],needs:[]}),
+      assess:async()=>({needs:[],resolved:[{need,sourceIds:[structural?"eligibility":"invented"]}]}),
+    }),/ASSESSMENT_RESOLUTION_INVALID/);
+  }
+});
+
+test("many distinct bounded source failures preserve every gap and the useful admitted evidence",async()=>{
+  const needs:ResearchNeed[]=Array.from({length:42},(_,index)=>({reason:"source_unavailable",detail:`Source ${index} was unavailable.`}));
+  const result=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence:[evidence("useful")],needs}),
+    official:async()=>({evidence:[],needs:[]}),assess:async()=>[],
+  });
+  assert.equal(result.evidence.length,1);
+  assert.equal(result.needs.filter(need=>need.reason==="source_unavailable").length,42);
+  assert.equal(result.sourceUnavailable,true);
+});
+
+test("repeated needs have a unique assessment inventory and duplicate valid resolutions apply atomically",async()=>{
+  let assessment=0;
+  const result=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence:[evidence("rule")],needs:[missing,missing]}),
+    official:async()=>({evidence:[],needs:[missing]}),
+    assess:async input=>{
+      assert.deepEqual(input.needs,[missing]);
+      return ++assessment<3?[]:{needs:[],resolved:[
+        {need:missing,sourceIds:["rule"]},{need:missing,sourceIds:["rule"]}]};
+    },
+  });
+  assert.equal(result.rounds,2);
+  assert.deepEqual(result.needs,[]);
+});
+
 test("official recovery follows corpus search and explicitly resolves a referenced rule",async()=>{
   const calls:string[]=[];
   const result=await researchLegalQuestion(question,{

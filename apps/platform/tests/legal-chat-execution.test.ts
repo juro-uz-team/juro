@@ -22,11 +22,13 @@ const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:
 test("one execution preserves chronological facts and saves only the verified terminal answer",async()=>{
   const turns=[{question:"I am an applicant.",answer:"An earlier assistant assertion is not law."}];
   const events:string[]=[];let saved:LegalChatTerminal|undefined;
+  const observations=[{kind:"candidate_read_limit" as const,lane:"indexed" as const,omitted:30}];
   const result=await executeLegalChat({context:{question:"I need my record.",locale:"en",priorTurns:turns},mode:"fast",answerMode:"detailed",
     interpret:async input=>{events.push("interpret");assert.deepEqual(input.priorTurns,turns);
       return {topics:["Record access"],facts:[{turn:0,quotation:"I am an applicant."},{turn:1,quotation:"I need my record."}],temporal:{kind:"current"},questions:[]};},
     research:{indexed:async request=>{events.push("research");assert.deepEqual(request.question.priorTurns,turns);
-      return {evidence:[evidence],needs:[]};},official:async()=>assert.fail("Corpus evidence is sufficient"),assess:async()=>[]},
+      return {evidence:[evidence],needs:[],observations};},official:async()=>assert.fail("Corpus evidence is sufficient"),
+      assess:async input=>{assert.deepEqual(input.observations,observations);return [];}},
     model:{write:async input=>{events.push("write");assert.deepEqual(input.question.priorTurns,turns);
       assert.deepEqual(input.question.caseFacts,["I need my record."]);return draft;},
       verify:async()=>{events.push("verify");return review;}},
@@ -35,6 +37,10 @@ test("one execution preserves chronological facts and saves only the verified te
   });
   assert.deepEqual(result,{id:"saved-result"});
   assert.equal(saved?.kind,"complete");
+  if(saved&&"research" in saved) {
+    assert.deepEqual(saved.research.observations,observations);
+    assert.doesNotMatch(JSON.stringify(saved.result),/candidate_read_limit/);
+  }
   assert.deepEqual(events,["interpret","research","write","verify","save"]);
 });
 

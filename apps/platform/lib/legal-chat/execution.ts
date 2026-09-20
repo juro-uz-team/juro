@@ -1,11 +1,11 @@
 import { answerFromEvidence, type AnswerModel, type AnswerOutcome, type AnswerQuestion } from "./answer-engine";
 import { interpretLegalQuestion, type QuestionContext, type QuestionContextInput } from "./question-context";
-import { researchLegalQuestion, type LegalResearchServices, type ResearchNeed } from "./research";
+import { researchLegalQuestion, type LegalResearchServices, type ResearchNeed, type ResearchObservation } from "./research";
 import { runReservedLegalChat } from "./reserved-execution";
 import { aiText } from "../ai/localization";
 
 export type LegalChatTerminal = (AnswerOutcome & {research:{
-  needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];
+  needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
 }}) | Exclude<QuestionContext,{kind:"ready"}>;
 
 /** One reserved request owns interpretation, bounded research, answer and save.
@@ -39,6 +39,6 @@ export function executeLegalChat<Saved>(input:{
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs},input.model);
       return {...answer,research:{needs:research.needs,rounds:research.rounds,
-        sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id)}};
+        sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}};
     }});
 }

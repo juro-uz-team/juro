@@ -76,7 +76,6 @@ type RuntimeDependencies = {
   evidenceBucket: Pick<LegalEvidenceBucket, "get">;
   historyEvidenceBucket?: Pick<LegalEvidenceBucket, "get">;
   customArtifactBucket?: R2Bucket;
-  reasoningService: Fetcher;
 };
 
 type RuntimeReleaseResolver = {
@@ -598,7 +597,7 @@ function createRuntimeEvidenceServices(
   releaseResolver: RuntimeReleaseResolver,
 ) {
   const { environment, db, evidenceBucket, historyEvidenceBucket,
-    customArtifactBucket, reasoningService } = dependencies;
+    customArtifactBucket } = dependencies;
   const r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>();
   const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket);
   const historicalArticleContext = historyEvidenceBucket
@@ -658,18 +657,16 @@ export function createRuntimeLegalEvidenceServices(
   observation: {onReleaseResolved?: (releaseId: string) => void} = {},
 ) {
   const environment = environmentSchema.parse(env.APP_ENV);
-  if (!env.LEGAL_DB || !env.LEGAL_EVIDENCE_BUCKET
-    || !env.LEGAL_CORPUS_REASONING_SERVICE) {
+  if (!env.LEGAL_DB || !env.LEGAL_EVIDENCE_BUCKET) {
     throw new TypeError("TARGET_RETRIEVAL_RUNTIME_UNAVAILABLE");
   }
   const db = env.LEGAL_DB;
   const evidenceBucket = env.LEGAL_EVIDENCE_BUCKET;
-  const reasoningService = env.LEGAL_CORPUS_REASONING_SERVICE;
   const dependencies = { environment, db, evidenceBucket, onReleaseResolved: observation.onReleaseResolved,
     membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
     sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
     historyEvidenceBucket: env.LEGAL_HISTORY_EVIDENCE_BUCKET,
-    customArtifactBucket: env.LEGAL_CUSTOM_ARTIFACT_BUCKET, reasoningService };
+    customArtifactBucket: env.LEGAL_CUSTOM_ARTIFACT_BUCKET };
   const releaseLifecycle = createReleaseLifecycle({ db });
   const customProviders = new Map<CustomSearchCapability, LegalCandidateProvider>();
   if (env.LEGAL_AI_GATEWAY_ID && env.LEGAL_AI_PROVIDER_PROJECT_ID) {

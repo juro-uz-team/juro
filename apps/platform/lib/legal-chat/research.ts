@@ -9,18 +9,29 @@ export const researchNeedSchema = z.object({
   detail: z.string().trim().min(1).max(1000),
 }).strict();
 export type ResearchNeed = z.infer<typeof researchNeedSchema>;
+export const researchObservationSchema=z.object({
+  kind:z.enum(["candidate_read_limit","candidate_context_limit","search_query_limit","historical_live_unavailable"]),
+  lane:z.enum(["indexed","official"]),omitted:z.number().int().positive(),
+}).strict();
+export type ResearchObservation=z.infer<typeof researchObservationSchema>;
 export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sourceUnavailable"|"onStage"> & {topics:readonly string[]};
 export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly ResearchNeed[];
+  observations?:readonly ResearchObservation[];
   resolved?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[]};
 export type ResearchRequest = {question:ResearchQuestion; needs:readonly ResearchNeed[]; round:number};
+export type ResearchAssessment = {
+  needs:readonly ResearchNeed[];
+  resolved:readonly {need:ResearchNeed;sourceIds:readonly string[]}[];
+};
 export type LegalResearchServices = {
   indexed(request:ResearchRequest):Promise<ResearchPacket>;
   official(request:ResearchRequest):Promise<ResearchPacket>;
-  assess(request:ResearchRequest & {evidence:readonly LegalEvidence[]}):Promise<readonly ResearchNeed[]>;
+  assess(request:ResearchRequest & {evidence:readonly LegalEvidence[];observations?:readonly ResearchObservation[]}):Promise<readonly ResearchNeed[]|ResearchAssessment>;
 };
 export type LegalResearchResult = ResearchPacket & {
   sourceUnavailable:boolean;
   rounds:number;
+  observations:readonly ResearchObservation[];
 };
 
 /** Retrieval discovers evidence; assessment identifies unresolved coverage.
@@ -31,11 +42,16 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   let needs:ResearchNeed[]=[];
   let sourceUnavailable=false;
   let rounds=0;
-  const parseNeeds=(value:readonly ResearchNeed[])=>z.array(researchNeedSchema).max(40).parse(value);
+  const observations:ResearchObservation[]=[];
+  // Structural readers may report one failure per bounded source read. Their
+  // inventory is not the model's 40-item response schema; preserve these gaps
+  // without discarding otherwise authenticated, useful evidence.
+  const parseNeeds=(value:readonly ResearchNeed[])=>z.array(researchNeedSchema).parse(value);
   const checkCancellation=()=>question.signal?.throwIfAborted();
   const merge=async(packet:ResearchPacket)=>{
     checkCancellation();
     const incoming=parseNeeds(packet.needs);
+    observations.push(...z.array(researchObservationSchema).parse(packet.observations??[]));
     if(!fitsLegalEvidenceBudget(packet.evidence.map(item=>item.text))) {
       // This packet is not admitted at all. Do not truncate it, attempt to
       // authenticate an arbitrary prefix, or turn a size limit into an outage.
@@ -84,7 +100,25 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
     await search("indexed",request);
     const assess=async()=>{
       checkCancellation();
-      return parseNeeds(await services.assess({...request,needs:[...needs],evidence}));
+      needs=[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()];
+      const result=await services.assess({...request,needs:[...needs],evidence,observations:[...observations]});
+      checkCancellation();
+      if(Array.isArray(result)) return parseNeeds(result);
+      const assessment=result as ResearchAssessment;
+      const next=parseNeeds(assessment.needs);
+      for(const resolution of assessment.resolved) {
+        researchNeedSchema.parse(resolution.need);
+        // Semantic assessment may close substantive coverage gaps. It cannot
+        // certify a failed service, source revision or exhausted read budget.
+        if(!["missing_rule","unresolved_reference"].includes(resolution.need.reason)
+          || !needs.some(need=>need.reason===resolution.need.reason&&need.detail===resolution.need.detail)
+          || !resolution.sourceIds.length || resolution.sourceIds.some(id=>!evidence.some(item=>item.source.id===id))) {
+          throw new Error("RESEARCH_ASSESSMENT_RESOLUTION_INVALID");
+        }
+      }
+      needs=needs.filter(need=>!assessment.resolved.some(resolution=>
+        need.reason===resolution.need.reason&&need.detail===resolution.need.detail));
+      return next;
     };
     let assessed=await assess();
     needs=[...needs,...assessed];
@@ -102,5 +136,5 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   if(!evidence.length && !needs.length) needs.push({reason:"missing_rule",detail:"No authenticated official evidence was found for the question."});
   if(rounds===LEGAL_CHAT_MAX_RESEARCH_ROUNDS && needs.length) needs.push({reason:"search_budget",detail:"The bounded official research rounds are exhausted; unresolved coverage remains."});
   sourceUnavailable ||= needs.some(need=>need.reason==="source_unavailable");
-  return {evidence,needs,sourceUnavailable,rounds};
+  return {evidence,needs,sourceUnavailable,rounds,observations};
 }

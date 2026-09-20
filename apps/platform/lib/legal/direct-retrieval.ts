@@ -8,6 +8,7 @@ import {
   fetchLegalSource,
   LegalSourceFetchError,
   type LegalSourceFetchErrorCode,
+  type LegalSourceLocale,
 } from "./source-fetch";
 import {
   containsLegalSourceUiNoise,
@@ -607,14 +608,11 @@ async function requestScopedSourceSpans(input: {
     const article = completeArticleText(input.snapshot.blocks, input.articleNumberRequested);
     if (!article) throw new Error("LEGAL_SOURCE_PROVISION_INCOMPLETE");
     const {heading, text: fullText} = article;
-    const chunks = splitLegalText(fullText);
-    if (chunks.length > MAX_SOURCE_SPANS || chunks.join(" ").replace(/\s+/gu, " ").trim() !== fullText) {
-      throw new Error("LEGAL_SOURCE_PROVISION_CONTEXT_LIMIT");
-    }
-    return Promise.all(chunks.map(async (text, index) => ({
-      id: `span:${input.contentSha256.slice(0, 12)}:article:${input.articleNumberRequested}:${index}`,
-      article: heading, paragraph: null, text, textSha256: await sha256Hex(text), quality: "high" as const,
-    })));
+    // Complete evidence already passed the shared article context bound. The
+    // ranked-snippet splitter can clip long sentences and must not determine
+    // whether a complete article is usable or which qualifications survive.
+    return [{id: `span:${input.contentSha256.slice(0, 12)}:article:${input.articleNumberRequested}:0`,
+      article: heading, paragraph: null, text:fullText, textSha256:await sha256Hex(fullText), quality:"high"}];
   }
   let currentArticle: string | null = null;
   const articleHeadingsByNumber = new Map<string, string>();
@@ -705,7 +703,7 @@ async function requestScopedSourceSpans(input: {
 function sourceQuality(input: {
   snapshot: NormalizedLegalSourceSnapshot;
   canonicalUrl: string;
-  locale: "ru" | "uz";
+  locale: LegalSourceLocale;
   spans: readonly LegalSourceSpan[];
 }): NonNullable<LegalSourceContext["sourceQuality"]> {
   const title = input.snapshot.documentTitle.replace(/\s+/gu, " ").trim();
@@ -716,7 +714,7 @@ function sourceQuality(input: {
   const uzbekCyrillic = sample.match(/[ўқғҳ]/giu)?.length ?? 0;
   const localeMatches = letters >= 40 && (input.locale === "ru"
     ? cyrillic / letters >= 0.55 && (cyrillic === 0 || uzbekCyrillic / cyrillic <= 0.02)
-    : latin / letters >= 0.45);
+    : input.locale === "uzc" ? cyrillic / letters >= 0.55 : latin / letters >= 0.45);
   let canonicalUrl = false;
   try {
     const parsed = new URL(input.canonicalUrl);
@@ -801,14 +799,10 @@ class OfficialDirectProvider implements LegalSourceProvider {
       terms: this.terms,
       completeRequestedArticle: this.completeArticle,
     });
-    // Direct-answer source cards predate the `uz-Cyrl` value. Preserve the
-    // exact UZC page in the packet while using Uzbek query quality rules; the
-    // full corpus stores `uz-Cyrl` explicitly instead of translating it.
-    if (fetched.locale === "en") throw new Error("LEGAL_SOURCE_QUALITY_REJECTED");
     const quality = sourceQuality({
       snapshot,
       canonicalUrl: fetched.canonicalUrl,
-      locale: fetched.locale === "uzc" ? "uz" : fetched.locale,
+      locale: fetched.locale,
       spans,
     });
     if (!quality.passed) throw new Error("LEGAL_SOURCE_QUALITY_REJECTED");
@@ -1078,7 +1072,7 @@ export async function retrieveDirectLegalSources(
  * robots, parsing, structure and quality gates as search retrieval. */
 export async function fetchDirectOfficialLexDocument(
   url: string,
-  locale: "ru" | "uz",
+  locale: LegalSourceLocale,
   options: {
     fetchImpl?: FetchLike;
     now?: () => Date;
@@ -1105,7 +1099,7 @@ export async function fetchDirectOfficialLexDocument(
   try {
     return await new OfficialDirectProvider(
       "lex",
-      locale,
+      locale === "uzc" ? "uz" : locale === "en" ? "ru" : locale,
       abortableFetch(options.fetchImpl ?? fetch, signal),
       options.now ?? (() => new Date()),
       wait,
