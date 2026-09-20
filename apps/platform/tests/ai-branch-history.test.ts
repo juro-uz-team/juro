@@ -13,6 +13,49 @@ import { loadAiConversationTurns } from "../lib/ai/conversation-branch-reader";
 
 const resolveAiBranchInput = async (input: Parameters<typeof readConversationContext>[0]) => (await readConversationContext(input)).branch;
 
+test("long follow-ups retain early facts and edits across context read pages",async context=>{
+  const {sqlite,d1}=await branchDatabase();context.after(()=>sqlite.close());
+  seedInitialBranch(sqlite);
+  for(let index=2;index<=201;index++) {
+    for(const author of ["user","assistant"]) {
+      sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,'conversation-1',?,?,'2026-08-01')")
+        .run(`${author==="user"?"request":"response"}-${index}`,author,`Turn ${index}`);
+    }
+    sqlite.prepare(`INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,forked_from_message_id,request_message_id,response_message_id,operation,created_at)
+      VALUES (?,'conversation-1','workspace-1','user-1',?,NULL,?,?,?,'2026-08-01')`)
+      .run(`branch-${index}`,`branch-${index-1}`,`request-${index}`,`response-${index}`,index===31?"regenerate":"follow_up");
+  }
+  const selected=await readConversationContext({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
+    requestedOperation:"follow_up",sourceMessageId:"response-70",question:"What should I do next?"});
+  assert.equal(selected.turns.length,69);
+  assert.equal(selected.turns[0]?.question,"Какой срок действует по договору?");
+  assert.equal(selected.turns.some(turn=>turn.question==="Turn 30"),false);
+  assert.equal(selected.turns[29]?.question,"Turn 31");
+  assert.equal(selected.turns.at(-1)?.question,"Turn 70");
+  await assert.rejects(readConversationContext({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
+    requestedOperation:"follow_up",sourceMessageId:"response-201",question:"What next?"}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
+});
+
+test("legacy follow-up context does not silently discard turns beyond the old display page",async context=>{
+  const {sqlite,d1}=await branchDatabase();context.after(()=>sqlite.close());
+  seedInitialBranch(sqlite);
+  sqlite.exec("DELETE FROM message_versions; DELETE FROM message_branches;");
+  for(let index=2;index<=26;index++) {
+    const time=new Date(Date.parse("2026-08-01T00:00:00Z")+index*1000).toISOString();
+    for(const author of ["user","assistant"]) {
+      sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,'conversation-1',?,?,?)")
+        .run(`${author==="user"?"request":"response"}-${index}`,author,`Legacy ${index}`,time);
+    }
+    sqlite.prepare(`INSERT INTO ai_runs(id,workspace_id,user_id,conversation_id,request_message_id,response_message_id,status,completed_at)
+      VALUES (?,'workspace-1','user-1','conversation-1',?,?,'completed',?)`).run(`run-${index}`,`request-${index}`,`response-${index}`,time);
+  }
+  const selected=await readConversationContext({db:d1,workspaceId:"workspace-1",userId:"user-1",conversationId:"conversation-1",
+    requestedOperation:"follow_up",sourceMessageId:"response-26",question:"What should I do next?"});
+  assert.equal(selected.turns.length,26);
+  assert.equal(selected.turns[0]?.question,"Какой срок действует по договору?");
+  assert.equal(selected.turns.at(-1)?.question,"Legacy 26");
+});
+
 test("legacy-root regeneration advances versions across sibling and descendant selections", async () => {
   const {sqlite,d1}=await branchDatabase();
   seedInitialBranch(sqlite);
