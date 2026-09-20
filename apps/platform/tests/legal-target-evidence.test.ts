@@ -64,6 +64,10 @@ test("accepted parent recovery authenticates full article context without replac
   assert.equal(alreadyComplete?.evidence.r2Key, key,
     "An already complete provision still needs an authenticated full-article locator");
   assert.equal(alreadyComplete?.provisionText, context!.provisionText);
+  const middle = await read({...original, provisionText: "2) the requested action"}, "7");
+  assert.equal(middle?.provisionText, context!.provisionText,
+    "A middle fragment recovers the complete authenticated article");
+  assert.equal(await read({...original, provisionText:""}, "7"), null);
   const receipt = {version: 1 as const, capability: "current" as const, kind: "normalized-article" as const,
     r2Key: key, byteCount: bytes.length, sha256: sha256(bytes), officialUrl: representativeProvision.sourceUrl,
     languageTag: "ru" as const, articleNumber: "7", textSha256: sha256(context!.provisionText)};

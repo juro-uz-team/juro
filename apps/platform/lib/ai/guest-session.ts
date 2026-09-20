@@ -6,10 +6,28 @@ import {
   type IdentityKeyring,
 } from "../auth/keyring";
 import type { AiOutputLocale } from "./localization";
+import { LEGAL_CHAT_RESERVATION_TTL_MS } from "../legal-chat/execution-limits";
 
 export const GUEST_AI_COOKIE = "juro_guest_ai";
 export const GUEST_AI_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
-export const GUEST_AI_RESERVATION_TTL_MS = 2 * 60 * 1_000;
+export const GUEST_AI_RESERVATION_TTL_MS = LEGAL_CHAT_RESERVATION_TTL_MS;
+
+export async function renewGuestAiReservation(input: {
+  db: D1Database; session: GuestAiSession; runId: string; now?: number;
+}): Promise<boolean> {
+  const time = input.now ?? Date.now();
+  const now = new Date(time).toISOString();
+  const expiresAt = new Date(Math.min(time + GUEST_AI_RESERVATION_TTL_MS,
+    Date.parse(input.session.expiresAt))).toISOString();
+  const result = await input.db.prepare(`UPDATE guest_ai_sessions
+    SET reservation_expires_at=?,updated_at=?
+    WHERE id=? AND token_hmac=? AND state='reserved' AND reserved_run_id=?
+      AND reservation_expires_at>? AND expires_at>?
+      AND EXISTS (SELECT 1 FROM guest_ai_runs WHERE id=? AND session_id=? AND status='processing')`)
+    .bind(expiresAt,now,input.session.id,input.session.tokenHmac,input.runId,now,now,
+      input.runId,input.session.id).run();
+  return Number(result.meta.changes ?? 0) === 1;
+}
 export const GUEST_AI_IP_WINDOW_MS = 60 * 60 * 1_000;
 export const GUEST_AI_MAX_SESSIONS_PER_IP = 5;
 export const GUEST_AI_MAX_REQUESTS = 5;
@@ -534,7 +552,16 @@ export async function completeGuestAiRun(input: {
   );
   const nowIso = date(input.now).toISOString();
   const consumed = input.responseKind === "answer";
-  const [runResult, sessionResult] = await input.db.batch([
+  const [, runResult, sessionResult] = await input.db.batch([
+    // Force the entire transaction to roll back when ownership is lost. A
+    // zero-row UPDATE alone would still execute caller-supplied save statements.
+    input.db.prepare(`SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM guest_ai_sessions session JOIN guest_ai_runs run ON run.id=session.reserved_run_id
+      WHERE session.id=? AND run.id=? AND run.session_id=session.id
+        AND session.state='reserved' AND run.status='processing'
+        AND session.reservation_expires_at>? AND session.expires_at>?
+    ) THEN 1 ELSE json_extract('GUEST_RESERVATION_LOST','$') END AS owned`)
+      .bind(input.run.sessionId,input.run.id,nowIso,nowIso),
     input.db.prepare(
       `UPDATE guest_ai_runs SET status='completed',response_kind=?,
          result_ciphertext=?,result_iv=?,result_key_version=?,provider=?,model=?,
@@ -546,6 +573,7 @@ export async function completeGuestAiRun(input: {
          AND EXISTS (
            SELECT 1 FROM guest_ai_sessions
            WHERE id=? AND state='reserved' AND reserved_run_id=?
+             AND reservation_expires_at>? AND expires_at>?
          )`,
     ).bind(
       input.responseKind,
@@ -569,6 +597,8 @@ export async function completeGuestAiRun(input: {
       input.run.sessionId,
       input.run.sessionId,
       input.run.id,
+      nowIso,
+      nowIso,
     ),
     input.db.prepare(
       `UPDATE guest_ai_sessions SET state=?,answer_count=?,consumed_at=?,

@@ -651,8 +651,8 @@ export async function queryCustomBm25RuntimeBatch(
     }
     return [...scores].map(([ordinal, score]) => ({ ordinal, score,
       ...(explicitArticles.has(ordinal) ? {explicitArticleMatch: true as const} : {}) }))
-      .sort((left, right) => Number(!!right.explicitArticleMatch) - Number(!!left.explicitArticleMatch)
-        || right.score - left.score || left.ordinal - right.ordinal)
+      .sort((left, right) => right.score - left.score
+        || Number(!!right.explicitArticleMatch) - Number(!!left.explicitArticleMatch) || left.ordinal - right.ordinal)
       .slice(0, input.topK);
   });
 }

@@ -10,6 +10,12 @@ export const legalDraftSchema = z.object({
   risks: z.array(legalRiskSchema).max(16),
   questions: z.array(z.string().min(1).max(500)).max(8),
   unresolved: z.array(z.string().min(1).max(1000)).max(40),
+  // Compiled by the writer adapter from issue membership, never inferred from
+  // claim positions in a different draft or supplied by the verifier.
+  ruleBindings: z.array(z.object({
+    findingId: z.string().min(1).max(80),
+    actionIds: z.array(z.string().min(1).max(80)).max(16),
+  }).strict()).max(16).default([]),
 }).strict();
 export type LegalDraft = z.infer<typeof legalDraftSchema>;
 export type LegalClaimKind = "mainPoint" | "finding" | "action" | "risk" | "question" | "gap";
@@ -40,6 +46,7 @@ export const legalVerificationSchema = z.object({
     issue: z.string().min(1).max(1000),
     findingIds: z.array(z.string().min(1).max(80)).max(16),
     actionIds: z.array(z.string().min(1).max(80)).max(16),
+    actionRequired: z.boolean().default(true),
     gaps: z.array(z.string().min(1).max(1000)).max(16),
   }).strict()).max(24),
   complete: z.boolean(), gaps: z.array(z.string().min(1).max(1000)).max(40),

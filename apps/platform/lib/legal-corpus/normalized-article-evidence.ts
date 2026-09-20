@@ -61,7 +61,10 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
       || ({ru: "ru", uz: "uz-Latn", uzc: "uz-Cyrl", en: "en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
     const context = completeArticleText(parent.snapshot.blocks, article);
     const originalText = original.provisionText.replace(/\s+/gu, " ").trim();
-    if (!context || !context.text.startsWith(originalText)) return null;
+    // A discovered provision can be a middle fragment. Its exact content must
+    // occur in this uniquely identified article of the authenticated parent;
+    // requiring a prefix loses earlier scope and later exceptions.
+    if (!context || !originalText || !context.text.includes(originalText)) return null;
     console.info(JSON.stringify({event: "legal.article_context_resolved",
       originalCharacters: original.provisionText.length, contextCharacters: context.text.length}));
     return {...original, provisionText: context.text, evidence: {...original.evidence,

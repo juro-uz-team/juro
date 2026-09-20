@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReferenceDiscoveryResult } from "./runtime-reference-discovery";
 import {createRuntimeExecutionObserver, parseRuntimeExecutionHeader, readExecutionDiagnostic, type ServiceExecutionObservation} from "../ai/runtime-execution-observation";
 import {pinnedSourceStatusSchema, type PinnedSourceStatus} from "../legal/source-observation";
 import { citationEvidenceLocatorSchema } from "./citation-evidence";
@@ -331,7 +332,7 @@ type Dependencies = {
     ): Promise<RevalidatedCandidate[]>;
   };
   referenceDiscovery?: (candidates: readonly SelectionCandidate[], endpoint: TemporalEndpoint,
-    release: PinnedCandidateRelease, currentAt: string) => Promise<RevalidatedCandidate[]>;
+    release: PinnedCandidateRelease, currentAt: string) => Promise<ReferenceDiscoveryResult>;
   evidenceResolver: {
     resolveControlling(
       provisionRenditionId: string,

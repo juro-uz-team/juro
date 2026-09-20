@@ -2,12 +2,12 @@ import { z } from "zod";
 import { callOpenAiStructured, type AiProviderAttemptObservation, type AiStructuredProgress } from "../document-builder/ai/openai";
 import { openAiChatModel } from "../ai/provider-models";
 import { legalChatProviderTimeoutMs } from "../ai/legal-chat-timeout";
+import { LEGAL_CHAT_PROVIDER_TIMEOUT_MS } from "./execution-limits";
 import { legalClaimId, legalDraftClaims, legalDraftSchema, legalVerificationSchema, MAX_LEGAL_SOURCE_PASSAGES, type LegalVerification } from "./answer-contract";
 import type { AnswerModel, AnswerQuestion } from "./answer-engine";
 
 // Whole-answer writing and independent verification share a bounded quality
 // window in both modes. Mode selects the model, not a reduced correctness budget.
-const WHOLE_ANSWER_PROVIDER_TIMEOUT_MS = 900_000;
 
 const reviewedDraftSchema = z.object({
   sourceReview: z.array(z.object({
@@ -31,7 +31,7 @@ const reviewedDraftSchema = z.object({
 }).strict();
 
 const practicalInstructionSchema = legalDraftSchema.shape.actions.element.omit({ description: true }).extend({
-  instruction: z.string().min(1).max(1997).describe("Concrete practical step following this issue's complete finding. The server prefixes the finding explanation verbatim and combines citations. The final explanation, two newline characters and instruction together must fit 2000 characters; never omit operative law to save space."),
+  instruction: z.string().min(1).max(2000).describe("Concrete practical application of this issue's qualified rule. Include conditions and time triggers essential to this action; do not copy unrelated explanatory background. The instruction is the complete public action description."),
 }).strict();
 
 function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correction"]) {
@@ -67,7 +67,7 @@ function writerResponse(correction: Parameters<AnswerModel["write"]>[0]["correct
         const finding = issue.shape.finding.parse(resolve(item.finding));
         return { finding, actions: item.actions.map(action => "reuse" in action ? resolve(action) : ({
           title: action.title,
-          description: `${finding.explanation}\n\n${action.instruction}`,
+          description: action.instruction,
           sourceIds: [...new Set([...finding.sourceIds, ...action.sourceIds])],
         })) };
       }),
@@ -129,9 +129,9 @@ Organize issues by the legal decision the reader must make, not by article or br
 
 Use the exact schema:
 - sourceReview: one entry per source, containing sourceId and coverage. For every passage with a rule material to this decision, coverage contains its original passageId, the zero-based issueIndices that explain AND apply its supported content, and unresolvedIndices pointing to answer.unresolved for material content that cannot be answered from the supplied evidence. Include later qualifications and cross-cutting rules, not just the first operative paragraph. An irrelevant source has empty coverage. Headings and background need no separate entry. Plan these bindings together with the answer. Each referenced issue must cite this source in its finding or an action. Several sources may jointly support an issue: complete legal explanation and usable guidance remain required, but their source lists need not be identical. A material but insufficient passage may have only unresolvedIndices; never invent an issue or action to satisfy a mapping. Bind the actual actor, forum, status and trigger: a rule for one forum cannot be counted as covered by an issue about another forum merely because the topics resemble each other. If an answerable selected rule has no matching issue, supply the missing issue instead of a nominal binding to an unrelated one. Do not invent IDs or add legal prose here. Unresolved descriptions still undergo independent verification and cannot hide answerable rules.
-- answer.issues: each issue has a finding AND its practical actions. Put materially distinct rules in separate issues when otherwise their conditions would be lost. The finding must explain the governing law completely; its actions must independently preserve the operative conditions and time triggers needed to use that rule. A legal rule stated only in an action is missing from the legal explanation; a deadline stated only in a finding is missing from the practical guidance. There may be at most16issues and16actions in total. These are bounds, not targets.
+- answer.issues: each issue has a finding and any relevant practical actions. Put materially distinct rules in separate issues when otherwise their conditions would be lost. The finding must explain the governing law completely; its actions must independently preserve the operative conditions and time triggers needed to use that rule. A legal rule stated only in an action is missing from the legal explanation; a deadline stated only in a finding is missing from the practical guidance. There may be at most16issues and16actions in total. These are bounds, not targets.
 - Each finding: explain the supported rule and its material qualifications in explanation. Use a clear title, not an article heading alone.
-- Each new action: supply title, instruction and sourceIds. The server constructs its public description from this issue's complete finding explanation, two newline characters, then instruction; it combines finding and instruction citations. Write the operative rule once in the finding, including actor, scope, eligibility, exceptions, each duration and starting event. Write a concrete usable next step in instruction. Do not repeat the rule unnecessarily or contradict it. Distinguish a practical recommendation from a mandatory legal step. Do not invent a filing, document or deadline. The complete constructed description must fit 2000 characters. If several rules do not fit with useful instructions, organize them into distinct self-contained issues without losing qualifications. Explanatory findings without actions may use their full 4000-character allowance. Reused actions are copied exactly and receive no finding prefix.
+- Each new action: supply title, instruction and sourceIds. Its instruction becomes its complete public description; the server combines its citations with the finding's citations and preserves issue membership. Derive it from the same qualified rule as the finding, preserving actor, eligibility, exceptions, duration and starting event when essential to the action. Do not mechanically copy the entire finding or add unrelated background. Distinguish a practical recommendation from a mandatory legal step. Do not invent a filing, document or deadline. The instruction must fit 2000 characters without losing essential qualifications; the finding may use 4000 characters. An explanatory issue needs no action unless there is a material practical step for the user's decision.
 - answer.risks: only actual relevant risks with supported legal consequences, level, title and explanation; otherwise empty.
 - answer.questions: focused missing facts that change the answer. Do not embed an unsupported legal premise or ask instead of giving a supported conditional answer.
 - answer.unresolved: only genuinely missing applicable legal evidence required for the user's decision. Unknown facts belong in questions. An unrequested procedure or excluded ground is not a missing-law problem. Do not enumerate other possible legal routes as gaps merely because the supplied evidence does not describe them. A conditional answer can be complete within the requested decision without a disclaimer about every alternative transaction or procedure.
@@ -157,13 +157,13 @@ Review MainPoint's own operative deadline assertions separately from the other s
 
 Claims also include question:N and gap:N. Approve neutral material factual questions and genuine missing-evidence descriptions, which need no citation merely to identify an unknown fact or missing source. Reject any unsupported legal premise embedded in them, such as a fabricated sanction or duty. Missing case facts are not missing law. An already stated supported conditional answer can be complete despite focused factual questions. A gap about an unrequested alternative is not a material evidence gap. Determine relevance from the question and actual facts, independently of the writer's unresolved claims: the writer cannot make another legal route mandatory simply by declaring it unresolved. Reject such a gap as irrelevant; do not copy it into verification.gaps or demand new evidence for it.
 
-verification.coverage: independently identify the material issues raised by the question and evidence. Bind each to actual finding:N and action:N IDs that provide its supported legal explanation and usable practical guidance. Check the operative conditions separately in findings and actions: a deadline in a finding does not repair an action that omits the necessary clock or trigger. Do not split incidental background into mandatory issues. Report all genuinely material omissions in this first audit so the single correction can address them together.
+verification.coverage: independently identify the material issues raised by the question and evidence. Set actionRequired false for an explanatory issue with no material practical step; do not invent an action to satisfy coverage. Bind each to actual finding:N and action:N IDs that provide its supported legal explanation and usable practical guidance. Check the operative conditions separately in findings and actions: a deadline in a finding does not repair an action that omits the necessary clock or trigger. Do not split incidental background into mandatory issues. Report all genuinely material omissions in this first audit so the single correction can address them together.
 
 verification.complete: true only if every answerable material issue has supported explanation and practical guidance, with no unsupported claims or remaining material omissions. Use generic gaps only for additional material cross-issue or missing-evidence problems. Do not demand additional legal sources for excluded or unrequested procedures. Questions ask only for facts that change the outcome; neither your questions nor your gaps are automatically published.
 
 An accurate signpost can be supported as a claim yet insufficient as the answer's MainPoint. When supplied evidence supports a substantive answer, completeness also requires MainPoint to state the applicable governing conclusion and its decisive qualifications for the requested decision; record a missing conclusion as an answer gap instead of inventing an unsupported assertion in the signpost. When no substantive portion is supported, a non-conclusive explanation of the evidence gap is appropriate.
 
-verification.retention: initially empty. If previousClaims is nonempty, provide exactly one mapping for every previous legal claim. priorId is that ID. Reassess the ORIGINAL claim against the evidence and set priorSupported to whether it is legally supported; previous approval is not new evidence. If you discover that an originally approved claim was unsupported, set priorSupported false so it cannot be restored. Do not mark it false merely because the correction omitted it or it is unnecessary: a supported original remains supported even when the correction loses it. currentIds identify independently supported claims of the SAME kind retaining all its material content and conditions. Use an empty currentIds array if any material content was lost; report the loss. A similarly titled claim is not sufficient. Preserve practical details in actions, not only in findings. An error confined to the old draft does not make a correctly repaired answer incomplete: gaps describe remaining problems in the corrected draft.`;
+verification.retention: return an empty array. Previous approved claims are context for finding lost material, not an alternative answer eligible for publication. Compare them with the current draft and report any still-relevant lost content in coverage gaps. Judge only the exact current claims; do not create old-to-new mappings or approve an earlier body for fallback. The server publishes only supported portions of this reviewed draft.`;
 function sourcePassages(text: string) {
   const lines = text.split("\n");
   const groupSize = Math.max(1, Math.ceil(lines.length / MAX_LEGAL_SOURCE_PASSAGES));
@@ -188,6 +188,7 @@ function modelContext(question: AnswerQuestion) {
   return {
     question: question.question, locale: question.locale, answerMode: question.answerMode,
     temporalScope: question.temporalScope, caseFacts: question.caseFacts ?? [], priorTurns: question.priorTurns ?? [],
+    researchNeeds: question.researchNeeds ?? [],
     unresolved: question.unresolved, sourceUnavailable: question.sourceUnavailable ?? false,
     evidence: question.evidence.map(({ source, text, endpoint }) => ({
       id: source.id, title: source.actTitle, article: source.article ?? null,
@@ -215,7 +216,7 @@ export function createLegalAnswerModel(options: {
       textVerbosity: question.answerMode === "detailed" ? "high" : "medium",
       reasoningEffort: "max",
       reasoningMode: "pro",
-      timeoutMs: legalChatProviderTimeoutMs({ reasoningMode: question.mode, providerTimeoutMs: WHOLE_ANSWER_PROVIDER_TIMEOUT_MS })!,
+      timeoutMs: legalChatProviderTimeoutMs({ reasoningMode: question.mode, providerTimeoutMs: LEGAL_CHAT_PROVIDER_TIMEOUT_MS })!,
       deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       onProgress: options.onProgress,
       onAttempt: ({ model }) => options.onAttempt?.({ stage, model }),
@@ -250,9 +251,14 @@ export function createLegalAnswerModel(options: {
       }
       if (reviewedIds.size !== sources.size) throw new Error("Incomplete source review");
       const {issues, ...answer} = reviewed.answer;
+      let actionIndex = 0;
       return legalDraftSchema.parse({...answer,
         findings: issues.map(issue => issue.finding),
         actions: issues.flatMap(issue => issue.actions),
+        ruleBindings: issues.map((issue, index) => ({
+          findingId: legalClaimId("finding", index),
+          actionIds: issue.actions.map(() => legalClaimId("action", actionIndex++)),
+        })),
       });
     },
     verify: async ({ question, draft, claims, previous }) => {

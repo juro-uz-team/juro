@@ -1,9 +1,11 @@
+import { LEGAL_CHAT_RESERVATION_TTL_MS } from "../legal-chat/execution-limits";
+
 const CHAT_FEATURE = "legal_chat";
 const FREE_MONTHLY_CYCLES = 20;
 // Provider-specific deadlines can legitimately outlive the old 30-second
 // route budget (especially in deep mode). Recovery stays bounded, but must not
 // expire a live provider/fallback chain and race its finalization.
-const STALE_RESERVATION_MS = 10 * 60 * 1_000;
+const STALE_RESERVATION_MS = LEGAL_CHAT_RESERVATION_TTL_MS;
 
 export type AiRunReservation = {
   kind: "reserved";
@@ -267,9 +269,32 @@ async function expireStaleReservation(
 export async function beginAiRunFinalization(input: Pick<CompleteAiRunInput, "db" | "runId" | "workspaceId" | "userId">): Promise<boolean> {
   const now = isoNow();
   const result = await input.db.prepare(
-    "UPDATE ai_runs SET status='finalizing',updated_at=? WHERE id=? AND workspace_id=? AND user_id=? AND status='reserved'",
-  ).bind(now, input.runId, input.workspaceId, input.userId).run();
+    "UPDATE ai_runs SET status='finalizing',updated_at=? WHERE id=? AND workspace_id=? AND user_id=? AND status='reserved' AND updated_at>?",
+  ).bind(now, input.runId, input.workspaceId, input.userId,
+    new Date(Date.now()-STALE_RESERVATION_MS).toISOString()).run();
   return Number(result.meta.changes ?? 0) === 1;
+}
+
+/** Renew only an unexpired reservation owned by this execution. A delayed
+ * heartbeat cannot revive an expired, cancelled or finalized run. */
+export async function renewAiRunReservation(input: {
+  db: D1Database; runId: string; workspaceId: string; userId: string; now?: number;
+}): Promise<boolean> {
+  const time = input.now ?? Date.now();
+  const now = new Date(time).toISOString();
+  const cutoff = new Date(time - STALE_RESERVATION_MS).toISOString();
+  const [run] = await input.db.batch([
+    input.db.prepare(`UPDATE ai_runs SET updated_at=?
+      WHERE id=? AND workspace_id=? AND user_id=? AND status='reserved' AND updated_at>?`)
+      .bind(now,input.runId,input.workspaceId,input.userId,cutoff),
+    input.db.prepare(`UPDATE idempotency_keys SET updated_at=?
+      WHERE result_ref=? AND scope=? AND status='started'
+      AND EXISTS (SELECT 1 FROM ai_runs WHERE id=? AND workspace_id=? AND user_id=?
+        AND status='reserved' AND updated_at=?)`)
+      .bind(now,input.runId,`legal-chat:${input.workspaceId}:${input.userId}`,
+        input.runId,input.workspaceId,input.userId,now),
+  ]);
+  return Number(run!.meta.changes ?? 0) === 1;
 }
 
 export type CompleteAiRunInput = {
@@ -300,6 +325,13 @@ export function completeAiRunStatements(input: CompleteAiRunInput): D1PreparedSt
   const now = isoNow();
   const registryKey = `legal-chat:${input.workspaceId}:${input.userId}:${input.idempotencyKey}`;
   return [
+    input.db.prepare(`SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM ai_runs run JOIN ai_usage_ledger ledger ON ledger.ai_run_id=run.id
+        JOIN idempotency_keys registry ON registry.result_ref=run.id
+      WHERE run.id=? AND run.workspace_id=? AND run.user_id=? AND run.status='finalizing'
+        AND ledger.id=? AND ledger.status='reserved' AND registry.key=? AND registry.status='started'
+    ) THEN 1 ELSE json_extract('AI_RUN_FINALIZATION_CLAIM_FAILED','$') END AS owned`)
+      .bind(input.runId,input.workspaceId,input.userId,input.ledgerId,registryKey),
     input.db.prepare(
       `UPDATE ai_runs SET conversation_id=?,request_message_id=?,response_message_id=?,provider_response_id=?,provider=?,fallback_from_provider=?,model=?,status='completed',
        input_tokens=?,output_tokens=?,cached_input_tokens=?,attempt_count=?,latency_ms=?,

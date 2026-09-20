@@ -40,7 +40,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     const draft = legalDraftSchema.parse(await model.write({ question, correction: null }));
     assert.equal(draft.mainPoint.text, "Supported result");
     assert.equal(draft.findings[0]?.explanation,"A written application is required.");
-    assert.equal(draft.actions[0]?.description,"A written application is required.\n\nSubmit the application and keep a copy.");
+    assert.equal(draft.actions[0]?.description,"Submit the application and keep a copy.");
     assert.ok(!("sourceReview" in draft));
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-5.6-luna", "gpt-5.6-terra"]);
@@ -413,7 +413,7 @@ test("one whole correction can reuse approved claims without rewriting their con
   assert.deepEqual(corrected.mainPoint, draft.mainPoint);
   assert.deepEqual(corrected.findings, draft.findings);
   assert.match(corrected.actions[0]!.description, /within ten days after it/);
-  assert.ok(corrected.actions[0]!.description.startsWith(`${draft.findings[0]!.explanation}\n\n`));
+  assert.equal(corrected.actions[0]!.description,"Record the written-notice date and request review within ten days after it.");
   assert.ok(!("reuse" in corrected.findings[0]!));
   actionSource = "unrelated-source";
   // Source support can be complementary: the finding still cites this source.
@@ -468,7 +468,7 @@ test("a material passage can remain explicitly unresolved without inventing pair
   assert.deepEqual(draft.unresolved, [gap]);
 });
 
-test("shared operative law respects composed limits and leaves reused actions exact", async context => {
+test("qualified issues preserve action membership without duplicating explanatory text", async context => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
@@ -494,12 +494,17 @@ test("shared operative law respects composed limits and leaves reused actions ex
   const model = createLegalAnswerModel({ requestId: "composed-limits" });
   const write = () => model.write({ question, correction: null });
   const initial = legalDraftSchema.parse(await write());
-  assert.equal(initial.actions[0]!.description, `${explanation}\n\n${instruction}`);
+  assert.equal(initial.actions[0]!.description, instruction);
+  assert.deepEqual(initial.ruleBindings, [{findingId:"finding:0",actionIds:["action:0"]}]);
   assert.deepEqual(initial.actions[0]!.sourceIds, ["rule", "procedure"]);
-  explanation = "x".repeat(2000 - 2 - instruction.length);
-  assert.equal(legalDraftSchema.parse(await write()).actions[0]!.description.length, 2000);
-  explanation += "x";
-  await assert.rejects(write(), "Composition must reject overflow without dropping legal text");
+  explanation = "x".repeat(4000);
+  instruction = "y".repeat(2000);
+  const bounded = legalDraftSchema.parse(await write());
+  assert.equal(bounded.findings[0]!.explanation.length, 4000);
+  assert.equal(bounded.actions[0]!.description.length, 2000);
+  instruction += "y";
+  await assert.rejects(write(), "Oversized guidance must fail without truncation");
+  instruction = "Apply within ten days after written notice.";
   hasAction = false;
   explanation = "x".repeat(4000);
   assert.equal(legalDraftSchema.parse(await write()).findings[0]!.explanation.length, 4000);

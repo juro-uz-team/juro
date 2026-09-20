@@ -20,11 +20,12 @@ export const CUSTOM_SEARCH_PATH = "/internal/legal-corpus/custom-search";
 export const CUSTOM_SEARCH_SERVICE_MARKER = "custom-search-runtime-v1";
 
 export function fuseCustomProvisionMatches(sparseKeys: string[], denseKeys: string[], explicitArticleKeys: ReadonlySet<string>, topK: number) {
-  // Preserve explicit provision lookup through fusion and the later bounded
-  // evidence pool. This is retrieval priority, never authority or entailment.
+  // Article numbers are not document identities. They may break a rank tie,
+  // but must not override agreement between the independent candidate lanes.
   return fuseCustomRankedLanes([sparseKeys, denseKeys], {k: 60, topK: Math.max(topK, sparseKeys.length + denseKeys.length)})
-    .map(hit => ({...hit, score: hit.score + (explicitArticleKeys.has(hit.itemKey) ? 1 : 0)}))
-    .sort((left, right) => right.score - left.score || left.itemKey.localeCompare(right.itemKey))
+    .sort((left, right) => right.score - left.score
+      || Number(explicitArticleKeys.has(right.itemKey)) - Number(explicitArticleKeys.has(left.itemKey))
+      || left.itemKey.localeCompare(right.itemKey))
     .slice(0, topK);
 }
 const QUERY_RESERVATION_USD_MICROS = 1_065;

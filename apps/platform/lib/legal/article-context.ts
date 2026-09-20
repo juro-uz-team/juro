@@ -1,4 +1,5 @@
 import { detectArticleNumbers } from "./legal-language";
+import { MAX_LEGAL_EVIDENCE_CHARACTERS } from "./legal-evidence-budget";
 import type { NormalizedLegalSourceSnapshot } from "./source-parser";
 
 const ARTICLE_HEADING = /^(?:(?:статья|модда|modda|article)\s+\d+(?:[.-]\d+)?|\d+(?:[.-]\d+)?\s*(?:-\s*)?modda\b)/iu;
@@ -20,7 +21,7 @@ export function completeArticleText(
     && blocks[end]!.semanticRole !== "chapter" && blocks[end]!.semanticRole !== "section") end++;
   if (end - start < 2) return null;
   const text = normalize(blocks.slice(start, end).map(block => block.text).join(" "));
-  if (text.length > 24_000 || /:\s*$/u.test(text)) return null;
+  if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return null;
   if (originalText && (!text.startsWith(normalize(originalText))
     || text.length <= normalize(originalText).length)) return null;
   return { heading: blocks[start]!.text.slice(0, 240), text };

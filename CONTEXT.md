@@ -22,6 +22,10 @@ _Avoid_: model reasoning, general legal knowledge, references
 The ordered practical guidance that follows from the supported legal analysis.
 _Avoid_: action-plan upsell, recommendations panel, suggested prompts
 
+**Qualified Rule**:
+A source-grounded legal proposition together with the actors, conditions, exceptions and temporal qualifications that determine its meaning. Its explanation and practical application share that meaning without requiring identical wording across answer sections.
+_Avoid_: answer template, keyword match, isolated entitlement
+
 **Supporting Sections**:
 Relevant qualifications presented separately as Important Considerations, Deadlines, What to Prepare, or Additional Materials; empty sections are absent.
 _Avoid_: additional details, miscellaneous information

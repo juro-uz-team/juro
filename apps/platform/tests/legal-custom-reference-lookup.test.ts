@@ -118,9 +118,10 @@ test("reference discovery preserves all matching members and isolates revisions 
     }});
   const discovered = await discover([referring], {kind: "current"}, release, "2026-09-11T00:00:00.000Z");
   assert.equal(validations, 1);
-  assert.equal(discovered.length, 2);
-  const operative = {...referring, citationLabel: "Code — Article 732", provisionText: "Complete substantive grounds of this provision.", candidate: discovered[0]!};
-  assert.deepEqual(await discover([referring, operative], {kind: "current"}, release, "2026-09-11T00:00:00.000Z"), []);
+  assert.equal(discovered.candidates.length, 2);
+  assert.deepEqual(discovered.unresolved, []);
+  const operative = {...referring, citationLabel: "Code — Article 732", provisionText: "Complete substantive grounds of this provision.", candidate: discovered.candidates[0]!};
+  assert.deepEqual(await discover([referring, operative], {kind: "current"}, release, "2026-09-11T00:00:00.000Z"), {candidates:[],unresolved:[]});
   assert.equal(validations, 1, "already supplied operative text needs no lookup or revalidation");
   const otherReferring = (suffix: string, article: string) => {
     const candidate = selectionCandidateSchema.parse({...referring,
@@ -137,7 +138,9 @@ test("reference discovery preserves all matching members and isolates revisions 
     ...["910", "911", "912"].map(article => otherReferring(article, article)),
     referring, otherReferring("second-rule", "732"),
   ], {kind: "current"}, release, "2026-09-11T00:00:00.000Z");
-  assert.equal(repeatedReference.length, 2, "a reference shared by distinct rules must not lose discovery to three earlier incidental references");
+  assert.equal(repeatedReference.candidates.length, 2, "a reference shared by distinct rules must not lose discovery to three earlier incidental references");
+  assert.equal(repeatedReference.unresolved.filter(gap=>gap.reason==="lookup_budget").length,1);
+  assert.equal(repeatedReference.unresolved.filter(gap=>gap.reason==="reference_not_found").length,2);
   rejectMembership = true;
   await assert.rejects(discover([referring], {kind: "current"}, release, "2026-09-11T00:00:00.000Z"), /Not an accepted member/u);
   rejectMembership = false;

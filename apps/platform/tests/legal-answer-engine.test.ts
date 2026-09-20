@@ -68,9 +68,9 @@ test("losing a qualification removes transitive conclusions, including after cor
           {id:"finding:3",supported:reassessment,reason:"Exception reviewed.",dependsOn:[]}],
       } : {...approval,retention:[{priorId:"finding:3",priorSupported:false,currentIds:[]}]},
     });
-    assert.equal(outcome.kind,"partial");
+    assert.equal(outcome.kind,reassessment?"complete":"partial");
     assert.deepEqual(outcome.result.confirmedFindings.map(item=>item.title),["Filing period"]);
-    assert.equal(outcome.errorCode,reassessment?"ANSWER_CORRECTION_REGRESSED":"ANSWER_CORRECTION_UNAVAILABLE");
+    assert.equal(outcome.errorCode,reassessment?undefined:"ANSWER_CORRECTION_UNAVAILABLE");
   }
 });
 
@@ -105,6 +105,49 @@ test("a whole answer is published only after independent verification and uses s
   assert.equal(outcome.result.confirmedFindings[0]?.explanation, draft.findings[0]?.explanation);
   assert.equal(outcome.result.actionPlan[0]?.description, draft.actions[0]?.description);
   assert.equal(outcome.result.sources[0]?.originalUrl, "https://lex.uz/docs/999999");
+});
+
+test("a rejected conclusion cannot return through prior approval after a useful repair", async () => {
+  let writes = 0, checks = 0;
+  const corrected = {...draft, mainPoint:{...draft.mainPoint,text:"An unsupported replacement conclusion."},
+    findings:[...draft.findings,{title:"Repaired explanation",explanation:"The applicant files the notice.",sourceIds:["official-fixture"]}]};
+  const outcome = await answerFromEvidence(question, {
+    write:async()=>++writes===1?draft:corrected,
+    verify:async()=>++checks===1?{...approval,complete:false,gaps:["Explain the actor."]}:
+      {...approval,complete:false,claims:[...approval.claims.map(claim=>claim.id==="mainPoint"?{...claim,supported:false}:claim),
+        {id:"finding:1",supported:true,reason:"The source identifies the applicant."}],
+        retention:[{priorId:"mainPoint",priorSupported:true,currentIds:[]}]},
+  });
+  assert.equal(writes,2);
+  assert.equal(checks,2);
+  assert.equal(outcome.kind,"partial");
+  assert.notEqual(outcome.result.summary,draft.mainPoint.text);
+  assert.doesNotMatch(outcome.result.summary,/unsupported replacement/);
+  assert.equal(outcome.result.confirmedFindings.length,2);
+});
+
+test("an action cannot survive rejection of its bound qualified rule", async () => {
+  const grouped = {...draft,ruleBindings:[{findingId:"finding:0",actionIds:["action:0"]}],
+    findings:[...draft.findings,{title:"Independent information",explanation:"The source describes a notice.",sourceIds:["official-fixture"]}]};
+  const outcome = await answerFromEvidence(question, {
+    write:async()=>grouped,
+    verify:async()=>({...approval,complete:false,claims:[...approval.claims.map(claim=>claim.id==="finding:0"?{...claim,supported:false}:claim),
+      {id:"finding:1",supported:true,reason:"Independent explanation."}]}),
+  });
+  assert.equal(outcome.kind,"partial");
+  assert.deepEqual(outcome.result.actionPlan,[]);
+  assert.equal(outcome.result.confirmedFindings[0]?.title,"Independent information");
+});
+
+test("a purely explanatory issue does not require inventing an action", async () => {
+  const outcome = await answerFromEvidence(question, {
+    write:async()=>({...draft,actions:[]}),
+    verify:async()=>({...approval,claims:approval.claims.slice(0,2),coverage:[{
+      issue:"Explanation",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[],
+    }]}),
+  });
+  assert.equal(outcome.kind,"complete");
+  assert.deepEqual(outcome.result.actionPlan,[]);
 });
 
 test("source-audit omissions reach correction without publishing their unverified legal premises", async () => {
@@ -248,7 +291,7 @@ test("rejected legal premises in questions and gap prose cannot escape verificat
   assert.ok(!JSON.stringify(outcome.result).includes("20%"));
 });
 
-test("a correction that loses supported issues preserves the earlier verified partial answer", async () => {
+test("a correction reports lost issues without restoring an earlier whole answer", async () => {
   const initial={...draft,findings:[...draft.findings,{title:"Separate issue",explanation:"The notice must be filed.",sourceIds:["official-fixture"]}]};
   let writes=0,checks=0;
   const outcome=await answerFromEvidence(question,{write:async()=>++writes===1?initial:draft,
@@ -256,7 +299,7 @@ test("a correction that loses supported issues preserves the earlier verified pa
       claims:[...approval.claims,{id:"finding:1",supported:true,reason:"The text supports filing"}]}:
       {...approval,complete:false,gaps:["A supported issue was lost"],retention:[]}});
   assert.equal(outcome.kind,"partial");
-  assert.equal(outcome.result.confirmedFindings.length,2);
+  assert.equal(outcome.result.confirmedFindings.length,1);
 });
 
 test("a supported correction can complete the answer while retaining its verified findings", async () => {
@@ -285,8 +328,8 @@ test("a later rejection of an original claim prevents restoring it after correct
           ],
         },
   });
-  assert.equal(outcome.kind, "partial");
-  assert.equal(outcome.result.confirmedFindings.length, 1);
+  assert.equal(outcome.kind, "insufficient_evidence");
+  assert.equal(outcome.result.confirmedFindings.length, 0);
   assert.deepEqual(outcome.result.actionPlan, []);
   assert.doesNotMatch(JSON.stringify(outcome.result), /eleven/);
 });

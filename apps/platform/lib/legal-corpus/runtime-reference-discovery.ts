@@ -6,6 +6,15 @@ import type {RevalidatedCandidate, SelectionCandidate} from "./target-retrieval"
 
 const citationArticle = (label: string) => /(?:Article|Статья|Ст\.)\s+(\d+(?:[.-]\d+)?)\s*$/iu.exec(label)?.[1];
 
+export type UnresolvedReference = {
+  query: LegalReferenceQuery;
+  reason: "lookup_unavailable" | "reference_not_found" | "lookup_budget" | "member_budget";
+};
+export type ReferenceDiscoveryResult = {
+  candidates: RevalidatedCandidate[];
+  unresolved: UnresolvedReference[];
+};
+
 /** Resolve explicit references without asking a language model or a search
  * provider to rediscover their article numbers. Returned keys still pass the
  * independent accepted-membership catalog and same-revision checks. */
@@ -17,7 +26,8 @@ export function createRuntimeReferenceDiscovery(input: {
     release: PinnedCandidateRelease, currentAt: string) => Promise<RevalidatedCandidate[]>;
 }) {
   return async (candidates: readonly SelectionCandidate[], endpoint: TemporalEndpoint,
-    release: PinnedCandidateRelease, currentAt: string): Promise<RevalidatedCandidate[]> => {
+    release: PinnedCandidateRelease, currentAt: string): Promise<ReferenceDiscoveryResult> => {
+    const gaps: UnresolvedReference[] = [];
     const unresolved = new Map<string, {query: LegalReferenceQuery; source: SelectionCandidate;
       identity: CustomRuntimeLegalIdentity; referringConcepts: Set<string>}>();
     for (const source of candidates) {
@@ -40,7 +50,10 @@ export function createRuntimeReferenceDiscovery(input: {
     // distinct provisions, not duplicate chunks or translations of one rule.
     const requests = new Map([...unresolved].sort(([, left], [, right]) =>
       right.referringConcepts.size - left.referringConcepts.size).slice(0, 3));
-    if (!requests.size) return [];
+    for (const [key, request] of unresolved) {
+      if (!requests.has(key)) gaps.push({query:request.query,reason:"lookup_budget"});
+    }
+    if (!requests.size) return {candidates:[],unresolved:gaps};
     const row = await input.db.prepare(`SELECT root.mapping_inventory_sha256 AS sourceInventorySha256,
       root.mapping_count AS memberCount,root.runtime_descriptor_r2_key AS descriptorKey,
       lookup.lookup_r2_key AS lookupKey,lookup.lookup_sha256 AS lookupSha256,
@@ -50,7 +63,8 @@ export function createRuntimeReferenceDiscovery(input: {
         AND lookup.source_inventory_sha256=root.mapping_inventory_sha256 AND lookup.member_count=root.mapping_count
       WHERE root.search_release_id=?`).bind(release.id).first<{sourceInventorySha256: string; memberCount: number;
         descriptorKey: string; lookupKey: string; lookupSha256: string; lookupSizeBytes: number}>();
-    if (!row) return [];
+    if (!row) return {candidates:[],unresolved:[...gaps,
+      ...[...requests.values()].map(({query})=>({query,reason:"lookup_unavailable" as const}))]};
     const physicalReleaseId = /^search-releases\/([^/]+)\/runtime\/descriptor-[a-f0-9]{64}\.json$/u.exec(row.descriptorKey)?.[1];
     if (!physicalReleaseId) throw new TypeError("CUSTOM_REFERENCE_RELEASE_INVALID");
     const keys = await resolveCustomReferenceKeys({bucket: input.bucket, releaseId: physicalReleaseId,
@@ -58,10 +72,14 @@ export function createRuntimeReferenceDiscovery(input: {
       reference: {key: row.lookupKey, sha256: row.lookupSha256, sizeBytes: row.lookupSizeBytes},
       queries: [...requests.values()].map(request => request.query)});
     const origins = new Map<string, (typeof requests extends Map<string, infer Value> ? Value : never)>();
-    for (const [reference, members] of keys) {
+    for (const [reference, request] of requests) {
+      const members = keys.get(reference) ?? [];
       // A large split article stays unresolved for bounded semantic repair;
       // do not silently represent it with an arbitrary prefix of its chunks.
-      if (members.length > 4) continue;
+      if (!members.length || members.length > 4) {
+        gaps.push({query:request.query,reason:members.length?"member_budget":"reference_not_found"});
+        continue;
+      }
       for (const member of members) {
         const key = `search-releases/${release.id}/${member}`;
         if (!candidates.some(candidate => candidate.candidate.candidate.itemKey === key)) {
@@ -69,7 +87,7 @@ export function createRuntimeReferenceDiscovery(input: {
         }
       }
     }
-    if (!origins.size) return [];
+    if (!origins.size) return {candidates:[],unresolved:gaps};
     const packet = parseCandidatePacket({availability: "available", releaseId: release.id, endpoint,
       requiredInstanceIds: release.instances.map(instance => instance.id), partialErrors: [],
       candidates: [...origins].map(([itemKey, {source, query}]) => ({...source.candidate.candidate,
@@ -93,6 +111,6 @@ export function createRuntimeReferenceDiscovery(input: {
     }
     console.info(JSON.stringify({event: "legal.reference_candidates_resolved", referenceCount: requests.size,
       candidateCount: validated.length}));
-    return validated;
+    return {candidates:validated,unresolved:gaps};
   };
 }

@@ -22,6 +22,7 @@ export type AnswerQuestion = {
   evidence: readonly LegalEvidence[];
   unresolved: readonly string[];
   sourceUnavailable?: boolean;
+  researchNeeds?: readonly {reason:string;detail:string}[];
   caseFacts?: readonly string[];
   priorTurns?: readonly { question: string; answer: string }[];
   signal?: AbortSignal;
@@ -72,7 +73,10 @@ function acceptedClaims(input: AnswerQuestion, draft: LegalDraft, verification: 
       const invalid = new Set(dependencies).size !== dependencies.length || dependencies.some(id =>
         id === claim.id || !["finding", "action", "risk"].includes(claim.kind)
         || accepted.get(id)?.kind !== claim.kind);
-      if (invalid) { accepted.delete(claim.id); changed = true; }
+      const rules = draft.ruleBindings.filter(binding => binding.actionIds.includes(claim.id));
+      const unsupportedRule = claim.kind === "action" && draft.ruleBindings.length > 0
+        && (rules.length !== 1 || accepted.get(rules[0]!.findingId)?.kind !== "finding");
+      if (invalid || unsupportedRule) { accepted.delete(claim.id); changed = true; }
     }
   }
   return [...accepted.values()];
@@ -113,7 +117,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "So‘ralgan har bir davr uchun javobning huquqiy qismi tasdiqlanmagan.",
     "The answer does not have supported legal findings for every requested time period.")] : [];
   const completeCoverage = verification.coverage.length > 0 && verification.coverage.every(item =>
-    !item.gaps.length && item.findingIds.length > 0 && item.actionIds.length > 0
+    !item.gaps.length && item.findingIds.length > 0 && (!item.actionRequired || item.actionIds.length > 0)
     && item.findingIds.every(id => accepted.get(id)?.kind === "finding")
     && item.actionIds.every(id => accepted.get(id)?.kind === "action"));
   const coverageGaps = completeCoverage ? [] : [aiText(input.locale,
@@ -125,7 +129,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Ayrim rasmiy manbalar vaqtincha mavjud emas; javobning to‘liqligi tasdiqlanmagan.",
     "Some official sources are temporarily unavailable; the answer's completeness is not confirmed.")] : [];
   const complete = verification.complete && legalDraftClaims(draft).every(item => accepted.has(item.id))
-    && actions.length > 0 && !draft.unresolved.length && !verification.gaps.length && !hasSourceGaps && !input.unresolved.length
+    && !draft.unresolved.length && !verification.gaps.length && !hasSourceGaps && !input.unresolved.length
     && !input.sourceUnavailable && !missingTime && completeCoverage;
   const partialSummary = aiText(input.locale, "Ниже — подтвержденная часть ответа; остальные вопросы требуют проверки.",
     "Quyida javobning tasdiqlangan qismi; qolgan masalalar tekshiruv talab qiladi.",
@@ -186,19 +190,11 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     const checked = legalVerificationSchema.parse(await model.verify({ question: input, draft: corrected, claims: legalDraftClaims(corrected), previous: correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     const final = projectVerifiedAnswer(input, corrected, checked);
-    const rejectedPriorIds = new Set(checked.retention.filter(item => !item.priorSupported).map(item => item.priorId));
-    const recheckedFirst = projectVerifiedAnswer(input, draft, { ...verification,
-      claims: verification.claims.map(claim => rejectedPriorIds.has(claim.id)
-        ? { ...claim, supported: false, reason: "The later verification rejected this original claim." } : claim),
-    });
-    const acceptedCorrection = new Map(acceptedClaims(input,corrected,checked).map(claim=>[claim.id,claim]));
-    const retained = acceptedClaims(input,draft,verification).filter(claim=>claim.kind!=="question"&&claim.kind!=="gap").every(prior=>{
-      const mappings=checked.retention.filter(item=>item.priorId===prior.id);
-      return mappings.length===1 && (!mappings[0]!.priorSupported || (mappings[0]!.currentIds.length>0
-        && mappings[0]!.currentIds.every(id=>acceptedCorrection.get(id)?.kind===prior.kind)));
-    });
-    if(!retained && first.kind==="partial") return {...recheckedFirst,errorCode:"ANSWER_CORRECTION_REGRESSED"};
-    return final.kind === "insufficient_evidence" && recheckedFirst.kind === "partial" ? recheckedFirst : final;
+    // The latest successful review owns publication. Semantic old-to-new
+    // mappings cannot authorize resurrecting an earlier body or discard a
+    // repaired finding. Missing retained content is a coverage gap in this
+    // draft, never a reason to restore another whole answer.
+    return final;
   } catch {
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     if (first.kind !== "partial") return unavailableAnswer(input, "ANSWER_CORRECTION_UNAVAILABLE");

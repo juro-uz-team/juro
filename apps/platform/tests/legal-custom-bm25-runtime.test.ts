@@ -26,7 +26,7 @@ class MemoryR2 {
   }
 }
 
-test("explicit article retrieval prefers the provision heading over body cross-references", async () => {
+test("article matches remain identifiable without overriding lexical relevance", async () => {
   const built = await buildCustomBm25Artifacts([
     {segmentId: "base", itemKey: "cross-reference", language: "en", documentType: "law", validFromEpoch: 1, validToEpoch: null,
       fields: {title: "Employment termination", hierarchy: "Termination grounds", article: "Article 99", text: "Employment termination grounds exceptions under article 72 employment termination grounds"}},
@@ -40,7 +40,8 @@ test("explicit article retrieval prefers the provision heading over body cross-r
   bucket.objects.set(runtime.documentsReference.key, runtime.documentsBytes);
   for (const artifact of built.artifacts) bucket.objects.set(artifact.key, artifact.bytes);
   const hits = await queryCustomBm25Runtime(bucket as unknown as R2Bucket, runtime.descriptor, {text: "employment termination grounds exceptions article 72", atEpoch: 2, topK: 3});
-  assert.equal(built.manifest.documents.find(doc => doc.ordinal === hits[0]?.ordinal)?.itemKey, "operative");
+  assert.ok(hits.every((hit,index)=>index===0 || hits[index-1]!.score >= hit.score));
+  assert.equal(built.manifest.documents.find(doc => doc.ordinal === hits.find(hit=>hit.explicitArticleMatch)?.ordinal)?.itemKey, "operative");
   assert.equal(hits.filter(hit => hit.explicitArticleMatch).length, 1);
   const topical = await queryCustomBm25Runtime(bucket as unknown as R2Bucket, runtime.descriptor, {text: "employment termination grounds exceptions 72", atEpoch: 2, topK: 3});
   assert.ok(topical.every(hit => !hit.explicitArticleMatch));

@@ -11,6 +11,7 @@ import {
   latestGuestAiClarificationRun,
   purgeExpiredGuestAiSessions,
   reserveGuestAiRun,
+  renewGuestAiReservation,
   resolveGuestAiSession,
   revealGuestAiRunQuestion,
   revealGuestAiRunResult,
@@ -226,6 +227,31 @@ test("guest AI session creation is HMAC-bound and rate limited per IP", async ()
   }
 });
 
+test("guest lease renewal fences wrong owners and expired runs without consuming an answer", async () => {
+  const {sqlite,d1}=sqliteD1Fixture();
+  try {
+    const identityKeyring=keyring();
+    const created=await createGuestAiSession({db:d1,keyring:identityKeyring,connectingIp:"203.0.113.31",locale:"en",now:NOW});
+    const reserved=await reserveGuestAiRun(reservationInput(d1,created.session,identityKeyring,"guest-lease-request","Synthetic question"));
+    assert.equal(reserved.kind,"created");
+    if(reserved.kind!=="created")throw Error("Reservation required");
+    const owner={db:d1,session:created.session,runId:reserved.run.id};
+    const now=Date.parse(NOW)+15*60_000;
+    assert.equal(await renewGuestAiReservation({...owner,session:{...created.session,tokenHmac:"wrong"},now}),false);
+    assert.equal(await renewGuestAiReservation({...owner,now}),true);
+    assert.deepEqual(await purgeExpiredGuestAiSessions({db:d1,now:"2026-08-03T12:17:00.000Z"}),
+      {eligible:0,purged:0,reservationsReleased:0});
+    assert.equal(await renewGuestAiReservation({...owner,now:Date.parse(NOW)+32*60_000}),false);
+    sqlite.exec("CREATE TABLE saved_lease_marker(value TEXT)");
+    await assert.rejects(completeGuestAiRun({db:d1,keyring:identityKeyring,run:reserved.run,
+      resultJson:JSON.stringify({summary:"Late result"}),responseKind:"answer",provider:"openai",model:"synthetic-model",
+      inputTokens:0,outputTokens:0,cachedInputTokens:0,attempts:1,latencyMs:0,now:"2026-08-03T12:32:00.000Z",
+      additionalStatements:[d1.prepare("INSERT INTO saved_lease_marker VALUES ('late')")]}));
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM saved_lease_marker").get()?.count,0);
+    assert.equal(sqlite.prepare("SELECT answer_count FROM guest_ai_sessions WHERE id=?").get(created.session.id)?.answer_count,0);
+  } finally {sqlite.close();}
+});
+
 test("guest retention releases stale reservations and cascades expired encrypted content", async () => {
   const { sqlite, d1 } = sqliteD1Fixture();
   try {
@@ -247,7 +273,7 @@ test("guest retention releases stale reservations and cascades expired encrypted
     assert.equal(reserved.kind, "created");
     assert.deepEqual(await purgeExpiredGuestAiSessions({
       db: d1,
-      now: "2026-08-03T12:03:00.000Z",
+      now: "2026-08-03T12:17:00.000Z",
     }), { eligible: 0, purged: 0, reservationsReleased: 1 });
     assert.equal(sqlite.prepare("SELECT state FROM guest_ai_sessions WHERE id=?").get(created.session.id)?.state, "available");
     assert.equal(sqlite.prepare("SELECT status FROM guest_ai_runs WHERE session_id=?").get(created.session.id)?.status, "expired");

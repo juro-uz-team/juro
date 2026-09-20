@@ -15,10 +15,10 @@ const DENSE_METADATA_RELEASE_ID = "release:staging:current:custom-v0";
 const INSTANCE_ID = "custom-current-staging-v1";
 const ITEM_KEY = `retrieval-chunk-v1:${"1".repeat(64)}`;
 
-test("fusion retains an explicitly requested provision ahead of shared cross-reference matches", () => {
+test("an article number cannot override agreement between both retrieval lanes", () => {
   const hits = fuseCustomProvisionMatches(["operative", "cross-reference"], ["cross-reference"], new Set(["operative"]), 1);
-  assert.equal(hits[0]?.itemKey, "operative");
-  assert.ok(hits[0]!.score > 1);
+  assert.equal(hits[0]?.itemKey, "cross-reference");
+  assert.ok(hits[0]!.score < 1);
   assert.equal(fuseCustomProvisionMatches(["operative", "cross-reference"], ["cross-reference"], new Set(), 1)[0]?.itemKey, "cross-reference");
   assert.deepEqual(fuseCustomProvisionMatches([], [], new Set(), 5), []);
 });
