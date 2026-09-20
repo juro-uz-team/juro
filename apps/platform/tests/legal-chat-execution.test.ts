@@ -32,7 +32,12 @@ test("one execution preserves chronological facts and saves only the verified te
     model:{write:async input=>{events.push("write");assert.deepEqual(input.question.priorTurns,turns);
       assert.deepEqual(input.question.caseFacts,["I need my record."]);return draft;},
       verify:async()=>{events.push("verify");return review;}},
-    renew:async()=>true,commit:async terminal=>{events.push("save");saved=terminal;return {id:"saved-result"};},
+    renew:async()=>true,commit:async(terminal,sources)=>{events.push("save");saved=terminal;
+      assert.equal(sources[0]?.id,evidence.source.id);
+      assert.equal(sources[0]?.spans?.[0]?.text,evidence.text);
+      assert.equal(sources[0]?.spans?.[0]?.textSha256,evidence.textSha256);
+      if("research" in terminal)assert.doesNotMatch(JSON.stringify(terminal.research),/Synthetic rule:/);
+      return {id:"saved-result"};},
     release:async()=>assert.fail("Successful request does not release as a failure"),
   });
   assert.deepEqual(result,{id:"saved-result"});

@@ -3,6 +3,7 @@ import { interpretLegalQuestion, type QuestionContext, type QuestionContextInput
 import { researchLegalQuestion, type LegalResearchServices, type ResearchNeed, type ResearchObservation } from "./research";
 import { runReservedLegalChat } from "./reserved-execution";
 import { aiText } from "../ai/localization";
+import type {LegalSourceContext} from "../legal/source-context";
 
 export type LegalChatTerminal = (AnswerOutcome & {research:{
   needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
@@ -19,13 +20,14 @@ export function executeLegalChat<Saved>(input:{
   research:LegalResearchServices;
   model:AnswerModel;
   renew:()=>Promise<boolean>;
-  commit:(terminal:LegalChatTerminal)=>Promise<Saved>;
+  commit:(terminal:LegalChatTerminal,sources:readonly LegalSourceContext[])=>Promise<Saved>;
   release:(reason:"cancelled"|"lease_lost"|"failed")=>Promise<void>;
 }):Promise<Saved> {
-  return runReservedLegalChat({signal:input.context.signal,renew:input.renew,
-    commit:input.commit,release:input.release,work:async signal=>{
+  return runReservedLegalChat<{terminal:LegalChatTerminal;sources:readonly LegalSourceContext[]},Saved>({signal:input.context.signal,renew:input.renew,
+    commit:({terminal,sources})=>input.commit(terminal,sources),release:input.release,
+    work:async(signal):Promise<{terminal:LegalChatTerminal;sources:readonly LegalSourceContext[]}>=>{
       const context=await interpretLegalQuestion({...input.context,signal},input.interpret);
-      if(context.kind!=="ready") return context;
+      if(context.kind!=="ready") return {terminal:context,sources:[]};
       const question={question:context.question,topics:context.topics,locale:input.context.locale,
         mode:input.mode,answerMode:input.answerMode,temporalScope:context.temporalScope,
         caseFacts:context.caseFacts,priorTurns:context.priorTurns,signal};
@@ -38,7 +40,13 @@ export function executeLegalChat<Saved>(input:{
         "Official research could not fully verify every material part of the question.")]:[];
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs},input.model);
-      return {...answer,research:{needs:research.needs,rounds:research.rounds,
-        sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}};
+      const published=new Set(answer.result.sources.map(source=>source.sourceId));
+      return {terminal:{...answer,research:{needs:research.needs,rounds:research.rounds,
+        sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},
+        // Authenticated spans are ephemeral inputs to receipt persistence, not
+        // part of the serializable terminal answer or its diagnostics.
+        sources:research.evidence.filter(item=>published.has(item.source.id)).map(item=>({...item.source,
+          spans:[{id:`${item.source.id}:complete`,article:item.source.article??null,paragraph:null,
+            text:item.text,textSha256:item.textSha256,quality:"high" as const}]}))};
     }});
 }
