@@ -8,11 +8,12 @@ import {LEGAL_CHAT_EXECUTION_TIMEOUT_MS} from "./execution-limits";
 import type {CorpusSessionInput} from "./corpus-session";
 import type {AiProviderAttemptObservation} from "../document-builder/ai/openai";
 import type {AiResponseTone} from "../ai/runtime-settings";
+import {observeCurrentLexDocument} from "../legal/lex-document-status";
 
 /** Production composition owns all request-local model and research state.
  * Reservation, tenant-scoped storage and replay remain the route's boundary. */
 export async function executeRuntimeLegalChat<Saved>(input:
-  Omit<Parameters<typeof executeLegalChat<Saved>>[0],"interpret"|"research"|"model">&{
+  Omit<Parameters<typeof executeLegalChat<Saved>>[0],"interpret"|"research"|"model"|"observeSource">&{
     service:CorpusResearchService;
     environment:CorpusSessionInput["environment"];
     requestId:string;
@@ -31,6 +32,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
       interpret:createQuestionInterpreter({...options,mode:input.mode}),
       research:{indexed:corpus.indexed,official:createOfficialResearch({formulate:model.formulate}),assess:model.assess},
       model:createLegalAnswerModel({...options,responseTone:input.responseTone}),
+      observeSource:observeCurrentLexDocument,
     });
   } finally {await corpus.close();}
 }

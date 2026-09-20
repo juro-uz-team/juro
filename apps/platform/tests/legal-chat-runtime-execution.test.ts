@@ -5,6 +5,37 @@ import {env} from "cloudflare:workers";
 import {executeRuntimeLegalChat} from "../lib/legal-chat/runtime-execution";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
+test("runtime refuses to publish a model-approved answer whose source freshness cannot be established",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let calls=0;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));calls++;
+    const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
+    const output=calls===1?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
+      :calls===2?{queries:[query]}:calls===3?{needs:[],resolved:[],queries:[query]}
+      :calls===4?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
+        answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
+          actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
+      :{sourceAudit:{source:{p0:{material:true,actionRequired:true,
+        findingSupport:[{claimId:"finding:0",excerpt:text}],actionSupport:[{claimId:"action:0",excerpt:text}],missingContent:[]}}},
+        verification:{claims:["mainPoint","finding:0","action:0"].map(id=>({id,supported:true,reason:"Supported"})),
+          retention:[],coverage:[{issue:"Record access",actionRequired:true,findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
+          complete:true,gaps:[],questions:[]}};
+    return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const stale={...evidence,source:{...evidence.source,verifiedAt:new Date(Date.now()-600_000).toISOString()}};
+  const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode:"fast",answerMode:"short",
+    context:{question:"May I request my record?",locale:"en",priorTurns:[]},
+    service:{async openLegalResearch(){return {async search(){return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
+    renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
+  });
+  assert.equal(calls,5,"The normal writer and verifier both completed before final source validation");
+  assert.equal(result.kind,"unavailable");assert.ok("result" in result);
+  assert.equal(result.result.failureReason,"official_research_unavailable");
+  assert.deepEqual(result.result.confirmedFindings,[]);
+});
+
 const text="Synthetic rule: applicants may request a record.";
 const evidence:LegalEvidence={source:{id:"source",actTitle:"Synthetic source",actIdentifier:null,
   officialUrl:"https://lex.uz/docs/999999",revisionDate:null,lastCheckedAt:"2026-09-20",locale:"en",

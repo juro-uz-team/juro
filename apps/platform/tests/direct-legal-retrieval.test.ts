@@ -42,6 +42,12 @@ test("known official candidates are fetched and validated without repeating titl
   });
   assert.equal(result.sources.length, 1);
   assert.equal(result.sources[0]?.verificationState, "direct_validated");
+  const source=result.sources[0]!;
+  assert.match(source.currentSourceStatus?.pinnedTextSha256??"",/^[a-f0-9]{64}$/);
+  assert.equal(source.currentSourceStatus?.observation?.normalizedTextSha256,source.currentSourceStatus?.pinnedTextSha256);
+  assert.equal(source.currentSourceStatus?.observation?.rawContentSha256,source.contentSha256);
+  assert.equal(source.currentSourceStatus?.observation?.officialUrl,source.officialUrl);
+  assert.equal(source.currentSourceStatus?.observation?.observedAt,source.verifiedAt);
 });
 
 test("explicit complete-article evidence retains every list continuation and stops at the next article", async () => {

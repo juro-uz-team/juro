@@ -4,6 +4,8 @@ import { researchLegalQuestion, type LegalResearchServices, type ResearchNeed, t
 import { runReservedLegalChat } from "./reserved-execution";
 import { aiText } from "../ai/localization";
 import type {LegalSourceContext} from "../legal/source-context";
+import {validateAnswerSources} from "./final-source-validation";
+import type {SourceObservation} from "../legal/source-observation";
 
 export type LegalChatTerminal = (AnswerOutcome & {caseFacts?:readonly string[];research:{
   needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
@@ -20,6 +22,8 @@ export function executeLegalChat<Saved>(input:{
   interpret:(input:QuestionContextInput)=>Promise<unknown>;
   research:LegalResearchServices;
   model:AnswerModel;
+  /** Production supplies a publisher reader; frozen-evidence evaluations omit it. */
+  observeSource?:(url:string)=>Promise<SourceObservation>;
   renew:()=>Promise<boolean>;
   commit:(terminal:LegalChatTerminal,sources:readonly LegalSourceContext[])=>Promise<Saved>;
   release:(reason:"cancelled"|"lease_lost"|"failed")=>Promise<void>;
@@ -42,15 +46,27 @@ export function executeLegalChat<Saved>(input:{
         "Официальные источники не позволили полностью проверить все существенные части вопроса.",
         "Rasmiy manbalar savolning barcha muhim qismlarini to‘liq tekshirish uchun yetarli bo‘lmadi.",
         "Official research could not fully verify every material part of the question.")]:[];
+      let validated:ReadonlyMap<string,LegalSourceContext>=new Map();
+      let sourceUnavailable=research.sourceUnavailable;
+      const observe=input.observeSource;
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
-        sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model);
+        sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model,
+        observe?{validateSources:async evidence=>{
+          validated=await validateAnswerSources({evidence,observe,signal});
+          sourceUnavailable ||= validated.size!==evidence.length;
+          return validated;
+        }}:undefined);
+      signal.throwIfAborted();
       const published=new Set(answer.result.sources.map(source=>source.sourceId));
+      const sources=research.evidence.filter(item=>published.has(item.source.id)).map(item=>({
+        ...(validated.get(item.source.id)??item.source),
+        applicabilityStatus:item.endpoint.kind==="current"?"current" as const:"historical" as const,
+        spans:[{id:`${item.source.id}:complete`,article:item.source.article??null,paragraph:null,
+          text:item.text,textSha256:item.textSha256,quality:"high" as const}]}));
       return {terminal:{...answer,caseFacts:context.caseFacts,research:{needs:research.needs,rounds:research.rounds,
-        sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},
+        sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},
         // Authenticated spans are ephemeral inputs to receipt persistence, not
         // part of the serializable terminal answer or its diagnostics.
-        sources:research.evidence.filter(item=>published.has(item.source.id)).map(item=>({...item.source,
-          spans:[{id:`${item.source.id}:complete`,article:item.source.article??null,paragraph:null,
-            text:item.text,textSha256:item.textSha256,quality:"high" as const}]}))};
+        sources};
     }});
 }

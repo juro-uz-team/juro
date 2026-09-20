@@ -2,7 +2,7 @@ import type { LegalSourceContext, LegalSourceSpan } from "../legal/source-contex
 import { detectArticleNumbers } from "./legal-language";
 import { completeArticleText } from "./article-context";
 import { legalDatabaseFreshnessFromAsOf, type LegalDatabaseFreshness } from "./verified-retrieval";
-import { lexDocumentIsRepealed } from "./lex-document-status";
+import { lexDocumentIsRepealed, publisherTextFingerprint } from "./lex-document-status";
 import {
   classifyLegalSourceUrl,
   fetchLegalSource,
@@ -806,6 +806,7 @@ class OfficialDirectProvider implements LegalSourceProvider {
       spans,
     });
     if (!quality.passed) throw new Error("LEGAL_SOURCE_QUALITY_REJECTED");
+    const pinnedTextSha256 = await publisherTextFingerprint(snapshot);
     const source: LegalSourceContext = {
       id: sourceId,
       actTitle: officialDisplayTitle(snapshot.documentTitle),
@@ -824,6 +825,9 @@ class OfficialDirectProvider implements LegalSourceProvider {
       excerpt: spans.map((span) => span.text).join(" ").slice(0, 1_200) || relevantExcerpt(snapshot.plainText, this.terms),
       effectiveDate: null,
       applicabilityStatus: "current",
+      currentSourceStatus: {pinnedTextSha256, observation: {version: 2, officialUrl: fetched.canonicalUrl,
+        observedAt: fetchedAt, current: true, normalizedTextSha256: pinnedTextSha256,
+        rawContentSha256: fetched.contentSha256}},
       spans,
       sourceQuality: quality,
     };

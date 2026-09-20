@@ -164,7 +164,25 @@ function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutc
     sourceValidationStatus: "unavailable" } };
 }
 
-export async function answerFromEvidence(input: AnswerQuestion, model: AnswerModel): Promise<AnswerOutcome> {
+export async function answerFromEvidence(input: AnswerQuestion, model: AnswerModel, options?:{
+  validateSources:(evidence:readonly LegalEvidence[])=>Promise<ReadonlyMap<string,LegalSourceContext>>;
+}): Promise<AnswerOutcome> {
+  const finalize=async(draft:LegalDraft,verification:LegalVerification):Promise<AnswerOutcome>=>{
+    const projected=projectVerifiedAnswer(input,draft,verification);
+    if(!options||!projected.result.sources.length)return projected;
+    const published=new Set(projected.result.sources.map(source=>source.sourceId));
+    const selected=input.evidence.filter(item=>published.has(item.source.id));
+    let valid:ReadonlyMap<string,LegalSourceContext>;
+    try {valid=await options.validateSources(selected);}
+    catch {return unavailableAnswer(input,input.signal?.aborted?"AI_CANCELLED":"OFFICIAL_RESEARCH_UNAVAILABLE");}
+    if(input.signal?.aborted)return unavailableAnswer(input,"AI_CANCELLED");
+    // Reuse the reviewed draft and its qualification/rule dependencies. A
+    // current-source outage cannot leave a dependent action or summary behind.
+    const refreshed={...input,sourceUnavailable:input.sourceUnavailable||valid.size!==selected.length,
+      evidence:selected.filter(item=>valid.has(item.source.id)).map(item=>({...item,source:valid.get(item.source.id)!}))};
+    const result=projectVerifiedAnswer(refreshed,draft,verification);
+    return result.kind==="insufficient_evidence"?unavailableAnswer(input,"OFFICIAL_RESEARCH_UNAVAILABLE"):result;
+  };
   try { await assertAnswerEvidence(input); }
   catch { return unavailableAnswer(input, "EVIDENCE_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
@@ -181,7 +199,7 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
   } catch { return unavailableAnswer(input, input.signal?.aborted ? "AI_CANCELLED" : "ANSWER_PROVIDER_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   const first = projectVerifiedAnswer(input, draft, verification);
-  if (first.kind === "complete") return first;
+  if (first.kind === "complete") return finalize(draft,verification);
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   try {
     input.onStage?.("correcting");
@@ -191,15 +209,14 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     input.onStage?.("verifying");
     const checked = legalVerificationSchema.parse(await model.verify({ question: input, draft: corrected, claims: legalDraftClaims(corrected), previous: correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
-    const final = projectVerifiedAnswer(input, corrected, checked);
     // The latest successful review owns publication. Semantic old-to-new
     // mappings cannot authorize resurrecting an earlier body or discard a
     // repaired finding. Missing retained content is a coverage gap in this
     // draft, never a reason to restore another whole answer.
-    return final;
+    return finalize(corrected,checked);
   } catch {
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     if (first.kind !== "partial") return unavailableAnswer(input, "ANSWER_CORRECTION_UNAVAILABLE");
-    return { ...first, errorCode: "ANSWER_CORRECTION_UNAVAILABLE" };
+    return { ...await finalize(draft,verification), errorCode: "ANSWER_CORRECTION_UNAVAILABLE" };
   }
 }

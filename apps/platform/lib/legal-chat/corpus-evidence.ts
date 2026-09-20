@@ -67,6 +67,7 @@ export async function corpusAnswerEvidence(input: {
       verifiedAt: input.currentAt, locale: {ru:"ru", "uz-Latn":"uz", "uz-Cyrl":"uzc", en:"en"}[complete.languageTag],
       sourceType: "lex", sourceClass: "OFFICIAL_LEGISLATION",
       status: input.endpoint.kind === "current" ? "current" : "historical",
+      applicabilityStatus: input.endpoint.kind === "current" ? "current" : "historical",
       verificationState: "verified", contentSha256: receipt.sha256,
       citationEvidenceReceipt: receipt,
       ...(input.endpoint.kind === "current" ? {currentSourceStatus: input.currentSourceStatus} : {}),

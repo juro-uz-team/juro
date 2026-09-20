@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {executeLegalChat,type LegalChatTerminal} from "../lib/legal-chat/execution";
 import {legalDraftClaims,legalDraftSchema} from "../lib/legal-chat/answer-contract";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
+import type {SourceObservation} from "../lib/legal/source-observation";
 
 const text="Synthetic rule: applicants may request a copy of their record.";
 const evidence:LegalEvidence={source:{id:"source",actTitle:"Synthetic source",actIdentifier:null,
@@ -18,6 +19,82 @@ const draft=legalDraftSchema.parse({mainPoint:{text:"You may request a copy of y
 const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported by synthetic evidence."})),
   retention:[],coverage:[{issue:"Record access",findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
   complete:true,gaps:[],questions:[]};
+
+for(const scenario of ["unchanged","changed","unavailable","historical","cancelled"] as const) {
+  test(`final source validation before saving: ${scenario}`,async()=>{
+    const controller=new AbortController();
+    const old=new Date(Date.now()-600_000).toISOString();
+    const observation:SourceObservation={version:2,officialUrl:evidence.source.officialUrl,observedAt:old,
+      current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)};
+    const historical=scenario==="historical";
+    const item:LegalEvidence={...evidence,endpoint:historical?{kind:"timestamp",instant:"2024-12-31T19:00:00.000Z"}:{kind:"current"},
+      source:{...evidence.source,status:historical?"historical":"current",verifiedAt:old,
+        // Applicability is derived from the authenticated endpoint, not optional metadata.
+        currentSourceStatus:historical?undefined:{pinnedTextSha256:observation.normalizedTextSha256!,observation}}};
+    let reads=0,saves=0;
+    const run=()=>executeLegalChat({context:{question:"May I request my record?",locale:"en",priorTurns:[],signal:controller.signal},
+      mode:"fast",answerMode:"short",
+      interpret:async()=>({topics:["Record access"],facts:[],temporal:historical?{kind:"date",date:"2025-01-01"}:{kind:"current"},questions:[]}),
+      research:{indexed:async()=>({evidence:[item],needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
+      model:{write:async()=>draft,verify:async()=>review},renew:async()=>true,
+      observeSource:async()=>{reads++;
+        if(scenario==="unavailable")throw new Error("Publisher unavailable");
+        if(scenario==="cancelled")controller.abort(new Error("Request cancelled"));
+        return {...observation,observedAt:new Date().toISOString(),normalizedTextSha256:scenario==="changed"?"d".repeat(64):"b".repeat(64)};},
+      commit:async(terminal,sources)=>{saves++;
+        if(scenario==="unchanged"||historical) {
+          assert.equal(terminal.kind,"complete");assert.ok("result" in terminal);
+          assert.equal(sources[0]?.spans?.[0]?.text,text);
+          assert.equal(terminal.result.sources[0]?.verifiedAt,sources[0]?.verifiedAt);
+          assert.equal(terminal.result.legalDatabaseAsOf,sources[0]?.verifiedAt);
+          if(historical)assert.equal(sources[0]?.verifiedAt,old);
+          else assert.notEqual(sources[0]?.verifiedAt,old);
+        } else {
+          assert.equal(terminal.kind,"unavailable");assert.ok("result" in terminal);
+          assert.equal(terminal.result.failureReason,"official_research_unavailable");
+          assert.deepEqual(terminal.result.confirmedFindings,[]);assert.deepEqual(sources,[]);
+          assert.equal(terminal.research.sourceUnavailable,true);
+        }
+        return terminal;},release:async()=>{},
+    });
+    if(scenario==="cancelled")await assert.rejects(run(),/Request cancelled/);else await run();
+    assert.equal(reads,historical?0:1);assert.equal(saves,scenario==="cancelled"?0:1);
+  });
+}
+
+test("one stale source withholds dependent claims while preserving an independent supported topic",async()=>{
+  const old=new Date(Date.now()-600_000).toISOString();
+  const packet=["source","other"].map(id=>({...evidence,source:{...evidence.source,id,
+    officialUrl:`https://lex.uz/docs/${id==="source"?"999999":"888888"}`,verifiedAt:old,
+    currentSourceStatus:{pinnedTextSha256:"b".repeat(64),observation:null}}}));
+  const mixed=legalDraftSchema.parse({...draft,mainPoint:{text:"Both topics are supported.",sourceIds:["source","other"]},
+    findings:[...draft.findings,{title:"Other topic",explanation:"Other supported rule.",sourceIds:["other"]},
+      {title:"Dependent rule",explanation:"Subject to the other rule.",sourceIds:["source"]}],
+    actions:[...draft.actions,{title:"Other step",description:"Apply the other rule.",sourceIds:["other"]},
+      {title:"Dependent step",description:"Use the qualified dependent rule.",sourceIds:["source"]}],
+    ruleBindings:[0,1,2].map(index=>({findingId:`finding:${index}`,actionIds:[`action:${index}`]}))});
+  const checked={...review,claims:legalDraftClaims(mixed).map(claim=>({id:claim.id,supported:true,reason:"Supported",
+    dependsOn:claim.id==="finding:2"?["finding:1"]:[]})),
+    coverage:[0,1,2].map(index=>({issue:`Topic ${index}`,findingIds:[`finding:${index}`],actionIds:[`action:${index}`],gaps:[]}))};
+  let writes=0;
+  const result=await executeLegalChat({context:{question:"Explain both topics.",locale:"en",priorTurns:[]},mode:"fast",answerMode:"detailed",
+    interpret:async()=>({topics:["Both topics"],facts:[],temporal:{kind:"current"},questions:[]}),
+    research:{indexed:async()=>({evidence:packet,needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
+    model:{write:async()=>{writes++;return mixed;},verify:async()=>checked},renew:async()=>true,
+    observeSource:async officialUrl=>{
+      if(officialUrl.endsWith("888888"))throw new Error("Publisher unavailable");
+      return {version:2,officialUrl,observedAt:new Date().toISOString(),current:true,
+        normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)};
+    },commit:async(terminal,sources)=>{assert.deepEqual(sources.map(source=>source.id),["source"]);return terminal;},release:async()=>{},
+  });
+  assert.equal(writes,1,"A final source outage does not start another model correction");
+  assert.equal(result.kind,"partial");assert.ok("result" in result);
+  assert.equal(result.research.sourceUnavailable,true);
+  assert.deepEqual(result.result.confirmedFindings,draft.findings);
+  assert.deepEqual(result.result.actionPlan,draft.actions);
+  assert.notEqual(result.result.summary,mixed.mainPoint.text);
+  assert.ok(result.result.coverageGaps.length);
+});
 
 test("one execution preserves chronological facts and saves only the verified terminal answer",async()=>{
   const turns=[{question:"I am an applicant.",answer:"An earlier assistant assertion is not law."}];
