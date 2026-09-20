@@ -37,4 +37,12 @@ test("guest clarifications retain every user turn, stay encrypted and replay wit
   assert.doesNotMatch(JSON.stringify(sqlite.prepare("SELECT * FROM guest_ai_runs").all()),/Private original|Private second|Which date/);
   const state=sqlite.prepare("SELECT state,answer_count,request_count FROM guest_ai_sessions").get();
   assert.equal(state?.state,"available");assert.equal(state?.answer_count,0);assert.equal(state?.request_count,2);
+  // A later unreadable clarification must not prevent replay of an intact result.
+  sqlite.prepare("UPDATE guest_ai_runs SET request_ciphertext='unreadable' WHERE id=?").run(second.runId);
+  assert.deepEqual(await deliverGuestLegalChat({...input,configured:false,service:undefined}),first);
+  assert.equal(requests.length,2);
+  await assert.rejects(deliverGuestLegalChat({...input,request:{...input.request,idempotencyKey:"guest-unreadable-context"}}));
+  assert.equal(requests.length,2);
+  assert.equal(sqlite.prepare("SELECT state FROM guest_ai_sessions").get()?.state,"available");
+  assert.equal(sqlite.prepare("SELECT status FROM guest_ai_runs WHERE idempotency_key='guest-unreadable-context'").get()?.status,"failed");
 });

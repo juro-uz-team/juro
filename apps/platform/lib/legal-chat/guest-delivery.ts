@@ -30,11 +30,6 @@ export async function deliverGuestLegalChat(input:{
   const request=input.request;
   const model=openAiChatModel(request.reasoningMode);
   const safetyIdentifier=await sha256Json({guestSessionId:input.session.id});
-  const previous=await guestAiClarificationRuns(input.db,input.session);
-  const priorTurns=await Promise.all(previous.map(async run=>({
-    question:await revealGuestAiRunQuestion({keyring:input.keyring,run}),
-    answer:legalAnswerConversationText(decodeSavedLegalAnswer(await revealGuestAiRunResult({keyring:input.keyring,run}))),
-  })));
   const reservation=await reserveGuestAiRun({...input,idempotencyKey:request.idempotencyKey,
     requestHash:await sha256Json(request),question:request.question,provider:"openai",model,legalDatabaseAsOf:"unavailable",
     instructionHash:await sha256Json({policy:"qualified-legal-answer",model,configHash:input.settings.configHash}),
@@ -47,6 +42,13 @@ export async function deliverGuestLegalChat(input:{
     await failGuestAiRun({db:input.db,run,errorCode:"GUEST_CONFIGURATION_UNAVAILABLE"});
     throw new GuestAiError("GUEST_CONFIGURATION_UNAVAILABLE");
   }
+  const priorTurns=await (async()=>{
+    const previous=await guestAiClarificationRuns(input.db,input.session);
+    return Promise.all(previous.map(async prior=>({
+      question:await revealGuestAiRunQuestion({keyring:input.keyring,run:prior}),
+      answer:legalAnswerConversationText(decodeSavedLegalAnswer(await revealGuestAiRunResult({keyring:input.keyring,run:prior}))),
+    })));
+  })().catch(async error=>{await failGuestAiRun({db:input.db,run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
   const started=Date.now();
   const accounting=createLegalChatAccounting({db:input.db,workspaceId:null,userId:null,environment:input.settings.environment,feature:"guest_legal_chat"});
   return executeRuntimeLegalChat({service:input.service,environment:input.retrievalEnvironment,requestId:run.id,safetyIdentifier,
