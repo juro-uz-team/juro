@@ -7,7 +7,7 @@ import {
   saveAiActionPlanToCase,
 } from "../lib/ai/action-plan-save";
 import { confirmedActionPlanPatchSchema } from "../lib/platform/action-plan";
-import { sqliteD1Fixture } from "./helpers/sqlite-d1";
+import { batchBarrier, sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const USER_ID = "user_ai_plan";
 const WORKSPACE_ID = "ws_ai_plan";
@@ -283,8 +283,8 @@ test("AI-plan route and chat require server-side ownership and explicit confirma
   const service = source("lib/ai/action-plan-save.ts");
   const client = source("app/_platform/AiLawyerClient.tsx");
   assert.match(route, /assertSafeWrite\(request\)/);
-  assert.match(route, /requireApiUser\(\)/);
-  assert.match(route, /workspaceForContentEditor\(user\)/);
+  assert.match(route, /legalChatOwner\(request\)/);
+  assert.match(service, /member\.status='active' AND member\.role IN/);
   assert.match(route, /saveAiActionPlanToCase/);
   assert.match(service, /conversation\.workspace_id=\? AND conversation\.owner_user_id=\?/);
   assert.match(service, /c\.id=\? AND c\.workspace_id=\? AND c\.archived_at IS NULL/);
@@ -294,6 +294,85 @@ test("AI-plan route and chat require server-side ownership and explicit confirma
   assert.match(client, /ai-plan-confirmation/);
   assert.match(client, /planConfirmationRef/);
   assert.match(client, /\/api\/platform\/ai\/action-plan/);
-  assert.match(client, /assistantMessageId: answer\.messageId/);
-  assert.match(client, /targetCaseId: targetCaseId \|\| undefined/);
+  assert.match(client, /assistantMessageId:\s*answer\.messageId/);
+  assert.match(client, /targetCaseId:\s*targetCaseId\s*\|\|\s*undefined/);
+});
+
+
+test("concurrent identical confirmations commit one plan and return the same receipt", async () => {
+  const {sqlite,d1}=seed();
+  try {
+    const db=batchBarrier(d1);
+    const input={db,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW};
+    const saved=await Promise.all([saveAiActionPlanToCase(input),saveAiActionPlanToCase(input)]);
+    assert.equal(saved[0].caseId,saved[1].caseId);
+    assert.equal(saved.filter(item=>item.replay).length,1);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM action_plan_versions").get()?.n,1);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM tasks").get()?.n,2);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM tasks WHERE id=plan_step_id").get()?.n,2);
+  } finally {sqlite.close();}
+});
+
+test("a failure after writing steps rolls the complete confirmation back", async () => {
+  const {sqlite,d1}=seed();
+  try {
+    sqlite.exec("CREATE TRIGGER reject_plan_version BEFORE INSERT ON action_plan_versions BEGIN SELECT RAISE(ABORT,'injected persistence failure'); END;");
+    await assert.rejects(saveAiActionPlanToCase({db:d1,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW}),
+      (error:unknown)=>error instanceof AiActionPlanSaveError && error.code==="AI_ACTION_PLAN_PERSISTENCE_FAILED");
+    for(const table of ["cases","action_plans","action_plan_steps","tasks","case_events","action_plan_versions"]){
+      assert.equal(sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n,0,table);
+    }
+  } finally {sqlite.close();}
+});
+
+test("read-only membership and removal before commit cannot save a plan", async () => {
+  const {sqlite,d1}=seed();
+  try {
+    const input={db:d1,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW};
+    sqlite.prepare("UPDATE workspace_members SET role='viewer' WHERE user_id=?").run(USER_ID);
+    await assert.rejects(saveAiActionPlanToCase(input),(error:unknown)=>error instanceof AiActionPlanSaveError && error.code==="AI_ACTION_PLAN_NOT_FOUND");
+    sqlite.prepare("UPDATE workspace_members SET role='owner' WHERE user_id=?").run(USER_ID);
+    const originalBatch=d1.batch.bind(d1);
+    d1.batch=async (statements:D1PreparedStatement[])=>{
+      sqlite.prepare("UPDATE workspace_members SET status='removed' WHERE user_id=?").run(USER_ID);
+      return originalBatch(statements);
+    };
+    await assert.rejects(saveAiActionPlanToCase(input),(error:unknown)=>error instanceof AiActionPlanSaveError && error.code==="AI_ACTION_PLAN_PERSISTENCE_FAILED");
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM cases").get()?.n,0);
+  } finally {sqlite.close();}
+});
+
+
+test("appending preserves retained progress semantics and selected-workspace case classification", async () => {
+  const {sqlite,d1}=seed();
+  try {
+    sqlite.prepare("UPDATE workspaces SET type='business',full_name='Business workspace',short_name='Business' WHERE id=?").run(WORKSPACE_ID);
+    const input={db:d1,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW};
+    const first=await saveAiActionPlanToCase(input);
+    assert.equal(sqlite.prepare("SELECT account_type AS type FROM cases WHERE id=?").get(first.caseId)?.type,"business");
+    const steps=sqlite.prepare("SELECT id FROM action_plan_steps WHERE plan_id=? ORDER BY ordinal").all(first.planId);
+    sqlite.prepare("UPDATE action_plan_steps SET status='completed' WHERE id=?").run(steps[0].id);
+    sqlite.prepare("UPDATE action_plan_steps SET status='cancelled' WHERE id=?").run(steps[1].id);
+    const nextMessage=crypto.randomUUID();
+    sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,structured_json,created_at) VALUES (?,?,'assistant',?,?,?)")
+      .run(nextMessage,CONVERSATION_ID,"Next saved answer",JSON.stringify({...structuredAnswer,actionPlan:Array.from({length:4},(_,i)=>({...structuredAnswer.actionPlan[0],title:`Next step ${i+1}`}))}),NOW);
+    await saveAiActionPlanToCase({...input,assistantMessageId:nextMessage,targetCaseId:first.caseId});
+    assert.equal(sqlite.prepare("SELECT progress_percent AS progress FROM action_plans WHERE id=?").get(first.planId)?.progress,17);
+    assert.equal(sqlite.prepare("SELECT current_revision AS revision FROM cases WHERE id=?").get(first.caseId)?.revision,2);
+    const version=sqlite.prepare("SELECT snapshot_json AS snapshot FROM action_plan_versions WHERE plan_id=? AND version=2").get(first.planId);
+    assert.equal(JSON.parse(String(version?.snapshot)).progressPercent,17);
+  } finally {sqlite.close();}
+});
+
+
+test("saved confirmation events remain replayable across changes to generated identifiers", async()=>{
+  const {sqlite,d1}=seed();
+  try{
+    const input={db:d1,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW};
+    const first=await saveAiActionPlanToCase(input);
+    sqlite.prepare("UPDATE case_events SET id=? WHERE case_id=?").run(crypto.randomUUID(),first.caseId);
+    assert.deepEqual(await saveAiActionPlanToCase(input),{...first,replay:true});
+    assert.deepEqual(await saveAiActionPlanToCase({...input,targetCaseId:first.caseId}),{...first,replay:true});
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM action_plan_steps").get()?.n,2);
+  }finally{sqlite.close();}
 });
