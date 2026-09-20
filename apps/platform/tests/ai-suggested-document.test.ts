@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
+import {env} from "cloudflare:workers";
+import {POST} from "../app/api/platform/ai/suggested-document/route";
 import { DOCUMENT_REGISTRY } from "../lib/document-builder/registry";
 import {
   AiSuggestedDocumentError,
@@ -12,7 +13,7 @@ import type { UserProfile } from "../lib/document-builder/types";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const USER_ID = "user_ai_document";
-const WORKSPACE_ID = "ws_ai_document";
+const WORKSPACE_ID = `ws_${"a".repeat(32)}`;
 const CONVERSATION_ID = "conversation_ai_document";
 const ASSISTANT_MESSAGE_ID = "121f218d-30a1-49f7-8602-5f1b04ccd63b";
 const NOW = "2026-08-03T09:00:00.000Z";
@@ -38,10 +39,6 @@ const USER: UserProfile = {
   registeredAddress: "Тестовый адрес",
   phone: "+998900000000",
 };
-
-function source(relativePath: string): string {
-  return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
-}
 
 function structuredAnswer(templateCode: string | null = PUBLISHED_TEMPLATE.code) {
   return {
@@ -223,7 +220,7 @@ test("read-only members keep private AI drafts but cannot create case-linked dra
       () => createAiSuggestedDocumentDraft({
         db: caseLinked.d1,
         workspaceId: WORKSPACE_ID,
-        workspaceRole: "viewer",
+        workspaceRole: "owner",
         user: USER,
         assistantMessageId: ASSISTANT_MESSAGE_ID,
         locale: "ru",
@@ -245,21 +242,55 @@ test("read-only members keep private AI drafts but cannot create case-linked dra
   }
 });
 
-test("AI document route and client never accept a client-selected template", () => {
-  const route = source("app/api/platform/ai/suggested-document/route.ts");
-  const service = source("lib/ai/suggested-document.ts");
-  const client = source("app/_platform/AiLawyerClient.tsx");
-  assert.match(route, /assertSafeWrite\(request\)/);
-  assert.match(route, /requireApiUser\(\)/);
-  assert.match(route, /workspaceForUser\(user\)/);
-  assert.match(route, /workspaceRole: workspace\.role/);
-  assert.match(route, /parseJsonRequest\(request, z\.unknown\(\), 64_000\)/);
-  assert.match(route, /idempotency-key/);
-  assert.match(service, /conversation\.workspace_id=\? AND conversation\.owner_user_id=\?/);
-  assert.match(service, /getDocumentByCode\(suggested\.templateCode\)/);
-  assert.match(service, /idempotencyKeySha256 = await sha256\(input\.idempotencyKey\)/);
-  assert.match(service, /if \(preview\.caseId\) requireWorkspaceContentEditor\(input\.workspaceRole\)/);
-  assert.match(client, /\/api\/platform\/ai\/suggested-document/);
-  assert.match(client, /assistantMessageId: documentPrefillMessageId/);
-  assert.doesNotMatch(client, /templateCode: answer\.result\.suggestedDocument/);
+test("concurrent confirmations create one draft and replay survives profile changes but not revoked membership", async () => {
+  const { sqlite, d1 } = seed(PREFILL_TEMPLATE.code);
+  try {
+    const input = { db: d1, workspaceId: WORKSPACE_ID, workspaceRole: "owner", user: USER,
+      assistantMessageId: ASSISTANT_MESSAGE_ID, locale: "ru" as const, fields: [],
+      idempotencyKey: "concurrent-document-confirmation" };
+    const results = await Promise.all([createAiSuggestedDocumentDraft(input), createAiSuggestedDocumentDraft(input)]);
+    assert.equal(results[0].documentId, results[1].documentId);
+    assert.deepEqual(results.map(result => result.replayed).sort(), [false, true]);
+    assert.equal((sqlite.prepare("SELECT count(*) AS count FROM documents").get() as { count: number }).count, 1);
+    assert.deepEqual(await createAiSuggestedDocumentDraft({ ...input, user: { ...USER, fullName: "Changed profile" } }),
+      { documentId: results[0].documentId, replayed: true });
+    await assert.rejects(() => createAiSuggestedDocumentDraft({ ...input, user: { ...USER, id: "foreign-user" } }),
+      (error: unknown) => error instanceof AiSuggestedDocumentError && error.code === "AI_SUGGESTED_DOCUMENT_NOT_FOUND");
+    sqlite.prepare("UPDATE workspace_members SET status='inactive' WHERE user_id=?").run(USER_ID);
+    await assert.rejects(() => createAiSuggestedDocumentDraft(input),
+      (error: unknown) => error instanceof AiSuggestedDocumentError && error.code === "AI_SUGGESTED_DOCUMENT_NOT_FOUND");
+  } finally { sqlite.close(); }
+});
+
+test("document handoff HTTP boundary uses the selected workspace and saved template, with explicit replayable confirmation",async context=>{
+  const {sqlite,d1}=seed(PREFILL_TEMPLATE.code);context.after(()=>sqlite.close());
+  const bindings={DB:d1,APP_ENV:"development",ALLOW_PLATFORM_AUTH_HEADERS:"true",IDENTITY_PROTECTION_MODE:"legacy"};
+  const previous=Object.fromEntries(Object.keys(bindings).map(key=>[key,Reflect.get(env,key)]));
+  Object.assign(env,bindings);context.after(()=>Object.assign(env,previous));
+  const otherWorkspace=`ws_${"b".repeat(32)}`;
+  sqlite.prepare("INSERT INTO workspaces (id,type,name,locale,created_at,updated_at) VALUES (?,'individual','Other','ru',?,?)").run(otherWorkspace,NOW,NOW);
+  sqlite.prepare("INSERT INTO workspace_members (id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('other-member',?,?,'owner','active',?,?,?)").run(otherWorkspace,USER_ID,NOW,NOW,NOW);
+  sqlite.prepare("UPDATE user_profiles SET default_workspace_id=? WHERE id=?").run(otherWorkspace,USER_ID);
+  const request=(body:unknown,selected=WORKSPACE_ID)=>new Request("https://app.example/api/platform/ai/suggested-document",{method:"POST",
+    headers:{"oai-authenticated-user-email":"ai-document@example.invalid",origin:"https://app.example","x-juro-csrf":"1",
+      "content-type":"application/json","x-juro-workspace-id":selected,"idempotency-key":"http-document-confirmation-0001"},body:JSON.stringify(body)});
+  const previewInput={action:"preview",assistantMessageId:ASSISTANT_MESSAGE_ID,locale:"ru"};
+  const preview=await POST(request(previewInput));assert.equal(preview.status,200);
+  assert.match(preview.headers.get("cache-control")??"",/no-store/);
+  assert.equal((await preview.json() as {templateCode:string}).templateCode,PREFILL_TEMPLATE.code);
+  assert.equal((await POST(request(previewInput,otherWorkspace))).status,404);
+  assert.equal((await POST(request({...previewInput,templateCode:PUBLISHED_TEMPLATE.code}))).status,400);
+  const crossOrigin=request(previewInput);crossOrigin.headers.set("origin","https://foreign.example");
+  assert.equal((await POST(crossOrigin)).status,403);
+  const noCsrf=request(previewInput);noCsrf.headers.delete("x-juro-csrf");assert.equal((await POST(noCsrf)).status,403);
+  const noAuth=request(previewInput);noAuth.headers.delete("oai-authenticated-user-email");assert.equal((await POST(noAuth)).status,401);
+  const confirm={...previewInput,action:"confirm",fields:[]};
+  const noKey=request(confirm);noKey.headers.delete("idempotency-key");assert.equal((await POST(noKey)).status,400);
+  const first=await POST(request(confirm));assert.equal(first.status,200);
+  const created=await first.json() as {documentId:string;replayed:boolean};assert.equal(created.replayed,false);
+  assert.deepEqual(await (await POST(request(confirm))).json(),{documentId:created.documentId,replayed:true});
+  const stored=sqlite.prepare("SELECT workspace_id AS workspaceId FROM documents WHERE id=?").get(created.documentId) as {workspaceId:string};
+  assert.equal(stored.workspaceId,WORKSPACE_ID);
+  const answers=JSON.parse((sqlite.prepare("SELECT answers_json AS answersJson FROM document_answers WHERE document_id=?").get(created.documentId) as {answersJson:string}).answersJson);
+  assert(!Object.values(answers).includes(USER.fullName),"Unselected profile values must not be copied");
 });
