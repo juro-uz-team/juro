@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { executeAiPostForInternalEvaluation } from "../../app/api/platform/ai/route";
+import { POST as executeAiPostForInternalEvaluation } from "../../app/api/platform/ai/route";
 import {
   LEGAL_EVALUATION_CORPUS_VERSION,
 } from "../../evaluation/legal-evaluation-contract";
@@ -426,6 +426,7 @@ export async function runStagingLegalEvaluationScenario(input: RunInput) {
         "idempotency-key": ids.idempotencyKey,
       },
       body: JSON.stringify({
+        idempotencyKey: ids.idempotencyKey,
         question: scenario.prompt,
         locale: scenario.locale,
         conversationId: scenario.conversationHistory?.length ? ids.conversationId : undefined,

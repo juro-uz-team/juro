@@ -7,6 +7,7 @@ import {createRemoteCorpusResearch,type CorpusResearchService} from "./remote-co
 import {LEGAL_CHAT_EXECUTION_TIMEOUT_MS} from "./execution-limits";
 import type {CorpusSessionInput} from "./corpus-session";
 import type {AiProviderAttemptObservation} from "../document-builder/ai/openai";
+import type {AiResponseTone} from "../ai/runtime-settings";
 
 /** Production composition owns all request-local model and research state.
  * Reservation, tenant-scoped storage and replay remain the route's boundary. */
@@ -16,6 +17,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
     environment:CorpusSessionInput["environment"];
     requestId:string;
     safetyIdentifier?:string;
+    responseTone?:AiResponseTone;
     onAttempt?:(input:{model:string})=>void|Promise<void>;
     onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
   }):Promise<Saved> {
@@ -28,7 +30,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
     return await executeLegalChat({...input,
       interpret:createQuestionInterpreter({...options,mode:input.mode}),
       research:{indexed:corpus.indexed,official:createOfficialResearch({formulate:model.formulate}),assess:model.assess},
-      model:createLegalAnswerModel(options),
+      model:createLegalAnswerModel({...options,responseTone:input.responseTone}),
     });
   } finally {await corpus.close();}
 }

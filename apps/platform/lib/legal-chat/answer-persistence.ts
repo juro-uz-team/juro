@@ -11,9 +11,8 @@ type Completion=Pick<CompleteAiRunInput,"db"|"runId"|"ledgerId"|"workspaceId"|"u
 
 function prepareCitations(input:Parameters<typeof legalCitationStatements>[0]) {
   const published=new Set(input.citations.map(source=>source.sourceId));
-  // The retained table currently accepts these two source locales only. Never
-  // relabel an English or Cyrillic Uzbek source to force it into that contract.
-  if(input.sources.some(source=>published.has(source.id)&&!["ru","uz"].includes(source.locale))) {
+  // Preserve the source language exactly; an unsupported identity is never relabeled.
+  if(input.sources.some(source=>published.has(source.id)&&!["ru","uz","uzc","en"].includes(source.locale))) {
     throw new Error("LEGAL_CHAT_CITATION_LOCALE_UNSUPPORTED");
   }
   const statements=legalCitationStatements(input);

@@ -5,6 +5,7 @@ import { legalChatProviderTimeoutMs } from "../ai/legal-chat-timeout";
 import { LEGAL_CHAT_PROVIDER_TIMEOUT_MS } from "./execution-limits";
 import { legalClaimId, legalDraftClaims, legalDraftSchema, legalVerificationSchema, MAX_LEGAL_SOURCE_PASSAGES, type LegalVerification } from "./answer-contract";
 import type { AnswerModel, AnswerQuestion } from "./answer-engine";
+import {aiResponseToneInstruction,type AiResponseTone} from "../ai/runtime-settings";
 
 // Whole-answer writing and independent verification share a bounded quality
 // window in both modes. Mode selects the model, not a reduced correctness budget.
@@ -201,6 +202,7 @@ export function createLegalAnswerModel(options: {
   requestId: string;
   deadlineAt?: number;
   safetyIdentifier?: string;
+  responseTone?:AiResponseTone;
   onProgress?: (input: AiStructuredProgress) => void | Promise<void>;
   /** Internal diagnostics only: neither callback contains approved public text. */
   onDraftProduced?: (input: z.infer<typeof reviewedDraftSchema>) => void | Promise<void>;
@@ -211,7 +213,9 @@ export function createLegalAnswerModel(options: {
   async function run<T>(question: AnswerQuestion, stage: "writing" | "verifying" | "correcting",
     instructions: string, input: unknown, schema: z.ZodType<T>, schemaName: string): Promise<T> {
     const result = await callOpenAiStructured({
-      instructions, input, schemaName, schema: z.toJSONSchema(schema, {reused:"ref"}), parse: value => schema.parse(value),
+      instructions:options.responseTone&&stage!=="verifying"
+        ? `${instructions}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:instructions,
+      input, schemaName, schema: z.toJSONSchema(schema, {reused:"ref"}), parse: value => schema.parse(value),
       requestId: options.requestId, model: openAiChatModel(question.mode), maxAttempts: 1,
       textVerbosity: question.answerMode === "detailed" ? "high" : "medium",
       reasoningEffort: "max",

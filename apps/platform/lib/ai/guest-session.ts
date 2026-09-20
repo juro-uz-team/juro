@@ -733,6 +733,18 @@ export async function latestGuestAiClarificationRun(
   return row ? runFromRow(row) : null;
 }
 
+/** All completed clarifications in the authenticated guest session, in order.
+ * Keeping the original question matters when more than one clarification is needed. */
+export async function guestAiClarificationRuns(db:D1Database,session:GuestAiSession):Promise<GuestAiRun[]> {
+  const rows=await db.prepare(`SELECT r.idempotency_key AS idempotencyKey FROM guest_ai_runs r
+    JOIN guest_ai_sessions s ON s.id=r.session_id
+    WHERE s.id=? AND s.token_hmac=? AND s.expires_at>? AND r.status='completed'
+      AND r.response_kind='clarification_required' ORDER BY r.created_at,r.id LIMIT ?`)
+    .bind(session.id,session.tokenHmac,new Date().toISOString(),GUEST_AI_MAX_REQUESTS).all<{idempotencyKey:string}>();
+  const runs=await Promise.all(rows.results.map(row=>runForIdempotency(db,session.id,row.idempotencyKey)));
+  return runs.filter((run):run is GuestAiRun=>run!==null);
+}
+
 export async function purgeExpiredGuestAiSessions(input: {
   db: D1Database;
   now?: Date | string;

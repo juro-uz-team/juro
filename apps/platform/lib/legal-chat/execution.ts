@@ -8,6 +8,7 @@ import type {LegalSourceContext} from "../legal/source-context";
 export type LegalChatTerminal = (AnswerOutcome & {research:{
   needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
 }}) | Exclude<QuestionContext,{kind:"ready"}>;
+export type LegalChatStage="interpreting"|"researching"|"writing"|"verifying"|"correcting"|"saving";
 
 /** One reserved request owns interpretation, bounded research, answer and save.
  * Storage adapters enforce tenant ownership and atomic terminal persistence;
@@ -22,15 +23,18 @@ export function executeLegalChat<Saved>(input:{
   renew:()=>Promise<boolean>;
   commit:(terminal:LegalChatTerminal,sources:readonly LegalSourceContext[])=>Promise<Saved>;
   release:(reason:"cancelled"|"lease_lost"|"failed")=>Promise<void>;
+  onStage?:(stage:LegalChatStage)=>void;
 }):Promise<Saved> {
   return runReservedLegalChat<{terminal:LegalChatTerminal;sources:readonly LegalSourceContext[]},Saved>({signal:input.context.signal,renew:input.renew,
-    commit:({terminal,sources})=>input.commit(terminal,sources),release:input.release,
+    commit:({terminal,sources})=>{input.onStage?.("saving");return input.commit(terminal,sources);},release:input.release,
     work:async(signal):Promise<{terminal:LegalChatTerminal;sources:readonly LegalSourceContext[]}>=>{
+      input.onStage?.("interpreting");
       const context=await interpretLegalQuestion({...input.context,signal},input.interpret);
       if(context.kind!=="ready") return {terminal:context,sources:[]};
       const question={question:context.question,topics:context.topics,locale:input.context.locale,
         mode:input.mode,answerMode:input.answerMode,temporalScope:context.temporalScope,
         caseFacts:context.caseFacts,priorTurns:context.priorTurns,signal};
+      input.onStage?.("researching");
       const research=await researchLegalQuestion(question,input.research);
       // Research feedback is not approved public legal prose. Keep detailed
       // source needs inside research; publication receives a neutral limitation.
@@ -39,7 +43,7 @@ export function executeLegalChat<Saved>(input:{
         "Rasmiy manbalar savolning barcha muhim qismlarini to‘liq tekshirish uchun yetarli bo‘lmadi.",
         "Official research could not fully verify every material part of the question.")]:[];
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
-        sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs},input.model);
+        sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model);
       const published=new Set(answer.result.sources.map(source=>source.sourceId));
       return {terminal:{...answer,research:{needs:research.needs,rounds:research.rounds,
         sourceUnavailable:research.sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},

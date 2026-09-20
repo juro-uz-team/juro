@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useState, useRef, type FormEvent } from "react";
 
 import { TurnstileWidget } from "../_auth/TurnstileWidget";
 import { LegalAnswerView, type LegalAnswerViewResult } from "../_platform/LegalAnswerView";
 import { aiText } from "../../lib/ai/localization";
-import { answerVerificationFailureText } from "../../lib/ai/legal-answer-failure";
+import { readLegalChatStream,shouldReuseLegalChatRequest } from "../../lib/legal-chat/client-stream";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 type GuestResult = LegalAnswerViewResult & {
@@ -29,15 +29,63 @@ type Bootstrap = {
   error?: string;
 };
 
-type SubmitResponse = {
-  result?: GuestResult;
-  session?: Bootstrap["session"];
-  code?: string;
-  error?: string;
-};
-
 export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
-  // Presentation bindings are supplied by the replacement chat controller.
+  const labelId=useId();
+  const text=useCallback((ru:string,uz:string,en:string)=>aiText(locale,ru,uz,en),[locale]);
+  const [bootstrap,setBootstrap]=useState<Bootstrap|null>(null);
+  const [state,setState]=useState<"loading"|"ready"|"submitting"|"error">("loading");
+  const [question,setQuestion]=useState("");
+  const [result,setResult]=useState<GuestResult|null>(null);
+  const [message,setMessage]=useState("");
+  const [turnstileToken,setTurnstileToken]=useState("");
+  const [turnstileReset,setTurnstileReset]=useState(0);
+  const active=useRef<AbortController|null>(null);
+  const retry=useRef<{question:string;locale:PlatformLocale;key:string}|null>(null);
+  const load=useCallback(async(signal?:AbortSignal)=>{
+    const response=await fetch("/api/guest/ai",{headers:{"x-juro-locale":locale},cache:"no-store",signal});
+    if(!response.ok)throw new Error("GUEST_UNAVAILABLE");
+    const data:Bootstrap=await response.json();
+    if(signal?.aborted)return;
+    return data;
+  },[locale]);
+  useEffect(()=>{
+    const controller=new AbortController();
+    void load(controller.signal).then(data=>{if(!controller.signal.aborted&&data){setBootstrap(data);setResult(data.result);setState("ready");}}).catch(()=>{
+      if(!controller.signal.aborted){setState("error");setMessage(text("Гостевой чат временно недоступен.","Mehmon suhbati vaqtincha mavjud emas.","Guest chat is temporarily unavailable."));}
+    });
+    return ()=>{controller.abort();active.current?.abort();};
+  },[load,text]);
+  const consumed=bootstrap?.session?.state==="consumed";
+  const needsTurnstile=!bootstrap?.session;
+  const canSubmit=state!=="loading"&&state!=="submitting"&&Boolean(bootstrap?.enabled&&bootstrap.providerConfigured)&&!consumed&&
+    Boolean(question.trim())&&(!needsTurnstile||Boolean(turnstileToken));
+  async function submit(event:FormEvent){
+    event.preventDefault();if(!canSubmit||active.current)return;
+    const controller=new AbortController();active.current=controller;setState("submitting");setMessage("");
+    const pending=retry.current?.question===question&&retry.current.locale===locale?retry.current:{question,locale,key:crypto.randomUUID()};
+    retry.current=pending;
+    try {
+      const response=await fetch("/api/guest/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale},
+        body:JSON.stringify({question:pending.question,locale,idempotencyKey:pending.key,turnstileToken:turnstileToken||undefined}),signal:controller.signal});
+      const saved=await readLegalChatStream(response,()=>{
+        setMessage(text("Проверяем вопрос и официальные источники…","Savol va rasmiy manbalarni tekshiryapmiz…","Checking your question and official sources…"));
+      });
+      if(controller.signal.aborted)return;
+      retry.current=null;setResult(saved.result);setQuestion("");setMessage("");setState("ready");
+      const refreshed=await load(controller.signal).catch(()=>null);
+      if(refreshed){setBootstrap(refreshed);setResult(refreshed.result);}
+      if(!refreshed&&saved.result.responseKind==="answer")setBootstrap(previous=>previous?{...previous,session:{state:"consumed",requestCount:previous.session?.requestCount??1,answerCount:1,expiresAt:previous.session?.expiresAt??""}}:previous);
+    } catch(error) {
+      if(controller.signal.aborted)return;
+      if(!shouldReuseLegalChatRequest(error))retry.current=null;
+      setState("error");setMessage(text("Не удалось получить ответ. Повторите запрос, чтобы проверить сохранённый результат.","Javobni olib bo‘lmadi. Saqlangan natijani tekshirish uchun qayta urinib ko‘ring.","The answer could not be received. Retry to check for a saved result."));
+      const refreshed=await load(controller.signal).catch(()=>null);
+      if(refreshed){setBootstrap(refreshed);setResult(refreshed.result);}
+    } finally {
+      if(active.current===controller)active.current=null;
+      if(!controller.signal.aborted){setTurnstileToken("");setTurnstileReset(value=>value+1);}
+    }
+  }
   return (
     <main className="guest-ai-page">
       <header className="guest-ai-header">

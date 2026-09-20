@@ -9,8 +9,8 @@ import {legalChatResponseSchema} from "../lib/ai/legal-chat-schema";
 import type {LegalSourceContext} from "../lib/legal/source-context";
 import {parseIdentityKeyring} from "../lib/auth/keyring";
 import {createGuestAiSession,reserveGuestAiRun,revealGuestAiRunResult,latestGuestAiRun} from "../lib/ai/guest-session";
-import {readConversationContext} from "../lib/legal-chat/conversation-context";
-import {listAiAnswerVersions} from "../lib/ai/branch-store";
+import {readConversationContext,readSavedConversationTurns} from "../lib/legal-chat/conversation-context";
+import {listAiAnswerVersions,listAiBranches} from "../lib/ai/branch-store";
 import {corpusAnswerEvidence} from "../lib/legal-chat/corpus-evidence";
 import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
 import {executeLegalChat} from "../lib/legal-chat/execution";
@@ -164,7 +164,7 @@ test("edited answers keep version ancestry and follow-ups use the active facts",
 test("unsupported source locales fail before finalization rather than being relabeled",async()=>{
   const {sqlite,input}=await fixture();
   try {
-    for(const locale of ["en","uzc"]){
+    for(const locale of ["invented"]){
       await assert.rejects(saveSignedInLegalAnswer({...input,sources:[{...source,locale}]}),/CITATION_LOCALE_UNSUPPORTED/);
     }
     assert.equal(sqlite.prepare("SELECT status FROM ai_runs").get()?.status,"reserved");
@@ -194,3 +194,37 @@ test("guest saves retain encryption and commit exact receipts with session consu
     assert.equal((await reserveGuestAiRun(reservation)).kind,"completed");
   } finally {sqlite.close();}
 });
+
+
+test("selected history remains available after its branch leaves the branch menu",async()=>{
+  const {sqlite,d1,input,reservation}=await fixture();
+  try {
+    const first=await saveSignedInLegalAnswer(input);
+    const owner={db:d1,workspaceId:"workspace",userId:"owner",conversationId:first.conversationId};
+    for(let index=0;index<41;index++) {
+      const idempotencyKey=`follow-${index}`;
+      const reserved=await reserveAiRun({...reservation,idempotencyKey,requestHash:idempotencyKey,monthlyLimit:null,conversationId:first.conversationId});
+      if(reserved.kind!=="reserved")throw new Error("Expected reservation");
+      await saveSignedInLegalAnswer({...input,idempotencyKey,runId:reserved.runId,ledgerId:reserved.ledgerId,
+        conversationId:first.conversationId,branch:{...input.branch,operation:"follow_up",parentBranchId:first.branchId}});
+    }
+    assert.equal((await listAiBranches(owner)).some(branch=>branch.branchId===first.branchId),false);
+    const turns=await readSavedConversationTurns({...owner,responseMessageId:first.messageId});
+    assert.deepEqual(turns.map(turn=>turn.question),[input.branch.question]);
+    await assert.rejects(readSavedConversationTurns({...owner,userId:"foreign",responseMessageId:first.messageId}),/SOURCE_MESSAGE_NOT_FOUND/);
+  } finally {sqlite.close();}
+});
+
+
+for(const [locale,languageTag] of [["en","en"],["uzc","uz-Cyrl"]] as const){
+  test(`citation persistence retains exact ${locale} source identity`,async()=>{
+    const {sqlite,input}=await fixture();
+    try {
+      await saveSignedInLegalAnswer({...input,sources:[{...source,locale,
+        citationEvidenceReceipt:{...source.citationEvidenceReceipt!,languageTag}}]});
+      const row=sqlite.prepare("SELECT source_locale,evidence_receipt_json FROM legal_source_references").get();
+      assert.equal(row?.source_locale,locale);
+      assert.equal(JSON.parse(String(row?.evidence_receipt_json)).languageTag,languageTag);
+    } finally {sqlite.close();}
+  });
+}

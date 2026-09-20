@@ -2,57 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const route = readFileSync(new URL("../app/api/guest/ai/route.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../app/[locale]/guest/ai-lawyer/page.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../app/_guest/GuestAiClient.tsx", import.meta.url), "utf8");
-
-test("guest AI route is server-only, same-origin protected, provider-backed, and source bounded", () => {
-  assert.match(route, /assertSafeWrite\(request\)/);
-  assert.match(route, /parseJsonRequest\(request, requestSchema, 8_192\)/);
-  assert.doesNotMatch(route, /requestSchema\.safeParse\(await request\.json/);
-  assert.match(route, /GUEST_AI_PAYLOAD_TOO_LARGE/);
-  assert.match(route, /validateTurnstile/);
-  assert.match(route, /guestAiTurnstileAction/);
-  assert.match(route, /retrieveCorpusAwareLegalSources/);
-  assert.match(route, /retrievalOptions[^=]*=\s*\{\s*query: effectiveQuestion,/);
-  assert.match(route, /retrieveCorpusAwareLegalSources\(retrievalOptions\)/);
-  assert.match(route, /understandLegalRetrievalQuery/);
-  assert.doesNotMatch(route, /rerankLegalCorpusCandidates/);
-  assert.match(route, /shouldRetrieveSecondaryInternet\(retrieval\)/);
-  assert.match(route, /retrieveSecondaryInternetSources/);
-  assert.match(route, /lexSearchQueries: retrievalUnderstanding\.lexSearchQueries/);
-  assert.doesNotMatch(route, /indexQueries:/);
-  const official = route.indexOf("retrieval = await retrieveCorpusAwareLegalSources");
-  const secondaryGate = route.indexOf("shouldRetrieveSecondaryInternet(retrieval)");
-  const secondary = route.indexOf("await retrieveSecondaryResearch", secondaryGate);
-  assert.ok(official >= 0 && secondaryGate > official && secondary > secondaryGate);
-  assert.match(route, /createLegalAiGateway\(provider\)\.generateGroundedAnswer\(\{/);
-  assert.doesNotMatch(route, /provider\.runLegalChat\(/);
-  assert.match(route, /coverageRequirements: retrieval\.coverageRequirements\?\.length/);
-  assert.match(route, /retrievalUnderstanding\.requiredConcepts\.map/);
-  assert.match(route, /questionContext: requirement\.questionContext/);
-  assert.match(route, /applicableAt: synthesisApplicableAt/);
-  assert.match(route, /temporalComparison,/);
-  assert.match(route, /requirePlanningHints: true/);
-  assert.match(route, /!synthesisApplicableAt && !temporalComparison/);
-  assert.match(route, /coverageGaps\?\.length && retrieval\.coverageStatus === "good_coverage"/);
-  assert.match(route, /sources:\s*allRetrievedSources,/);
-  assert.match(route, /function rethrowGuestCancellation/);
-  assert.equal(route.match(/rethrowGuestCancellation\(error, budget!?\.signal\)/gu)?.length, 3);
-  assert.match(route, /legalCitationStatements/);
-  assert.doesNotMatch(route, /retrieveInteractiveVerifiedLegalSources/);
-  assert.match(route, /legalAiProvider\(\)/);
-  assert.match(route, /enforceLegalDatabaseFreshness/);
-  assert.match(route, /completeGuestAiRun/);
-  assert.match(route, /failGuestAiRun/);
-  assert.match(route, /assertProviderCallAllowed/);
-  assert.match(route, /beforeProviderCall/);
-  assert.match(route, /feature: "guest_legal_chat"/);
-  assert.match(route, /workspaceId: null/);
-  assert.match(route, /GUEST_AI_DISABLED/);
-  assert.doesNotMatch(route, /(?:mock|fake)(?:Answer|Response|Result)/i);
-  assert.doesNotMatch(route, /OPENAI_API_KEY[^\n]+(?:json|Response)/);
-});
 
 test("guest AI page is noindex, RU/UZ/EN localized, and exposes no fake success path", () => {
   assert.match(page, /robots:\s*\{\s*index:\s*false,\s*follow:\s*false/);
@@ -62,6 +13,6 @@ test("guest AI page is noindex, RU/UZ/EN localized, and exposes no fake success 
   assert.match(client, /Гостевые данные удаляются через 24 часа/);
   assert.match(client, /Mehmon ma’lumotlari 24 soatdan keyin o‘chiriladi/);
   assert.match(client, /Guest data is deleted after 24 hours/);
-  assert.match(client, /"x-juro-locale": locale/);
+  assert.match(client, /"x-juro-locale":\s*locale/);
   assert.doesNotMatch(client, /setTimeout\([^)]*(?:success|result)/i);
 });

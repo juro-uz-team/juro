@@ -40,7 +40,7 @@ export type AnswerModel = {
     previous: { draft: LegalDraft; verification: LegalVerification } | null }): Promise<unknown>;
 };
 
-function emptyAnswer(input: AnswerQuestion): LegalChatResponse {
+export function emptyLegalAnswer(input:Pick<AnswerQuestion,"locale"|"mode"|"answerMode"|"unresolved">): LegalChatResponse {
   const summary = aiText(input.locale,
     "Недостаточно проверенных официальных источников для правового вывода.",
     "Huquqiy xulosa uchun tekshirilgan rasmiy manbalar yetarli emas.",
@@ -94,7 +94,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     ? [incompleteMessage] : [];
   const findings = draft.findings.filter((_, index) => accepted.has(legalClaimId("finding",index)));
   if (!findings.length) return { kind: "insufficient_evidence", verification, result: {
-    ...emptyAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps])],
+    ...emptyLegalAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps])],
     clarificationQuestions: questions,
   } };
   const actions = draft.actions.filter((_, index) => accepted.has(legalClaimId("action",index)));
@@ -134,7 +134,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
   const partialSummary = aiText(input.locale, "Ниже — подтвержденная часть ответа; остальные вопросы требуют проверки.",
     "Quyida javobning tasdiqlangan qismi; qolgan masalalar tekshiruv talab qiladi.",
     "The supported parts are explained below; the remaining issues need verification.");
-  const result = legalChatResponseSchema.parse({ ...emptyAnswer(input),
+  const result = legalChatResponseSchema.parse({ ...emptyLegalAnswer(input),
     responseKind: findings.length ? "answer" : "clarification_required",
     summary: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
     summarySourceIds: accepted.has("mainPoint") ? draft.mainPoint.sourceIds : [],
@@ -157,7 +157,7 @@ function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutc
     "Проверка ответа временно недоступна. Это не означает, что применимых норм нет. Повторите запрос.",
     "Javobni tekshirish vaqtincha mavjud emas. Bu tegishli normalar yo‘qligini anglatmaydi. Qayta urinib ko‘ring.",
     "Answer verification is temporarily unavailable. This does not mean that no law applies. Please retry.");
-  return { kind: "unavailable", errorCode, result: { ...emptyAnswer(input), summary: text, answer: text,
+  return { kind: "unavailable", errorCode, result: { ...emptyLegalAnswer(input), summary: text, answer: text,
     failureReason: errorCode === "OFFICIAL_RESEARCH_UNAVAILABLE" ? "official_research_unavailable" : "answer_verification_unavailable",
     sourceValidationStatus: "unavailable" } };
 }
@@ -167,7 +167,7 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
   catch { return unavailableAnswer(input, "EVIDENCE_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   if (!input.evidence.length) return input.sourceUnavailable ? unavailableAnswer(input, "OFFICIAL_RESEARCH_UNAVAILABLE")
-    : { kind: "insufficient_evidence", result: emptyAnswer(input) };
+    : { kind: "insufficient_evidence", result: emptyLegalAnswer(input) };
   let draft: LegalDraft;
   let verification: LegalVerification;
   try {

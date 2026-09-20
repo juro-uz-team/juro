@@ -21,7 +21,7 @@ const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:
 
 test("one execution preserves chronological facts and saves only the verified terminal answer",async()=>{
   const turns=[{question:"I am an applicant.",answer:"An earlier assistant assertion is not law."}];
-  const events:string[]=[];let saved:LegalChatTerminal|undefined;
+  const events:string[]=[];const stages:string[]=[];let saved:LegalChatTerminal|undefined;
   const observations=[{kind:"candidate_read_limit" as const,lane:"indexed" as const,omitted:30}];
   const result=await executeLegalChat({context:{question:"I need my record.",locale:"en",priorTurns:turns},mode:"fast",answerMode:"detailed",
     interpret:async input=>{events.push("interpret");assert.deepEqual(input.priorTurns,turns);
@@ -38,7 +38,7 @@ test("one execution preserves chronological facts and saves only the verified te
       assert.equal(sources[0]?.spans?.[0]?.textSha256,evidence.textSha256);
       if("research" in terminal)assert.doesNotMatch(JSON.stringify(terminal.research),/Synthetic rule:/);
       return {id:"saved-result"};},
-    release:async()=>assert.fail("Successful request does not release as a failure"),
+    release:async()=>assert.fail("Successful request does not release as a failure"),onStage:stage=>{stages.push(stage);},
   });
   assert.deepEqual(result,{id:"saved-result"});
   assert.equal(saved?.kind,"complete");
@@ -47,6 +47,7 @@ test("one execution preserves chronological facts and saves only the verified te
     assert.doesNotMatch(JSON.stringify(saved.result),/candidate_read_limit/);
   }
   assert.deepEqual(events,["interpret","research","write","verify","save"]);
+  assert.deepEqual(stages,["interpreting","researching","writing","verifying","saving"]);
 });
 
 test("a missing temporal endpoint saves a clarification without research or generation",async()=>{
