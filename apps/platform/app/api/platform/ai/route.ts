@@ -1,5 +1,5 @@
 import {LegalContextCapacityError} from "../../../../lib/legal-chat/context-capacity";
-import {runtimeIdentityProtection} from "../../../../lib/auth/identity-runtime";
+import {memoryKeyring,UserMemoryError} from "../../../../lib/ai/user-memory";
 import {legalChatOwner} from "../../../../lib/legal-chat/http-owner";
 import {z} from "zod";
 import {withApiErrors,assertSafeWrite} from "../../../../lib/document-builder/auth/api";
@@ -86,7 +86,12 @@ export const POST=withApiErrors(async(request:Request)=>{
   const [settings,entitlements]=await Promise.all([resolveAiRuntimeSettings({db:scope.db,env}),workspaceEntitlements(scope.db,scope.workspaceId)]);
   const work:Parameters<typeof legalChatStream>[0]["work"]=async(signal,onStage)=>{
     try {
-      return await deliverSignedInLegalChat({...scope,request:parsed.data,settings,memoryKeyring:runtimeIdentityProtection().keyring,
+      // Memory encryption is independent of account identity migration. The
+      // context reader fails closed if stored memories exist without a key.
+      let keyring:ReturnType<typeof memoryKeyring>|null=null;
+      try {keyring=memoryKeyring(env.IDENTITY_KEYRING);}
+      catch(error){if(!(error instanceof UserMemoryError))throw error;}
+      return await deliverSignedInLegalChat({...scope,request:parsed.data,settings,memoryKeyring:keyring,
         monthlyLimit:resolveAiAnswerCycleLimit(env.APP_ENV,entitlements.aiAnswerCyclesMonthly),configured:hasAiConfiguration(),
         service:env.LEGAL_RETRIEVAL_SERVICE,retrievalEnvironment:legalRetrievalEnvironment(env),signal,onStage});
     } catch(error){
