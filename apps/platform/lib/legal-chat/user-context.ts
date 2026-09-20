@@ -1,3 +1,4 @@
+import {LegalContextCapacityError} from "./context-capacity";
 import type {IdentityKeyring} from "../auth/keyring";
 import {listUserMemories,UserMemoryError,type UserMemory} from "../ai/user-memory";
 
@@ -14,10 +15,10 @@ export async function readLegalUserContext(input:{db:D1Database;workspaceId:stri
     JOIN conversations c ON c.id=f.conversation_id WHERE c.id=? AND c.workspace_id=? AND c.owner_user_id=?
       AND f.status IN ('confirmed','rejected') ORDER BY f.updated_at DESC,f.id DESC LIMIT 101`)
     .bind(input.conversationId,input.workspaceId,input.userId).all<{statement:string;status:string}>():{results:[]};
-  if(facts.results.length>100||facts.results.some(fact=>fact.statement.length>4000))throw new Error("LEGAL_CONTEXT_CAPACITY_EXCEEDED");
+  if(facts.results.length>100||facts.results.some(fact=>fact.statement.length>4000))throw new LegalContextCapacityError();
   const count=await input.db.prepare(`SELECT COUNT(*) AS total FROM user_memories WHERE user_id=? AND status='active'
     AND (scope='global' OR (scope='workspace' AND workspace_id=?))`).bind(input.userId,input.workspaceId).first<{total:number}>();
-  if(Number(count?.total??0)>100)throw new Error("LEGAL_CONTEXT_CAPACITY_EXCEEDED");
+  if(Number(count?.total??0)>100)throw new LegalContextCapacityError();
   let memories:UserMemory[]=[];
   if(input.keyring)memories=await listUserMemories({...input,keyring:input.keyring});
   else {

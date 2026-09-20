@@ -1,3 +1,4 @@
+import {LegalContextCapacityError} from "../../../../lib/legal-chat/context-capacity";
 import {runtimeIdentityProtection} from "../../../../lib/auth/identity-runtime";
 import {legalChatOwner} from "../../../../lib/legal-chat/http-owner";
 import {z} from "zod";
@@ -90,6 +91,7 @@ export const POST=withApiErrors(async(request:Request)=>{
         service:env.LEGAL_RETRIEVAL_SERVICE,retrievalEnvironment:legalRetrievalEnvironment(env),signal,onStage});
     } catch(error){
       if(error instanceof AiRunConflictError)throw new LegalChatDeliveryError(error.code,error.code==="PLAN_LIMIT"?429:409);
+      if(error instanceof LegalContextCapacityError)throw new LegalChatDeliveryError(error.code,422);
       if(error instanceof AiBranchInputError)throw new LegalChatDeliveryError(error.code,404);
       throw error;
     }

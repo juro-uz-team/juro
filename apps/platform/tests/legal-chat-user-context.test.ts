@@ -35,6 +35,6 @@ test("context includes only active owned memories and distinguishes confirmed fr
     await assert.rejects(readLegalUserContext({...scope,keyring:null,conversationId:"conversation"}),/MEMORY_ENCRYPTION_UNAVAILABLE/);
     for(let index=0;index<100;index++)sqlite.prepare("INSERT INTO confirmed_facts(id,conversation_id,statement,status,created_at,updated_at) VALUES (?,'conversation',?,'confirmed',?,?)")
       .run(`new-${index}`,`Newer circumstance ${index}`,now,"2099-01-01T00:00:00.000Z");
-    await assert.rejects(readLegalUserContext({...scope,conversationId:"conversation"}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
+    await assert.rejects(readLegalUserContext({...scope,conversationId:"conversation"}),{name:"LegalContextCapacityError",message:"LEGAL_CONTEXT_CAPACITY_EXCEEDED"});
   } finally {sqlite.close();}
 });

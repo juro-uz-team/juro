@@ -12,7 +12,7 @@ import { aiText } from "../../lib/ai/localization";
 import type { LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import { uzbekistanCalendarDate } from "../../lib/legal/applicability-date";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
-import {readLegalChatStream,shouldReuseLegalChatRequest} from "../../lib/legal-chat/client-stream";
+import {readLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-chat/client-stream";
 import {chatStageLabel} from "../../lib/legal-chat/stage-label";
 import { AiSelect } from "./AiSelect";
 import { LegalAnswerView } from "./LegalAnswerView";
@@ -220,7 +220,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     } catch(cause){
       if(streamAbortRef.current!==controller)return;
       retryRef.current=shouldReuseLegalChatRequest(cause)?payload:{...payload,idempotencyKey:crypto.randomUUID()};
-      setCanRetry(true);setError(controller.signal.aborted?text("Запрос остановлен. Можно проверить сохранённый результат повтором.","So‘rov to‘xtatildi. Qayta urinish orqali saqlangan natijani tekshirish mumkin.","Request stopped. Retry to check for a saved result."):text("Не удалось завершить запрос. Можно безопасно повторить.","So‘rov yakunlanmadi. Xavfsiz qayta urinishingiz mumkin.","The request did not finish. You can retry safely."));
+      const retryable=controller.signal.aborted||!(cause instanceof LegalChatClientError)||cause.retryable;
+      setCanRetry(retryable);if(!retryable)retryRef.current=null;
+      setError(cause instanceof LegalChatClientError&&cause.code==="LEGAL_CONTEXT_CAPACITY_EXCEEDED"?text("Объём переписки или сохранённого контекста слишком велик. Начните новый чат или сократите сохранённые факты и память.","Suhbat yoki saqlangan kontekst hajmi juda katta. Yangi chat boshlang yoki saqlangan faktlar va xotirani qisqartiring.","The conversation or saved context is too large. Start a new chat or reduce saved facts and memory."):!retryable?text("Запрос нельзя повторить без изменений. Проверьте данные запроса и доступный лимит.","So‘rovni o‘zgartirmasdan qayta yuborib bo‘lmaydi. So‘rov ma’lumotlari va mavjud limitni tekshiring.","This request needs changes before it can be submitted again. Check your request and available allowance."):controller.signal.aborted?text("Запрос остановлен. Можно проверить сохранённый результат повтором.","So‘rov to‘xtatildi. Qayta urinish orqali saqlangan natijani tekshirish mumkin.","Request stopped. Retry to check for a saved result."):text("Не удалось завершить запрос. Можно безопасно повторить.","So‘rov yakunlanmadi. Xavfsiz qayta urinishingiz mumkin.","The request did not finish. You can retry safely."));
     } finally {if(streamAbortRef.current===controller){streamAbortRef.current=null;setSending(false);setStreamStatus("");}}
   }
   function submit(event:FormEvent){event.preventDefault();if(!question.trim()||sending||(selectedConversationId&&!answer))return;void send({question,locale,answerMode,reasoningMode,conversationId:answer?.conversationId,

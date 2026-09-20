@@ -71,3 +71,11 @@ test("browser distinguishes uncertain replay from a new explicit attempt after t
   assert.equal(shouldReuseLegalChatRequest(new LegalChatClientError("GUEST_RUN_FAILED")),false);
   assert.equal(shouldReuseLegalChatRequest(new LegalChatClientError("AI_RUN_EXPIRED")),false);
 });
+
+
+test("context capacity is a permanent input failure across the server/browser boundary",async()=>{
+  const {LegalContextCapacityError}=await import("../lib/legal-chat/context-capacity");
+  const {readLegalChatStream}=await import("../lib/legal-chat/client-stream");
+  await assert.rejects(readLegalChatStream(legalChatStream({work:async()=>{throw new LegalContextCapacityError();}}),()=>{}),
+    {code:"LEGAL_CONTEXT_CAPACITY_EXCEEDED",retryable:false});
+});

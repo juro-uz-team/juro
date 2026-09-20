@@ -1,3 +1,4 @@
+import {LegalContextCapacityError} from "./context-capacity";
 import type {GuestAiError} from "../ai/guest-session";
 import type {LegalChatStage} from "./execution";
 import {legalChatResponseSchema,type LegalChatResponse} from "../ai/legal-chat-schema";
@@ -12,7 +13,7 @@ export type LegalChatDelivery={
 };
 export class LegalChatDeliveryError extends Error {
   constructor(readonly code:GuestAiError["code"]|"AI_RUN_PROCESSING"|"AI_RUN_FAILED"|"AI_RUN_EXPIRED"|"LEGAL_CHAT_UNAVAILABLE"
-    |"PLAN_LIMIT"|"IDEMPOTENCY_CONFLICT"|"SOURCE_MESSAGE_NOT_FOUND"|"INVALID_BRANCH_OPERATION",
+    |"LEGAL_CONTEXT_CAPACITY_EXCEEDED"|"PLAN_LIMIT"|"IDEMPOTENCY_CONFLICT"|"SOURCE_MESSAGE_NOT_FOUND"|"INVALID_BRANCH_OPERATION",
     readonly status:number,readonly runId?:string){super(code);}
 }
 
@@ -52,9 +53,9 @@ export function legalChatStream(input:{
           requestMessageId:saved.requestMessageId,messageId:saved.messageId,branchId:saved.branchId,
           result:legalChatResponseSchema.parse(saved.result)});
       } catch(error) {
-        if(!abort.signal.aborted)send("error",{code:error instanceof LegalChatDeliveryError?error.code:"LEGAL_CHAT_UNAVAILABLE",
+        if(!abort.signal.aborted)send("error",{code:(error instanceof LegalChatDeliveryError||error instanceof LegalContextCapacityError)?error.code:"LEGAL_CHAT_UNAVAILABLE",
           runId:error instanceof LegalChatDeliveryError?error.runId:undefined,
-          retryable:!(error instanceof LegalChatDeliveryError)||!["PLAN_LIMIT","IDEMPOTENCY_CONFLICT","SOURCE_MESSAGE_NOT_FOUND","INVALID_BRANCH_OPERATION"].includes(error.code)});
+          retryable:!(error instanceof LegalContextCapacityError)&&(!(error instanceof LegalChatDeliveryError)||!["LEGAL_CONTEXT_CAPACITY_EXCEEDED","PLAN_LIMIT","IDEMPOTENCY_CONFLICT","SOURCE_MESSAGE_NOT_FOUND","INVALID_BRANCH_OPERATION"].includes(error.code))});
       } finally {
         cleanup();
         if(!finished){finished=true;controller.close();}

@@ -1,3 +1,4 @@
+import {LegalContextCapacityError} from "./context-capacity";
 import { AI_MESSAGE_OPERATIONS, AiBranchInputError, listAiAnswerVersions,
   type AiBranchInput, type AiMessageOperation } from "../ai/branch-store";
 import { loadAiConversationTurns, type AiConversationTurn } from "../ai/conversation-branch-reader";
@@ -44,7 +45,7 @@ async function readBranchAncestry(input:ConversationOwner&{conversationId:string
       }
       seen.add(turn.branchId);
     }
-    if(input.maxStoredTurns!==undefined&&turns.length+page.length>input.maxStoredTurns)throw new Error("LEGAL_CONTEXT_CAPACITY_EXCEEDED");
+    if(input.maxStoredTurns!==undefined&&turns.length+page.length>input.maxStoredTurns)throw new LegalContextCapacityError();
     turns.unshift(...page);
     cursor=page[0]!.parentBranchId;
   }
@@ -83,7 +84,7 @@ export async function readSavedConversationTurns(input: ConversationOwner & {
         AND NOT EXISTS(SELECT 1 FROM message_branches b WHERE b.response_message_id=response.id)
       ORDER BY response.created_at DESC,response.id DESC LIMIT ${CONTEXT_READ_PAGE}`).bind(input.conversationId,input.workspaceId,input.userId,
       cursor.createdAt,cursor.createdAt,cursor.responseMessageId).all<Omit<AiConversationTurn,"branchId"|"parentBranchId">>();
-    if(input.maxStoredTurns!==undefined&&storedTurns.length+legacy.results.length>input.maxStoredTurns)throw new Error("LEGAL_CONTEXT_CAPACITY_EXCEEDED");
+    if(input.maxStoredTurns!==undefined&&storedTurns.length+legacy.results.length>input.maxStoredTurns)throw new LegalContextCapacityError();
     const oldest=legacy.results.at(-1);
     const page=legacy.results.reverse().map(row=> {
       const branchId = `legacy:${row.responseMessageId}`;
@@ -122,7 +123,7 @@ export async function readSavedConversationTurns(input: ConversationOwner & {
       ).first<{id:string}>();
       if (legacy) {
         const previous = await readSavedConversationTurns({...owner,responseMessageId:legacy.id});
-        if(input.maxStoredTurns!==undefined&&storedTurns.length+previous.length>input.maxStoredTurns)throw new Error("LEGAL_CONTEXT_CAPACITY_EXCEEDED");
+        if(input.maxStoredTurns!==undefined&&storedTurns.length+previous.length>input.maxStoredTurns)throw new LegalContextCapacityError();
         storedTurns.unshift(...previous);
         for (const turn of previous) operations.set(turn.branchId,"follow_up");
       }
