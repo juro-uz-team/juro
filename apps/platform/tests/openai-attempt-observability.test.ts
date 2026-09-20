@@ -2,31 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { env } from "cloudflare:workers";
 import { callOpenAiStructured, type AiProviderAttemptObservation } from "../lib/document-builder/ai/openai";
-import {understandLegalRetrievalQuery, type LegalRetrievalUnderstandingTelemetry} from "../lib/legal/legal-retrieval-understanding";
+import {createQuestionInterpreter} from "../lib/legal-chat/question-model";
 
-test("primary interpretation retains cached usage and observes rejected plans", async (context) => {
+test("question interpretation retains cached usage and observes invalid provider output", async (context) => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";
   context.after(() => {env.OPENAI_API_KEY = previousKey;});
   let valid = true;
-  context.mock.method(globalThis, "fetch", async () => Response.json({model: "gpt-5.6-terra", id: "planner-response",
-    output: [{content: [{type: "output_text", text: JSON.stringify({answerLanguage: "en", standaloneQuestion: "Which rules apply?",
-      relationship: "independent", questionAccounting: {q0:{disposition:"active",requirementIndexes:[0],
-        currentQuestionQuotation:null,contextQuotation:null,explanation:null}},
-      requirements: [{statement: "Applicable rules", scopeKind: "general", priority: "core",
-        origin: {kind: "explicit_question", questionIndex: 0, quotation: valid ? "rules" : "invented quotation"}}],
-      temporalEndpoint: null, comparison: null, missingFacts: []})}]}],
-    usage: {input_tokens: 100, output_tokens: 20, input_tokens_details: {cached_tokens: 50}}}));
-  const telemetry: LegalRetrievalUnderstandingTelemetry[] = [];
+  context.mock.method(globalThis, "fetch", async () => Response.json({model: "gpt-5.6-terra", id: "question-response",
+    output: [{content: [{type: "output_text", text: JSON.stringify({
+      topics: valid ? ["Applicable rules"] : [], facts: [], selectedMemoryIds: [],
+      temporal: {kind: "current"}, questions: [],
+    })}]}], usage: {input_tokens: 100, output_tokens: 20, input_tokens_details: {cached_tokens: 50}}}));
   const attempts: AiProviderAttemptObservation[] = [];
-  const input = {query: "Which rules apply?", locale: "en" as const, requestId: "planner-cost", safetyIdentifier: "test",
-    onTelemetry: (event: LegalRetrievalUnderstandingTelemetry) => {telemetry.push(event);},
-    onAttemptFinished: (event: AiProviderAttemptObservation) => {attempts.push(event);}};
-  await understandLegalRetrievalQuery(input);
-  assert.equal(telemetry[0]?.cachedInputTokens, 50);
+  const interpret = createQuestionInterpreter({mode: "deep", requestId: "question-cost", safetyIdentifier: "test",
+    onAttemptFinished: event => {attempts.push(event);}});
+  const input = {question: "Which rules apply?", locale: "en" as const, priorTurns: []};
+  await interpret(input);
   valid = false;
-  await assert.rejects(understandLegalRetrievalQuery(input), {code: "INVALID_AI_OUTPUT"});
-  assert.equal(telemetry.length, 1);
+  await assert.rejects(interpret(input), {code: "INVALID_AI_OUTPUT"});
   assert.deepEqual(attempts.map(({outcome, usage}) => ({outcome, usage})), [
     {outcome: "completed", usage: {inputTokens: 100, outputTokens: 20, cachedInputTokens: 50}},
     {outcome: "failed", usage: {inputTokens: 100, outputTokens: 20, cachedInputTokens: 50}},
