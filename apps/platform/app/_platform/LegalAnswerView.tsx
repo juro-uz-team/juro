@@ -42,6 +42,7 @@ export type LegalAnswerViewResult = {
   referenceNotes?: Array<{ title: string; note: string; sourceIds: string[] }>;
   conditionalBranches?: Array<{ condition: string; outcome: string; sourceIds: string[] }>;
   coverageGaps?: string[];
+  coverageStatus?: "good_coverage" | "partial_coverage" | "weak_coverage" | "no_coverage";
   failureReason?: LegalAnswerFailureReason;
 };
 
@@ -58,6 +59,7 @@ type AnswerCopy = {
   insufficient: string;
   checked: string;
   checkedBody: string;
+  partial: string;
   missing: string;
   authority: Record<NonNullable<LegalAnswerViewResult["evidenceMode"]>, string>;
   citationLabel: string;
@@ -81,6 +83,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Пока нельзя подтвердить ответ",
     checked: "Что удалось проверить",
     checkedBody: "Доступных подтверждений недостаточно для полного правового вывода.",
+    partial: "Ответ неполный: остаются неподтверждённые вопросы",
     missing: "Нужны дополнительные факты или подтверждённая применимая норма. JURO не заменяет их предположением из общих знаний модели.",
     authority: {
       official: "Подтверждено официальными источниками",
@@ -108,6 +111,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Javobni hozircha tasdiqlab bo‘lmaydi",
     checked: "Nimalar tekshirildi",
     checkedBody: "Mavjud tasdiqlar to‘liq huquqiy xulosa uchun yetarli emas.",
+    partial: "Javob to‘liq emas: tasdiqlanmagan masalalar qolmoqda",
     missing: "Qo‘shimcha faktlar yoki tasdiqlangan amaldagi norma kerak. JURO ularning o‘rniga modelning umumiy bilimiga asoslangan taxmin bermaydi.",
     authority: {
       official: "Rasmiy manbalar bilan tasdiqlangan",
@@ -135,6 +139,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "The answer cannot yet be verified",
     checked: "What was checked",
     checkedBody: "The available evidence is insufficient for a complete legal conclusion.",
+    partial: "This answer is incomplete: some issues remain unverified",
     missing: "Additional facts or a verified applicable rule are required. JURO will not replace them with an assumption based on a model's general knowledge.",
     authority: {
       official: "Verified by official sources",
@@ -230,6 +235,8 @@ export function LegalAnswerView({
   const id = useId().replace(/:/gu, "");
   const copy = COPY[locale];
   const mode = deriveLegalEvidenceMode(result);
+  const incomplete = Boolean(result.coverageGaps?.length)
+    || (result.coverageStatus !== undefined && result.coverageStatus !== "good_coverage");
   const rootClass = `legal-answer ${className}`.trim();
   const usesInternet = result.sources.some((source) => source.sourceOrigin === "web"
     || source.sourceOrigin === "live" || source.sourceClass === "SECONDARY_REFERENCE");
@@ -296,7 +303,7 @@ export function LegalAnswerView({
   ].flatMap((sourceIds) => sourceIds ?? []))];
   return <article className={rootClass} data-answer-kind="legal-answer">
     {internetNotice}
-    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{copy.authority[mode]}</p>
+    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{incomplete ? copy.partial : copy.authority[mode]}</p>
     <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
       <CitationList sourceIds={mainSourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />

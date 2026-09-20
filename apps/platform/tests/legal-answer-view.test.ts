@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import {retrieveCorpusAwareLegalSources} from "../lib/legal-corpus/chat-retrieval";
-import {buildVerifiedSourceOnlyFallback} from "../lib/ai/legal-ai-gateway";
-import {legalResearchFailureReason, resolveLegalAnswerFailureReason} from "../lib/ai/legal-answer-failure";
-import {legalDatabaseFreshnessFromAsOf} from "../lib/legal/verified-retrieval";
+import {createHash} from "node:crypto";
+import {researchLegalQuestion} from "../lib/legal-chat/research";
+import {answerFromEvidence, type AnswerQuestion} from "../lib/legal-chat/answer-engine";
+import {resolveLegalAnswerFailureReason} from "../lib/ai/legal-answer-failure";
 
 import {
   LegalAnswerView,
@@ -239,57 +239,43 @@ test(`unavailable answer verification survives research finalization and seriali
   }
 });
 
-test("partial indexed evidence survives failed live research through validation, serialization and rendering", async () => {
-  const now = new Date("2026-09-01T00:00:00.000Z");
-  const hash = "a".repeat(64);
+test("partial indexed evidence survives failed live research without a complete-answer badge", async () => {
   const retainedText = "Для регистрации подайте заявление в регистрирующий орган.";
-  const requirements = [{id: "registration", statement: "Порядок регистрации", priority: "core"},
-    {id: "permission", statement: "Условия отдельного разрешения", priority: "core"}];
-  const targetService = {async fetch() {return Response.json({result: {kind: "legal_answer",
-    sourceLadder: "indexed_official_corpus", mainPoint: "Нужны регистрация и отдельное разрешение.",
-    whatTheLawSays: requirements.map((requirement, index) => ({requirementId: requirement.id,
-      provisionConceptId: `concept-${index}`, provisionRenditionId: `rendition-${index}`,
-      proposition: requirement.statement,
-      controllingQuotation: index ? "Разрешение выдаётся после проверки самостоятельных условий." : retainedText,
-      officialCitations: [{label: "Проверяемый закон — Статья 9", url: `https://lex.uz/ru/docs/${index ? "888" : "777"}`}],
-      evidenceSha256: hash, currentSourceStatus: {pinnedTextSha256: hash, observation: null}})),
-    whatToDoNext: [], focusedQuestions: [], formulationsUsed: 1, repairQueriesUsed: 0,
-    temporalEndpoint: {kind: "current"}, coverageRequirements: requirements}},
-  {headers: {"x-juro-target-answer-contract": "2"}});},
-  connect() {throw new Error("No sockets");}} satisfies Fetcher;
-  let liveCalls = 0;
-  const retrieval = await retrieveCorpusAwareLegalSources({query: "Куда подать заявление для регистрации и какие условия отдельного разрешения?", locale: "ru",
-    now, clock: () => now.getTime(), targetService, targetEnvironment: "staging", targetQuestionId: "partial-research-rendering",
-    verifyCurrentSource: async officialUrl => {
-      if (officialUrl.endsWith("888")) throw new Error("Publisher verification unavailable");
-      return {version: 2, officialUrl, observedAt: now.toISOString(), current: true,
-        normalizedTextSha256: hash, rawContentSha256: hash};
-    },
-    liveSearch: async () => {liveCalls++; return {sources: [], evidence: [], sourceAccessMode: "direct",
-      freshness: legalDatabaseFreshnessFromAsOf("", now), legalDatabaseAsOf: "",
-      sourcesRetrievedAt: now.toISOString(), sourceValidationStatus: "unavailable",
-      errors: [{code: "LEGAL_SOURCE_UPSTREAM_UNAVAILABLE"}]};}});
-  assert.equal(liveCalls, 1);
-  assert.equal(retrieval.sources.length, 1);
-  assert.deepEqual(retrieval.coverageRequirements?.map(scope => [scope.id, scope.sourceIds.length]),
-    [["registration", 1], ["permission", 0]]);
-  assert.equal(retrieval.coverageStatus, "partial_coverage");
-  assert.deepEqual(retrieval.errors.map(error => error.code),
-    ["LEGAL_SOURCE_CURRENT_STATUS_UNAVAILABLE", "LEGAL_SOURCE_UPSTREAM_UNAVAILABLE"]);
-  const checked = buildVerifiedSourceOnlyFallback({sources: retrieval.sources, coverageRequirements: retrieval.coverageRequirements,
-    question: "Куда подать заявление для регистрации и какие условия отдельного разрешения?", locale: "ru", answerMode: "detailed", reasoningMode: "fast",
-    legalDatabaseAsOf: now.toISOString(), provider: "openai", model: "gpt-5.6-luna", attempts: 1, latencyMs: 0,
-    reason: "PROVIDER_UNAVAILABLE"});
-  assert.ok(checked);
-  assert.equal(checked.coverageDiagnostics.requirementCount, 2);
-  assert.equal(checked.run.data.responseKind, "clarification_required");
-  assert.equal(checked.run.data.confirmedFindings[0]?.explanation.includes(retainedText), true);
-  const restored = JSON.parse(JSON.stringify({...checked.run.data, failureReason: legalResearchFailureReason(retrieval.errors)}));
-  const html = renderToStaticMarkup(createElement(LegalAnswerView, {result: restored, locale: "ru"}));
-  assert.match(html, /data-answer-kind="insufficient-evidence"/u);
-  assert.match(html, /не означает отсутствия применимых норм/u);
-  assert.match(html, /Для регистрации подайте заявление в регистрирующий орган/u);
-  assert.doesNotMatch(html, />Подтверждено официальными источниками</u);
+  const evidence: AnswerQuestion["evidence"] = [{
+    source: {id:"registration",actTitle:"Synthetic law",actIdentifier:null,officialUrl:"https://lex.uz/docs/777",
+      revisionDate:null,lastCheckedAt:"2026-09-01",locale:"ru",publishedAt:null,sourceType:"lex",status:"current",
+      verificationState:"verified",verifiedAt:"2026-09-01",contentSha256:"a".repeat(64),sourceClass:"OFFICIAL_LEGISLATION"},
+    text:retainedText,textSha256:createHash("sha256").update(retainedText).digest("hex"),endpoint:{kind:"current"},origin:"indexed",
+  }];
+  const question = {question:"Куда подать заявление для регистрации и какие условия отдельного разрешения?",
+    locale:"ru" as const,mode:"fast" as const,answerMode:"detailed" as const,temporalScope:{kind:"current" as const},
+    topics:["Registration","Separate permit"]};
+  const needs=[{reason:"missing_rule" as const,detail:"The separate permit conditions are missing."}];
+  let liveCalls=0;
+  const research=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence,needs}),
+    official:async()=>{liveCalls++;throw new Error("Publisher unavailable");},
+    assess:async()=>needs,
+  });
+  assert.ok(liveCalls>0&&liveCalls<=3);
+  assert.equal(research.sourceUnavailable,true);
+  assert.equal(research.evidence.length,1);
+  const draft={mainPoint:{text:retainedText,sourceIds:["registration"]},
+    findings:[{title:"Registration",explanation:retainedText,sourceIds:["registration"]}],
+    actions:[{title:"Submit",description:retainedText,sourceIds:["registration"]}],risks:[],questions:[],unresolved:[]};
+  const outcome=await answerFromEvidence({...question,evidence:research.evidence,sourceUnavailable:research.sourceUnavailable,
+    unresolved:["Условия отдельного разрешения не подтверждены."]},{write:async()=>draft,verify:async()=>({
+      claims:["mainPoint","finding:0","action:0"].map(id=>({id,supported:true,reason:"Synthetic source supports the claim."})),
+      coverage:[{issue:"Registration",findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
+      complete:true,retention:[],gaps:[],questions:[],
+    })});
+  assert.equal(outcome.kind,"partial");
+  const restored=JSON.parse(JSON.stringify(outcome.result));
+  const html=renderToStaticMarkup(createElement(LegalAnswerView,{result:restored,locale:"ru"}));
+  assert.match(html,/Для регистрации подайте заявление в регистрирующий орган/u);
+  assert.match(html,/Условия отдельного разрешения не подтверждены/u);
+  assert.match(html,/полнота ответа не подтверждена/u);
+  assert.doesNotMatch(html,/>Подтверждено официальными источниками</u);
 });
 
 test("incomplete evidence displays found provisions and focused questions without a verified-answer badge", () => {
@@ -323,4 +309,18 @@ test("authenticated and guest chat use the same Legal Answer presentation contra
   assert.match(guest, /<LegalAnswerView result=\{result\} locale=\{locale\}/u);
   assert.doesNotMatch(authenticated, /function uniqueAnswerDetail/u);
   assert.doesNotMatch(guest, /function paragraphs/u);
+});
+
+
+test("partial status and saved coverage gaps remain visible in every locale", () => {
+  const labels={ru:"Ответ неполный",uz:"Javob to‘liq emas",en:"This answer is incomplete"};
+  for(const locale of ["ru","uz","en"] as const) {
+    for(const state of [{coverageStatus:"partial_coverage" as const},{coverageGaps:["Missing governing rule"]}]) {
+      const html=renderToStaticMarkup(createElement(LegalAnswerView,{result:result(state),locale}));
+      assert.ok(html.includes(labels[locale]));
+      assert.doesNotMatch(html,/>Подтверждено официальными источниками<|>Verified by official sources</u);
+    }
+    const complete=renderToStaticMarkup(createElement(LegalAnswerView,{result:result({coverageStatus:"good_coverage"}),locale}));
+    assert.ok(!complete.includes(labels[locale]));
+  }
 });
