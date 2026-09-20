@@ -166,9 +166,10 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const mobileContextRef=useRef<HTMLElement>(null),mobileFactsTabRef=useRef<HTMLButtonElement>(null),mobileSourcesTabRef=useRef<HTMLButtonElement>(null);
   const planConfirmationRef=useRef<HTMLDivElement>(null),streamAbortRef=useRef<AbortController|null>(null);
   const retryRef=useRef<(AiRequestPayload&{idempotencyKey:string})|null>(null),nearBottom=useRef(true);
-  const handoffKey=useRef(crypto.randomUUID());
+  const handoffKey=useRef(crypto.randomUUID()),handoffGeneration=useRef(0);
   const selectedConversationId=params.get("conversationId")??"",selectedBranchId=params.get("branchId")??"";
   useLayoutEffect(()=>{activeScope.current=workspaceId;currentMessage.current=answer?.messageId;currentSelection.current=selectedConversationId;},[workspaceId,answer?.messageId,selectedConversationId]);
+  useLayoutEffect(()=>{const invalidate=()=>{handoffGeneration.current++;};invalidate();handoffKey.current=crypto.randomUUID();setOpeningSuggestedDocument(false);setCreatingSuggestedDocument(false);return invalidate;},[workspaceId,selectedConversationId,selectedBranchId,answer?.messageId]);
   const preliminary:AiPreliminary|null=null;
   const aiLocation=(query:URLSearchParams)=>`${pathname}${query.size?`?${query}`:""}`;
   const requestJson=useCallback(async<T,>(url:string,options:RequestInit={}):Promise<T>=>{
@@ -250,11 +251,31 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   async function saveFeedback(feedbackType:AiFeedbackType,comment?:string){if(!answer?.messageId||savingFeedback)return;const messageId=answer.messageId;setSavingFeedback(true);try{await requestJson("/api/platform/ai/feedback",{method:"POST",body:JSON.stringify({assistantMessageId: answer.messageId,feedbackType,comment})});const data=await requestJson<{feedback:AiFeedback[]}>(`/api/platform/ai/feedback?${new URLSearchParams({assistantMessageId:answer.messageId})}`);if(currentMessage.current!==messageId)return;setFeedback(data.feedback);setFeedbackStatus(text("Отзыв сохранён.","Fikr saqlandi.","Feedback saved."));}catch(cause){if(currentMessage.current===messageId)setFeedbackStatus(String(cause instanceof Error?cause.message:cause));}finally{setSavingFeedback(false);}}
   const feedbackLabel=(value:AiFeedbackType)=>({helpful:text("Полезно","Foydali","Helpful"),not_helpful:text("Не полезно","Foydasiz","Not helpful"),wrong_norm:text("Неверная норма","Noto‘g‘ri norma","Wrong legal rule"),broken_link:text("Ссылка не работает","Havola ishlamaydi","Broken link"),outdated:text("Устарело","Eskirgan","Outdated"),incomplete:text("Неполно","To‘liq emas","Incomplete"),language:text("Язык","Til","Language"),unsafe:text("Небезопасно","Xavfli","Unsafe"),ignored_facts:text("Факты не учтены","Faktlar hisobga olinmagan","Facts ignored")}[value]);
   async function savePlanToCase(){if(!answer?.messageId||savingPlan)return;setSavingPlan(true);try{const saved=await requestJson<{caseId:string}>("/api/platform/ai/action-plan",{method:"POST",headers:{"idempotency-key":`plan-${answer.messageId}-${targetCaseId||"new"}`},body:JSON.stringify({assistantMessageId:answer.messageId,targetCaseId:targetCaseId||undefined,locale})});setPlanConfirmationOpen(false);router.push(`${basePath}/cases/${encodeURIComponent(saved.caseId)}`);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}finally{setSavingPlan(false);}}
-  function dismissDocumentPrefill(){setDocumentPrefill(null);setDocumentPrefillMessageId("");setSensitivePrefillConsent(false);handoffKey.current=crypto.randomUUID();}
-  async function openSuggestedDocument(){if(!answer?.messageId||openingSuggestedDocument)return;setOpeningSuggestedDocument(true);try{const preview=await requestJson<DocumentPrefillPreview>("/api/platform/ai/suggested-document",{method:"POST",body:JSON.stringify({action:"preview",assistantMessageId:answer.messageId,locale})});setDocumentPrefill(preview);setDocumentPrefillMessageId(answer.messageId);setSensitivePrefillConsent(false);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}finally{setOpeningSuggestedDocument(false);}}
+  function dismissDocumentPrefill(){handoffGeneration.current++;setOpeningSuggestedDocument(false);setCreatingSuggestedDocument(false);setDocumentPrefill(null);setDocumentPrefillMessageId("");setSensitivePrefillConsent(false);handoffKey.current=crypto.randomUUID();}
+  async function openSuggestedDocument(){
+    if(!answer?.messageId||openingSuggestedDocument)return;
+    const generation=handoffGeneration.current,messageId=answer.messageId;
+    setOpeningSuggestedDocument(true);
+    try{
+      const preview=await requestJson<DocumentPrefillPreview>("/api/platform/ai/suggested-document",{method:"POST",body:JSON.stringify({action:"preview",assistantMessageId:messageId,locale})});
+      if(handoffGeneration.current!==generation)return;
+      setDocumentPrefill(preview);setDocumentPrefillMessageId(messageId);setSensitivePrefillConsent(false);
+    }catch(cause){if(handoffGeneration.current===generation)setError(String(cause instanceof Error?cause.message:cause));}
+    finally{if(handoffGeneration.current===generation)setOpeningSuggestedDocument(false);}
+  }
   const updateDocumentPrefillField=(id:string,value:string)=>setDocumentPrefill(current=>current?{...current,candidates:current.candidates.map(field=>field.fieldId===id?{...field,value}:field)}:current);
   const removeDocumentPrefillField=(id:string)=>setDocumentPrefill(current=>current?{...current,candidates:current.candidates.filter(field=>field.fieldId!==id)}:current);
-  async function confirmSuggestedDocument(){if(!documentPrefill||!answer?.messageId||creatingSuggestedDocument)return;setCreatingSuggestedDocument(true);try{const saved=await requestJson<{documentId:string}>("/api/platform/ai/suggested-document",{method:"POST",headers:{"idempotency-key":handoffKey.current},body:JSON.stringify({action:"confirm",assistantMessageId:answer.messageId,locale,fields:documentPrefill.candidates.map(({fieldId,value})=>({fieldId,value})),sensitiveDataConsent:sensitivePrefillConsent})});dismissDocumentPrefill();router.push(`${basePath}/documents/${encodeURIComponent(saved.documentId)}`);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}finally{setCreatingSuggestedDocument(false);}}
+  async function confirmSuggestedDocument(){
+    if(!documentPrefill||!answer?.messageId||documentPrefillMessageId!==answer.messageId||creatingSuggestedDocument)return;
+    const generation=handoffGeneration.current;
+    setCreatingSuggestedDocument(true);
+    try{
+      const saved=await requestJson<{documentId:string}>("/api/platform/ai/suggested-document",{method:"POST",headers:{"idempotency-key":handoffKey.current},body:JSON.stringify({action:"confirm",assistantMessageId:answer.messageId,locale,fields:documentPrefill.candidates.map(({fieldId,value})=>({fieldId,value})),sensitiveDataConsent:sensitivePrefillConsent})});
+      if(handoffGeneration.current!==generation)return;
+      dismissDocumentPrefill();router.push(`${basePath}/documents/${encodeURIComponent(saved.documentId)}`);
+    }catch(cause){if(handoffGeneration.current===generation)setError(String(cause instanceof Error?cause.message:cause));}
+    finally{if(handoffGeneration.current===generation)setCreatingSuggestedDocument(false);}
+  }
   const sourceResult=citationContext?.result??answer?.result;
   const sourceMessageId=citationContext?.messageId??answer?.messageId;
   const visibleSources=(sourceResult?.sources??[]).filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl));
