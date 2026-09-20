@@ -174,7 +174,7 @@ function GuestResultView({ result, locale }: { result: GuestResult; locale: Plat
   const sourceDate = new Date(sourceTimestamp);
   const hasSourceDate = Number.isFinite(sourceDate.getTime());
   return (
-    <article className="guest-ai-result" aria-label={aiText(locale, "Проверенный ответ JURO", "JURO tekshirgan javob", "JURO verified answer")}>
+    <article className="guest-ai-result" aria-label={aiText(locale, "Ответ JURO", "JURO javobi", "JURO answer")}>
       <div className="guest-ai-result-heading">
         <span>{aiText(locale, "AI-ответ", "AI javobi", "AI answer")}</span>
         {hasSourceDate && <time dateTime={sourceTimestamp}>{result.sourceAccessMode === "direct" ? aiText(locale, "Получено напрямую", "Bevosita olindi", "Retrieved directly") : aiText(locale, "База на", "Baza sanasi", "Database as of")}: {sourceDate.toLocaleDateString(locale === "en" ? "en-GB" : locale === "uz" ? "uz-UZ" : "ru-RU")}</time>}
