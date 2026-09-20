@@ -80,7 +80,12 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
       if(!shouldReuseLegalChatRequest(error))retry.current=null;
       setState("error");setMessage(text("Не удалось получить ответ. Повторите запрос, чтобы проверить сохранённый результат.","Javobni olib bo‘lmadi. Saqlangan natijani tekshirish uchun qayta urinib ko‘ring.","The answer could not be received. Retry to check for a saved result."));
       const refreshed=await load(controller.signal).catch(()=>null);
-      if(refreshed){setBootstrap(refreshed);setResult(refreshed.result);}
+      if(refreshed){
+        setBootstrap(refreshed);setResult(refreshed.result);
+        if(refreshed.session?.state==="consumed"&&refreshed.result){
+          retry.current=null;setQuestion("");setMessage("");setState("ready");
+        }
+      }
     } finally {
       if(active.current===controller)active.current=null;
       if(!controller.signal.aborted){setTurnstileToken("");setTurnstileReset(value=>value+1);}
