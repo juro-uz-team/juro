@@ -39,7 +39,6 @@ import {
 import { ensureDefaultWorkspace } from "../../../../../lib/platform/workspace";
 import type { PlatformLocale } from "../../../../../lib/platform/routing";
 import { dispatchOutbox } from "../../../../../worker/platform-outbox";
-import type { PlatformJobEnv } from "../../../../../worker/platform-jobs";
 
 const CHALLENGE_TTL_MS = 10 * 60 * 1_000;
 const RECENT_SESSION_MS = 10 * 60 * 1_000;
@@ -431,7 +430,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
       now,
     });
     if (result.status === "retried" || result.status === "already_queued") {
-      await dispatchOutbox(env as PlatformJobEnv, 1, body.requestId);
+      await dispatchOutbox({ ...env, DB: db }, 1, body.requestId);
       return jsonNoStore(
         {
           ok: true,
@@ -508,7 +507,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
     return confirmationError(result, locale);
   }
   if (body.deletionMode === "immediate") {
-    await dispatchOutbox(env as PlatformJobEnv, 1, result.requestId);
+    await dispatchOutbox({ ...env, DB: db }, 1, result.requestId);
   }
   return jsonNoStore(
     {

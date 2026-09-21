@@ -2460,7 +2460,8 @@ test("outbox dispatch is leased, identifiers-only, and fenced on success", async
   try {
     insertOutbox(sqlite);
     const { env, sends } = createEnv(d1);
-    const result = await dispatchOutbox(env);
+    const result = await dispatchOutbox({DB:env.DB,APP_ENV:env.APP_ENV,ASYNC_RUNTIME_ENABLED:env.ASYNC_RUNTIME_ENABLED,
+      JOB_SCHEMA_VERSION:env.JOB_SCHEMA_VERSION,DATA_RETENTION_CLEANUP_QUEUE:env.DATA_RETENTION_CLEANUP_QUEUE});
     assert.deepEqual(result, {
       claimed: 1,
       dispatched: 1,

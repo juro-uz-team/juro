@@ -66,6 +66,9 @@ export interface BuilderRuntimeEnv {
   IDENTITY_PROTECTION_MODE?: string;
   MALWARE_SCANNER?: Fetcher;
   MALWARE_SCAN_QUEUE?: Queue;
+  DATA_RETENTION_CLEANUP_QUEUE?: Queue;
+  ASYNC_RUNTIME_ENABLED?: string;
+  JOB_SCHEMA_VERSION?: string;
   MALWARE_SCAN_ENABLED?: string;
   PUBLIC_DOCUMENT_URL_IMPORT_ENABLED?: string;
 }

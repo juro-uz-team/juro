@@ -7,9 +7,15 @@ import {
   jobEnvelopeSchema,
   retryDelay,
   type JobEnvelope,
-  type PlatformJobEnv,
   type PlatformQueueBinding,
 } from "./platform-jobs";
+
+export type PlatformOutboxEnv = {
+  DB: D1Database;
+  APP_ENV?: string;
+  ASYNC_RUNTIME_ENABLED?: string;
+  JOB_SCHEMA_VERSION?: string;
+} & Partial<Record<PlatformQueueBinding, Queue<JobEnvelope>>>;
 
 const outboxRowSchema = z.object({
   id: z.string().min(1).max(180),
@@ -56,7 +62,7 @@ function isoAfter(iso: string, milliseconds: number): string {
 }
 
 async function claimNextOutbox(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   now: string,
   subjectId: string | null,
 ): Promise<OutboxRow | null> {
@@ -118,7 +124,7 @@ async function claimNextOutbox(
     `).bind(now, candidate.id, leaseOwner).run();
     logOutbox("error", {
       event: "outbox.invalid_row",
-      environment: env.APP_ENV,
+      environment: env.APP_ENV ?? "unknown",
     });
     return null;
   }
@@ -126,7 +132,7 @@ async function claimNextOutbox(
 }
 
 function queueBinding(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   binding: PlatformQueueBinding,
 ): Queue<JobEnvelope> {
   const queue = env[binding];
@@ -137,7 +143,7 @@ function queueBinding(
 }
 
 async function markOutboxRejected(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   row: OutboxRow,
   now: string,
 ): Promise<boolean> {
@@ -155,7 +161,7 @@ async function markOutboxRejected(
 }
 
 async function markOutboxRetrying(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   row: OutboxRow,
   now: string,
 ): Promise<boolean> {
@@ -179,7 +185,7 @@ async function markOutboxRetrying(
 }
 
 async function markOutboxDispatched(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   row: OutboxRow,
   now: string,
 ): Promise<boolean> {
@@ -203,7 +209,7 @@ async function markOutboxDispatched(
  * by idempotencyKey.
  */
 export async function dispatchOutbox(
-  env: PlatformJobEnv,
+  env: PlatformOutboxEnv,
   limit = 10,
   subjectId: string | null = null,
 ): Promise<DispatchSummary> {
@@ -216,14 +222,14 @@ export async function dispatchOutbox(
   if (String(env.ASYNC_RUNTIME_ENABLED) !== "true") {
     logOutbox("error", {
       event: "outbox.runtime_disabled",
-      environment: env.APP_ENV,
+      environment: env.APP_ENV ?? "unknown",
     });
     return summary;
   }
   if (String(env.JOB_SCHEMA_VERSION) !== "1") {
     logOutbox("error", {
       event: "outbox.schema_version_mismatch",
-      environment: env.APP_ENV,
+      environment: env.APP_ENV ?? "unknown",
     });
     return summary;
   }
@@ -241,7 +247,7 @@ export async function dispatchOutbox(
     } catch {
       logOutbox("error", {
         event: "outbox.claim_failed",
-        environment: env.APP_ENV,
+        environment: env.APP_ENV ?? "unknown",
       });
       break;
     }
@@ -270,13 +276,13 @@ export async function dispatchOutbox(
         summary.rejected += 1;
         logOutbox("error", {
           event: "outbox.rejected",
-          environment: env.APP_ENV,
+          environment: env.APP_ENV ?? "unknown",
           jobId: row.id,
         });
       } else {
         logOutbox("error", {
           event: "outbox.lease_lost_before_rejection",
-          environment: env.APP_ENV,
+          environment: env.APP_ENV ?? "unknown",
           jobId: row.id,
         });
       }
@@ -292,7 +298,7 @@ export async function dispatchOutbox(
       } else {
         logOutbox("error", {
           event: "outbox.lease_lost_after_send",
-          environment: env.APP_ENV,
+          environment: env.APP_ENV ?? "unknown",
           jobId: row.id,
         });
       }
@@ -302,13 +308,13 @@ export async function dispatchOutbox(
           summary.retrying += 1;
           logOutbox("error", {
             event: "outbox.send_failed",
-            environment: env.APP_ENV,
+            environment: env.APP_ENV ?? "unknown",
             jobId: row.id,
           });
         } else {
           logOutbox("error", {
             event: "outbox.lease_lost_after_send_failure",
-            environment: env.APP_ENV,
+            environment: env.APP_ENV ?? "unknown",
             jobId: row.id,
           });
         }
