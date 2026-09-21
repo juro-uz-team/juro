@@ -6,6 +6,7 @@ import {deliverSignedInLegalChat} from "../lib/legal-chat/signed-in-delivery";
 import {legalChatRequestSchema} from "../lib/legal-chat/request-schema";
 import {resolveAiRuntimeSettings} from "../lib/ai/runtime-settings";
 import {privateDocumentContext} from "./helpers/private-document-context";
+import {setProviderCircuitState} from "../lib/ai/provider-cost-control";
 
 async function fixture(){
   const {sqlite,d1}=sqliteD1FixtureFromDirectory(new URL("../drizzle/",import.meta.url));
@@ -50,6 +51,9 @@ test("signed-in clarification persists, accounts once, and replays without anoth
   assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
   const run=sqlite.prepare("SELECT status,input_tokens,output_tokens,attempt_count FROM ai_runs").get();
   assert.equal(run?.status,"completed");assert.equal(run?.input_tokens,20);assert.equal(run?.output_tokens,10);assert.equal(run?.attempt_count,1);
+  assert.deepEqual({...sqlite.prepare("SELECT feature,model,input_tokens,output_tokens,usage_observed FROM ai_provider_usage_events").get()},
+    {feature:"legal_chat",model:"gpt-5.6-luna",input_tokens:20,output_tokens:10,usage_observed:1});
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_provider_usage_events").get()?.n,1);
   await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,question:"Changed request"}}),{code:"IDEMPOTENCY_CONFLICT"});
   assert.equal(models.length,1);
 
@@ -101,4 +105,17 @@ test("a private document reader failure releases the reservation before model tr
   assert.equal(sqlite.prepare("SELECT status FROM ai_runs").get()?.status,"failed");
   assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
   assert.equal(sqlite.prepare("SELECT count(*) AS n FROM conversation_messages").get()?.n,0);
+});
+
+test("an open provider circuit prevents text transport, records no attempt and releases the answer allowance",async context=>{
+  const {sqlite,input}=await fixture();context.after(()=>sqlite.close());
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="offline-test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  await setProviderCircuitState({db:input.db,environment:input.settings.environment,provider:"openai",state:"open",actorUserId:"owner"});
+  context.mock.method(globalThis,"fetch",async()=>assert.fail("An open provider circuit must stop transport"));
+  const saved=await deliverSignedInLegalChat(input);
+  assert.equal(saved.result.failureReason,"question_interpretation_unavailable");
+  assert.deepEqual(saved.result.confirmedFindings,[]);
+  assert.equal(sqlite.prepare("SELECT attempt_count FROM ai_runs").get()?.attempt_count,0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_provider_usage_events").get()?.n,0);
+  assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
 });

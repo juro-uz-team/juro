@@ -256,19 +256,16 @@ test("0082 alert delivery fails closed when operations email config is absent", 
   }
 });
 
-test("0082 guards real legal-chat and document-analysis provider boundaries", () => {
-  const chatRoute = readFileSync(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8");
+test("document-analysis and operational controls retain provider cost safeguards", () => {
   const documentProcessor = readFileSync(new URL("../lib/document-analysis/processor.ts", import.meta.url), "utf8");
   const adminRoute = readFileSync(new URL("../app/api/platform/admin/costs/route.ts", import.meta.url), "utf8");
   const adminClient = readFileSync(new URL("../app/_staff/CostConsole.tsx", import.meta.url), "utf8");
   const worker = readFileSync(new URL("../worker/platform-jobs.ts", import.meta.url), "utf8");
 
-  for (const source of [chatRoute, documentProcessor]) {
-    assert.match(source, /assertProviderCallAllowed/);
-    assert.match(source, /beforeProviderCall/);
-    assert.match(source, /recordProviderUsage/);
-    assert.match(source, /PROVIDER_CIRCUIT_OPEN/);
-  }
+  assert.match(documentProcessor, /assertProviderCallAllowed/);
+  assert.match(documentProcessor, /beforeProviderCall/);
+  assert.match(documentProcessor, /recordProviderUsage/);
+  assert.match(documentProcessor, /PROVIDER_CIRCUIT_OPEN/);
   assert.match(adminRoute, /requirePlatformStaffRequest\(request, "staff\.operations\.manage", \{ freshMfaWithinMs: 15 \* 60 \* 1000 \}\)/);
   assert.match(adminRoute, /assertSafeWrite\(request\)/);
   assert.match(adminClient, /action: "policy"/);

@@ -37,6 +37,8 @@ test("guest clarifications retain every user turn, stay encrypted and replay wit
   assert.equal(requests.length,2);
   assert.deepEqual(await deliverGuestLegalChat({...input,configured:false,service:undefined}),first);
   assert.equal(requests.length,2);
+  assert.deepEqual(sqlite.prepare("SELECT feature,model,input_tokens,output_tokens,usage_observed FROM ai_provider_usage_events").all().map(row=>({...row})),
+    Array.from({length:2},()=>({feature:"guest_legal_chat",model:"gpt-5.6-terra",input_tokens:20,output_tokens:10,usage_observed:1})));
   const history=await guestAiClarificationRuns(d1,session);
   assert.deepEqual(await Promise.all(history.map(run=>revealGuestAiRunQuestion({keyring,run}))),["Private original guest question","Private second guest clarification"]);
   assert.deepEqual(await guestAiClarificationRuns(d1,{...session,tokenHmac:"foreign"}),[]);
