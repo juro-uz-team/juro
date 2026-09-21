@@ -30,12 +30,12 @@ export async function fetchSecondaryPage(input:{url:string;fetchImpl?:typeof fet
   const fetchPage=input.fetchImpl??fetch;
   for(let redirects=0;redirects<=MAX_REDIRECTS;redirects++) {
     signal.throwIfAborted();
-    const response=await fetchPage(url,{redirect:"manual",credentials:"omit",signal,
+    const response:Response=await fetchPage(url,{redirect:"manual",credentials:"omit",signal,
       headers:{accept:"text/html, text/plain;q=0.9"}});
     if(signal.aborted) {await response.body?.cancel();signal.throwIfAborted();}
     if([301,302,303,307,308].includes(response.status)) {
       await response.body?.cancel();
-      const location=response.headers.get("location");
+      const location:string|null=response.headers.get("location");
       let next:string|null=null;
       try {next=location?canonicalSecondaryInternetUrl(new URL(location,url).href):null;} catch { /* Invalid redirect. */ }
       if(!next)throw new Error("SECONDARY_PAGE_REDIRECT_REJECTED");
