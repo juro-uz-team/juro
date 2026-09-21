@@ -4,6 +4,23 @@ import { env } from "cloudflare:workers";
 import { callOpenAiStructured, type AiProviderAttemptObservation } from "../lib/document-builder/ai/openai";
 import {createQuestionInterpreter} from "../lib/legal-chat/question-model";
 
+test("an exhausted shared deadline cannot announce or account for a new provider attempt", async context => {
+  const previousKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="offline-key";
+  context.after(()=>{env.OPENAI_API_KEY=previousKey;});
+  let requests=0,starts=0,finishes=0;
+  const progress:string[]=[];
+  context.mock.method(globalThis,"fetch",async()=>{requests++;throw Error("No request is permitted after the deadline");});
+  await assert.rejects(callOpenAiStructured({model:"gpt-5.6-luna",schemaName:"expired_request",
+    schema:{type:"object",properties:{},additionalProperties:false},instructions:"Validate.",input:{},parse:value=>value,
+    maxAttempts:1,deadlineAt:Date.now()-1,
+    onAttempt:()=>{starts++;},onAttemptFinished:()=>{finishes++;},onProgress:event=>{progress.push(event.stage);},
+  }),{code:"PROVIDER_TIMEOUT"});
+  assert.equal(requests,0);
+  assert.equal(starts,0);
+  assert.equal(finishes,0);
+  assert.deepEqual(progress,[]);
+});
+
 test("question interpretation retains cached usage and observes invalid provider output", async (context) => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-only-key";

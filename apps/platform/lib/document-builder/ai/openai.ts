@@ -198,6 +198,9 @@ export async function callOpenAiStructured<T>(options: {
     if (options.signal?.aborted) {
       throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
     }
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+      throw new AiUnavailableError("Время выполнения AI-запроса истекло.", "PROVIDER_TIMEOUT", true);
+    }
     await options.onAttempt?.({ attempt: attempt as 1 | 2, model });
     const attemptStartedAt = Date.now();
     let attemptUsage: AiProviderUsage | null = null;
