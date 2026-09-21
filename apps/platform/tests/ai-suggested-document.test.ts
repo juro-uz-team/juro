@@ -242,6 +242,51 @@ test("read-only members keep private AI drafts but cannot create case-linked dra
   }
 });
 
+test("answer prefill preserves whole qualified findings and citations only after explicit sensitive confirmation",async()=>{
+  const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
+  assert.ok(template);
+  const {sqlite,d1}=seed(template.code);
+  try {
+    const answer={...structuredAnswer(template.code),confirmedFindings:[
+      {title:'Qualified rule',explanation:'The rule applies only under condition A.',sourceIds:['law']},
+      {title:'Exception',explanation:'Exception B excludes that rule.',sourceIds:['law']},
+    ],sources:[{sourceId:'law',actTitle:'Official source',actIdentifier:null,article:'1',excerpt:null,
+      originalUrl:'https://lex.uz/docs/1',status:'current',effectiveDate:null,verifiedAt:NOW,sourceClass:'OFFICIAL_LEGISLATION'}],
+      referenceNotes:[{title:'Private context',note:'Do not copy private notes as legal grounds.',sourceIds:[]}]};
+    sqlite.prepare('UPDATE conversation_messages SET structured_json=? WHERE id=?').run(JSON.stringify(answer),ASSISTANT_MESSAGE_ID);
+    const scope={db:d1,workspaceId:WORKSPACE_ID,user:USER,assistantMessageId:ASSISTANT_MESSAGE_ID,locale:'ru' as const};
+    const candidate=(await previewAiSuggestedDocument(scope)).candidates.find(item=>item.source==='ai_answer');
+    assert.ok(candidate);assert.equal(candidate.fieldId,'claim.legalGrounds');assert.equal(candidate.sensitive,true);
+    assert.equal(candidate.value,'Qualified rule\nThe rule applies only under condition A.\nOfficial source — 1: https://lex.uz/docs/1\n\nException\nException B excludes that rule.\nOfficial source — 1: https://lex.uz/docs/1');
+    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM documents').get()?.n,0);
+    const input={...scope,workspaceRole:'owner',idempotencyKey:'answer-ground-prefill-0001',fields:[{fieldId:candidate.fieldId,value:candidate.value}]};
+    await assert.rejects(()=>createAiSuggestedDocumentDraft(input),(error:unknown)=>error instanceof AiSuggestedDocumentError&&error.code==='AI_SUGGESTED_DOCUMENT_SENSITIVE_CONSENT_REQUIRED');
+    const created=await createAiSuggestedDocumentDraft({...input,sensitiveDataConsent:true});
+    const stored=sqlite.prepare('SELECT answers_json FROM document_answers WHERE document_id=?').get(created.documentId);
+    assert.equal(JSON.parse(String(stored?.answers_json))['claim.legalGrounds'],candidate.value);
+  }finally{sqlite.close();}
+});
+
+test("answer prefill never drops unsupported or historical qualifications to offer a partial legal basis",async()=>{
+  const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
+  assert.ok(template);
+  const {sqlite,d1}=seed(template.code);
+  try {
+    for(const variant of ['private','historical','missing','overflow']) {
+      const answer={...structuredAnswer(template.code),confirmedFindings:Array.from({length:variant==='overflow'?16:2},(_,i)=>({
+        title:'Rule',explanation:variant==='overflow'?'x'.repeat(4000):'Condition must remain with the rule.',sourceIds:[i===0?'official':'qualification'],
+      })),sources:[{sourceId:'official',actTitle:'Official source',actIdentifier:null,article:null,excerpt:null,
+        originalUrl:'https://lex.uz/docs/1',status:'current',effectiveDate:null,verifiedAt:NOW,sourceClass:'OFFICIAL_LEGISLATION'},
+      ...(variant==='missing'?[]:[{sourceId:'qualification',actTitle:'Qualification',actIdentifier:null,article:null,excerpt:null,
+        originalUrl:'https://lex.uz/docs/2',status:variant==='historical'?'historical':'current',effectiveDate:null,verifiedAt:NOW,
+        sourceClass:variant==='private'?'USER_TRUSTED_PRIVATE':'OFFICIAL_LEGISLATION'}])]};
+      sqlite.prepare('UPDATE conversation_messages SET structured_json=? WHERE id=?').run(JSON.stringify(answer),ASSISTANT_MESSAGE_ID);
+      const preview=await previewAiSuggestedDocument({db:d1,workspaceId:WORKSPACE_ID,user:USER,assistantMessageId:ASSISTANT_MESSAGE_ID,locale:'ru'});
+      assert.equal(preview.candidates.some(item=>item.source==='ai_answer'),false,variant);
+    }
+  }finally{sqlite.close();}
+});
+
 test("concurrent confirmations create one draft and replay survives profile changes but not revoked membership", async () => {
   const { sqlite, d1 } = seed(PREFILL_TEMPLATE.code);
   try {
@@ -293,4 +338,35 @@ test("document handoff HTTP boundary uses the selected workspace and saved templ
   assert.equal(stored.workspaceId,WORKSPACE_ID);
   const answers=JSON.parse((sqlite.prepare("SELECT answers_json AS answersJson FROM document_answers WHERE document_id=?").get(created.documentId) as {answersJson:string}).answersJson);
   assert(!Object.values(answers).includes(USER.fullName),"Unselected profile values must not be copied");
+});
+
+test("Cyrillic answer prefill respects the complete HTTP byte budget without truncating qualifications",async context=>{
+  const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
+  assert.ok(template);
+  const {sqlite,d1}=seed(template.code);context.after(()=>sqlite.close());
+  const bindings={DB:d1,APP_ENV:'development',ALLOW_PLATFORM_AUTH_HEADERS:'true',IDENTITY_PROTECTION_MODE:'legacy'};
+  const previous=Object.fromEntries(Object.keys(bindings).map(key=>[key,Reflect.get(env,key)]));
+  Object.assign(env,bindings);context.after(()=>Object.assign(env,previous));
+  const request=(body:unknown)=>new Request('https://app.example/api/platform/ai/suggested-document',{method:'POST',
+    headers:{'oai-authenticated-user-email':'ai-document@example.invalid',origin:'https://app.example','x-juro-csrf':'1',
+      'content-type':'application/json','x-juro-workspace-id':WORKSPACE_ID,'idempotency-key':'multilingual-prefill-http-0001'},body:JSON.stringify(body)});
+  const scope={assistantMessageId:ASSISTANT_MESSAGE_ID,locale:'ru'};
+  for(const count of [10,6]) {
+    const answer={...structuredAnswer(template.code),confirmedFindings:Array.from({length:count},()=>({
+      title:'Условие',explanation:'я'.repeat(3900)+' Только при сохранении условия.',sourceIds:['law'],
+    })),sources:[{sourceId:'law',actTitle:'Закон',actIdentifier:null,article:'1',excerpt:null,
+      originalUrl:'https://lex.uz/docs/1',status:'current',effectiveDate:null,verifiedAt:NOW,sourceClass:'OFFICIAL_LEGISLATION'}]};
+    sqlite.prepare('UPDATE conversation_messages SET structured_json=? WHERE id=?').run(JSON.stringify(answer),ASSISTANT_MESSAGE_ID);
+    const response=await POST(request({...scope,action:'preview'}));assert.equal(response.status,200);
+    const preview=await response.json() as {candidates:Array<{fieldId:string;value:string;source:string}>};
+    const grounds=preview.candidates.find(item=>item.source==='ai_answer');
+    if(count===10){assert.equal(grounds,undefined);continue;}
+    assert.ok(grounds);assert.equal(grounds.value.split('Только при сохранении условия.').length-1,6);
+    const body={...scope,action:'confirm',sensitiveDataConsent:true,fields:preview.candidates.map(({fieldId,value})=>({fieldId,value}))};
+    assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength<=64_000);
+    const confirmed=await POST(request(body));assert.equal(confirmed.status,200);
+    const created=await confirmed.json() as {documentId:string};
+    const row=sqlite.prepare('SELECT answers_json FROM document_answers WHERE document_id=?').get(created.documentId);
+    assert.equal(JSON.parse(String(row?.answers_json))['claim.legalGrounds'],grounds.value);
+  }
 });

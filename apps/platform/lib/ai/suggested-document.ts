@@ -8,6 +8,8 @@ import { requireWorkspaceContentEditor } from "../platform/permissions";
 import { parseLegalChatResponse } from "./legal-chat-schema";
 import type { AiOutputLocale } from "./localization";
 
+export const AI_SUGGESTED_DOCUMENT_MAX_BODY_BYTES=64_000;
+
 export const resolveAiSuggestedDocumentInputSchema = z.object({
   assistantMessageId: z.string().uuid(),
   locale: z.enum(["ru", "uz", "en"]).default("uz"),
@@ -74,6 +76,7 @@ type SuggestedContext = {
   definition: DocumentDefinition;
   reason: string;
   caseId: string | null;
+  answer: ReturnType<typeof parseLegalChatResponse>;
 };
 
 const selfPartyPrefixes = new Set([
@@ -107,7 +110,7 @@ function suggestionContext(row:StoredSuggestedDocumentMessage):SuggestedContext{
   if(result.responseKind!=="answer"||!suggested?.templateCode)throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
   const definition=getDocumentByCode(suggested.templateCode);
   if(!definition||definition.status!=="published")throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
-  return {definition,reason:suggested.reason,caseId:row.caseId};
+  return {definition,reason:suggested.reason,caseId:row.caseId,answer:result};
 }
 
 function resolvedSuggestion(context:SuggestedContext,locale:AiOutputLocale){
@@ -130,16 +133,43 @@ function profileCandidate(field:QuestionnaireField,user:UserProfile,locale:AiOut
   return {fieldId:field.id,label:localize(field.label,locale==="uz"?"uz":"ru"),value,source:"profile",sensitive:property!=="fullName"};
 }
 
-function suggestedPreview(context:SuggestedContext,user:UserProfile,locale:AiOutputLocale):AiSuggestedDocumentPreview{
+function suggestedPreview(context:SuggestedContext,user:UserProfile,locale:AiOutputLocale,assistantMessageId:string):AiSuggestedDocumentPreview{
   const candidates=new Map<string,AiDocumentPrefillCandidate>();
+  const legalGrounds=answerLegalGrounds(context.answer);
   for(const step of context.definition.questionnaire)for(const field of step.fields){
     const candidate=profileCandidate(field,user,locale);if(candidate)candidates.set(field.id,candidate);
+    if(field.id==="claim.legalGrounds"&&field.type==="long-text"&&legalGrounds)candidates.set(field.id,{
+      fieldId:field.id,label:localize(field.label,locale==="uz"?"uz":"ru"),value:legalGrounds,
+      source:"ai_answer",sensitive:true,
+    });
   }
+  const confirmation={action:"confirm",assistantMessageId,locale,sensitiveDataConsent:true,
+    fields:[...candidates.values()].map(({fieldId,value})=>({fieldId,value}))};
+  if(new TextEncoder().encode(JSON.stringify(confirmation)).byteLength>AI_SUGGESTED_DOCUMENT_MAX_BODY_BYTES)
+    candidates.delete("claim.legalGrounds");
   return {...resolvedSuggestion(context,locale),caseId:context.caseId,candidates:[...candidates.values()]};
 }
 
+/** Keep the whole saved explanation, including qualifications. This is an
+ * editable draft candidate, never new legal analysis or automatic confirmation. */
+function answerLegalGrounds(answer:ReturnType<typeof parseLegalChatResponse>):string|null {
+  if(!answer.confirmedFindings.length)return null;
+  const sources=new Map(answer.sources.map(source=>[source.sourceId,source]));
+  if(sources.size!==answer.sources.length||answer.confirmedFindings.some(finding=>
+    !finding.sourceIds.length||finding.sourceIds.some(id=>{
+      const source=sources.get(id);
+      return !source||source.status!=="current"||!['OFFICIAL_LEGISLATION','OFFICIAL_GOVERNMENT_GUIDANCE'].includes(source.sourceClass??'');
+    })))return null;
+  const value=answer.confirmedFindings.map(finding=>`${finding.title}\n${finding.explanation}\n${finding.sourceIds.map(id=>{
+    const source=sources.get(id)!;
+    return `${source.actTitle}${source.article?` — ${source.article}`:''}: ${source.originalUrl}`;
+  }).join('\n')}`).join('\n\n');
+  // Dropping an overlong part could discard a condition on another finding.
+  return value.length<=50_000?value:null;
+}
+
 export async function previewAiSuggestedDocument(input:Omit<SuggestedScope,"userId">&{user:UserProfile}):Promise<AiSuggestedDocumentPreview>{
-  return suggestedPreview(suggestionContext(await storedSuggestion({...input,userId:input.user.id})),input.user,input.locale);
+  return suggestedPreview(suggestionContext(await storedSuggestion({...input,userId:input.user.id})),input.user,input.locale,input.assistantMessageId);
 }
 
 async function sha256(value:string):Promise<string>{
@@ -172,7 +202,7 @@ export async function createAiSuggestedDocumentDraft(input:Omit<SuggestedScope,"
     return {documentId:existing.documentId,replayed:true};
   };
   const existing=await replay();if(existing)return existing;
-  const context=suggestionContext(row),preview=suggestedPreview(context,input.user,input.locale);
+  const context=suggestionContext(row),preview=suggestedPreview(context,input.user,input.locale,input.assistantMessageId);
   if(preview.caseId){
     requireWorkspaceContentEditor(row.workspaceRole);
     const caseRow=await input.db.prepare("SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL")

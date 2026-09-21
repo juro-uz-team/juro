@@ -3,7 +3,7 @@ import {parseJsonRequest} from "../../../../../lib/auth/input";
 import {requireD1} from "../../../../../lib/document-builder/storage/runtime";
 import {workspaceForUser,workspaceForUserById} from "../../../../../lib/platform/workspace";
 import {isWorkspaceId} from "../../../../../lib/platform/routing";
-import {AiSuggestedDocumentError,aiSuggestedDocumentRequestSchema,aiSuggestedDocumentIdempotencyKeySchema,
+import {AI_SUGGESTED_DOCUMENT_MAX_BODY_BYTES,AiSuggestedDocumentError,aiSuggestedDocumentRequestSchema,aiSuggestedDocumentIdempotencyKeySchema,
   previewAiSuggestedDocument,createAiSuggestedDocumentDraft} from "../../../../../lib/ai/suggested-document";
 import {aiText} from "../../../../../lib/ai/localization";
 
@@ -14,7 +14,7 @@ export const POST=withApiErrors(async(request:Request)=>{
   const selected=request.headers.get("x-juro-workspace-id");
   const workspace=selected?(isWorkspaceId(selected)?await workspaceForUserById(user.id,selected):null):await workspaceForUser(user);
   if(!workspace)return response({code:"WORKSPACE_UNAVAILABLE"},404);
-  const parsed=await parseJsonRequest(request,aiSuggestedDocumentRequestSchema,64_000);
+  const parsed=await parseJsonRequest(request,aiSuggestedDocumentRequestSchema,AI_SUGGESTED_DOCUMENT_MAX_BODY_BYTES);
   if(!parsed.ok)return response({code:"INVALID_REQUEST"},400);
   const input={db:requireD1(),workspaceId:workspace.id,workspaceRole:workspace.role,user,...parsed.data};
   try{
