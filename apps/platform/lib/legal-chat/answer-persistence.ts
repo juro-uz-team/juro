@@ -6,6 +6,7 @@ import type {LegalSourceContext} from "../legal/source-context";
 import {completeGuestAiRun} from "../ai/guest-session";
 import {automaticMemoryStatements} from "../ai/user-memory";
 import type {IdentityKeyring} from "../auth/keyring";
+import {privateDocumentCitationGuards} from "./private-document-persistence";
 
 type Completion=Pick<CompleteAiRunInput,"db"|"runId"|"ledgerId"|"workspaceId"|"userId"|"idempotencyKey"
   |"providerResponseId"|"provider"|"fallbackFromProvider"|"model"|"inputTokens"|"outputTokens"
@@ -14,7 +15,8 @@ type Completion=Pick<CompleteAiRunInput,"db"|"runId"|"ledgerId"|"workspaceId"|"u
 function prepareCitations(input:Parameters<typeof legalCitationStatements>[0]) {
   const published=new Set(input.citations.map(source=>source.sourceId));
   // Preserve the source language exactly; an unsupported identity is never relabeled.
-  if(input.sources.some(source=>published.has(source.id)&&!["ru","uz","uzc","en"].includes(source.locale))) {
+  if(input.sources.some(source=>published.has(source.id)&&!["ru","uz","uzc","en"].includes(source.locale)
+    &&!(source.sourceType==="internal"&&["mixed","unknown"].includes(source.locale)))) {
     throw new Error("LEGAL_CHAT_CITATION_LOCALE_UNSUPPORTED");
   }
   const statements=legalCitationStatements(input);
@@ -83,6 +85,7 @@ export async function saveSignedInLegalAnswer(input:Completion&{
       (id,conversation_id,branch_id,message_id,source_message_id,created_by_user_id,operation,version_number,content_sha256,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(crypto.randomUUID(),conversationId,branchId,requestMessageId,input.branch.sourceMessageId,
         input.userId,input.branch.operation,input.branch.versionNumber,contentSha256,now),
+    ...privateDocumentCitationGuards({...input,conversationId}),
     ...citations,
     ...completeAiRunStatements({...input,conversationId,requestMessageId,responseMessageId:messageId,
       chargeable:result.responseKind==="answer"&&!result.failureReason,sourceVersionHash,legalDatabaseAsOf:result.legalDatabaseAsOf}),

@@ -58,6 +58,8 @@ export async function readLegalDocumentContext(
       revisionDate: null, lastCheckedAt: checkedAt, locale: item.language, publishedAt: null,
       sourceType: "internal", status: "unconfirmed", verificationState: "user_supplied", verifiedAt: checkedAt,
       contentSha256: item.sourceHash, documentType: "uploaded_document",
+      privateDocumentReceipt:{analysisId:item.analysisId,documentVersionId:item.documentVersionId,
+        workspaceId:item.workspaceId,ownerUserId:item.ownerUserId,accessScope:item.accessScope,caseId:item.caseId},
       sourceClass: item.accessScope === "workspace" ? "TENANT_TRUSTED_PRIVATE" : "USER_TRUSTED_PRIVATE",
       spans: [{ id: item.id, article: null, paragraph: item.page === null ? null : String(item.page),
         text: item.snippet, textSha256, quality: "high" }],

@@ -6,6 +6,7 @@ import { aiText } from "../ai/localization";
 import type {LegalSourceContext} from "../legal/source-context";
 import {validateAnswerSources} from "./final-source-validation";
 import type {SourceObservation} from "../legal/source-observation";
+import {appendPrivateDocumentExcerpts} from "./private-document-projection";
 
 export type LegalChatTerminal = (AnswerOutcome & {caseFacts?:readonly string[];research:{
   needs:readonly ResearchNeed[];rounds:number;sourceUnavailable:boolean;evidenceIds:string[];observations:readonly ResearchObservation[];
@@ -57,16 +58,17 @@ export function executeLegalChat<Saved>(input:{
           return validated;
         }}:undefined);
       signal.throwIfAborted();
+      const result=appendPrivateDocumentExcerpts(answer.result,context.documents);
       const published=new Set(answer.result.sources.map(source=>source.sourceId));
       const sources=research.evidence.filter(item=>published.has(item.source.id)).map(item=>({
         ...(validated.get(item.source.id)??item.source),
         applicabilityStatus:item.endpoint.kind==="current"?"current" as const:"historical" as const,
         spans:[{id:`${item.source.id}:complete`,article:item.source.article??null,paragraph:null,
           text:item.text,textSha256:item.textSha256,quality:"high" as const}]}));
-      return {terminal:{...answer,caseFacts:context.caseFacts,research:{needs:research.needs,rounds:research.rounds,
+      return {terminal:{...answer,result,caseFacts:context.caseFacts,research:{needs:research.needs,rounds:research.rounds,
         sourceUnavailable,evidenceIds:research.evidence.map(item=>item.source.id),observations:research.observations}},
         // Authenticated spans are ephemeral inputs to receipt persistence, not
         // part of the serializable terminal answer or its diagnostics.
-        sources};
+        sources:[...sources,...context.documents.map(document=>document.source)]};
     }});
 }

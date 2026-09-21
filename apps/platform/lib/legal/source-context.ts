@@ -12,6 +12,12 @@ export type LegalSourceSpan = {
   provisionSequence?: number;
 };
 export type LegalSourceContext = {
+  /** Authenticated upload identity. Rechecked against the document ledger when
+   * the owning chat transaction saves a private citation. Never sent to models. */
+  privateDocumentReceipt?: {
+    analysisId:string;documentVersionId:string;workspaceId:string;ownerUserId:string;
+    accessScope:"owner"|"workspace";caseId:string|null;
+  };
   /** Server-owned publisher observation and authenticated parent fingerprint. */
   currentSourceStatus?: PinnedSourceStatus;
   /** Server-owned immutable evidence locator; never supplied to the model. */

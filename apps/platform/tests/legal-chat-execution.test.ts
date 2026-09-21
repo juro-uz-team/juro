@@ -115,7 +115,8 @@ test("one execution preserves chronological facts and saves only the verified te
       verify:async()=>{events.push("verify");return review;}},
     renew:async()=>true,commit:async(terminal,sources)=>{events.push("save");saved=terminal;
       assert.equal(sources[0]?.id,evidence.source.id);
-      assert.equal(sources.length,1,"Private context is not official evidence or a legal citation");
+      assert.equal(sources.length,2);
+      assert.equal(sources[1]?.sourceClass,"USER_TRUSTED_PRIVATE","Document citation retains its private class");
       assert.equal(sources[0]?.spans?.[0]?.text,evidence.text);
       assert.equal(sources[0]?.spans?.[0]?.textSha256,evidence.textSha256);
       if("research" in terminal)assert.doesNotMatch(JSON.stringify(terminal.research),/Synthetic rule:/);
@@ -131,6 +132,25 @@ test("one execution preserves chronological facts and saves only the verified te
   }
   assert.deepEqual(events,["interpret","research","write","verify","save"]);
   assert.deepEqual(stages,["interpreting","researching","writing","verifying","saving"]);
+});
+
+test("unavailable official research preserves attributed private excerpts without a legal conclusion",async()=>{
+  const document=privateDocumentContext();
+  const result=await executeLegalChat({context:{question:"What does my agreement say?",locale:"en",priorTurns:[],documents:[document]},
+    mode:"fast",answerMode:"detailed",interpret:async()=>({topics:["Agreement terms"],facts:[],temporal:{kind:"current"},
+      questions:[],selectedDocumentIds:[document.source.id]}),
+    research:{indexed:async()=>{throw Error("Source unavailable");},official:async()=>{throw Error("Source unavailable");},assess:async()=>[]},
+    model:{write:async()=>assert.fail("Private documents cannot replace legal evidence"),verify:async()=>assert.fail("No fabricated law")},
+    renew:async()=>true,commit:async(terminal,sources)=>{
+      assert.deepEqual(sources,[document.source]);return terminal;
+    },release:async()=>assert.fail("Useful private context can be saved with the explicit official-source failure")});
+  assert.equal(result.kind,"unavailable");
+  if(!("result" in result))throw Error("Expected result");
+  assert.equal(result.result.failureReason,"official_research_unavailable");
+  assert.equal(result.result.evidenceMode,"private_only");
+  assert.deepEqual(result.result.confirmedFindings,[]);
+  assert.deepEqual(result.result.actionPlan,[]);
+  assert.ok(result.result.referenceNotes![0]!.note.includes(document.text));
 });
 
 test("a missing temporal endpoint saves a clarification without research or generation",async()=>{

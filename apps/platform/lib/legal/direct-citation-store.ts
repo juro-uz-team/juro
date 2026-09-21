@@ -48,12 +48,17 @@ export function legalCitationStatements(input: {
         return url.protocol === "https:" && (url.hostname === "lex.uz" || url.hostname === "www.lex.uz");
       } catch { return false; }
     })();
-    const trustedPrivate = source?.sourceType === "internal"
+    const retainedPrivate = source?.sourceType === "internal"
       && source.sourceClass === "USER_TRUSTED_PRIVATE"
       && source.verificationState === "user_supplied"
       && source.status === "user_supplied"
       && parsePrivateDocumentLocator(source.officialUrl) !== null
       && source.sourceQuality?.passed === true;
+    const authenticatedPrivate=source?.sourceType==="internal"&&source.verificationState==="user_supplied"
+      &&source.status==="unconfirmed"&&parsePrivateDocumentLocator(source.officialUrl)===source.id
+      &&source.privateDocumentReceipt!==undefined
+      &&source.sourceClass===(source.privateDocumentReceipt.accessScope==="workspace"?"TENANT_TRUSTED_PRIVATE":"USER_TRUSTED_PRIVATE");
+    const trustedPrivate=retainedPrivate||authenticatedPrivate;
     const trustedSecondary = source?.sourceType === "advice"
       && source.sourceClass === "SECONDARY_REFERENCE"
       && source.verificationState === "web_cited"

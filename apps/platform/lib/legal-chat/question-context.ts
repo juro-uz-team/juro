@@ -8,7 +8,7 @@ import type { LegalTemporalScope, LegalTime } from "./answer-engine";
 
 const endpoint = z.union([z.literal("current"),z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
 export const questionContextSchema = z.object({
-  selectedDocumentIds:z.array(z.string().min(1).max(160)).max(10).default([]),
+  selectedDocumentIds:z.array(z.string().min(1).max(160)).max(4).default([]),
   selectedMemoryIds:z.array(z.string().min(1).max(160)).max(20).default([]),
   topics:z.array(z.string().min(1).max(1000)).min(1).max(24),
   facts:z.array(z.object({turn:z.number().int().nonnegative(),quotation:z.string().min(1).max(2000)}).strict()).max(40),

@@ -16,6 +16,9 @@ import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence
 import {executeLegalChat} from "../lib/legal-chat/execution";
 import {legalDraftClaims,legalDraftSchema} from "../lib/legal-chat/answer-contract";
 import {listUserMemories,clearUserMemories} from "../lib/ai/user-memory";
+import {privateDocumentContext} from "./helpers/private-document-context";
+import {appendPrivateDocumentExcerpts} from "../lib/legal-chat/private-document-projection";
+import {changeAnalysisCaseLink} from "../lib/document-analysis/analysis-case-link";
 
 const sourceText="Article 7. Synthetic record access. "+"Private ephemeral source continuation. ".repeat(80);
 const hash=createHash("sha256").update(sourceText).digest("hex");
@@ -49,6 +52,79 @@ async function fixture(){
     result,sources:[source]};
   return {sqlite,d1,input,reservation};
 }
+
+function seedPrivateDocument(sqlite:ReturnType<typeof sqliteD1FixtureFromDirectory>["sqlite"],scope:"owner"|"workspace") {
+  const document=privateDocumentContext(),now=new Date().toISOString();
+  document.source.contentSha256="d".repeat(64);
+  document.source.sourceClass=scope==="workspace"?"TENANT_TRUSTED_PRIVATE":"USER_TRUSTED_PRIVATE";
+  document.source.privateDocumentReceipt={analysisId:"analysis",documentVersionId:"version",workspaceId:"workspace",
+    ownerUserId:"owner",accessScope:scope,caseId:null};
+  sqlite.prepare("INSERT INTO workspace_members(id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('member','workspace','owner','owner','active',?,?,?)").run(now,now,now);
+  sqlite.prepare(`INSERT INTO document_files(id,workspace_id,owner_user_id,kind,r2_key,file_name,mime_type,size_bytes,sha256,created_at,updated_at)
+    VALUES ('file','workspace','owner','analysis_safe','safe/file','contract.pdf','application/pdf',10,?,?,?)`).run("f".repeat(64),now,now);
+  sqlite.prepare(`INSERT INTO document_analyses(id,workspace_id,owner_user_id,uploaded_file_id,status,consent_version,created_at,updated_at)
+    VALUES ('analysis','workspace','owner','file','completed','2026-08-04',?,?)`).run(now,now);
+  sqlite.prepare(`INSERT INTO analysis_document_versions(id,analysis_id,workspace_id,owner_user_id,version,parent_version_id,source_kind,
+    r2_key,file_name,mime_type,size_bytes,sha256,idempotency_key,selection_sha256,revision_ids_json,created_by_user_id,created_at)
+    VALUES ('version','analysis','workspace','owner',1,NULL,'extracted','analysis-versions/file','contract.md','text/markdown; charset=utf-8',10,?,NULL,NULL,'[]',NULL,?)`)
+    .run(document.source.contentSha256,now);
+  sqlite.prepare(`INSERT INTO user_document_index_jobs(id,analysis_id,document_version_id,workspace_id,owner_user_id,source_hash,
+    language,access_scope,status,created_at,updated_at)
+    VALUES ('job','analysis','version','workspace','owner',?,'mixed',?,'processing',?,?)`)
+    .run(document.source.contentSha256,scope,now,now);
+  sqlite.prepare(`INSERT INTO user_document_vector_chunks(id,job_id,vector_id,chunk_index,char_start,char_end,submitted_at)
+    VALUES ('chunk','job',?,0,0,10,?)`).run(document.source.id,now);
+  sqlite.prepare("UPDATE user_document_index_jobs SET status='submitted' WHERE id='job'").run();
+  return document;
+}
+
+for(const scope of ["owner","workspace"] as const)test(`private ${scope} document citations persist exact mixed language and replay`,async()=>{
+  const {sqlite,d1,input}=await fixture();
+  try {
+    const document=seedPrivateDocument(sqlite,scope);
+    const projected=appendPrivateDocumentExcerpts(result,[document]);
+    const saved=await saveSignedInLegalAnswer({...input,result:projected,sources:[source,document.source]});
+    const loaded=await readSavedLegalAnswer({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId});
+    assert.deepEqual(loaded?.result,projected);
+    const row=sqlite.prepare("SELECT source_locale,source_kind,document_status FROM legal_source_references WHERE source_kind='internal'").get();
+    assert.equal(row?.source_locale,"mixed");assert.equal(row?.document_status,"unconfirmed");
+    assert.equal(sqlite.prepare("PRAGMA foreign_key_check").all().length,0);
+  } finally {sqlite.close();}
+});
+
+for(const revocation of ["membership","document","scope","checksum","case","version"] as const)test(`private citation ${revocation} change rolls back answer and usage`,async()=>{
+  const {sqlite,d1,input}=await fixture();
+  try {
+    const document=seedPrivateDocument(sqlite,"workspace");
+    const projected=appendPrivateDocumentExcerpts(result,[document]);
+    if(revocation==="membership")sqlite.prepare("UPDATE workspace_members SET status='inactive'").run();
+    if(revocation==="document")sqlite.prepare("UPDATE user_document_index_jobs SET status='delete_pending'").run();
+    if(revocation==="scope")sqlite.prepare("UPDATE user_document_index_jobs SET access_scope='owner'").run();
+    if(revocation==="checksum")document.source.contentSha256="e".repeat(64);
+    if(revocation==="case") {
+      const now=new Date().toISOString();
+      sqlite.prepare("INSERT INTO cases(id,workspace_id,owner_user_id,account_type,locale,title,legal_area,status,current_revision,created_at,updated_at) VALUES ('case','workspace','owner','individual','en','Case','contracts','open',1,?,?)").run(now,now);
+      await changeAnalysisCaseLink({db:d1,workspaceId:"workspace",userId:"owner",analysisId:"analysis",caseId:"case",idempotencyKey:"move-document-case"});
+    }
+    if(revocation==="version") {
+      const now=new Date().toISOString();
+      sqlite.prepare(`INSERT INTO document_risks(id,analysis_id,level,title,description,excerpt,confidence_percent,risk_type,
+        clause,page,recommendation,proposed_wording,legal_basis_source_ids_json,created_at)
+        VALUES ('risk','analysis','medium','Term','Unclear term','Original',90,'document_internal','1',1,'Clarify','Corrected','[]',?)`).run(now);
+      sqlite.prepare(`INSERT INTO suggested_revisions(id,analysis_id,risk_id,source_version_id,workspace_id,owner_user_id,
+        original_text,proposed_text,status,decided_by_user_id,decided_at,applied_version_id,created_at,updated_at)
+        VALUES ('revision','analysis','risk','version','workspace','owner','Original','Corrected','pending',NULL,NULL,NULL,?,?)`).run(now,now);
+      sqlite.prepare(`INSERT INTO analysis_document_versions(id,analysis_id,workspace_id,owner_user_id,version,parent_version_id,source_kind,
+        r2_key,file_name,mime_type,size_bytes,sha256,idempotency_key,selection_sha256,revision_ids_json,created_by_user_id,created_at)
+        SELECT 'replacement',analysis_id,workspace_id,owner_user_id,2,id,'corrected','analysis-versions/replacement',file_name,mime_type,
+          size_bytes,sha256,'replacement-request-key',sha256,'["revision"]',owner_user_id,created_at FROM analysis_document_versions WHERE id='version'`).run();
+    }
+    await assert.rejects(saveSignedInLegalAnswer({...input,result:projected,sources:[source,document.source]}),/malformed JSON|PRIVATE_DOCUMENT_CONTEXT_CHANGED/);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM conversation_messages").get()?.n,0);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM legal_source_references").get()?.n,0);
+    assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"reserved");
+  } finally {sqlite.close();}
+});
 
 test("answer, version, receipt and usage commit together and replay without a second charge",async()=>{
   const {sqlite,d1,input,reservation}=await fixture();

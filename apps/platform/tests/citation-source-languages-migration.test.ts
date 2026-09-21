@@ -34,6 +34,17 @@ test("citation language migration preserves saved rows, structure, indexes and f
       sqlite.prepare("UPDATE legal_source_references SET source_locale=? WHERE id='old'").run(locale);
     }
     assert.throws(()=>sqlite.prepare("UPDATE legal_source_references SET source_locale='invented'").run(),/locale_check/);
+    const beforePrivateMigration=sqlite.prepare("SELECT * FROM legal_source_references").all();
+    sqlite.exec(readFileSync(new URL("../drizzle/0158_private_document_citation_languages.sql",import.meta.url),"utf8"));
+    assert.deepEqual(sqlite.prepare("SELECT * FROM legal_source_references").all(),beforePrivateMigration);
+    assert.deepEqual(sqlite.prepare("PRAGMA table_info(legal_source_references)").all(),columns);
+    assert.deepEqual(sqlite.prepare("PRAGMA foreign_key_list(legal_source_references)").all(),foreignKeys);
+    assert.deepEqual(indexes(),originalIndexes);
+    assert.throws(()=>sqlite.prepare("UPDATE legal_source_references SET source_locale='mixed'").run(),/locale_check/);
+    sqlite.prepare("UPDATE legal_source_references SET source_kind='internal',source_locale='mixed'").run();
+    sqlite.prepare("UPDATE legal_source_references SET source_locale='unknown'").run();
+    assert.throws(()=>sqlite.prepare("UPDATE legal_source_references SET source_kind='lex'").run(),/locale_check/);
+    assert.throws(()=>sqlite.prepare("UPDATE legal_source_references SET source_locale='invented'").run(),/locale_check/);
     assert.equal(sqlite.prepare("PRAGMA foreign_key_check").all().length,0);
   } finally {sqlite.close();}
 });
