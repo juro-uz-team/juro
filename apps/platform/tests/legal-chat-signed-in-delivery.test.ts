@@ -53,8 +53,14 @@ test("signed-in clarification persists, accounts once, and replays without anoth
   await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,question:"Changed request"}}),{code:"IDEMPOTENCY_CONFLICT"});
   assert.equal(models.length,1);
 
-  const followUp={...input,request:{...input.request,conversationId:saved.conversationId!,operation:"follow_up" as const,idempotencyKey:"follow-up-request"}};
+  const followUp={...input,settings:{...input.settings,configHash:"b".repeat(64)},
+    request:{...input.request,conversationId:saved.conversationId!,operation:"follow_up" as const,idempotencyKey:"follow-up-request"}};
   const followed=await deliverSignedInLegalChat(followUp);
+  const firstHash=sqlite.prepare("SELECT instruction_hash FROM ai_runs WHERE id=?").get(saved.runId)?.instruction_hash;
+  const changedHash=sqlite.prepare("SELECT instruction_hash FROM ai_runs WHERE id=?").get(followed.runId)?.instruction_hash;
+  assert.match(String(firstHash),/^[a-f0-9]{64}$/);
+  assert.match(String(changedHash),/^[a-f0-9]{64}$/);
+  assert.notEqual(firstHash,changedHash,"Changed server settings must change the persisted instruction identity");
   let parent=followed.branchId!;
   for(let index=3;index<=201;index++) {
     const requestId=crypto.randomUUID(),responseId=crypto.randomUUID(),branchId=crypto.randomUUID();

@@ -23,7 +23,13 @@ test("guest clarifications retain every user turn, stay encrypted and replay wit
     configured:true,retrievalEnvironment:"development",service:{async openLegalResearch(){throw new Error("Clarification needs no research");}},
     request:guestLegalChatRequestSchema.parse({question:"Private original guest question",locale:"en",reasoningMode:"deep",idempotencyKey:"guest-first"})};
   const first=await deliverGuestLegalChat(input);
-  const second=await deliverGuestLegalChat({...input,request:{...input.request,question:"Private second guest clarification",idempotencyKey:"guest-second"}});
+  const second=await deliverGuestLegalChat({...input,settings:{...input.settings,configHash:"b".repeat(64)},
+    request:{...input.request,question:"Private second guest clarification",idempotencyKey:"guest-second"}});
+  const firstHash=sqlite.prepare("SELECT instruction_hash FROM guest_ai_runs WHERE id=?").get(first.runId)?.instruction_hash;
+  const changedHash=sqlite.prepare("SELECT instruction_hash FROM guest_ai_runs WHERE id=?").get(second.runId)?.instruction_hash;
+  assert.match(String(firstHash),/^[a-f0-9]{64}$/);
+  assert.match(String(changedHash),/^[a-f0-9]{64}$/);
+  assert.notEqual(firstHash,changedHash,"Changed server settings must change the persisted instruction identity");
   assert.equal(second.result.responseKind,"clarification_required");
   assert.match(requests[1]!,/Private original guest question/);
   const followup=JSON.parse(JSON.parse(requests[1]!).input);

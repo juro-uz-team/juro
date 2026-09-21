@@ -188,7 +188,7 @@ test("0088 corrupt history fails closed and protected settings are absent from t
   assert.equal(aiRuntimeConfigInputSchema.safeParse({ ...settings, sourceAllowlist: ["example.com"] }).success, false);
 });
 
-test("AI settings route is POST-only, CSRF/fresh-MFA protected, localized and wired into AI hashes", () => {
+test("AI settings route is POST-only, CSRF/fresh-MFA protected, localized and wired into document analysis hashes", () => {
   const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
   const route = source("app/api/platform/admin/ai-settings/route.ts");
   const page = source("app/[locale]/admin/ai-settings/page.tsx");
@@ -201,7 +201,5 @@ test("AI settings route is POST-only, CSRF/fresh-MFA protected, localized and wi
   assert.match(client, /x-juro-csrf/);
   assert.match(client, /aria-live="polite"/);
   assert.doesNotMatch(client, /input[^>]+model/i);
-  assert.match(source("app/api/platform/ai/route.ts"), /runtimeConfigHash:\s*runtimeSettings\.configHash/);
-  assert.match(source("app/api/guest/ai/route.ts"), /runtimeConfigHash:\s*runtimeSettings\.configHash/);
   assert.match(source("lib/document-analysis/processor.ts"), /runtimeConfigHash:\s*persisted\.technical\.runtimeConfigHash/);
 });

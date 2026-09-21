@@ -207,7 +207,7 @@ const coreTestFiles = [
   "tests/legal-corpus-alerts.test.ts",
   "tests/legal-source-review.test.ts",
   "tests/ai-platform.test.ts",
-  "tests/ai-chat-slo-contract.test.ts",
+  "tests/legal-chat-request-schema.test.ts",
   "tests/ai-chat-retrieval-safety.test.ts",
   "tests/ai-safe-markdown.test.ts",
   "tests/secondary-internet-page-verification.test.ts",
