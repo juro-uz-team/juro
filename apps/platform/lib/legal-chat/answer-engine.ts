@@ -1,4 +1,5 @@
 import type {LegalUserContext} from "./user-context";
+import type {LegalDocumentContext} from "./document-context";
 import { legalChatResponseSchema, type LegalChatResponse } from "../ai/legal-chat-schema";
 import { aiText } from "../ai/localization";
 import type { LegalSourceContext } from "../legal/source-context";
@@ -26,6 +27,7 @@ export type AnswerQuestion = {
   researchNeeds?: readonly {reason:string;detail:string}[];
   caseFacts?: readonly string[];
   userContext?:LegalUserContext;
+  documents?:readonly LegalDocumentContext[];
   priorTurns?: readonly { question: string; answer: string }[];
   signal?: AbortSignal;
   onStage?: (stage: "writing" | "verifying" | "correcting") => void;

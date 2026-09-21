@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {containsExactQuotation} from "./quoted-text";
 import { callOpenAiStructured, type AiProviderAttemptObservation, type AiStructuredProgress } from "../document-builder/ai/openai";
 import { openAiChatModel } from "../ai/provider-models";
@@ -182,7 +183,7 @@ function modelContext(question: AnswerQuestion) {
   return {
     question: question.question, locale: question.locale, answerMode: question.answerMode,
     temporalScope: question.temporalScope, caseFacts: question.caseFacts ?? [], priorTurns: question.priorTurns ?? [],
-    userContext:question.userContext??null,
+    userContext:question.userContext??null,privateDocuments:documentModelContext(question.documents),
     researchNeeds: question.researchNeeds ?? [],
     unresolved: question.unresolved, sourceUnavailable: question.sourceUnavailable ?? false,
     evidence: question.evidence.map(({ source, text, endpoint }) => ({
@@ -208,7 +209,7 @@ export function createLegalAnswerModel(options: {
     instructions: string, input: unknown, schema: z.ZodType<T>, schemaName: string): Promise<T> {
     const result = await callOpenAiStructured({
       instructions:options.responseTone&&stage!=="verifying"
-        ? `${instructions}\n${userContextPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}`,
+        ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`,
       input, schemaName, schema: z.toJSONSchema(schema, {reused:"ref"}), parse: value => schema.parse(value),
       requestId: options.requestId, model: openAiChatModel(question.mode), maxAttempts: 1,
       textVerbosity: question.answerMode === "detailed" ? "high" : "medium",

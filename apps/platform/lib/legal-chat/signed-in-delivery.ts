@@ -1,4 +1,5 @@
 import {readLegalUserContext} from "./user-context";
+import type {LegalDocumentContext} from "./document-context";
 import type {IdentityKeyring} from "../auth/keyring";
 import {reserveAiRun,renewAiRunReservation,failAiRun,readAiRunStatus,sha256Json} from "../ai/run-store";
 import {openAiChatModel} from "../ai/provider-models";
@@ -21,6 +22,7 @@ export async function deliverSignedInLegalChat(input:{
   db:D1Database;workspaceId:string;userId:string;request:LegalChatRequest;
   settings:AiRuntimeSettings;memoryKeyring?:IdentityKeyring|null;monthlyLimit:number|null;configured:boolean;
   service?:CorpusResearchService;retrievalEnvironment:AiRuntimeSettings["environment"];
+  readDocuments?:(query:string,conversationId:string|null,signal?:AbortSignal)=>Promise<readonly LegalDocumentContext[]>;
   signal?:AbortSignal;onStage?:(stage:LegalChatStage)=>void;
 }):Promise<LegalChatDelivery> {
   input.signal?.throwIfAborted();
@@ -58,11 +60,13 @@ export async function deliverSignedInLegalChat(input:{
     .catch(async error=>{await failAiRun({...run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
   const userContext=await readLegalUserContext({...owner,conversationId:request.conversationId,keyring:input.memoryKeyring??null})
     .catch(async error=>{await failAiRun({...run,errorCode:"LEGAL_CONTEXT_UNAVAILABLE"});throw error;});
+  const documents=await (input.readDocuments?.(selected.branch.question,request.conversationId,input.signal)??Promise.resolve([]))
+    .catch(async error=>{await failAiRun({...run,errorCode:"PRIVATE_DOCUMENT_CONTEXT_UNAVAILABLE"});throw error;});
   const started=Date.now();
   const accounting=createLegalChatAccounting({...owner,environment:input.settings.environment,feature:"legal_chat"});
   return executeRuntimeLegalChat({service:input.service,environment:input.retrievalEnvironment,requestId:reservation.runId,
     safetyIdentifier,responseTone:input.settings.responseTone,
-    context:{question:selected.branch.question,locale:request.locale,userContext,
+    context:{question:selected.branch.question,locale:request.locale,userContext,documents,
       priorTurns:selected.turns.map(turn=>({question:turn.question,answer:turn.answer})),
       legalContextDate:request.legalContextDate,signal:input.signal},mode:request.reasoningMode,answerMode:request.answerMode,
     onStage:input.onStage,onAttempt:accounting.onAttempt,onAttemptFinished:accounting.onAttemptFinished,

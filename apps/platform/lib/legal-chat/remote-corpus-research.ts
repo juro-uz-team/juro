@@ -1,4 +1,5 @@
 import type {CorpusSessionInput, CorpusSearchInput} from "./corpus-session";
+import {documentModelContext} from "./document-context";
 import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
 import type {ResearchPacket,ResearchRequest} from "./research";
 
@@ -46,7 +47,8 @@ export function createRemoteCorpusResearch(input:{
       request.question.signal?.throwIfAborted();
       if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
       const identity=JSON.stringify([request.question.question,request.question.topics,
-        request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null]);
+        request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,
+        documentModelContext(request.question.documents)]);
       if(owner!==undefined&&owner!==identity)throw new Error("CORPUS_RESEARCH_REQUEST_MISMATCH");
       owner=identity;
       if(!opening){

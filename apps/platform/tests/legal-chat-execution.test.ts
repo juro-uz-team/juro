@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {privateDocumentContext} from "./helpers/private-document-context";
 import {createHash} from "node:crypto";
 import {executeLegalChat,type LegalChatTerminal} from "../lib/legal-chat/execution";
 import {legalDraftClaims,legalDraftSchema} from "../lib/legal-chat/answer-contract";
@@ -97,20 +98,24 @@ test("one stale source withholds dependent claims while preserving an independen
 });
 
 test("one execution preserves chronological facts and saves only the verified terminal answer",async()=>{
+  const documents=[privateDocumentContext()];
   const turns=[{question:"I am an applicant.",answer:"An earlier assistant assertion is not law."}];
   const events:string[]=[];const stages:string[]=[];let saved:LegalChatTerminal|undefined;
   const observations=[{kind:"candidate_read_limit" as const,lane:"indexed" as const,omitted:30}];
-  const result=await executeLegalChat({context:{question:"I need my record.",locale:"en",priorTurns:turns},mode:"fast",answerMode:"detailed",
+  const result=await executeLegalChat({context:{question:"I need my record.",locale:"en",priorTurns:turns,documents},mode:"fast",answerMode:"detailed",
     interpret:async input=>{events.push("interpret");assert.deepEqual(input.priorTurns,turns);
-      return {topics:["Record access"],facts:[{turn:0,quotation:"I am an applicant."},{turn:1,quotation:"I need my record."}],temporal:{kind:"current"},questions:[]};},
+      return {topics:["Record access"],facts:[{turn:0,quotation:"I am an applicant."},{turn:1,quotation:"I need my record."}],temporal:{kind:"current"},questions:[],selectedDocumentIds:[documents[0]!.source.id]};},
     research:{indexed:async request=>{events.push("research");assert.deepEqual(request.question.priorTurns,turns);
+      assert.deepEqual(request.question.documents,documents);
       return {evidence:[evidence],needs:[],observations};},official:async()=>assert.fail("Corpus evidence is sufficient"),
       assess:async input=>{assert.deepEqual(input.observations,observations);return [];}},
     model:{write:async input=>{events.push("write");assert.deepEqual(input.question.priorTurns,turns);
+      assert.deepEqual(input.question.documents,documents);
       assert.deepEqual(input.question.caseFacts,["I need my record."]);return draft;},
       verify:async()=>{events.push("verify");return review;}},
     renew:async()=>true,commit:async(terminal,sources)=>{events.push("save");saved=terminal;
       assert.equal(sources[0]?.id,evidence.source.id);
+      assert.equal(sources.length,1,"Private context is not official evidence or a legal citation");
       assert.equal(sources[0]?.spans?.[0]?.text,evidence.text);
       assert.equal(sources[0]?.spans?.[0]?.textSha256,evidence.textSha256);
       if("research" in terminal)assert.doesNotMatch(JSON.stringify(terminal.research),/Synthetic rule:/);

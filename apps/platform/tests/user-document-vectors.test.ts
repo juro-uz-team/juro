@@ -344,9 +344,14 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
     sqlite.prepare("UPDATE conversations SET case_id='private-case' WHERE id='private-chat'").run();
     const caseContext = () => readLegalDocumentContext(env, { workspaceId: "workspace-a", userId: "user-a", conversationId: "private-chat", query: "срок оплаты" }, { fetchImpl: embeddingFetch() });
     assert.deepEqual(await caseContext(), [], "An unrelated document cannot enter a case-linked conversation");
+    const caseInput={workspaceId:"workspace-a",userId:"user-a",conversationId:"private-chat",query:"срок оплаты"};
+    assert.deepEqual(await readLegalDocumentContext({DB:d1},caseInput,{fetchImpl:noFetch}),[],
+      "No eligible document needs neither storage configuration nor an embedding request");
     await changeAnalysisCaseLink({ db: d1, workspaceId: "workspace-a", userId: "user-a", analysisId: "analysis-a",
       caseId: "private-case", idempotencyKey: "link-private-document-case" });
     assert.equal((await caseContext()).length, 1);
+    await assert.rejects(readLegalDocumentContext({DB:d1},caseInput,{fetchImpl:noFetch}),/PRIVATE_DOCUMENT_CONTEXT_UNAVAILABLE/,
+      "Eligible private context must not be silently omitted when bindings are unavailable");
     const memberResults = await searchUserDocuments(env, {
       workspaceId: "workspace-a", userId: "user-b", query: "срок оплаты",
     }, { fetchImpl: embeddingFetch() });
@@ -379,9 +384,9 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
         provider_request_id AS providerRequestId,price_version_id AS priceVersionId
        FROM ai_provider_usage_events ORDER BY created_at,id`,
     ).all() as Array<Record<string, unknown>>;
-    assert.equal(usage.length, 9);
+    assert.equal(usage.length, 8);
     assert.equal(usage.filter((event) => event.feature === "document_indexing").length, 1);
-    assert.equal(usage.filter((event) => event.feature === "document_search").length, 8);
+    assert.equal(usage.filter((event) => event.feature === "document_search").length, 7);
     assert.ok(usage.every((event) => event.status === "succeeded"));
     assert.ok(usage.every((event) => event.provider === "openai"));
     assert.ok(usage.every((event) => event.model === "text-embedding-3-large"));
@@ -392,8 +397,8 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
       `SELECT sum(request_count) AS requests,sum(unpriced_request_count) AS unpriced
        FROM ai_cost_daily_aggregates`,
     ).get() as { requests: number; unpriced: number };
-    assert.equal(aggregate.requests, 9);
-    assert.equal(aggregate.unpriced, 9);
+    assert.equal(aggregate.requests, 8);
+    assert.equal(aggregate.unpriced, 8);
   } finally {
     sqlite.close();
   }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {privateDocumentContext} from "./helpers/private-document-context";
 import {env} from "cloudflare:workers";
 import {createLegalResearchModel} from "../lib/legal-chat/research-model";
 import type {ResearchRequest} from "../lib/legal-chat/research";
@@ -27,7 +28,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
   });
   for(const mode of ["fast","deep"] as const) {
     const model=createLegalResearchModel({requestId:"request"});
-    const input={...request,question:{...request.question,mode}};
+    const input={...request,question:{...request.question,mode,documents:[privateDocumentContext()]}};
     await model.formulate(input);
     await model.formulate(input);
     const assessment=await model.assess({...input,evidence:[evidence]});
@@ -40,6 +41,9 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));
     assert.ok(!payload.input.includes("https://lex.uz"));
+    assert.deepEqual(JSON.parse(payload.input).privateDocuments,[{id:privateDocumentContext().source.id,
+      title:"Uploaded agreement",text:privateDocumentContext().text}]);
+    assert.doesNotMatch(payload.input,/juro-private:|private-object-checksum/);
   }
 });
 

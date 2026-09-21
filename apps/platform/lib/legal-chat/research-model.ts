@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {callOpenAiStructured, type AiProviderAttemptObservation} from "../document-builder/ai/openai";
 import {openAiChatModel} from "../ai/provider-models";
 import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
@@ -38,20 +39,22 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
   const bind=(request:ResearchRequest)=>{
     request.question.signal?.throwIfAborted();
     const identity=JSON.stringify([request.question.question,request.question.topics,request.question.temporalScope,
-      request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,request.question.mode]);
+      request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,
+      documentModelContext(request.question.documents),request.question.mode]);
     if(owner!==undefined&&owner!==identity)throw new Error("RESEARCH_MODEL_REQUEST_MISMATCH");
     owner=identity;
   };
   const context=(request:ResearchRequest,evidence:readonly LegalEvidence[]=[])=>({
     question:request.question.question,topics:request.question.topics,locale:request.question.locale,
     temporalScope:request.question.temporalScope,caseFacts:request.question.caseFacts??[],
-    priorTurns:request.question.priorTurns??[],userContext:request.question.userContext??null,needs:request.needs.map((need,index)=>({index,...need})),
+    priorTurns:request.question.priorTurns??[],userContext:request.question.userContext??null,
+    privateDocuments:documentModelContext(request.question.documents),needs:request.needs.map((need,index)=>({index,...need})),
     evidence:evidence.map(item=>({id:item.source.id,title:item.source.actTitle,language:item.source.locale,
       endpoint:item.endpoint,text:item.text})),
   });
   const call=async<T>(request:ResearchRequest,schema:z.ZodType<T>,payload:unknown,schemaName:string)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
-    const result=await callOpenAiStructured({instructions,input:payload,schemaName,schema:z.toJSONSchema(schema),
+    const result=await callOpenAiStructured({instructions:`${instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(schema),
       parse:value=>schema.parse(value),model:openAiChatModel(request.question.mode),maxAttempts:1,
       timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,deadlineAt:options.deadlineAt,requestId:options.requestId,
       safetyIdentifier:options.safetyIdentifier,signal:request.question.signal,

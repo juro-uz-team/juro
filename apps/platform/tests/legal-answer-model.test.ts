@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {privateDocumentContext} from "./helpers/private-document-context";
 import { createHash } from "node:crypto";
 import { env } from "cloudflare:workers";
 import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
@@ -44,7 +45,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   const model = createLegalAnswerModel({ requestId: "request", onAttemptFinished: value => { observations.push(value); } });
   for (const mode of ["fast", "deep"] as const) {
     const question: AnswerQuestion = { question: "Question", locale: "en", mode, answerMode: "detailed",
-      temporalScope: { kind: "current" }, unresolved: [], evidence: [{ source: {
+      temporalScope: { kind: "current" }, unresolved: [], documents:[privateDocumentContext()], evidence: [{ source: {
         id: "source", actTitle: "Title", actIdentifier: null, officialUrl: "https://lex.uz/docs/123",
         revisionDate: null, lastCheckedAt: "2026-09-14", locale: "en", publishedAt: null,
         sourceType: "lex", status: "current", verificationState: "verified", verifiedAt: "2026-09-14",
@@ -66,6 +67,9 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!body.input.includes("https://lex.uz"));
     assert.ok(body.input.includes("Official provision"));
     const input=JSON.parse(body.input);
+    assert.deepEqual(input.context.privateDocuments,[{id:privateDocumentContext().source.id,
+      title:"Uploaded agreement",text:privateDocumentContext().text}]);
+    assert.doesNotMatch(body.input,/juro-private:|private-object-checksum/);
     assert.ok(input.context.evidence[0].passages.length <=160);
     assert.equal(input.context.evidence[0].passages.map((passage:{text:string})=>passage.text).join("\n"),
       sourceText);

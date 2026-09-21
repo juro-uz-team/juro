@@ -1,4 +1,5 @@
 import {LegalContextCapacityError} from "../../../../lib/legal-chat/context-capacity";
+import {readLegalDocumentContext} from "../../../../lib/legal-chat/document-context";
 import {memoryKeyring,UserMemoryError} from "../../../../lib/ai/user-memory";
 import {legalChatOwner} from "../../../../lib/legal-chat/http-owner";
 import {z} from "zod";
@@ -92,6 +93,8 @@ export const POST=withApiErrors(async(request:Request)=>{
       try {keyring=memoryKeyring(env.IDENTITY_KEYRING);}
       catch(error){if(!(error instanceof UserMemoryError))throw error;}
       return await deliverSignedInLegalChat({...scope,request:parsed.data,settings,memoryKeyring:keyring,
+        readDocuments:(query,conversationId,signal)=>readLegalDocumentContext({...env,DB:scope.db},
+          {workspaceId:scope.workspaceId,userId:scope.userId,query,conversationId},{signal}),
         monthlyLimit:resolveAiAnswerCycleLimit(env.APP_ENV,entitlements.aiAnswerCyclesMonthly),configured:hasAiConfiguration(),
         service:env.LEGAL_RETRIEVAL_SERVICE,retrievalEnvironment:legalRetrievalEnvironment(env),signal,onStage});
     } catch(error){

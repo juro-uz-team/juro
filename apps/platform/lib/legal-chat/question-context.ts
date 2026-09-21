@@ -1,4 +1,5 @@
 import type {LegalUserContext} from "./user-context";
+import type {LegalDocumentContext} from "./document-context";
 import {containsExactQuotation} from "./quoted-text";
 import { z } from "zod";
 import { parseLegalApplicabilityDate } from "../legal/applicability-date";
@@ -7,6 +8,7 @@ import type { LegalTemporalScope, LegalTime } from "./answer-engine";
 
 const endpoint = z.union([z.literal("current"),z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
 export const questionContextSchema = z.object({
+  selectedDocumentIds:z.array(z.string().min(1).max(160)).max(10).default([]),
   selectedMemoryIds:z.array(z.string().min(1).max(160)).max(20).default([]),
   topics:z.array(z.string().min(1).max(1000)).min(1).max(24),
   facts:z.array(z.object({turn:z.number().int().nonnegative(),quotation:z.string().min(1).max(2000)}).strict()).max(40),
@@ -21,10 +23,10 @@ export const questionContextSchema = z.object({
 
 export type QuestionContextInput = {
   question:string;locale:"ru"|"uz"|"en";priorTurns:readonly{question:string;answer:string}[];
-  userContext?:LegalUserContext;legalContextDate?:string;now?:Date;signal?:AbortSignal;
+  userContext?:LegalUserContext;documents?:readonly LegalDocumentContext[];legalContextDate?:string;now?:Date;signal?:AbortSignal;
 };
 export type QuestionContext =
-  | {kind:"ready";question:string;topics:string[];caseFacts:string[];priorTurns:QuestionContextInput["priorTurns"];temporalScope:LegalTemporalScope;questions:string[];userContext?:LegalUserContext}
+  | {kind:"ready";question:string;topics:string[];caseFacts:string[];priorTurns:QuestionContextInput["priorTurns"];temporalScope:LegalTemporalScope;questions:string[];userContext?:LegalUserContext;documents:readonly LegalDocumentContext[]}
   | {kind:"clarification_required";questions:string[]}
   | {kind:"unavailable";errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"|"AI_CANCELLED"};
 
@@ -43,6 +45,12 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
     const value=questionContextSchema.parse(await interpret(input));
     if(input.signal?.aborted) return {kind:"unavailable",errorCode:"AI_CANCELLED"};
     const selectedIds=new Set(value.selectedMemoryIds);
+    const documentIds=new Set(value.selectedDocumentIds);
+    if(documentIds.size!==value.selectedDocumentIds.length
+      ||value.selectedDocumentIds.some(id=>!input.documents?.some(document=>document.source.id===id))) {
+      return {kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"};
+    }
+    const documents=(input.documents??[]).filter(document=>documentIds.has(document.source.id));
     if(value.selectedMemoryIds.some(id=>!input.userContext?.memories.some(memory=>memory.id===id))) {
       return {kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"};
     }
@@ -72,6 +80,6 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
     }
     return {kind:"ready",question:input.question,topics:value.topics,
       caseFacts:[...new Set(value.facts.filter(fact=>fact.turn===input.priorTurns.length).map(fact=>fact.quotation))],
-      priorTurns:input.priorTurns,temporalScope,questions:value.questions,userContext};
+      priorTurns:input.priorTurns,temporalScope,questions:value.questions,userContext,documents};
   } catch { return {kind:"unavailable",errorCode:input.signal?.aborted?"AI_CANCELLED":"QUESTION_INTERPRETATION_UNAVAILABLE"}; }
 }
