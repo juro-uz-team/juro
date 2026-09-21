@@ -233,7 +233,7 @@ test("case context selects authorized matches before the document result limit",
     seedIdentity(sqlite, "user-a", "workspace-a");
     sqlite.prepare("INSERT INTO cases (id,workspace_id,owner_user_id,account_type,locale,title,legal_area,status,current_revision,created_at,updated_at) VALUES ('selected-case','workspace-a','user-a','individual','ru','Case','contracts','open',1,?,?)").run(now, now);
     sqlite.prepare("INSERT INTO conversations (id,workspace_id,owner_user_id,case_id,title,locale,status,created_at,updated_at) VALUES ('selected-chat','workspace-a','user-a','selected-case','Private','ru','active',?,?)").run(now, now);
-    const env = { APP_ENV: "development" as const, DB: d1, BUCKET: bucket as unknown as R2Bucket,
+    const env = { LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST:"true", APP_ENV: "development" as const, DB: d1, BUCKET: bucket as unknown as R2Bucket,
       USER_DOCUMENTS_INDEX: vectorize as unknown as VectorizeIndex, OPENAI_API_KEY: "test-only-key" };
     for (let index = 0; index < 11; index++) {
       const analysisId = `ranked-analysis-${index}`, versionId = `ranked-version-${index}`, r2Key = `analysis-versions/workspace-a/${analysisId}/1-source.md`;
@@ -280,6 +280,7 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
       now,
     }));
     const env = {
+      LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST:"true",
       APP_ENV: "development" as const,
       DB: d1,
       BUCKET: bucket as unknown as R2Bucket,
@@ -327,6 +328,11 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
     for (const scope of [{ userId: "user-b", workspaceId: "workspace-a" }, { userId: "user-a", workspaceId: "workspace-b" }]) {
       assert.deepEqual(await readLegalDocumentContext(env, { ...scope, conversationId: "private-chat", query: "срок оплаты" }, { fetchImpl: noFetch }), []);
     }
+    for(const flag of [undefined,"false","TRUE"]){
+      assert.deepEqual(await readLegalDocumentContext({...env,LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST:flag},
+        {workspaceId:"workspace-a",userId:"user-a",conversationId:"private-chat",query:"срок оплаты"},
+        {fetchImpl:noFetch}),[],"An indexed private document remains excluded while the chat release flag is off");
+    }
     const chatSources = await readLegalDocumentContext(env, {
       workspaceId: "workspace-a", userId: "user-a", conversationId: "private-chat", query: "срок оплаты",
     }, { fetchImpl: embeddingFetch(), now: new Date(now) });
@@ -345,12 +351,12 @@ test("0080 indexes immutable text and search fails closed across tenants and tam
     const caseContext = () => readLegalDocumentContext(env, { workspaceId: "workspace-a", userId: "user-a", conversationId: "private-chat", query: "срок оплаты" }, { fetchImpl: embeddingFetch() });
     assert.deepEqual(await caseContext(), [], "An unrelated document cannot enter a case-linked conversation");
     const caseInput={workspaceId:"workspace-a",userId:"user-a",conversationId:"private-chat",query:"срок оплаты"};
-    assert.deepEqual(await readLegalDocumentContext({DB:d1},caseInput,{fetchImpl:noFetch}),[],
+    assert.deepEqual(await readLegalDocumentContext({DB:d1,LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST:"true"},caseInput,{fetchImpl:noFetch}),[],
       "No eligible document needs neither storage configuration nor an embedding request");
     await changeAnalysisCaseLink({ db: d1, workspaceId: "workspace-a", userId: "user-a", analysisId: "analysis-a",
       caseId: "private-case", idempotencyKey: "link-private-document-case" });
     assert.equal((await caseContext()).length, 1);
-    await assert.rejects(readLegalDocumentContext({DB:d1},caseInput,{fetchImpl:noFetch}),/PRIVATE_DOCUMENT_CONTEXT_UNAVAILABLE/,
+    await assert.rejects(readLegalDocumentContext({DB:d1,LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST:"true"},caseInput,{fetchImpl:noFetch}),/PRIVATE_DOCUMENT_CONTEXT_UNAVAILABLE/,
       "Eligible private context must not be silently omitted when bindings are unavailable");
     const memberResults = await searchUserDocuments(env, {
       workspaceId: "workspace-a", userId: "user-b", query: "срок оплаты",
