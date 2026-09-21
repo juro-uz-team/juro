@@ -184,6 +184,7 @@ const coreTestFiles = [
   "tests/legal-source-trust.test.ts",
   "tests/legal-corpus-worker-boundary.test.ts",
   "tests/legal-target-evaluation.test.ts",
+  "tests/legal-evaluation-evidence.test.ts",
   "tests/legal-custom-bm25-runtime.test.ts",
   "tests/legal-custom-membership-lookup.test.ts",
   "tests/legal-candidate-membership-proof.test.ts",

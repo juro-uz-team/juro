@@ -800,3 +800,66 @@ export type TargetActivationSetEvaluationObservation = {
     rightReleaseId?: string;
   }>;
 };
+
+/** Candidate evaluation reads one reconciled staging pair without consulting
+ * active-release routing. It shares authenticated readers with ordinary research. */
+export async function createRuntimeEvaluationEvidenceServices(input: {
+  env: TargetRetrievalRuntimeEnv;
+  activationSetId: string;
+  historyReconciliationRunId: string;
+  historyReportSha256: string;
+}) {
+  const {env}=input;
+  if(env.APP_ENV!=="staging"||env.LEGAL_CORPUS_SHADOW_MODE!=="true"||!env.LEGAL_DB
+    ||!env.LEGAL_EVIDENCE_BUCKET||!env.LEGAL_CUSTOM_SEARCH_SERVICE||!env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE
+    ||!env.LEGAL_AI_GATEWAY_ID||!env.LEGAL_AI_PROVIDER_PROJECT_ID) {
+    throw new TypeError("TARGET_ACTIVATION_SET_EVALUATION_UNAVAILABLE");
+  }
+  const selected=await resolveStagingHistoryComparisonEvaluationSet(env.LEGAL_DB,{
+    activationSetId:input.activationSetId,historyReconciliationRunId:input.historyReconciliationRunId,
+    historyReportSha256:input.historyReportSha256,
+  });
+  const providers=new Map<string,LegalCandidateProvider>();
+  const releases=new Map<CustomSearchCapability,PinnedCandidateRelease>();
+  for(const capability of ["current","history"] as const) {
+    const release=selected[capability],instanceId=customInstanceId(capability,"staging");
+    providers.set(instanceId,createRuntimeEvaluationCustomSearchProvider({releaseId:release.id,
+      configurationIdentity:release.configurationIdentity,capability,
+      service:capability==="current"?env.LEGAL_CUSTOM_SEARCH_SERVICE:env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE,
+      gatewayIdentity:env.LEGAL_AI_GATEWAY_ID,projectIdentity:env.LEGAL_AI_PROVIDER_PROJECT_ID}));
+    releases.set(capability,parsePinnedCandidateRelease({id:release.id,environment:"staging",capability,
+      instances:[{id:instanceId,shardId:customShardId(capability)}],configuration:customPinnedConfiguration(
+        release.configurationIdentity,env.LEGAL_AI_GATEWAY_ID,env.LEGAL_AI_PROVIDER_PROJECT_ID)}));
+  }
+  const providerFor=(instanceIds:readonly string[])=>{
+    const provider=instanceIds.length===1?providers.get(instanceIds[0]!):undefined;
+    if(!provider)throw new TypeError("TARGET_CANDIDATE_PROVIDER_UNAVAILABLE");
+    return provider;
+  };
+  const candidateIndex=createRuntimeCandidateIndex({
+    attest:(instanceId,releaseId)=>providerFor([instanceId]).attest(instanceId,releaseId),
+    search:request=>providerFor(request.instanceIds).search(request),
+    searchMany:request=>providerFor(request.instanceIds).searchMany!(request),
+  });
+  const observation:TargetActivationSetEvaluationObservation={activationSetId:selected.id,
+    historyReconciliationRunId:selected.historyReconciliationRunId,historyReportSha256:selected.historyReportSha256,resolutions:[]};
+  const pinned=(endpoint:TemporalEndpoint)=>structuredClone(releases.get(endpoint.kind==="current"?"current":"history")!);
+  const services=createRuntimeEvidenceServices({environment:"staging",db:env.LEGAL_DB,
+    evidenceBucket:env.LEGAL_EVIDENCE_BUCKET,historyEvidenceBucket:env.LEGAL_HISTORY_EVIDENCE_BUCKET,
+    customArtifactBucket:env.LEGAL_CUSTOM_ARTIFACT_BUCKET,
+    membershipProofsEnabled:env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED==="true",
+    sharedSourceObservationsEnabled:env.LEGAL_SOURCE_OBSERVATIONS_ENABLED==="true"},candidateIndex,{
+      async resolve(endpoint) {
+        const release=pinned(endpoint);
+        observation.resolutions.push({kind:"endpoint",endpoint:structuredClone(endpoint),releaseId:release.id});
+        return release;
+      },
+      async resolveComparison(left,right) {
+        const pair={left:pinned(left),right:pinned(right)};
+        observation.resolutions.push({kind:"comparison",left:structuredClone(left),right:structuredClone(right),
+          leftReleaseId:pair.left.id,rightReleaseId:pair.right.id});
+        return pair;
+      },
+    });
+  return {services,observation:()=>structuredClone(observation)};
+}
