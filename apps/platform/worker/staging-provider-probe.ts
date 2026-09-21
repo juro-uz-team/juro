@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { runAnthropicLegalChat } from "../lib/ai/anthropic-provider";
+import {callProviderContractProbe} from "./provider-contract-probe";
+import {runLegalChatStorageProbe} from "./legal-chat-storage-probe";
 import {
   AiExecutionBudgetAbortError,
   createAiExecutionBudget,
@@ -10,40 +11,15 @@ import {
   recordStagingAiSloProbe,
   type AiSloFirstUsefulStage,
 } from "../lib/ai/slo-telemetry";
-import type { PlatformJobEnv } from "./platform-jobs";
-import {
-  runStagingAiChatLifecycleProbe,
-} from "./staging-ai-chat-lifecycle-probe";
 import {
   providerFailureEvidence,
   recordDependencyHealthEvidence,
 } from "./dependency-health-evidence";
 
-// v1 completed for OpenAI and terminally failed for Anthropic before the
-// owner rotated the staging Anthropic key. Keep those records immutable. v5
-// verified only a trivial Anthropic schema; v6 exercised the exact legal-chat
-// schema but found an application-boundary error. v10-v13 isolated the strict
-// grammar rejection. v14 confirmed plain JSON is not contract-reliable. v15
-// validates forced non-strict tool use plus the unchanged Zod/source boundary.
-// v16 persists only bounded HTTP/type metadata after v15 failed before model
-// generation; provider messages and bodies remain excluded. v17 validates the
-// bounded JSON-string tool envelope while preserving the full Zod boundary.
-// v18 exercises the production Anthropic adapter, including its fail-closed
-// normalization and source-boundary enforcement. v19 adds bounded stage codes
-// for preflight versus post-processing failures, without logging content. v20
-// adds a request-stage stack path event; prompts and provider bodies stay out.
-// v22 records the same bounded stack paths at the probe boundary. v23 uses a
-// static adapter import because the worker bundler rewrote the dynamic import
-// to index.js, whose public namespace does not expose this internal function.
-// v24 exercises the exact OpenAI legal-chat structured-output contract and
-// stores only bounded HTTP/error metadata when the request is rejected. v25
-// verifies the same contract after normalizing Zod's draft-7 annotations to
-// the provider-supported Structured Outputs subset. v26 runs complete RU and
-// UZ synthetic tenant lifecycles: reservation, provider, persistence, released
-// clarification usage, idempotent replay, audit evidence, and full cleanup.
-// v27 intentionally leaves those historical rows untouched and adds bounded,
-// rolling execution records plus append-only, content-free SLO evidence.
-const ROLLING_PROBE_VERSION = "v27";
+type StagingProviderProbeEnv = {DB:D1Database;APP_ENV:string;STAGING_SYNTHETIC_PROBES_ENABLED:string};
+
+// Contract and storage observations are distinct from semantic answer acceptance.
+const ROLLING_PROBE_VERSION = "v28";
 const ROLLING_PROBE_KEY_PREFIX = `staging-provider-slo-${ROLLING_PROBE_VERSION}`;
 export const STAGING_PROVIDER_PROBE_EXECUTION_BUDGET_MS = 30_000;
 const STAGING_PROVIDER_PROBE_PROVIDER_TIMEOUT_MS = 25_500;
@@ -53,12 +29,12 @@ const STAGING_PROVIDER_PROBE_MAX_RECORDS_PER_PROVIDER = 2_000;
 const STAGING_PROVIDER_PROBE_ABANDONED_AFTER_MS = 2 * 60_000;
 type Provider = "openai" | "anthropic";
 // Staging probes exercise both configured server-side providers with a fixed,
-// content-free clarification request. This is deliberately opt-in and
+// content-free structured-output request. This is deliberately opt-in and
 // staging-only; production cannot enable this code path.
 const providers = ["openai", "anthropic"] as const satisfies readonly Provider[];
 
 // Retained as the stable minimal probe contract used by unit tests and older
-// immutable probe records. v24 itself exercises the full legal-chat schema.
+// immutable probe records. This probe does not claim legal-answer correctness.
 export const providerProbeOutputSchema = z.object({
   status: z.literal("ok"),
 }).strict();
@@ -81,6 +57,7 @@ export type RollingProbeExecution = {
 };
 
 type ProviderProbeTiming = {
+  providerCompleted: boolean;
   model: string | null;
   providerStartedAt: number | null;
   providerTtftMs: number | null;
@@ -108,7 +85,7 @@ class ProviderProbeStageError extends Error {
 }
 
 export function stagingProviderProbeEnabled(
-  env: Pick<PlatformJobEnv, "APP_ENV" | "STAGING_SYNTHETIC_PROBES_ENABLED">,
+  env: Pick<StagingProviderProbeEnv, "APP_ENV" | "STAGING_SYNTHETIC_PROBES_ENABLED">,
 ): boolean {
   return env.APP_ENV === "staging"
     && (env as Record<string, unknown>).STAGING_SYNTHETIC_PROBES_ENABLED === "true";
@@ -147,6 +124,7 @@ function probeId(provider: Provider, execution: RollingProbeExecution): string {
 
 function newProviderTiming(): ProviderProbeTiming {
   return {
+    providerCompleted: false,
     model: null,
     providerStartedAt: null,
     providerTtftMs: null,
@@ -263,11 +241,11 @@ function sloFailure(input: {
 }
 
 /**
- * Prunes only completed/failed v27 technical probe rows. It never deletes the
+ * Prunes only completed/failed v28 technical probe rows. It never deletes the
  * prior fixed-key evidence or the append-only SLO telemetry ledger.
  */
 export async function pruneRollingStagingProviderProbeRows(
-  env: PlatformJobEnv,
+  env: StagingProviderProbeEnv,
   now = new Date(),
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - STAGING_PROVIDER_PROBE_RETENTION_MS).toISOString();
@@ -301,122 +279,47 @@ export async function pruneRollingStagingProviderProbeRows(
 }
 
 async function executeProviderProbe(input: {
-  env: PlatformJobEnv;
+  env: StagingProviderProbeEnv;
   provider: Provider;
   execution: RollingProbeExecution;
   budget: AiExecutionBudget;
   timing: ProviderProbeTiming;
 }): Promise<ProviderProbeResult> {
-  const { env, provider, execution, budget, timing } = input;
-  if (provider === "anthropic") {
-    const stage = budget.beginStage("probe.anthropic.provider", {
-      timeoutMs: stageTimeoutMs(budget),
-    });
-    try {
-      // This technical probe is not an interactive user response. Anthropic's
-      // non-streaming Messages endpoint may not resolve fetch until it has a
-      // complete JSON/tool payload, so use the full already-reserved provider
-      // window for connectivity rather than the user's 4.5 s response-start
-      // threshold. The shared 30 s budget remains authoritative.
-      const timeoutMs = providerTimeoutMs(budget);
-      const result = await runAnthropicLegalChat({
-        question: "Synthetic staging check: request clarification only.",
-        locale: "ru",
-        answerMode: "short",
-        reasoningMode: "fast",
-        sources: [],
-        legalDatabaseAsOf: "unavailable",
-        requestId: probeId(provider, execution),
-        safetyIdentifier: "staging-synthetic-provider-probe",
-      }, {
-        budget,
-        signal: stage.signal,
-        providerTimeoutMs: timeoutMs,
-        nonStreamingResponseStartTimeoutMs: timeoutMs,
-        beforeProviderCall: ({ model }) => {
-          timing.model = model;
-          timing.providerStartedAt = Date.now();
-        },
-      });
-      if (result.data.responseKind !== "clarification_required" || result.data.sources.length !== 0
-        || result.data.confirmedFindings.length !== 0) {
-        throw new ProviderProbeStageError("PROBE_LEGAL_BOUNDARY_FAILED");
+  const {env,provider,execution,budget,timing}=input;
+  const stage=budget.beginStage(`probe.${provider}.contract`,{timeoutMs:stageTimeoutMs(budget)});
+  try {
+    timing.providerStartedAt=Date.now();
+    const result=await callProviderContractProbe(provider,{timeoutMs:providerTimeoutMs(budget),
+      deadlineAt:Date.now()+budget.remainingMs,signal:stage.signal,requestId:probeId(provider,execution)});
+    timing.providerCompleted=true;
+    timing.model=result.model;
+    stage.complete();
+    // A completed technical response is not a user's first useful Legal Answer.
+    timing.firstUsefulStage="none";
+    timing.firstUsefulLatencyMs=null;
+    if(provider==="openai") {
+      requireProbeBudget(budget);
+      const started=Date.now();
+      try {
+        await runLegalChatStorageProbe({db:env.DB,environment:env.APP_ENV,enabled:env.STAGING_SYNTHETIC_PROBES_ENABLED,
+          executionId:execution.id,locale:execution.locale,signal:budget.signal});
+      } catch {
+        throw new ProviderProbeStageError("PROBE_PERSISTENCE_FAILED");
       }
-      // Anthropic currently returns one complete non-streaming structured
-      // response. That proves bounded provider completion, but it has no
-      // independently observable first useful content. Keep this probe out of
-      // the 5-second first-useful SLO instead of recording terminal arrival as
-      // a fake token/TTFT measurement.
-      timing.firstUsefulStage = "none";
-      timing.firstUsefulLatencyMs = null;
-      stage.complete();
-      return {
-        model: result.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        cachedInputTokens: result.usage.cachedInputTokens,
-        latencyMs: result.latencyMs,
-        attempts: result.attempts,
-        timing,
-      };
-    } catch (error) {
-      stage.fail();
-      if (error instanceof AiExecutionBudgetAbortError || budget.signal.aborted) throw error;
-      const stackFrames = error instanceof Error && typeof error.stack === "string"
-        ? error.stack.split("\n").slice(1, 6).map((frame) => frame.trim().replace(/[?#].*$/, ""))
-        : undefined;
-      console.error({
-        event: "staging.provider_probe_exception",
-        provider: "anthropic",
-        errorName: error instanceof Error && typeof error.name === "string" ? error.name : "UnknownError",
-        safeCode: anthropicHttpFailureCode(error),
-        stackFrames,
-      });
-      throw new ProviderProbeStageError(anthropicHttpFailureCode(error));
+      timing.persistenceLatencyMs=Date.now()-started;
     }
+    return {model:result.model,inputTokens:result.usage.inputTokens,outputTokens:result.usage.outputTokens,
+      cachedInputTokens:result.usage.cachedInputTokens,latencyMs:result.latencyMs,attempts:result.attempts,timing};
+  } catch(error) {
+    stage.fail();
+    if(error instanceof AiExecutionBudgetAbortError||budget.signal.aborted)throw error;
+    if(error instanceof ProviderProbeStageError)throw error;
+    throw new ProviderProbeStageError(provider==="anthropic"?anthropicHttpFailureCode(error):openAiHttpFailureCode(error));
   }
-  if (provider === "openai") {
-    try {
-      const result = await runStagingAiChatLifecycleProbe(env, {
-        budget,
-        executionId: execution.id,
-        locale: execution.locale,
-        onProviderPrepared: ({ model }) => {
-          timing.model = model;
-          timing.providerStartedAt = Date.now();
-        },
-      });
-      timing.model = result.model;
-      timing.providerTtftMs = result.timing.providerTtftMs;
-      timing.validationLatencyMs = result.timing.validationLatencyMs;
-      timing.persistenceLatencyMs = result.timing.persistenceLatencyMs;
-      timing.firstUsefulStage = result.timing.firstUsefulStage;
-      timing.firstUsefulLatencyMs = result.timing.firstUsefulLatencyMs;
-      return {
-        model: result.model,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        cachedInputTokens: result.usage.cachedInputTokens,
-        latencyMs: result.latencyMs,
-        attempts: result.attempts,
-        timing,
-      };
-    } catch (error) {
-      if (error instanceof AiExecutionBudgetAbortError || budget.signal.aborted) throw error;
-      console.error({
-        event: "staging.provider_probe_exception",
-        provider: "openai",
-        errorName: error instanceof Error && typeof error.name === "string" ? error.name : "UnknownError",
-        safeCode: openAiHttpFailureCode(error),
-      });
-      throw new ProviderProbeStageError(openAiHttpFailureCode(error));
-    }
-  }
-  throw new ProviderProbeStageError("PROVIDER_PROBE_NOT_IMPLEMENTED");
 }
 
 async function markProbeFailed(input: {
-  env: PlatformJobEnv;
+  env: StagingProviderProbeEnv;
   id: string;
   safeCode: string;
   startedAt: number;
@@ -440,7 +343,7 @@ async function markProbeFailed(input: {
 }
 
 async function recordProbeSloSuccess(input: {
-  env: PlatformJobEnv;
+  env: StagingProviderProbeEnv;
   provider: Provider;
   correlationId: string;
   result: ProviderProbeResult;
@@ -466,7 +369,7 @@ async function recordProbeSloSuccess(input: {
 }
 
 async function runOne(input: {
-  env: PlatformJobEnv;
+  env: StagingProviderProbeEnv;
   provider: Provider;
   execution: RollingProbeExecution;
   budget: AiExecutionBudget;
@@ -587,7 +490,8 @@ async function runOne(input: {
         executionId: execution.id,
       }));
     }
-    await recordDependencyHealthEvidence(env, {
+    // A local storage failure does not establish a provider outage.
+    if(!timing.providerCompleted)await recordDependencyHealthEvidence(env, {
       ...providerFailureEvidence(provider, safeCode),
       evidenceKind: "synthetic_probe",
       startedAt: execution.startedAt,
@@ -601,11 +505,11 @@ async function runOne(input: {
  * opaque execution ID, new technical rows for both providers, one shared hard
  * 30-second deadline, and append-only SLO measurements. It has no HTTP entry
  * point and never records prompts, outputs, user IDs, account IDs, URLs, or
- * provider response bodies. Retention affects only its v27 technical table;
+ * provider response bodies. Retention affects only its v28 technical table;
  * historical provider evidence and append-only SLO telemetry are preserved.
  */
 export async function runStagingProviderProbes(
-  env: PlatformJobEnv,
+  env: StagingProviderProbeEnv,
 ): Promise<StagingProviderProbeSummary | null> {
   if (!stagingProviderProbeEnabled(env)) return null;
   // Retention is deliberately outside the provider execution window. A
