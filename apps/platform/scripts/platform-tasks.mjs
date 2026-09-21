@@ -95,6 +95,7 @@ const installInheritedEnvironmentKeys = new Set([
 ]);
 
 const coreTestFiles = [
+  "tests/dialog-focus.test.ts",
   "tests/legal-chat-answer-persistence.test.ts",
   "tests/legal-chat-corpus-evidence.test.ts",
   "tests/legal-chat-corpus-research.test.ts",

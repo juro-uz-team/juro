@@ -52,7 +52,7 @@ test("AI chat keeps the answer in focus and exposes responsive history and evide
     source("../app/_platform/ai-lawyer.css"),
   ]);
 
-  assert.match(client, /const \[historyCollapsed, setHistoryCollapsed\]/u);
+  assert.match(client, /const \[historyCollapsed,\s*setHistoryCollapsed\]/u);
   assert.match(client, /localStorage\.setItem\("juro:ai-history"/u);
   assert.match(client, /aria-controls="ai-conversations-panel"/u);
   assert.match(client, /className="ai-mobile-context-bar"/u);
@@ -76,25 +76,20 @@ test("AI composer grows with its content and does not submit during IME composit
   assert.match(client, /resizeComposer\(event\.currentTarget\)/u);
 });
 
-test("AI source dialog traps focus and returns it to the citation control", async () => {
+test("AI source dialog uses the shared focus lifecycle and restores its citation opener", async () => {
   const client = await source("../app/_platform/AiLawyerClient.tsx");
-  assert.match(client, /const sourceDialogRef = useRef<HTMLElement \| null>\(null\)/u);
-  assert.match(client, /const sourceReturnFocusRef = useRef<HTMLElement \| null>\(null\)/u);
-  assert.match(client, /event\.key !== "Tab"/u);
-  assert.match(client, /!element\.closest\("\[hidden\]"\)/u);
-  assert.match(client, /document\.activeElement === last/u);
-  assert.match(client, /sourceReturnFocusRef\.current\?\.focus\(\)/u);
+  assert.match(client, /activateDialogFocus\(dialog,\{initialFocus:closeRef\.current,returnFocus:returnFocus\.current/u);
+  assert.match(client, /returnFocus\.current=document\.activeElement instanceof HTMLElement/u);
   assert.match(client, /ref=\{sourceDialogRef\} className="ai-source-modal" role="dialog"/u);
 });
 
-test("mobile AI context sheet owns focus and implements keyboard tabs", async () => {
+test("mobile AI context sheet uses the shared focus lifecycle and keyboard tabs", async () => {
   const client = await source("../app/_platform/AiLawyerClient.tsx");
-
-  assert.match(client, /const mobileContextRef = useRef<HTMLElement \| null>\(null\)/u);
-  assert.match(client, /mobileContextReturnFocusRef\.current\?\.focus\(\)/u);
-  assert.match(client, /event\.key === "Escape"/u);
-  assert.match(client, /event\.key !== "Tab"/u);
-  assert.match(client, /event\.key !== "ArrowRight" && event\.key !== "ArrowLeft"/u);
+  assert.match(client, /const dialog=mobileContextRef\.current/u);
+  assert.match(client, /activateDialogFocus\(dialog,\{close:\(\)=>setMobileContextOpen\(false\)/u);
+  assert.match(client, /initialFocus:dialog\.querySelector<HTMLElement>\('\[role="tab"\]\[aria-selected="true"\]'\)/u);
+  assert.match(client, /\["ArrowLeft","ArrowRight","Home","End"\]\.includes\(event\.key\)/u);
+  assert.match(client, /!answer\?\.facts\.length\?"sources"/u);
   assert.match(client, /aria-controls="ai-context-facts-panel"/u);
   assert.match(client, /aria-controls="ai-context-sources-panel"/u);
   assert.match(client, /role=\{mobileContextOpen \? "tabpanel" : undefined\}/u);

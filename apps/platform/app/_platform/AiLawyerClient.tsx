@@ -14,6 +14,7 @@ import { uzbekistanCalendarDate } from "../../lib/legal/applicability-date";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 import {readLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-chat/client-stream";
 import {chatStageLabel} from "../../lib/legal-chat/stage-label";
+import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
 import { LegalAnswerView } from "./LegalAnswerView";
 import { AssistantSpeechControls, VoiceMessageControls } from "./VoiceMessageControls";
@@ -198,15 +199,22 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     const data=await requestJson<{feedback:AiFeedback[]}>(`/api/platform/ai/feedback?${new URLSearchParams({assistantMessageId:saved.messageId??""})}`,{signal}).catch(()=>({feedback:[]}));
     if(!signal?.aborted)setFeedback(data.feedback);
   },[requestJson]);
+  useEffect(()=>{try{setHistoryCollapsed(localStorage.getItem("juro:ai-history")==="collapsed");}catch{/* Storage can be disabled; the control remains usable. */}},[]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Чат временно недоступен.","Suhbat vaqtincha mavjud emas.","Chat is temporarily unavailable."));});return()=>controller.abort();},[refresh,text]);
   useEffect(()=>{const controller=new AbortController();const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setFeedback([]);setFeedbackStatus("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId));
     if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
     else setAnswer(null);return()=>controller.abort();
   },[selectedConversationId,selectedBranchId,loadAnswer,text]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
-  useEffect(()=>{if(nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"smooth"});},[answer,optimisticQuestion,streamStatus]);
+  useEffect(()=>{if(answer&&nearBottom.current)latestAnswerRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[answer]);
+  useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"smooth"});},[requestSending,optimisticQuestion,streamStatus]);
   useEffect(()=>{if(planConfirmationOpen)planConfirmationRef.current?.focus();},[planConfirmationOpen]);
-  useEffect(()=>{if(!mobileContextOpen)return;const onKey=(event:globalThis.KeyboardEvent)=>{if(event.key==="Escape")setMobileContextOpen(false);};document.addEventListener("keydown",onKey);mobileSourcesTabRef.current?.focus();return()=>document.removeEventListener("keydown",onKey);},[mobileContextOpen]);
+  useEffect(()=>{
+    const dialog=mobileContextRef.current;
+    if(!mobileContextOpen||!dialog)return;
+    return activateDialogFocus(dialog,{close:()=>setMobileContextOpen(false),
+      initialFocus:dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')});
+  },[mobileContextOpen]);
   async function send(payload:AiRequestPayload&{idempotencyKey:string}){
     if(streamAbortRef.current)return;const controller=new AbortController();streamAbortRef.current=controller;retryRef.current=payload;
     setSending(true);setCanRetry(false);setError("");setOptimisticQuestion(payload.question||answer?.question||"");
@@ -234,16 +242,16 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const editQuestion=()=>{if(answer?.requestMessageId){setEditSourceMessageId(answer.requestMessageId);setQuestion(answer.question??"");composerRef.current?.focus();}};
   const cancelQuestionEdit=()=>{setEditSourceMessageId("");setQuestion("");};
   const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
-  const changeQuestion=(event:React.ChangeEvent<HTMLTextAreaElement>)=>{setQuestion(event.target.value);resizeComposer(event.target);};
+  const changeQuestion=(event:React.ChangeEvent<HTMLTextAreaElement>)=>{setQuestion(event.target.value);resizeComposer(event.currentTarget);};
   const handleComposerKeyDown=(event:KeyboardEvent<HTMLTextAreaElement>)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.form?.requestSubmit();}};
   const selectFollowUpQuestion=(value:string)=>{setQuestion(value);composerRef.current?.focus();};
   const changeLegalContextDate=(value:string)=>setLegalContextDate(value);
   const acceptVoiceTranscript=({recordingId,transcript}:{recordingId:string;transcript:string})=>{setVoiceRecordingId(recordingId);setQuestion(transcript);composerRef.current?.focus();};
   const setComposerMode=(mode:"text"|"voice")=>setVoiceMode(mode==="voice");
   const trackTranscriptScroll=()=>{const element=transcriptRef.current;if(element)nearBottom.current=element.scrollHeight-element.scrollTop-element.clientHeight<100;};
-  const toggleHistory=()=>setHistoryCollapsed(value=>!value),toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
-  const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>{setMobileContextOpen(false);composerRef.current?.focus();};
-  const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
+  const toggleHistory=()=>{const next=!historyCollapsed;setHistoryCollapsed(next);try{localStorage.setItem("juro:ai-history",next?"collapsed":"expanded");}catch{/* Keep the in-memory preference when storage is unavailable. */}},toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
+  const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>setMobileContextOpen(false);
+  const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=!answer?.facts.length?"sources":event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
   const revealCitation=(sourceId:string,turn?:ConversationTurn)=>{setCitationContext(turn?.result?{messageId:turn.responseMessageId,result:turn.result}:null);setEvidenceCollapsed(false);setMobileContextTab("sources");if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(true);requestAnimationFrame(()=>focusSourceCard(sourceId));};
   const toggleConversationDeletion=(id:string)=>setDeleteCandidateId(current=>current===id?"":id);
   async function deleteConversation(id:string){const scope=workspaceId;setDeletingConversationId(id);setConversationDeleteError("");try{await requestJson("/api/platform/ai",{method:"DELETE",body:JSON.stringify({conversationId:id})});if(activeScope.current!==scope)return;if(currentSelection.current===id)startNewQuestion();setDeleteCandidateId("");await refresh();}catch(cause){if(activeScope.current===scope)setConversationDeleteError(String(cause instanceof Error?cause.message:cause));}finally{if(activeScope.current===scope)setDeletingConversationId("");}}
@@ -572,17 +580,14 @@ function LegalSourceCard({
     truncated:false,language:source.language??locale,status:source.status,validFrom:source.effectiveDate,validTo:null,versionDate:null,
     officialUrl:source.originalUrl,verifiedAt:retrievedAt??source.verifiedAt,availableLanguages:[],versionHistory:[]};
   const display=details??fallback;
-  const closeSourceDialog=()=>{requestRef.current?.abort();requestRef.current=null;setOpen(false);returnFocus.current?.focus();};
+  const closeSourceDialog=()=>{requestRef.current?.abort();requestRef.current=null;setOpen(false);};
   useEffect(()=>()=>requestRef.current?.abort(),[]);
-  useEffect(()=>{if(!open)return;closeRef.current?.focus();const onKey=(event:globalThis.KeyboardEvent)=>{
-    if(event.key === "Escape"){event.preventDefault();closeSourceDialog();}
-    if(event.key==="Tab"){
-      const controls=sourceDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input,select,textarea,[tabindex="0"]');
-      const first=controls?.[0],last=controls?.[controls.length-1];
-      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
-      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
-    }
-  };document.addEventListener("keydown",onKey);return()=>document.removeEventListener("keydown",onKey);},[open]);
+  useEffect(()=>{
+    const dialog=sourceDialogRef.current;
+    if(!open||!dialog)return;
+    return activateDialogFocus(dialog,{initialFocus:closeRef.current,returnFocus:returnFocus.current,
+      close:()=>{requestRef.current?.abort();requestRef.current=null;setOpen(false);}});
+  },[open]);
   async function showArticle(){
     returnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
     requestRef.current?.abort();const controller=new AbortController();requestRef.current=controller;
