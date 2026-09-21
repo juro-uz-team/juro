@@ -12,6 +12,7 @@ import {deliverGuestLegalChat,guestLegalChatRequestSchema} from "../../../../lib
 import {decodeSavedLegalAnswer} from "../../../../lib/legal-chat/saved-answer";
 import {legalChatStream,LegalChatDeliveryError} from "../../../../lib/legal-chat/delivery-stream";
 import {legalRetrievalEnvironment} from "../../../../lib/legal-corpus/environment";
+import {assertOperationalFeatureEnabled,operationalEnvironment,OperationalFeatureError,operationalFeatureMessage} from "../../../../lib/operations/operational-feature-flags";
 
 const requestSchema=guestLegalChatRequestSchema.extend({turnstileToken:z.string().max(2048).optional()});
 const response=(body:unknown,status=200,cookie?:string)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache",...(cookie?{"set-cookie":cookie}:{})}});
@@ -48,9 +49,15 @@ export const POST=withApiErrors(async(request:Request)=>{
   if(!guestAiEnabled(env))return response({code:"GUEST_AI_DISABLED"},404);
   const parsed=await parseJsonRequest(request,requestSchema,24_576);
   if(!parsed.ok)return response({code:parsed.error==="payload_too_large"?"GUEST_AI_PAYLOAD_TOO_LARGE":"INVALID_REQUEST"},parsed.error==="payload_too_large"?413:400);
+  const db=requireD1();
+  try {
+    await assertOperationalFeatureEnabled({db,environment:operationalEnvironment(env.APP_ENV),key: "ai_chat"});
+  } catch(error) {
+    if(!(error instanceof OperationalFeatureError))throw error;
+    return response({code:error.code,error:operationalFeatureMessage(parsed.data.locale)},503);
+  }
   const keyring=runtimeIdentityProtection().keyring;
   if(!keyring)return response({code:"GUEST_CONFIGURATION_UNAVAILABLE"},503);
-  const db=requireD1();
   let session:GuestAiSession;
   let cookie:string|undefined;
   try {

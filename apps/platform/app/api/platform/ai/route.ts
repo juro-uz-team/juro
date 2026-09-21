@@ -18,6 +18,7 @@ import {readSavedLegalAnswer,publicConversationTurn} from "../../../../lib/legal
 import {readSavedConversationTurns} from "../../../../lib/legal-chat/conversation-context";
 import {legalChatStream,LegalChatDeliveryError} from "../../../../lib/legal-chat/delivery-stream";
 import {legalRetrievalEnvironment} from "../../../../lib/legal-corpus/environment";
+import {assertOperationalFeatureEnabled,operationalEnvironment,OperationalFeatureError,operationalFeatureMessage} from "../../../../lib/operations/operational-feature-flags";
 
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache"}});
 
@@ -84,6 +85,12 @@ export const POST=withApiErrors(async(request:Request)=>{
   const parsed=await parseJsonRequest(request,legalChatRequestSchema,40_960);
   if(!parsed.ok)return response({code:parsed.error==="payload_too_large"?"AI_PAYLOAD_TOO_LARGE":"INVALID_REQUEST"},parsed.error==="payload_too_large"?413:400);
   const env=runtimeEnv();
+  try {
+    await assertOperationalFeatureEnabled({db:scope.db,environment:operationalEnvironment(env.APP_ENV),key: "ai_chat"});
+  } catch(error) {
+    if(!(error instanceof OperationalFeatureError))throw error;
+    return response({code:error.code,error:operationalFeatureMessage(parsed.data.locale)},503);
+  }
   const [settings,entitlements]=await Promise.all([resolveAiRuntimeSettings({db:scope.db,env}),workspaceEntitlements(scope.db,scope.workspaceId)]);
   const work:Parameters<typeof legalChatStream>[0]["work"]=async(signal,onStage)=>{
     try {
