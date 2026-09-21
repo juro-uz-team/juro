@@ -104,6 +104,8 @@ const coreTestFiles = [
   "tests/legal-chat-execution.test.ts",
   "tests/legal-chat-guest-delivery.test.ts",
   "tests/legal-chat-guest-route.test.ts",
+  "tests/legal-chat-intake-route.test.ts",
+  "tests/ai-question-intake.test.ts",
   "tests/legal-chat-official-research.test.ts",
   "tests/legal-chat-remote-corpus.test.ts",
   "tests/legal-chat-research-model.test.ts",

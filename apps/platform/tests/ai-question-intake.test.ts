@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { matchesGlob } from "node:path";
 
 import { parseIdentityKeyring } from "../lib/auth/keyring";
 import {
@@ -248,7 +249,7 @@ test("database guard bounds all unexpired question intakes even after delivery a
   }
 });
 
-test("dashboard-to-chat transition never copies legal text into a URL and both API writes enforce the shared boundary", () => {
+test("dashboard-to-chat wiring carries only the opaque intake handle", () => {
   const dashboard = readFileSync(new URL("../app/_platform/DashboardClient.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../app/_platform/AiLawyerClient.tsx", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../app/_platform/PlatformShell.tsx", import.meta.url), "utf8");
@@ -262,23 +263,20 @@ test("dashboard-to-chat transition never copies legal text into a URL and both A
   assert.match(dashboard, /ai-chat\?intake=/);
   assert.match(dashboard, /maxLength=\{4_000\}/);
   assert.doesNotMatch(client, /searchParams\.get\("prompt"\)/);
-  assert.match(client, /params\.delete\("prompt"\)/);
+  assert.match(client, /sanitized\.delete\("prompt"\)/);
   assert.match(client, /window\.history\.replaceState/);
-  assert.match(client, /fetch\("\/api\/platform\/ai\/intake\/consume"/);
-  assert.match(client, /fetch\("\/api\/platform\/ai\/intake\/finalize"/);
-  assert.match(client, /body: JSON\.stringify\(\{ handle, workspaceId \}\)/);
+  assert.match(client, /requestJson<\{question:string\}>\("\/api\/platform\/ai\/intake\/consume"/);
+  assert.match(client, /requestJson\("\/api\/platform\/ai\/intake\/finalize"/);
+  assert.match(client, /body:JSON\.stringify\(\{handle:intakeHandle,workspaceId\}\)/);
   assert.doesNotMatch(client, /window\.location\.assign\(params\.size/);
   assert.match(shell, /nextParams\.delete\("prompt"\)/);
   assert.doesNotMatch(shell, /nextParams\.delete\("intake"\)/);
   assert.match(routeContext, /PlatformWorkspaceIdContext/);
-  for (const route of [createRoute, consumeRoute, finalizeRoute]) {
-    assert.match(route, /assertSafeWrite\(request\)/);
-    assert.match(route, /parseJsonRequest/);
-    assert.match(route, /requireApiUser\(request\)/);
-    assert.match(route, /workspaceForUserById\(user\.id, parsed\.data\.workspaceId\)/);
-    assert.match(route, /"cache-control": "private, no-store"/);
-    assert.match(route, /"referrer-policy": "no-referrer"/);
-  }
+  // Authentication, CSRF, ownership and cache headers are exercised through the real routes
+  // in legal-chat-intake-route.test.ts; this check protects the UI and route wiring only.
+  assert.match(createRoute, /questionIntakeRoute\("create"\)/);
+  assert.match(consumeRoute, /questionIntakeRoute\("consume"\)/);
+  assert.match(finalizeRoute, /questionIntakeRoute\("finalize"\)/);
 });
 
 test("migration registers encrypted retryable handoff storage and production deployment includes it", () => {
@@ -294,5 +292,7 @@ test("migration registers encrypted retryable handoff storage and production dep
   assert.match(migration, /AI_QUESTION_INTAKE_ACCESS_DENIED/);
   assert.match(migration, /AI_QUESTION_INTAKE_CAPACITY_EXCEEDED/);
   assert.doesNotMatch(migration, /intake\.`consumed_at` IS NULL/);
-  assert.match(wrangler, /014\[0-9\]/);
+  const pattern = /"migrations_pattern":\s*"([^"]+)"/.exec(wrangler)?.[1];
+  assert.ok(pattern);
+  assert.equal(matchesGlob("./drizzle/0149_ai_question_intakes.sql", pattern), true);
 });

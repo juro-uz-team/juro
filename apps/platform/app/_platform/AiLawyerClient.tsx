@@ -168,11 +168,16 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const planConfirmationRef=useRef<HTMLDivElement>(null),streamAbortRef=useRef<AbortController|null>(null);
   const retryRef=useRef<(AiRequestPayload&{idempotencyKey:string})|null>(null),nearBottom=useRef(true);
   const handoffKey=useRef(crypto.randomUUID()),handoffGeneration=useRef(0);
-  const selectedConversationId=params.get("conversationId")??"",selectedBranchId=params.get("branchId")??"";
+  const selectedConversationId=params.get("conversationId")??"",selectedBranchId=params.get("branchId")??"",intakeHandle=params.get("intake")??"";
   useLayoutEffect(()=>{activeScope.current=workspaceId;currentMessage.current=answer?.messageId;currentSelection.current=selectedConversationId;},[workspaceId,answer?.messageId,selectedConversationId]);
   useLayoutEffect(()=>{const invalidate=()=>{handoffGeneration.current++;};invalidate();handoffKey.current=crypto.randomUUID();setOpeningSuggestedDocument(false);setCreatingSuggestedDocument(false);return invalidate;},[workspaceId,selectedConversationId,selectedBranchId,answer?.messageId]);
   const preliminary:AiPreliminary|null=null;
-  const aiLocation=(query:URLSearchParams)=>`${pathname}${query.size?`?${query}`:""}`;
+  const aiLocation=(query:URLSearchParams,preserveIntake=false)=>{
+    query.delete("prompt");
+    if(preserveIntake&&/^[A-Za-z0-9_-]{43}$/.test(intakeHandle))query.set("intake",intakeHandle);
+    else query.delete("intake");
+    return `${pathname}${query.size?`?${query}`:""}`;
+  };
   const requestJson=useCallback(async<T,>(url:string,options:RequestInit={}):Promise<T>=>{
     const headers=new Headers(options.headers);headers.set("x-juro-workspace-id",workspaceId);headers.set("x-juro-locale",locale);
     if(options.method&&options.method!=="GET"){headers.set("content-type","application/json");headers.set("x-juro-csrf","1");}
@@ -204,7 +209,27 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   useEffect(()=>{const controller=new AbortController();const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setFeedback([]);setFeedbackStatus("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId));
     if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
     else setAnswer(null);return()=>controller.abort();
-  },[selectedConversationId,selectedBranchId,loadAnswer,text]);
+  },[selectedConversationId,selectedBranchId,intakeHandle,loadAnswer,text]);
+  useEffect(()=>{
+    if(!params.has("prompt"))return;
+    const sanitized=new URLSearchParams(params.toString());sanitized.delete("prompt");
+    window.history.replaceState(window.history.state,"",`${pathname}${sanitized.size?`?${sanitized}`:""}`);
+  },[params,pathname]);
+  useEffect(()=>{
+    if(selectedConversationId||!intakeHandle)return;
+    const unavailable=text("Черновик вопроса недоступен.","Savol qoralamasi mavjud emas.","The question draft is unavailable.");
+    if(!/^[A-Za-z0-9_-]{43}$/.test(intakeHandle)){setError(unavailable);return;}
+    const controller=new AbortController();
+    void requestJson<{question:string}>("/api/platform/ai/intake/consume",{method:"POST",
+      body:JSON.stringify({handle:intakeHandle,workspaceId}),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)])})
+      .then(data=>{
+        if(controller.signal.aborted)return;
+        if(typeof data.question!=="string"||!data.question.trim()||data.question.length>4000)throw new Error(unavailable);
+        setQuestion(current=>current||data.question);composerRef.current?.focus();
+      }).catch(()=>{if(!controller.signal.aborted)setError(unavailable);});
+    return()=>controller.abort();
+  },[intakeHandle,selectedConversationId,workspaceId,requestJson,text]);
+  useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
   useEffect(()=>{if(answer&&nearBottom.current)latestAnswerRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[answer]);
   useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"smooth"});},[requestSending,optimisticQuestion,streamStatus]);
@@ -225,7 +250,14 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       if(!saved.conversationId)throw new Error("Missing saved conversation");
       setQuestion("");setEditSourceMessageId("");setVoiceRecordingId("");retryRef.current=null;setOptimisticQuestion("");
       await loadAnswer(saved.conversationId,saved.branchId,controller.signal);await refresh(controller.signal);
-      router.replace(aiLocation(new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})})),{scroll:false});
+      let intakeFinalized=true;
+      if(/^[A-Za-z0-9_-]{43}$/.test(intakeHandle)){
+        intakeFinalized=await requestJson("/api/platform/ai/intake/finalize",{method:"POST",body:JSON.stringify({handle:intakeHandle,workspaceId}),
+          signal:AbortSignal.any([controller.signal,AbortSignal.timeout(5_000)])}).then(()=>true,()=>false);
+      }
+      if(controller.signal.aborted)return;
+      const nextParams=new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})});
+      router.replace(aiLocation(nextParams, !intakeFinalized), { scroll: false });
     } catch(cause){
       if(streamAbortRef.current!==controller)return;
       retryRef.current=shouldReuseLegalChatRequest(cause)?payload:{...payload,idempotencyKey:crypto.randomUUID()};
