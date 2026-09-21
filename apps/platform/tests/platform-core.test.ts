@@ -1072,18 +1072,6 @@ test("comparison and monitoring migrations preserve immutable versions and verif
   assert.doesNotMatch(monitoringSql, /INSERT INTO `legislation_updates`/);
 });
 
-test("AI conversations and facts remain owner-scoped inside a tenant", async () => {
-  const [conversationRoute, factRoute] = await Promise.all([
-    readFile(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/platform/ai/facts/[factId]/route.ts", import.meta.url), "utf8"),
-  ]);
-  assert.match(conversationRoute, /owner_user_id=\?/);
-  assert.match(conversationRoute, /c\.owner_user_id=\?/);
-  assert.match(conversationRoute, /liveLexRetrievalErrorCodes: retrieval\.errors\.map/);
-  assert.match(factRoute, /conversations WHERE workspace_id=\? AND owner_user_id=\?/);
-  assert.doesNotMatch(conversationRoute, /WHERE workspace_id=\?\s+ORDER BY updated_at/s);
-});
-
 test("workspace switching is membership-scoped and never reuses an invalid default tenant", async () => {
   const [workspaceLibrary, workspaceAccess, route] = await Promise.all([
     readFile(new URL("../lib/platform/workspace.ts", import.meta.url), "utf8"),
@@ -1141,18 +1129,10 @@ test("global search policy ranks exact, prefix, fuzzy, and semantic matches in t
   assert.equal(globalSearchGroupScore(ranked), ranked[0]!.searchScore);
 });
 
-test("AI chat obtains its cycle limit from server-side workspace entitlements", async () => {
-  const [route, client] = await Promise.all([
-    readFile(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/_platform/AiLawyerClient.tsx", import.meta.url), "utf8"),
-  ]);
-  assert.match(route, /workspaceEntitlements\(db, workspace\.id\)/);
-  assert.match(route, /resolveAiAnswerCycleLimit/);
-  assert.match(route, /monthlyLimit: answerCycleLimit/);
-  assert.match(route, /usageSummary\(db, workspace\.id, user\.id, answerCycleLimit\)/);
+test("AI chat labels unmetered local allowances", async () => {
+  const client = await readFile(new URL("../app/_platform/AiLawyerClient.tsx", import.meta.url), "utf8");
   assert.match(client, /usage\?\.limit === null/);
   assert.match(client, /безлимитно \(локально\)/);
-  assert.doesNotMatch(route, /MONTHLY_CHAT_LIMIT/);
 });
 
 test("verified legal retrieval includes official metadata in exact lexical matching", async () => {

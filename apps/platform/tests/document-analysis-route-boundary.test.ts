@@ -171,18 +171,9 @@ test("scanner promotion requires strict evidence and never trusts document instr
   assert.doesNotMatch(scanner, /UPDATE document_analyses SET status='safe'/);
 });
 
-test("AI and document processors revalidate provider citations before persistence", () => {
-  const aiRoute = source("app/api/platform/ai/route.ts");
-  const gateway = source("lib/ai/legal-ai-gateway.ts");
+test("document processors revalidate provider citations before persistence", () => {
+  // Chat refresh and atomic receipts are exercised through execution and answer-persistence tests.
   const processor = source("lib/document-analysis/processor.ts");
-  assert.match(aiRoute, /gateway\.generateGroundedAnswer\(/);
-  assert.match(gateway, /validateLegalGatewayAnswer\(/);
-  assert.match(gateway, /sourceSpanId/);
-  const validationFailure = aiRoute.slice(aiRoute.indexOf("validationStage.fail()"),aiRoute.indexOf("// A disconnected caller"));
-  assert.match(validationFailure, /"FINAL_SOURCE_OBSERVATION_UNAVAILABLE"\s*\? "SOURCE_OBSERVATION_UNAVAILABLE" : "INVALID_AI_OUTPUT"/);
-  assert.match(validationFailure, /await failAiRun\(\{[\s\S]*errorCode: code/);
-  assert.match(validationFailure, /return response\(\{\s*code,[\s\S]*code === "SOURCE_OBSERVATION_UNAVAILABLE" \? 503 : 422\)/);
-  assert.match(aiRoute, /originalUrl: source\.officialUrl/);
   assert.match(processor, /enforceDocumentAnalysisSourceBoundary\(/);
   assert.match(processor, /enforceDocumentExcerptBoundary\(/);
   const provider = source("lib/document-analysis/provider.ts");
