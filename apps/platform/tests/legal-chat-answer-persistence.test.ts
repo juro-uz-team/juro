@@ -15,6 +15,7 @@ import {corpusAnswerEvidence} from "../lib/legal-chat/corpus-evidence";
 import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
 import {executeLegalChat} from "../lib/legal-chat/execution";
 import {legalDraftClaims,legalDraftSchema} from "../lib/legal-chat/answer-contract";
+import {listUserMemories,clearUserMemories} from "../lib/ai/user-memory";
 
 const sourceText="Article 7. Synthetic record access. "+"Private ephemeral source continuation. ".repeat(80);
 const hash=createHash("sha256").update(sourceText).digest("hex");
@@ -65,6 +66,48 @@ test("answer, version, receipt and usage commit together and replay without a se
     assert.equal((await reserveAiRun(reservation)).kind,"completed");
     await assert.rejects(saveSignedInLegalAnswer(input),/FINALIZATION_CLAIM_FAILED/);
     assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM conversation_messages").get()?.n,2);
+  } finally {sqlite.close();}
+});
+
+test("automatic memories commit with their user turn and regeneration cannot recreate cleared memories",async()=>{
+  const {sqlite,d1,input,reservation}=await fixture();
+  try {
+    const now=new Date().toISOString();
+    sqlite.prepare("INSERT INTO workspace_members(id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('member','workspace','owner','owner','active',?,?,?)").run(now,now,now);
+    const keyring=parseIdentityKeyring(JSON.stringify({active:"test",versions:{test:{
+      aead:Buffer.alloc(32,1).toString("base64url"),hmac:Buffer.alloc(32,2).toString("base64url")}}}));
+    const owned={db:d1,userId:"owner",workspaceId:"workspace",keyring};
+    const first=await saveSignedInLegalAnswer({...input,memoryKeyring:keyring,
+      branch:{...input.branch,question:"My name is Aziza."}});
+    assert.equal((await listUserMemories(owned))[0]?.statement,"User's name: Aziza");
+    assert.equal(sqlite.prepare("SELECT message_id FROM memory_sources").get()?.message_id,first.requestMessageId);
+    assert.equal((await reserveAiRun(reservation)).kind,"completed");
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM memory_sources").get()?.n,1);
+    await clearUserMemories(owned);
+    sqlite.prepare("DELETE FROM user_memories WHERE status='deleted'").run();
+    const branch=await readConversationContext({...owned,conversationId:first.conversationId,
+      requestedOperation:"regenerate",sourceMessageId:first.messageId,question:""});
+    const next=await reserveAiRun({...reservation,idempotencyKey:"regeneration",requestHash:"regeneration",conversationId:first.conversationId});
+    if(next.kind!=="reserved")throw new Error("Expected reservation");
+    await saveSignedInLegalAnswer({...input,runId:next.runId,ledgerId:next.ledgerId,idempotencyKey:"regeneration",
+      conversationId:first.conversationId,branch:branch.branch,memoryKeyring:keyring});
+    assert.deepEqual(await listUserMemories(owned),[]);
+  } finally {sqlite.close();}
+});
+
+test("a memory write failure rolls back the answer, provenance and usage",async()=>{
+  const {sqlite,input}=await fixture();
+  try {
+    const now=new Date().toISOString();
+    sqlite.prepare("INSERT INTO workspace_members(id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('member','workspace','owner','owner','active',?,?,?)").run(now,now,now);
+    const keyring=parseIdentityKeyring(JSON.stringify({active:"test",versions:{test:{
+      aead:Buffer.alloc(32,1).toString("base64url"),hmac:Buffer.alloc(32,2).toString("base64url")}}}));
+    sqlite.exec("CREATE TRIGGER fail_memory BEFORE INSERT ON memory_sources BEGIN SELECT RAISE(ABORT,'SYNTHETIC_MEMORY_FAILURE'); END");
+    await assert.rejects(saveSignedInLegalAnswer({...input,memoryKeyring:keyring,
+      branch:{...input.branch,question:"My name is Aziza."}}),/SYNTHETIC_MEMORY_FAILURE/);
+    for(const table of ["conversations","conversation_messages","user_memories","memory_sources","legal_source_references"])
+      assert.equal(sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n,0);
+    assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"reserved");
   } finally {sqlite.close();}
 });
 

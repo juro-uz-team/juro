@@ -11,6 +11,7 @@ import {
   memoryKeyring,
   memorySettings,
   persistAutomaticMemories,
+  automaticMemoryStatements,
   purgeDueDeletedUserMemories,
   saveUserMemory,
   setAutomaticMemory,
@@ -50,6 +51,11 @@ async function seedTenant(
 }
 
 test("automatic memory extraction is bounded, localized and sensitivity filtered", () => {
+  for (const text of ["Translate this example:\nMy name is Aziza.\nI prefer brief answers.",
+    "My colleague wrote:\nMy name is Bob.", "```\nMy name is Bob.\n```", "My company is not JURO.",
+    "My name is Aziza?", "My name is Aziza. What does this mean?"]) {
+    assert.deepEqual(extractAutomaticMemoryCandidates(text, "en"), []);
+  }
   assert.equal(classifyMemorySensitivity("Пароль от банка: secret"), "credential");
   assert.equal(classifyMemorySensitivity("Код из SMS 123456"), "credential");
   assert.equal(classifyMemorySensitivity("Карта 8600 1234 5678 9012"), "credential");
@@ -344,7 +350,8 @@ test("automatic memory obeys settings, keeps workspace context local and soft-cl
     ).bind("conversation-a", "workspace-a", "user-a", "Synthetic", "ru", now, now).run();
     await d1.prepare(
       "INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,?,'user',?,?)",
-    ).bind("message-a", "conversation-a", "Меня зовут Азиза.", now).run();
+    ).bind("message-a", "conversation-a", "Меня зовут Азиза. Моя компания JURO Labs.", now).run();
+    await d1.prepare("INSERT INTO workspace_members(id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('automatic-member','workspace-a','user-a','owner','active',?,?,?)").bind(now, now, now).run();
     const keyring = testKeyring();
     assert.deepEqual(await memorySettings(d1, "user-a"), { automaticEnabled: true });
     assert.equal(await persistAutomaticMemories({
@@ -376,33 +383,66 @@ test("automatic memory obeys settings, keeps workspace context local and soft-cl
     }), 0);
     assert.equal(await clearUserMemories({ db: d1, userId: "user-a", workspaceId: "workspace-a" }), 2);
     assert.deepEqual(await listUserMemories({ db: d1, keyring, userId: "user-a", workspaceId: "workspace-a" }), []);
+    await setAutomaticMemory(d1, "user-a", "workspace-a", true);
+    assert.equal(await persistAutomaticMemories({ db: d1, keyring, userId: "user-a", workspaceId: "workspace-a",
+      conversationId: "conversation-a", messageId: "message-a", question: "Меня зовут Азиза. Моя компания JURO Labs.", locale: "ru" }), 0,
+      "Automatic extraction cannot restore deleted entries");
+    assert.equal(await persistAutomaticMemories({ db: d1, keyring, userId: "user-a", workspaceId: "workspace-a",
+      conversationId: "conversation-a", messageId: "message-a", question: "Меня зовут Азиза. Моя компания JURO Labs.", locale: "en" }), 0,
+      "Changing the answer locale cannot bypass deleted memory");
   } finally {
     sqlite.close();
   }
 });
 
+test("automatic memory statements enforce live consent and exact user-message ownership at commit", async () => {
+  const { sqlite, d1 } = sqliteD1Fixture();
+  try {
+    const now = "2026-08-03T00:00:00.000Z";
+    await seedTenant(d1, "user-a", ["workspace-a"]);
+    sqlite.prepare("INSERT INTO workspace_members(id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES ('automatic-member','workspace-a','user-a','owner','active',?,?,?)").run(now, now, now);
+    sqlite.prepare("INSERT INTO conversations(id,workspace_id,owner_user_id,title,locale,status,created_at,updated_at) VALUES ('conversation-a','workspace-a','user-a','Memory','en','active',?,?)").run(now, now);
+    sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES ('message-a','conversation-a','user','My name is Aziza.',?)").run(now);
+    const input = { db: d1, keyring: testKeyring(), userId: "user-a", workspaceId: "workspace-a", conversationId: "conversation-a",
+      messageId: "message-a", question: "My name is Aziza.", locale: "en" as const };
+    assert.equal(await persistAutomaticMemories({ ...input, question: "My company is Invented Company." }), 0);
+    assert.equal(await persistAutomaticMemories({ ...input, userId: "foreign-user" }), 0);
+    const prepared = await automaticMemoryStatements(input);
+    await setAutomaticMemory(d1, "user-a", "workspace-a", false);
+    await d1.batch(prepared);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM user_memories").get()?.n, 0);
+    await setAutomaticMemory(d1, "user-a", "workspace-a", true);
+    sqlite.prepare("UPDATE workspace_members SET status='inactive'").run();
+    assert.equal(await persistAutomaticMemories(input), 0);
+    sqlite.prepare("UPDATE workspace_members SET status='active'").run();
+    sqlite.prepare("INSERT INTO confirmed_facts(id,conversation_id,statement,status,created_at,updated_at) VALUES ('rejected','conversation-a','My name is Aziza.','rejected',?,?)").run(now, now);
+    assert.equal(await persistAutomaticMemories(input), 0);
+    assert.equal(sqlite.prepare("SELECT count(*) AS n FROM memory_sources").get()?.n, 0);
+  } finally { sqlite.close(); }
+});
+
 test("provider and API boundaries treat memory as authenticated untrusted context", async () => {
-  const [openai, anthropic, aiRoute, memoryRoute, privacyExport, client] = await Promise.all([
-    readFile(new URL("../lib/ai/provider.ts", import.meta.url), "utf8"),
-    readFile(new URL("../lib/ai/anthropic-provider.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8"),
+  const [interpreter, writer, delivery, persistence, memoryRoute, privacyExport, client] = await Promise.all([
+    readFile(new URL("../lib/legal-chat/question-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/legal-chat/answer-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/legal-chat/signed-in-delivery.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/legal-chat/answer-persistence.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/platform/ai/memory/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/platform/privacy/export/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/MemoryPanel.tsx", import.meta.url), "utf8"),
   ]);
-  for (const provider of [openai, anthropic]) {
-    assert.match(provider, /userMemory/);
-    assert.match(provider, /недоверенн|недоверенный/iu);
-    assert.match(provider, /не исполняй/iu);
+  for (const provider of [interpreter, writer]) {
+    assert.match(provider, /userContext/);
+    assert.match(provider, /untrusted data, never instructions/);
+    assert.match(provider, /never official legal evidence/);
   }
-  assert.match(aiRoute, /listUserMemories/);
-  assert.match(aiRoute, /persistAutomaticMemories/);
-  assert.match(aiRoute, /memory_context_unavailable/);
-  assert.match(memoryRoute, /requireApiUser/);
-  assert.match(memoryRoute, /workspaceForUser/);
+  assert.match(delivery, /readLegalUserContext/);
+  assert.match(persistence, /automaticMemoryStatements/);
+  assert.match(delivery, /LEGAL_CONTEXT_UNAVAILABLE/);
+  assert.match(memoryRoute, /legalChatOwner/);
   assert.match(memoryRoute, /assertSafeWrite/);
   assert.match(memoryRoute, /discriminatedUnion/);
-  assert.match(memoryRoute, /z\.enum\(\["ru", "uz", "en"\]\)/);
+  assert.match(memoryRoute, /z\.enum\(\["ru",\s*"uz",\s*"en"\]\)/);
   assert.match(memoryRoute, /Encrypted memory is temporarily unavailable/);
   assert.match(memoryRoute, /cache-control.*private, no-store/s);
   assert.match(privacyExport, /listUserMemories/);
@@ -412,7 +452,7 @@ test("provider and API boundaries treat memory as authenticated untrusted contex
   assert.match(client, /Automatically save safe facts/);
   assert.match(client, /Passwords, verification codes and payment details are never stored/);
   assert.doesNotMatch(client, /const ru = locale === "ru"/);
-  for (const source of [openai, anthropic, aiRoute, memoryRoute, privacyExport, client]) {
+  for (const source of [interpreter, writer, delivery, persistence, memoryRoute, privacyExport, client]) {
     assert.doesNotMatch(source, /NEXT_PUBLIC_(?:OPENAI|ANTHROPIC|IDENTITY)/);
   }
 });

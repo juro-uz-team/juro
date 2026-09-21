@@ -68,7 +68,7 @@ export async function deliverSignedInLegalChat(input:{
     onStage:input.onStage,onAttempt:accounting.onAttempt,onAttemptFinished:accounting.onAttemptFinished,
     renew:()=>renewAiRunReservation(run),
     release:reason=>failAiRun({...run,errorCode:reason==="cancelled"?"AI_CANCELLED":reason==="lease_lost"?"AI_RUN_LEASE_LOST":"AI_RUN_FAILED"}),
-    commit:(terminal,sources)=>saveSignedInLegalAnswer({...run,conversationId:request.conversationId,branch:selected.branch,sources,
+    commit:(terminal,sources)=>saveSignedInLegalAnswer({...run,conversationId:request.conversationId,branch:selected.branch,sources,memoryKeyring:input.memoryKeyring,
       proposedFacts:"caseFacts" in terminal?terminal.caseFacts:[],
       result:legalChatTerminalResponse(terminal,{locale:request.locale,mode:request.reasoningMode,answerMode:request.answerMode}),
       provider:"openai",providerResponseId:null,fallbackFromProvider:null,model,...accounting.totals(),latencyMs:Date.now()-started}),

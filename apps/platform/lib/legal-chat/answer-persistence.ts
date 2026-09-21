@@ -4,6 +4,8 @@ import type {AiBranchInput} from "../ai/branch-store";
 import {legalCitationStatements} from "../legal/direct-citation-store";
 import type {LegalSourceContext} from "../legal/source-context";
 import {completeGuestAiRun} from "../ai/guest-session";
+import {automaticMemoryStatements} from "../ai/user-memory";
+import type {IdentityKeyring} from "../auth/keyring";
 
 type Completion=Pick<CompleteAiRunInput,"db"|"runId"|"ledgerId"|"workspaceId"|"userId"|"idempotencyKey"
   |"providerResponseId"|"provider"|"fallbackFromProvider"|"model"|"inputTokens"|"outputTokens"
@@ -37,6 +39,7 @@ export async function saveSignedInLegalAnswer(input:Completion&{
   result:LegalChatResponse;
   sources:readonly LegalSourceContext[];
   proposedFacts?:readonly string[];
+  memoryKeyring?:IdentityKeyring|null;
 }) {
   const result=legalChatResponseSchema.parse(input.result);
   const facts=[...new Set(input.proposedFacts??[])];
@@ -84,6 +87,10 @@ export async function saveSignedInLegalAnswer(input:Completion&{
     ...completeAiRunStatements({...input,conversationId,requestMessageId,responseMessageId:messageId,
       chargeable:result.responseKind==="answer"&&!result.failureReason,sourceVersionHash,legalDatabaseAsOf:result.legalDatabaseAsOf}),
   );
+  if(input.memoryKeyring&&input.branch.operation!=="regenerate") {
+    statements.push(...await automaticMemoryStatements({...input,keyring:input.memoryKeyring,
+      conversationId,messageId:requestMessageId,question:input.branch.question,locale:result.language}));
+  }
   for(const statement of facts){
     statements.push(input.db.prepare(`INSERT INTO confirmed_facts
       (id,conversation_id,statement,status,created_at,updated_at)

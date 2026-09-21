@@ -124,6 +124,95 @@ function capture(text: string, pattern: RegExp): string | null {
   return value.length >= 2 ? value : null;
 }
 
+/** Recognize explicit, simple first-person preferences only. Legal conclusions,
+ * quoted third-party speech and uncertain questions are not inferred memories. */
+export function extractAutomaticMemoryCandidates(question: string, locale: AiOutputLocale): MemoryCandidate[] {
+  if (question.length > 8_000) return [];
+  const candidates = new Map<MemoryCategory, MemoryCandidate>();
+  const localized = (ru: string, uz: string, en: string) => locale === "ru" ? ru : locale === "uz" ? uz : en;
+  let recognized = false;
+  const add = (category: MemoryCategory, statement: string, scope: MemoryScope = "global") => {
+    recognized = true;
+    if (statement.length <= 500 && classifyMemorySensitivity(statement) === "none") candidates.set(category, { category, statement, scope });
+  };
+  for (const raw of question.split(/(?<=[.!?])\s+|\r?\n/u)) {
+    if (!raw.trim()) continue;
+    // Only whole messages made of explicit declarations qualify. Splitting a
+    // translation request or pasted document must not change its speaker.
+    if (raw.trim().endsWith("?") || classifyMemorySensitivity(raw) !== "none") return [];
+    recognized = false;
+    const sentence = raw.trim().replace(/[.!]+$/u, "");
+    const name = capture(sentence, /^(?:Меня зовут|Mening ismim|My name is)\s+([\p{L}\p{M}][\p{L}\p{M} '\u2019\u02bb-]{1,79})$/iu);
+    if (name && !/(?:^|\s)(?:не|но|not|but|emas)(?:\s|$)/iu.test(name)) add("profile_name", localized(`Имя пользователя: ${name}`, `Foydalanuvchining ismi: ${name}`, `User's name: ${name}`));
+    const company = capture(sentence, /^(?:Моя компания|Mening kompaniyam|My company is)\s+(.{2,160})$/iu);
+    if (company && !/(?:^|\s)(?:не|но|not|but|emas)(?:\s|$)/iu.test(company)) add("company", localized(`Компания пользователя: ${company}`, `Foydalanuvchi kompaniyasi: ${company}`, `User's company: ${company}`), "workspace");
+    if (/^(?:(?:Я )?предпочитаю краткие ответы|Qisqa javoblarni afzal ko[‘’'ʻʼ]raman|I prefer (?:brief|short) answers)$/iu.test(sentence))
+      add("answer_style", localized("Пользователь предпочитает краткие ответы.", "Foydalanuvchi qisqa javoblarni afzal ko‘radi.", "The user prefers brief answers."));
+    if (/^(?:(?:Я )?предпочитаю подробные ответы|Batafsil javoblarni afzal ko[‘’'ʻʼ]raman|I prefer detailed answers)$/iu.test(sentence))
+      add("answer_style", localized("Пользователь предпочитает подробные ответы.", "Foydalanuvchi batafsil javoblarni afzal ko‘radi.", "The user prefers detailed answers."));
+    const instruction = capture(sentence, /^(?:Запомни|Eslab qol|Remember)\s*:\s*(.{2,400})$/iu);
+    if (instruction) add("user_instruction", localized(`Инструкция пользователя: ${instruction}`, `Foydalanuvchi ko‘rsatmasi: ${instruction}`, `User instruction: ${instruction}`));
+    if (!recognized) return [];
+  }
+  return [...candidates.values()];
+}
+
+type AutomaticMemoryInput = {
+  db: D1Database; keyring: IdentityKeyring; userId: string; workspaceId: string;
+  conversationId: string; messageId: string; question: string; locale: AiOutputLocale;
+};
+
+/** These statements can follow the originating message in the answer's atomic
+ * batch. Live settings, ownership, rejected facts and tombstones fence each write. */
+export async function automaticMemoryStatements(input: AutomaticMemoryInput): Promise<D1PreparedStatement[]> {
+  const statements: D1PreparedStatement[] = [];
+  for (const candidate of extractAutomaticMemoryCandidates(input.question, input.locale)) {
+    const id = crypto.randomUUID(), now = isoNow();
+    const hash = await statementHash(candidate.statement);
+    // A locale change must not bypass a previously deleted automatic memory.
+    // Include legacy localized hashes so existing rows need no migration.
+    const equivalentHashes = await Promise.all((["ru", "uz", "en"] as const).map(async locale => {
+      const equivalent = extractAutomaticMemoryCandidates(input.question, locale).find(item => item.category === candidate.category)!;
+      return statementHash(equivalent.statement);
+    }));
+    const { scopeKey, storedWorkspaceId } = scopeIdentity(candidate.scope, input.workspaceId);
+    const protectedValue = await protectIdentityValue(input.keyring, candidate.statement, memoryContext(input.userId, id));
+    statements.push(input.db.prepare(`INSERT INTO user_memories
+      (id,user_id,workspace_id,scope,scope_key,category,ciphertext,iv,key_version,content_sha256,source_kind,status,deleted_at,created_at,updated_at)
+      SELECT ?,?,?,?,?,?,?,?,?,?,'automatic','active',NULL,?,?
+      WHERE EXISTS(SELECT 1 FROM conversation_messages message
+        JOIN conversations conversation ON conversation.id=message.conversation_id
+        JOIN workspace_members member ON member.workspace_id=conversation.workspace_id AND member.user_id=conversation.owner_user_id
+        WHERE message.id=? AND message.conversation_id=? AND message.author_type='user' AND message.content=?
+          AND conversation.workspace_id=? AND conversation.owner_user_id=? AND member.status='active')
+      AND COALESCE((SELECT automatic_enabled FROM user_memory_settings WHERE user_id=?),1)=1
+      AND NOT EXISTS(SELECT 1 FROM user_memories WHERE user_id=? AND scope_key=? AND content_sha256 IN (?,?,?))
+      AND NOT EXISTS(SELECT 1 FROM confirmed_facts WHERE conversation_id=? AND status='rejected' AND instr(?,statement)>0)
+      AND (SELECT count(*) FROM user_memories WHERE user_id=? AND status='active'
+        AND (scope='global' OR (scope='workspace' AND workspace_id=?)))<100`)
+      .bind(id, input.userId, storedWorkspaceId, candidate.scope, scopeKey, candidate.category,
+        protectedValue.ciphertext, protectedValue.iv, protectedValue.keyVersion, hash, now, now,
+        input.messageId, input.conversationId, input.question, input.workspaceId, input.userId,
+        input.userId, input.userId, scopeKey, ...equivalentHashes, input.conversationId, input.question, input.userId, input.workspaceId),
+    input.db.prepare(`INSERT INTO memory_sources (id,memory_id,conversation_id,message_id,source_type,source_ref,created_at)
+      SELECT ?,?,?,?,'chat',NULL,? WHERE EXISTS(SELECT 1 FROM user_memories WHERE id=? AND user_id=?)`)
+      .bind(crypto.randomUUID(), id, input.conversationId, input.messageId, now, id, input.userId),
+    input.db.prepare(`INSERT INTO workspace_audit_events
+      (id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at)
+      SELECT ?,?,?,'user_memory',?,'user_memory_saved',?,? WHERE EXISTS(SELECT 1 FROM user_memories WHERE id=? AND user_id=?)`)
+      .bind(crypto.randomUUID(), input.workspaceId, input.userId, id,
+        JSON.stringify({ category: candidate.category, scope: candidate.scope, sourceKind: "automatic", restored: false }), now, id, input.userId));
+  }
+  return statements;
+}
+
+export async function persistAutomaticMemories(input: AutomaticMemoryInput): Promise<number> {
+  const statements = await automaticMemoryStatements(input);
+  if (!statements.length) return 0;
+  const results = await input.db.batch(statements);
+  return results.reduce((count, result, index) => count + (index % 3 === 0 ? Number(result.meta.changes ?? 0) : 0), 0);
+}
+
 export function memoryKeyring(raw: string | null | undefined): IdentityKeyring {
   try {
     return parseIdentityKeyring(raw);
