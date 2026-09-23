@@ -78,7 +78,8 @@ export class LocalObjectStore {
       return { ...this.describe(row), body,
         get bodyUsed() { return response.bodyUsed; },
         range: requested ? { offset, length } : undefined,
-        arrayBuffer: () => response.arrayBuffer(), text: () => response.text(),
+        arrayBuffer: () => response.arrayBuffer(), bytes: async () => new Uint8Array(await response.arrayBuffer()),
+        text: () => response.text(),
         json: <T>() => response.json() as Promise<T>, blob: () => response.blob(),
       };
     } finally {

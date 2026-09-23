@@ -1,3 +1,5 @@
+import {createHash} from "node:crypto";
+import {resolveCitationEvidence} from "../lib/legal-corpus/citation-evidence";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, stat, writeFile, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,6 +26,13 @@ test("concurrent immutable evidence writes create one object and retain exact ra
     assert.ok(content === "abcdef" || content === "uvwxyz");
     const range = await store.get("../evidence/legal.txt", { range: { offset: 1, length: 3 } });
     assert.equal(await range!.text(), content.slice(1, 4));
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    const citation = await resolveCitationEvidence(store, {
+      version: 1, capability: "current", kind: "provision", r2Key: "../evidence/legal.txt",
+      byteCount: Buffer.byteLength(content), sha256, textSha256: sha256,
+      officialUrl: "https://lex.uz/docs/1234567", languageTag: "uz-Latn", articleNumber: null,
+    });
+    assert.equal(citation.text, content);
     assert.equal(await store.get("absent"), null);
   } finally {
     await db.pool.query("DELETE FROM storage.objects WHERE bucket=$1", [bucket]);
