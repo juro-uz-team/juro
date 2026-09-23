@@ -99,3 +99,12 @@ test("unique conflicts retain retry identity without logging bound private value
     await db.close();
   }
 });
+
+test("SQLite search matching preserves ASCII case folding, Unicode distinction and escaped wildcards", async () => {
+  const db = new PostgresDatabase(process.env.DATABASE_URL!);
+  try {
+    const row = await db.prepare("SELECT 'CONTRACT' LIKE ? AS matched, 'Æ' LIKE ? AS unicodeMatch, '100%' LIKE ? ESCAPE '\\' AS escaped, 'CONTRACT' NOT LIKE ? AS excluded")
+      .bind('%contract%', 'æ', '100\\%', '%contract%').first();
+    assert.deepEqual(row, {matched:true, unicodeMatch:false, escaped:true, excluded:false});
+  } finally { await db.close(); }
+});

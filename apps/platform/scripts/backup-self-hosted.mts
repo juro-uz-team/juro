@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Pool } from "pg";
 import { createInterface } from "node:readline";
+import { objectStorageLock } from "../lib/storage/object-reclamation";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const databaseUrl = new URL(process.env.DATABASE_URL ?? "");
@@ -74,6 +75,8 @@ try {
   const requiredBytes = databaseBytes * (process.argv.includes("--verify-restore") ? 3 : 1.5)
     + (sameFilesystem ? 0 : objectBytes) + 10 * 1024 ** 3;
   if (space.bavail * space.bsize < requiredBytes) throw new Error("Insufficient free space for backup and restore verification");
+  // Keep snapshot-referenced bytes reachable until every backup hard link exists.
+  await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(objects)]);
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   const snapshot = (await client.query("SELECT pg_export_snapshot() id")).rows[0].id as string;
   const tables = (await client.query("SELECT schemaname,tablename FROM pg_tables WHERE schemaname IN ('app','legal','storage','public') ORDER BY schemaname,tablename")).rows;
@@ -106,6 +109,7 @@ try {
     }
   } finally { await manifest.close(); }
   await client.query("COMMIT");
+  await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(objects)]);
   await writeFile(join(destination, "private.env"), await readFile(join(root, ".env.self-hosted")), { flag: "wx", mode: 0o600 });
   const publicAssets = await capturePublicAssets();
   const report = { publicAssetCount: publicAssets.length, completedAt: new Date().toISOString(), databaseSha256: await sha256(dump), objectCount, tables: counts, restoreVerified: false };

@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { link, mkdir, unlink } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { link, mkdir, open, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Pool } from "pg";
+import { objectStorageLock, reclaimObjects } from "./object-reclamation";
 
 type HttpMetadata = { contentType?: string; contentLanguage?: string; contentDisposition?: string;
   contentEncoding?: string; cacheControl?: string; cacheExpiry?: Date };
@@ -55,28 +56,35 @@ export class LocalObjectStore {
   }
 
   async get(key: string, options?: { range?: Range; onlyIf?: Headers | Conditions }) {
-    const { rows } = await this.pool.query<ObjectRow>("SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
-    const row = rows[0];
-    if (!row) return null;
-    const gate = conditions(options?.onlyIf);
-    if ((gate.etagMatches && gate.etagMatches !== "*" && gate.etagMatches !== row.sha256)
-      || gate.etagDoesNotMatch === "*" || gate.etagDoesNotMatch === row.sha256) return null;
-    const size = Number(row.size);
-    const requested = options?.range;
-    const offset = requested?.suffix !== undefined ? Math.max(0, size - requested.suffix) : requested?.offset ?? 0;
-    const length = Math.min(requested?.length ?? size - offset, size - offset);
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) {
-      throw new RangeError("Invalid object byte range");
+    const client = await this.pool.connect();
+    try {
+      await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]);
+      const { rows } = await client.query<ObjectRow>("SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
+      const row = rows[0];
+      if (!row) return null;
+      const gate = conditions(options?.onlyIf);
+      if ((gate.etagMatches && gate.etagMatches !== "*" && gate.etagMatches !== row.sha256)
+        || gate.etagDoesNotMatch === "*" || gate.etagDoesNotMatch === row.sha256) return null;
+      const size = Number(row.size);
+      const requested = options?.range;
+      const offset = requested?.suffix !== undefined ? Math.max(0, size - requested.suffix) : requested?.offset ?? 0;
+      const length = Math.min(requested?.length ?? size - offset, size - offset);
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) {
+        throw new RangeError("Invalid object byte range");
+      }
+      const stream = length === 0 ? Readable.from([]) : (await open(this.path(row.sha256), "r")).createReadStream({ start: offset, end: offset + length - 1 });
+      const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
+      const response = new Response(body);
+      return { ...this.describe(row), body,
+        get bodyUsed() { return response.bodyUsed; },
+        range: requested ? { offset, length } : undefined,
+        arrayBuffer: () => response.arrayBuffer(), text: () => response.text(),
+        json: <T>() => response.json() as Promise<T>, blob: () => response.blob(),
+      };
+    } finally {
+      try { await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); }
+      finally { client.release(); }
     }
-    const stream = length === 0 ? Readable.from([]) : createReadStream(this.path(row.sha256), { start: offset, end: offset + length - 1 });
-    const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
-    const response = new Response(body);
-    return { ...this.describe(row), body,
-      get bodyUsed() { return response.bodyUsed; },
-      range: requested ? { offset, length } : undefined,
-      arrayBuffer: () => response.arrayBuffer(), text: () => response.text(),
-      json: <T>() => response.json() as Promise<T>, blob: () => response.blob(),
-    };
   }
 
   async put(key: string, value: string | ArrayBuffer | ArrayBufferView | Blob | ReadableStream | null, options: PutOptions = {}) {
@@ -89,51 +97,91 @@ export class LocalObjectStore {
       : value instanceof Blob ? Readable.fromWeb(value.stream() as import("node:stream/web").ReadableStream)
       : Readable.from([value === null ? Buffer.alloc(0) : typeof value === "string" ? Buffer.from(value)
         : ArrayBuffer.isView(value) ? Buffer.from(value.buffer, value.byteOffset, value.byteLength) : Buffer.from(value)]);
+    const client = await this.pool.connect();
+    let locked = false, transaction = false, registered = false;
+    const garbage: string[] = [];
     try {
+      // Also fence temporary files, so recovery can distinguish abandoned writes.
+      await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); locked = true;
       await pipeline(source, new Transform({ transform(chunk, _encoding, callback) {
         size += chunk.length; hash.update(chunk); callback(null, chunk);
       } }), createWriteStream(temporary, { flags: "wx", mode: 0o600 }));
       const digest = hash.digest("hex");
       const expected = typeof options.sha256 === "string" ? options.sha256 : options.sha256 ? Buffer.from(options.sha256).toString("hex") : null;
       if (expected && expected !== digest) throw new Error("Object SHA-256 mismatch");
-      const target = this.path(digest);
-      await mkdir(join(this.root, digest.slice(0, 2)), { recursive: true });
-      try { await link(temporary, target); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      const metadata = options.httpMetadata instanceof Headers
-        ? Object.fromEntries(Object.entries(headerNames).flatMap(([name, header]) => {
-          const value = (options.httpMetadata as Headers).get(header); return value === null ? [] : [[name, value]];
-        })) : options.httpMetadata ?? {};
-      const gate = conditions(options.onlyIf);
-      const values = [this.bucket, key, digest, size, randomUUID(), JSON.stringify(metadata), JSON.stringify(options.customMetadata ?? {})];
-      let sql = `INSERT INTO storage.objects(bucket,key,sha256,size,version,http_metadata,custom_metadata)
-        VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`;
-      if (gate.etagDoesNotMatch === "*") sql += " ON CONFLICT(bucket,key) DO NOTHING";
-      else if (gate.etagMatches) {
-        // Conditional replacement must not create a missing object.
-        const result = await this.pool.query<ObjectRow>(`UPDATE storage.objects SET sha256=$3,size=$4,version=$5,
-          http_metadata=$6::jsonb,custom_metadata=$7::jsonb,uploaded=now()
-          WHERE bucket=$1 AND key=$2 AND ($8='*' OR sha256=$8) RETURNING *`, [...values, gate.etagMatches]);
-        return result.rows[0] ? this.describe(result.rows[0]) : null;
-      } else {
-        sql += ` ON CONFLICT(bucket,key) DO UPDATE SET sha256=excluded.sha256,size=excluded.size,
-          version=excluded.version,http_metadata=excluded.http_metadata,custom_metadata=excluded.custom_metadata,uploaded=now()`;
-        if (gate.etagDoesNotMatch) {
-          values.push(gate.etagDoesNotMatch);
-          sql += " WHERE storage.objects.sha256<>$8";
+      garbage.push(digest);
+      const complete = async (row?: ObjectRow) => {
+        await client.query("COMMIT"); transaction = false;
+        return row ? this.describe(row) : null;
+      };
+      try {
+        // Durable before publishing bytes: interrupted writes can be reclaimed after restart.
+        await client.query("INSERT INTO storage.object_reclamation(root,sha256) VALUES($1,$2) ON CONFLICT DO NOTHING", [this.root,digest]); registered = true;
+        await client.query("BEGIN"); transaction = true;
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [JSON.stringify([this.bucket,key])]);
+        const previous = await client.query<{sha256:string}>("SELECT sha256 FROM storage.objects WHERE bucket=$1 AND key=$2 FOR UPDATE", [this.bucket,key]);
+        if (previous.rows[0] && previous.rows[0].sha256 !== digest) {
+          garbage.push(previous.rows[0].sha256);
+          await client.query("INSERT INTO storage.object_reclamation(root,sha256) VALUES($1,$2) ON CONFLICT DO NOTHING", [this.root,previous.rows[0].sha256]);
         }
+        const target = this.path(digest);
+        await mkdir(join(this.root, digest.slice(0, 2)), { recursive: true });
+        try { await link(temporary, target); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        const metadata = options.httpMetadata instanceof Headers
+          ? Object.fromEntries(Object.entries(headerNames).flatMap(([name, header]) => {
+            const value = (options.httpMetadata as Headers).get(header); return value === null ? [] : [[name, value]];
+          })) : options.httpMetadata ?? {};
+        const gate = conditions(options.onlyIf);
+        const values = [this.bucket, key, digest, size, randomUUID(), JSON.stringify(metadata), JSON.stringify(options.customMetadata ?? {})];
+        let sql = `INSERT INTO storage.objects(bucket,key,sha256,size,version,http_metadata,custom_metadata)
+          VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`;
+        if (gate.etagDoesNotMatch === "*") sql += " ON CONFLICT(bucket,key) DO NOTHING";
+        else if (gate.etagMatches) {
+          // Conditional replacement must not create a missing object.
+          const result = await client.query<ObjectRow>(`UPDATE storage.objects SET sha256=$3,size=$4,version=$5,
+            http_metadata=$6::jsonb,custom_metadata=$7::jsonb,uploaded=now()
+            WHERE bucket=$1 AND key=$2 AND ($8='*' OR sha256=$8) RETURNING *`, [...values, gate.etagMatches]);
+          return await complete(result.rows[0]);
+        } else {
+          sql += ` ON CONFLICT(bucket,key) DO UPDATE SET sha256=excluded.sha256,size=excluded.size,
+            version=excluded.version,http_metadata=excluded.http_metadata,custom_metadata=excluded.custom_metadata,uploaded=now()`;
+          if (gate.etagDoesNotMatch) {
+            values.push(gate.etagDoesNotMatch);
+            sql += " WHERE storage.objects.sha256<>$8";
+          }
+        }
+        const result = await client.query<ObjectRow>(sql + " RETURNING *", values);
+        return await complete(result.rows[0]);
+      } finally {
+        if (transaction) await client.query("ROLLBACK");
       }
-      const result = await this.pool.query<ObjectRow>(sql + " RETURNING *", values);
-      return result.rows[0] ? this.describe(result.rows[0]) : null;
     } finally {
-      await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
+      try { await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
+      finally {
+        try { if (locked) await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); }
+        finally { client.release(); }
+      }
+      if (registered) await reclaimObjects(this.pool,this.root,garbage);
     }
   }
 
   async delete(keys: string | string[]) {
-    await this.pool.query("DELETE FROM storage.objects WHERE bucket=$1 AND key=ANY($2::text[])", [this.bucket, typeof keys === "string" ? [keys] : keys]);
-    // Bytes remain immutable for concurrent readers and are reclaimed by reference-aware maintenance.
+    const client = await this.pool.connect();
+    let digests: string[] = [];
+    try {
+      await client.query("BEGIN");
+      const removed = await client.query<{sha256:string}>("DELETE FROM storage.objects WHERE bucket=$1 AND key=ANY($2::text[]) RETURNING sha256", [this.bucket, typeof keys === "string" ? [keys] : keys]);
+      digests = [...new Set(removed.rows.map(row => row.sha256))];
+      for (const digest of digests) await client.query("INSERT INTO storage.object_reclamation(root,sha256) VALUES($1,$2) ON CONFLICT DO NOTHING", [this.root,digest]);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+    // Complete physical removal before the purge caller records success.
+    // A retry may find no metadata because a prior unlink failed after its commit.
+    // Drain durable candidates in that case before reporting deletion success.
+    while ((await reclaimObjects(this.pool,this.root,digests.length ? digests : undefined)).processed === 1000) { /* next batch */ }
   }
 
   async list(options: { prefix?: string; cursor?: string; limit?: number } = {}) {

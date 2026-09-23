@@ -28,6 +28,8 @@ Forward ports 3000, 3001 and 3002 over SSH and browse `http://localhost:3000`, `
 
 The job process drains transactional outbox records into PostgreSQL queues, claims jobs with expiring leases, renews leases during execution, and fences acknowledgements after lease loss. Exhausted deliveries enter dead-letter queues; document dead-letter handlers finalize failure states, and unsupported dead-letter jobs remain parked for inspection. Domain handlers retain idempotency checks.
 
+Object deletion records durable reclamation candidates and removes unreferenced bytes before reporting success. Shared content remains while another object references it. The job process retries interrupted reclamation and removes abandoned temporary writes. Open readers keep their file descriptors; backups pin referenced files until backup links exist. Completed backups retain their own copies, so apply the appropriate private-data retention policy to backup directories as well.
+
 Email is captured in `storage.captured_emails`; only authorized operators should inspect it because messages may contain authentication codes. Payments, automatic legal ingestion, development authentication bypasses and synthetic production probes are disabled. User-triggered document work uses local malware scanning and conversion. AI calls go directly to the configured providers.
 
 ## Backup and recovery verification

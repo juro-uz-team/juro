@@ -8,6 +8,8 @@ export function postgresSql(source: string): string {
   sql = sql.replace(/\bINSERT\s+OR\s+IGNORE\b/gi, "INSERT");
   sql = sql.replace(/\bjson_object\s*\(/gi, "jsonb_build_object(");
   sql = sql.replace(/\b([A-Za-z_][\w.]*)\s+COLLATE\s+NOCASE\b/gi, "lower($1)");
+  // SQLite folds ASCII only for LIKE; the C collation gives PostgreSQL the same boundary.
+  sql = sql.replace(/\b(NOT\s+)?LIKE\b/gi, (_, not) => `COLLATE "C" ${not ?? ""}ILIKE`);
   sql = sql.replace(/\bifnull\s*\(/gi, "coalesce(");
   sql = sql.replace(/\bIS\s+(NOT\s+)?(?=(?:NEW|OLD)\.|`|"|\?)/gi,
     (_, not) => not ? "IS DISTINCT FROM " : "IS NOT DISTINCT FROM ");

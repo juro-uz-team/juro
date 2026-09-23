@@ -1,5 +1,7 @@
 import "../lib/runtime/node-globals";
 import { setTimeout as pause } from "node:timers/promises";
+import { resolve } from "node:path";
+import { reclaimObjects } from "../lib/storage/object-reclamation";
 import { database } from "../lib/storage/connection";
 import { PostgresQueue } from "../lib/storage/queue";
 import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
@@ -22,6 +24,7 @@ while (!stopping) {
   try {
     if (Date.now() - lastHousekeeping >= 300_000) {
       lastHousekeeping = Date.now();
+      await reclaimObjects(pool, resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects"));
       try { await handleScheduled({ cron: "*/5 * * * *", scheduledTime: Date.now(), noRetry() {} }, env); }
       catch (error) { console.error("Scheduled housekeeping failed", error instanceof Error ? error.message : "Unknown error"); }
     }
