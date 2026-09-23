@@ -1,3 +1,4 @@
+import { searchReleaseIdSchema } from "../lib/legal-corpus/target-domain-schemas";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {createRuntimeEvaluationEvidenceServices} from "../lib/legal-corpus/target-runtime";
@@ -21,7 +22,7 @@ test("candidate evaluation pins the exact off-side release pair across every tem
   assert.equal((await evaluation.services.releaseResolver.resolve(later))!.id,historyId);
   assert.equal((await evaluation.services.releaseResolver.resolve(current))!.id,currentId);
   const mutable=await evaluation.services.releaseResolver.resolve(current);
-  mutable!.id="release:staging:foreign";
+  mutable!.id=searchReleaseIdSchema.parse("release:staging:foreign");
   assert.equal((await evaluation.services.releaseResolver.resolve(current))!.id,currentId);
   const observed=evaluation.observation();
   assert.equal(observed.activationSetId,selection.activationSetId);
@@ -37,7 +38,7 @@ test("a caller cannot substitute another release after candidate-pair resolution
   env.LEGAL_CUSTOM_SEARCH_SERVICE=network;env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE=network;
   const evaluation=await createRuntimeEvaluationEvidenceServices({env,...selection});
   const release=(await evaluation.services.releaseResolver.resolve(current))!;
-  release.id="release:staging:foreign";
+  release.id=searchReleaseIdSchema.parse("release:staging:foreign");
   const result=await evaluation.services.candidateIndex.retrieve({id:"plan",formulations:[{id:"query",text:"Synthetic rule",
     privateNameSpans:[],readingIds:["topic"],requirementIds:["topic"]}]},current,release,
     {currentAt:"2026-09-21T00:00:00.000Z"});

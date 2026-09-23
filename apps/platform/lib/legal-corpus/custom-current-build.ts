@@ -117,7 +117,8 @@ const encoder = new TextEncoder();
 
 /** A lost creation response must reuse the immutable release's existing reduction. */
 export async function ensureCustomCurrentReduction<T extends { releaseId: string }>(
-  workflow: Pick<Workflow<T>, "create" | "get">, payload: T,
+  workflow: { create(input: { id: string; params: T }): Promise<unknown>;
+    get(id: string): Promise<{ status(): Promise<unknown> }> }, payload: T,
 ): Promise<string> {
   const id = `reduce-${await customCurrentSha256(payload.releaseId)}`;
   try { await workflow.create({ id, params: payload }); }

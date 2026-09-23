@@ -1,3 +1,4 @@
+import { validAdminOrigin } from "../../../../../lib/auth/admin-origin";
 import { z } from "zod";
 
 import { issueAdminDomainHandoff } from "../../../../../lib/auth/admin-domain-handoff";
@@ -16,7 +17,7 @@ function adminOrigin(): string | null {
     const origin = new URL(configured);
     if (
       origin.origin !== configured
-      || origin.protocol !== "https:"
+      || !validAdminOrigin(origin, runtime.APP_ENV)
       || origin.username
       || origin.password
       || origin.pathname !== "/"

@@ -78,17 +78,24 @@ function statements(sql: string): string[] {
     .filter(Boolean);
 }
 
-function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY): {
+function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, localDocumentConversion = false): {
   sqlite: DatabaseSync;
   d1: D1Database;
 } {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
   for (const entry of journal.entries.filter(({ idx }) => idx <= lastMigrationIndex)) {
-    const sql = readFileSync(
+    let sql = readFileSync(
       new URL(`${entry.tag}.sql`, drizzleRoot),
       "utf8",
     );
+    // Project the current PostgreSQL constraint into this legacy unit fixture.
+    // Historical migration files and migration-history fixtures stay immutable.
+    if (localDocumentConversion && entry.tag === "0042_sleepy_callisto") {
+      const historical = `CHECK("file_extractions"."method" = 'workers_ai_markdown')`;
+      if (!sql.includes(historical)) throw new Error("OCR fixture constraint not found");
+      sql = sql.replace(historical, `CHECK("file_extractions"."method" IN ('workers_ai_markdown', 'local_document_conversion'))`);
+    }
     for (const statement of statements(sql)) sqlite.exec(statement);
   }
   const d1 = {
@@ -172,4 +179,8 @@ export function batchBarrier(
       return db.batch(batchStatements);
     },
   } as unknown as D1Database;
+}
+
+export function localDocumentConversionFixture() {
+  return createSqliteD1Fixture(Number.POSITIVE_INFINITY, true);
 }

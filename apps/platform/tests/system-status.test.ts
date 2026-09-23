@@ -271,7 +271,7 @@ test("status routes use a fresh-MFA operations boundary and a narrow public host
   const ui = readFileSync(new URL("../app/_staff/SystemStatusConsole.tsx", import.meta.url), "utf8");
   const publicUi = readFileSync(new URL("../app/_status/PublicStatusPage.tsx", import.meta.url), "utf8");
   const publicApi = readFileSync(new URL("../app/api/status/route.ts", import.meta.url), "utf8");
-  const worker = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
+  const worker = readFileSync(new URL("../server/index.ts", import.meta.url), "utf8");
   assert.match(route, /requirePlatformStaffRequest\(request, "staff\.operations\.manage", \{ freshMfaWithinMs: 15 \* 60 \* 1_000 \}\)/);
   assert.match(route, /assertSafeWrite\(request\)/);
   assert.doesNotMatch(route, /actorUserId:\s*parsed\.data/);
@@ -280,10 +280,8 @@ test("status routes use a fresh-MFA operations boundary and a narrow public host
   assert.match(publicApi, /STATUS_TEMPORARILY_UNAVAILABLE/);
   assert.match(publicApi, /isLocale\(requestedLocale\)/);
   assert.match(publicApi, /s-maxage=30/);
-  assert.match(worker, /STATUS_HOSTNAME/);
-  assert.match(worker, /allowedStatusPath/);
-  assert.match(worker, /ru\|uz\|en/);
-  assert.match(worker, /Method Not Allowed/);
+  assert.match(worker, /PRIVATE_DEVELOPMENT !== "true"/);
+  assert.match(worker, /listen\(port, "127\.0\.0\.1"/);
   assert.doesNotMatch(ui + publicUi, /dangerouslySetInnerHTML|transition:\s*all|window\.confirm/);
   assert.match(ui, /aria-live="polite"/);
   assert.match(ui, /status-dependency-health/);

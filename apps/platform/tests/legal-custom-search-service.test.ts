@@ -142,7 +142,7 @@ test(physicalAlias
   const env = {
     APP_ENV: "staging",
     CUSTOM_SEARCH_CAPABILITY: "current",
-    AI_GATEWAY_ID: "juro-ai-search-staging",
+    OPENAI_API_KEY: "fixture-key",
     CUSTOM_SEARCH_RELEASE_ID: RELEASE_ID,
     ...(physicalAlias ? { CUSTOM_SEARCH_PHYSICAL_RELEASE_ID: physicalReleaseId } : {}),
     CUSTOM_SEARCH_INSTANCE_ID: INSTANCE_ID,
@@ -151,8 +151,8 @@ test(physicalAlias
     CUSTOM_RUNTIME_DESCRIPTOR_SHA256: runtime.descriptorReference.sha256,
     ARTIFACTS: bucket as unknown as R2Bucket,
     CATALOG_DB: database,
-    AI: { gateway() { return { async run(request: { query: { input: string[] } }) {
-      const inputs = request.query.input;
+    EMBEDDING_FETCH: async (_url: string | URL | Request, options?: RequestInit) => {
+      const inputs: string[] = JSON.parse(String(options?.body)).input;
       embeddingBatchSizes.push(inputs.length);
       activeEmbeddingRequests++;
       maximumEmbeddingConcurrency = Math.max(maximumEmbeddingConcurrency, activeEmbeddingRequests);
@@ -175,7 +175,7 @@ test(physicalAlias
         data: inputs.map((_, inputIndex) => ({ object: "embedding", index: inputIndex,
           embedding: Array.from({ length: 1_536 }, (_, index) => index === inputIndex ? 1 : 0) })),
         usage: { prompt_tokens: inputs.length, total_tokens: inputs.length } });
-    } }; } } as unknown as Ai,
+    },
     DENSE: dense,
   } satisfies CustomSearchEnv;
   const body = JSON.stringify({ releaseId: RELEASE_ID, instanceIds: [INSTANCE_ID], query: "work",
@@ -327,25 +327,10 @@ test("custom search rejects public requests without reserving provider spend", a
   assert.equal(prepared, false);
 });
 
-test("production history search reuses the accepted physical release without build bindings", async () => {
-  const config = JSON.parse(await readFile(
-    new URL("../wrangler.legal-custom-history-production.jsonc", import.meta.url), "utf8",
-  ));
-  assert.equal(config.name, "juro-legal-history-custom-production-20260908");
-  assert.equal(config.main, "./worker/legal-custom-search-worker.ts");
-  assert.equal(config.workers_dev, false);
-  assert.equal(config.preview_urls, false);
-  assert.equal(config.routes, undefined);
-  assert.equal(config.queues, undefined);
-  assert.equal(config.workflows, undefined);
-  assert.equal(config.vars.APP_ENV, "production");
-  assert.equal(config.vars.AI_GATEWAY_ID, "juro-ai-search-production");
-  assert.equal(config.vars.CUSTOM_SEARCH_RELEASE_ID,
-    "release:production:history:custom-v1:2026-09-08");
-  assert.equal(config.vars.CUSTOM_SEARCH_PHYSICAL_RELEASE_ID,
-    "release:staging:history:custom-v1:2026-09-06");
-  assert.equal(config.r2_buckets[0].bucket_name, "juro-legal-current-custom-20260903");
-  assert.equal(config.vectorize[0].index_name, "juro-legal-history-custom-20260906");
-  assert.equal(config.d1_databases[0].database_name,
-    "juro-legal-catalog-production-green-20260908");
+test("native history search preserves the accepted physical release", async () => {
+  const config = JSON.parse(await readFile(new URL("../config/corpus-releases.json", import.meta.url), "utf8")).history;
+  assert.equal(config.variables.CUSTOM_SEARCH_RELEASE_ID, "release:production:history:custom-v1:2026-09-08");
+  assert.equal(config.variables.CUSTOM_SEARCH_PHYSICAL_RELEASE_ID, "release:staging:history:custom-v1:2026-09-06");
+  assert.equal(config.artifactNamespace, "juro-legal-current-custom-20260903");
+  assert.equal(config.vectorCollection, "juro-legal-history-custom-20260906");
 });

@@ -1,3 +1,4 @@
+import { validAdminOrigin } from "./admin-origin";
 import { randomToken, sha256 } from "./crypto";
 import type { PlatformStaffAccess } from "./staff-access";
 
@@ -34,7 +35,7 @@ export async function issueAdminDomainHandoff(
   const destination = new URL(input.destinationOrigin);
   if (
     !appEnvironment
-    || destination.protocol !== "https:"
+    || !validAdminOrigin(destination, appEnvironment)
     || destination.username
     || destination.password
     || destination.pathname !== "/"

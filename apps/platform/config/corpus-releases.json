@@ -1,0 +1,41 @@
+{
+  "current": {
+    "variables": {
+      "APP_ENV": "production",
+      "AI_GATEWAY_ID": "juro-ai-search-production",
+      "CUSTOM_SEARCH_CAPABILITY": "current",
+      "CUSTOM_SEARCH_RELEASE_ID": "release:production:current:custom-v2:2026-09-08",
+      "CUSTOM_SEARCH_PHYSICAL_RELEASE_ID": "release:production:current:custom-v1:2026-09-08",
+      "CUSTOM_SEARCH_INSTANCE_ID": "custom-current-production-v1",
+      "CUSTOM_SEARCH_SHARD_ID": "current-base-v1",
+      "CUSTOM_RUNTIME_DESCRIPTOR_KEY": "search-releases/release:production:current:custom-v1:2026-09-08/runtime/descriptor-191048178852381edfda0f48cdb178b8032e49a75e51de78c923400790254b63.json",
+      "CUSTOM_RUNTIME_DESCRIPTOR_SHA256": "191048178852381edfda0f48cdb178b8032e49a75e51de78c923400790254b63"
+    },
+    "artifactNamespace": "juro-legal-current-custom-production-20260908",
+    "vectorCollection": "juro-legal-current-custom-production-20260908"
+  },
+  "history": {
+    "variables": {
+      "APP_ENV": "production",
+      "AI_GATEWAY_ID": "juro-ai-search-production",
+      "CUSTOM_SEARCH_CAPABILITY": "history",
+      "CUSTOM_SEARCH_RELEASE_ID": "release:production:history:custom-v1:2026-09-08",
+      "CUSTOM_SEARCH_PHYSICAL_RELEASE_ID": "release:staging:history:custom-v1:2026-09-06",
+      "CUSTOM_SEARCH_INSTANCE_ID": "custom-history-production-v1",
+      "CUSTOM_SEARCH_SHARD_ID": "history-base-v1",
+      "CUSTOM_RUNTIME_DESCRIPTOR_KEY": "search-releases/release:staging:history:custom-v1:2026-09-06/runtime/descriptor-45104e9c45a52a24b11e5e43b86e0ac007da1dd71577aa4ae68ccfa7160806bb.json",
+      "CUSTOM_RUNTIME_DESCRIPTOR_SHA256": "45104e9c45a52a24b11e5e43b86e0ac007da1dd71577aa4ae68ccfa7160806bb"
+    },
+    "artifactNamespace": "juro-legal-current-custom-20260903",
+    "vectorCollection": "juro-legal-history-custom-20260906"
+  },
+  "evidenceNamespace": "juro-legal-evidence-production-20260908",
+  "historyEvidenceNamespace": "juro-legal-evidence-staging-green2-20260831",
+  "catalog": {
+    "APP_ENV": "production",
+    "LEGAL_CORPUS_SHADOW_MODE": "false",
+    "LEGAL_CORPUS_LEGACY_WRITES_ENABLED": "false",
+    "LEGAL_AI_GATEWAY_ID": "juro-ai-search-production",
+    "LEGAL_AI_PROVIDER_PROJECT_ID": "juro-openai-production"
+  }
+}

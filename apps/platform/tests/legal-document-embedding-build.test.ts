@@ -3,7 +3,7 @@ import test from "node:test";
 import { DocumentEmbeddingLedger, ensureDocumentEmbeddings, type EmbeddingStore, type EmbeddingValues } from "../lib/legal-corpus/document-embedding-build";
 import { buildRetrievalChunks, serializeCustomEmbeddingInput } from "../lib/legal-corpus/custom-hybrid-index";
 import { customCurrentSha256 } from "../lib/legal-corpus/custom-current-build";
-import { requestGatewayDocumentEmbeddings } from "../lib/legal-corpus/document-embedding-build";
+import { requestDocumentEmbeddings } from "../lib/legal-corpus/document-embedding-build";
 import { reconcileDocumentEmbeddings } from "../lib/legal-corpus/document-embedding-build";
 import { createCustomEmbeddingArtifact, putImmutableCustomArtifact } from "../lib/legal-corpus/custom-hybrid-index";
 
@@ -44,21 +44,19 @@ const configuration = {
   requestsPerMinute: 60, tokensPerMinute: 10000, enabled: true,
 };
 
-test("Gateway dispatch disables content logging, caching and hidden retries", async () => {
+test("embedding dispatch makes one direct request using the existing model contract", async () => {
   const request = { model: "text-embedding-3-large" as const, dimensions: 1536 as const,
     encoding_format: "float" as const, input: ["fixture"] };
-  let called = false;
-  const response = await requestGatewayDocumentEmbeddings({ run: async (data, options) => {
-    called = true;
-    assert.deepEqual(data, { provider: "openai", endpoint: "embeddings",
-      headers: { "Content-Type": "application/json", "cf-aig-skip-cache": true,
-        "cf-aig-collect-log": false, "cf-aig-max-attempts": 1 }, query: request });
-    assert.deepEqual(options?.gateway, { id: "fixture-gateway", skipCache: true, collectLog: false,
-      requestTimeoutMs: 55000, retries: { maxAttempts: 1 } });
+  let calls = 0;
+  const response = await requestDocumentEmbeddings("fixture-key", request, async (url, options) => {
+    calls++;
+    assert.equal(url, "https://api.openai.com/v1/embeddings");
+    assert.equal(new Headers(options?.headers).get("authorization"), "Bearer fixture-key");
+    assert.deepEqual(JSON.parse(String(options?.body)), request);
     assert.ok(options?.signal instanceof AbortSignal);
     return new Response("fixture");
-  } }, "fixture-gateway", request);
-  assert.ok(called);
+  });
+  assert.equal(calls, 1);
   assert.equal(await response.text(), "fixture");
 });
 

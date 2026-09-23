@@ -1,20 +1,21 @@
+import { booleanInteger } from "./column-types";
 import { sql } from "drizzle-orm";
 import {
-  AnySQLiteColumn,
+  AnyPgColumn,
   check,
   index,
-  integer,
-  sqliteTable,
+  bigint,
+  pgTable,
   text,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
 const timestamps = {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 };
 
-export const workspaces = sqliteTable(
+export const workspaces = pgTable(
   "workspaces",
   {
     id: text("id").primaryKey(),
@@ -35,7 +36,7 @@ export const workspaces = sqliteTable(
   ],
 );
 
-export const userProfiles = sqliteTable(
+export const userProfiles = pgTable(
   "user_profiles",
   {
     id: text("id").primaryKey(),
@@ -63,7 +64,7 @@ export const userProfiles = sqliteTable(
     lastName: text("last_name"),
     firstName: text("first_name"),
     middleName: text("middle_name"),
-    phoneVerified: integer("phone_verified", { mode: "boolean" })
+    phoneVerified: booleanInteger("phone_verified")
       .notNull()
       .default(false),
     phoneVerifiedAt: text("phone_verified_at"),
@@ -91,14 +92,14 @@ export const userProfiles = sqliteTable(
   ],
 );
 
-export const userPasswordCredentials = sqliteTable(
+export const userPasswordCredentials = pgTable(
   "user_password_credentials",
   {
     userId: text("user_id").primaryKey().references(() => userProfiles.id, {
       onDelete: "cascade",
     }),
     algorithm: text("algorithm").notNull().default("PBKDF2-SHA256"),
-    iterations: integer("iterations").notNull().default(600_000),
+    iterations: bigint("iterations", { mode: "number" }).notNull().default(600_000),
     saltBase64url: text("salt_base64url").notNull(),
     hashBase64url: text("hash_base64url").notNull(),
     passwordChangedAt: text("password_changed_at").notNull(),
@@ -124,7 +125,7 @@ export const userPasswordCredentials = sqliteTable(
   ],
 );
 
-export const authPendingRegistrations = sqliteTable(
+export const authPendingRegistrations = pgTable(
   "auth_pending_registrations",
   {
     userId: text("user_id").primaryKey().references(() => userProfiles.id, {
@@ -147,11 +148,11 @@ export const authPendingRegistrations = sqliteTable(
   ],
 );
 
-export const authPasswordRateLimits = sqliteTable(
+export const authPasswordRateLimits = pgTable(
   "auth_password_rate_limits",
   {
     scopeKey: text("scope_key").primaryKey(),
-    failureCount: integer("failure_count").notNull().default(0),
+    failureCount: bigint("failure_count", { mode: "number" }).notNull().default(0),
     windowStartedAt: text("window_started_at").notNull(),
     lockedUntil: text("locked_until"),
     updatedAt: text("updated_at").notNull(),
@@ -165,7 +166,7 @@ export const authPasswordRateLimits = sqliteTable(
   ],
 );
 
-export const authPasswordAttemptReservations = sqliteTable(
+export const authPasswordAttemptReservations = pgTable(
   "auth_password_attempt_reservations",
   {
     id: text("id").primaryKey(),
@@ -191,7 +192,7 @@ export const authPasswordAttemptReservations = sqliteTable(
   ],
 );
 
-export const workspaceMembers = sqliteTable(
+export const workspaceMembers = pgTable(
   "workspace_members",
   {
     id: text("id").primaryKey(),
@@ -208,7 +209,7 @@ export const workspaceMembers = sqliteTable(
   ],
 );
 
-export const workspaceInvitations = sqliteTable(
+export const workspaceInvitations = pgTable(
   "workspace_invitations",
   {
     id: text("id").primaryKey(),
@@ -245,7 +246,7 @@ export const workspaceInvitations = sqliteTable(
   ],
 );
 
-export const workspaceAuditEvents = sqliteTable(
+export const workspaceAuditEvents = pgTable(
   "workspace_audit_events",
   {
     id: text("id").primaryKey(),
@@ -264,7 +265,7 @@ export const workspaceAuditEvents = sqliteTable(
   ],
 );
 
-export const consents = sqliteTable(
+export const consents = pgTable(
   "consents",
   {
     id: text("id").primaryKey(),
@@ -282,7 +283,7 @@ export const consents = sqliteTable(
   ],
 );
 
-export const contacts = sqliteTable(
+export const contacts = pgTable(
   "contacts",
   {
     id: text("id").primaryKey(),
@@ -302,16 +303,16 @@ export const contacts = sqliteTable(
   (table) => [index("contacts_owner_idx").on(table.ownerUserId)],
 );
 
-export const documentTemplates = sqliteTable("document_templates", {
+export const documentTemplates = pgTable("document_templates", {
   id: text("id").primaryKey(),
   key: text("key").notNull().unique(),
   category: text("category").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  active: booleanInteger("active").notNull().default(true),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
-export const documentTemplateLocales = sqliteTable(
+export const documentTemplateLocales = pgTable(
   "document_template_locales",
   {
     id: text("id").primaryKey(),
@@ -325,7 +326,7 @@ export const documentTemplateLocales = sqliteTable(
   (table) => [uniqueIndex("template_locales_uidx").on(table.templateId, table.language)],
 );
 
-export const documents = sqliteTable(
+export const documents = pgTable(
   "documents",
   {
     id: text("id").primaryKey(),
@@ -342,15 +343,15 @@ export const documents = sqliteTable(
     status: text("status").notNull(),
     caseId: text("case_id"),
     planStepId: text("plan_step_id"),
-    caseLinkRevision: integer("case_link_revision").notNull().default(0),
+    caseLinkRevision: bigint("case_link_revision", { mode: "number" }).notNull().default(0),
     caseLinkedByUserId: text("case_linked_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
     lenderName: text("lender_name"),
     borrowerName: text("borrower_name"),
-    isFavorite: integer("is_favorite", { mode: "boolean" }).notNull().default(false),
+    isFavorite: booleanInteger("is_favorite").notNull().default(false),
     archivedAt: text("archived_at"),
     generatedAt: text("generated_at"),
     signedFileId: text("signed_file_id"),
-    revision: integer("revision").notNull().default(1),
+    revision: bigint("revision", { mode: "number" }).notNull().default(1),
     ...timestamps,
   },
   (table) => [
@@ -364,7 +365,7 @@ export const documents = sqliteTable(
   ],
 );
 
-export const documentCaseLinkEvents = sqliteTable("document_case_link_events", {
+export const documentCaseLinkEvents = pgTable("document_case_link_events", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
   // The document FK owns lifecycle. Tenant/user/case IDs are immutable evidence
@@ -374,7 +375,7 @@ export const documentCaseLinkEvents = sqliteTable("document_case_link_events", {
   actorUserId: text("actor_user_id").notNull(),
   fromCaseId: text("from_case_id"),
   toCaseId: text("to_case_id"),
-  mutationVersion: integer("mutation_version").notNull(),
+  mutationVersion: bigint("mutation_version", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
   createdAt: text("created_at").notNull(),
@@ -388,21 +389,21 @@ export const documentCaseLinkEvents = sqliteTable("document_case_link_events", {
   check("document_case_link_events_idempotency_check", sql`length(${table.idempotencyKey}) BETWEEN 16 AND 180`),
 ]);
 
-export const documentAnswers = sqliteTable("document_answers", {
+export const documentAnswers = pgTable("document_answers", {
   documentId: text("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
   answersJson: text("answers_json").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 
-export const documentCurrentContent = sqliteTable("document_current_content", {
+export const documentCurrentContent = pgTable("document_current_content", {
   documentId: text("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
   autoContent: text("auto_content").notNull(),
   finalContent: text("final_content").notNull(),
-  manuallyEdited: integer("manually_edited", { mode: "boolean" }).notNull().default(false),
+  manuallyEdited: booleanInteger("manually_edited").notNull().default(false),
   updatedAt: text("updated_at").notNull(),
 });
 
-export const documentFiles = sqliteTable(
+export const documentFiles = pgTable(
   "document_files",
   {
     id: text("id").primaryKey(),
@@ -413,7 +414,7 @@ export const documentFiles = sqliteTable(
     r2Key: text("r2_key").notNull().unique(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type").notNull(),
-    sizeBytes: integer("size_bytes").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     sha256: text("sha256"),
     archivedAt: text("archived_at"),
     createdAt: text("created_at").notNull(),
@@ -426,19 +427,19 @@ export const documentFiles = sqliteTable(
   ],
 );
 
-export const documentAttachments = sqliteTable(
+export const documentAttachments = pgTable(
   "document_attachments",
   {
     id: text("id").primaryKey(),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
     fileId: text("file_id").notNull().references(() => documentFiles.id, { onDelete: "cascade" }),
-    visibleToCollaborator: integer("visible_to_collaborator", { mode: "boolean" }).notNull().default(false),
+    visibleToCollaborator: booleanInteger("visible_to_collaborator").notNull().default(false),
     createdAt: text("created_at").notNull(),
   },
   (table) => [index("document_attachments_document_idx").on(table.documentId)],
 );
 
-export const documentCollaborators = sqliteTable(
+export const documentCollaborators = pgTable(
   "document_collaborators",
   {
     id: text("id").primaryKey(),
@@ -446,12 +447,12 @@ export const documentCollaborators = sqliteTable(
     userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
     invitedByUserId: text("invited_by_user_id").notNull().references(() => userProfiles.id),
     role: text("role").notNull(),
-    partyNumber: integer("party_number"),
+    partyNumber: bigint("party_number", { mode: "number" }),
     permissionSetJson: text("permission_set_json"),
     invitationStatus: text("invitation_status").notNull().default("accepted"),
     approvalStatus: text("approval_status").notNull().default("pending"),
-    canView: integer("can_view", { mode: "boolean" }).notNull().default(true),
-    canDownload: integer("can_download", { mode: "boolean" }).notNull().default(false),
+    canView: booleanInteger("can_view").notNull().default(true),
+    canDownload: booleanInteger("can_download").notNull().default(false),
     status: text("status").notNull(),
     openedAt: text("opened_at"),
     confirmedAt: text("confirmed_at"),
@@ -466,7 +467,7 @@ export const documentCollaborators = sqliteTable(
   ],
 );
 
-export const documentInvitations = sqliteTable(
+export const documentInvitations = pgTable(
   "document_invitations",
   {
     id: text("id").primaryKey(),
@@ -478,7 +479,7 @@ export const documentInvitations = sqliteTable(
     targetIdentifierLookupHash: text("target_identifier_lookup_hash"),
     targetIdentifierLookupKeyVersion: text("target_identifier_lookup_key_version"),
     role: text("role").notNull(),
-    partyNumber: integer("party_number"),
+    partyNumber: bigint("party_number", { mode: "number" }),
     tokenHash: text("token_hash").notNull().unique(),
     expiresAt: text("expires_at").notNull(),
     acceptedAt: text("accepted_at"),
@@ -499,7 +500,7 @@ export const documentInvitations = sqliteTable(
   ],
 );
 
-export const documentPermissions = sqliteTable(
+export const documentPermissions = pgTable(
   "document_permissions",
   {
     id: text("id").primaryKey(),
@@ -513,7 +514,7 @@ export const documentPermissions = sqliteTable(
   (table) => [uniqueIndex("document_permissions_uidx").on(table.documentId, table.userId, table.permission)],
 );
 
-export const documentCommentThreads = sqliteTable(
+export const documentCommentThreads = pgTable(
   "document_comment_threads",
   {
     id: text("id").primaryKey(),
@@ -530,7 +531,7 @@ export const documentCommentThreads = sqliteTable(
   (table) => [index("document_comment_threads_document_idx").on(table.documentId, table.status)],
 );
 
-export const documentComments = sqliteTable(
+export const documentComments = pgTable(
   "document_comments",
   {
     id: text("id").primaryKey(),
@@ -547,7 +548,7 @@ export const documentComments = sqliteTable(
   (table) => [index("document_comments_document_idx").on(table.documentId)],
 );
 
-export const documentSuggestions = sqliteTable(
+export const documentSuggestions = pgTable(
   "document_suggestions",
   {
     id: text("id").primaryKey(),
@@ -564,12 +565,12 @@ export const documentSuggestions = sqliteTable(
   (table) => [index("document_suggestions_document_idx").on(table.documentId, table.status)],
 );
 
-export const documentRevisions = sqliteTable(
+export const documentRevisions = pgTable(
   "document_revisions",
   {
     id: text("id").primaryKey(),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-    revision: integer("revision").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
     actorUserId: text("actor_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
     source: text("source").notNull(),
     changesJson: text("changes_json").notNull(),
@@ -578,22 +579,22 @@ export const documentRevisions = sqliteTable(
   (table) => [uniqueIndex("document_revisions_uidx").on(table.documentId, table.revision)],
 );
 
-export const builderDocumentVersions = sqliteTable(
+export const builderDocumentVersions = pgTable(
   "builder_document_versions",
   {
     id: text("id").primaryKey(),
     workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-    version: integer("version").notNull(),
-    documentRevision: integer("document_revision").notNull(),
+    version: bigint("version", { mode: "number" }).notNull(),
+    documentRevision: bigint("document_revision", { mode: "number" }).notNull(),
     source: text("source").notNull(),
     r2Key: text("r2_key").notNull(),
-    sizeBytes: integer("size_bytes").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     sha256: text("sha256").notNull(),
     idempotencyKeySha256: text("idempotency_key_sha256").notNull(),
     status: text("status").notNull().default("pending"),
-    attemptCount: integer("attempt_count").notNull().default(0),
+    attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
     lastErrorCode: text("last_error_code"),
     ...timestamps,
   },
@@ -606,7 +607,7 @@ export const builderDocumentVersions = sqliteTable(
   ],
 );
 
-export const builderDocumentVersionRestoreEvents = sqliteTable(
+export const builderDocumentVersionRestoreEvents = pgTable(
   "builder_document_version_restore_events",
   {
     id: text("id").primaryKey(),
@@ -614,8 +615,8 @@ export const builderDocumentVersionRestoreEvents = sqliteTable(
     ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
     sourceVersionId: text("source_version_id").notNull().references(() => builderDocumentVersions.id, { onDelete: "restrict" }),
-    fromRevision: integer("from_revision").notNull(),
-    toRevision: integer("to_revision").notNull(),
+    fromRevision: bigint("from_revision", { mode: "number" }).notNull(),
+    toRevision: bigint("to_revision", { mode: "number" }).notNull(),
     contentSha256: text("content_sha256").notNull(),
     idempotencyKeySha256: text("idempotency_key_sha256").notNull(),
     createdAt: text("created_at").notNull(),
@@ -627,14 +628,14 @@ export const builderDocumentVersionRestoreEvents = sqliteTable(
   ],
 );
 
-export const documentApprovals = sqliteTable(
+export const documentApprovals = pgTable(
   "document_approvals",
   {
     id: text("id").primaryKey(),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
     participantUserId: text("participant_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("pending"),
-    revision: integer("revision").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
     approvedAt: text("approved_at"),
     revokedAt: text("revoked_at"),
     ...timestamps,
@@ -642,7 +643,7 @@ export const documentApprovals = sqliteTable(
   (table) => [uniqueIndex("document_approvals_uidx").on(table.documentId, table.participantUserId, table.revision)],
 );
 
-export const documentChangeProposals = sqliteTable(
+export const documentChangeProposals = pgTable(
   "document_change_proposals",
   {
     id: text("id").primaryKey(),
@@ -651,8 +652,8 @@ export const documentChangeProposals = sqliteTable(
     oldText: text("old_text").notNull(),
     newText: text("new_text").notNull(),
     anchor: text("anchor"),
-    ownerAccepted: integer("owner_accepted", { mode: "boolean" }).notNull().default(false),
-    collaboratorAccepted: integer("collaborator_accepted", { mode: "boolean" }).notNull().default(false),
+    ownerAccepted: booleanInteger("owner_accepted").notNull().default(false),
+    collaboratorAccepted: booleanInteger("collaborator_accepted").notNull().default(false),
     status: text("status").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
@@ -660,7 +661,7 @@ export const documentChangeProposals = sqliteTable(
   (table) => [index("document_change_proposals_document_idx").on(table.documentId)],
 );
 
-export const notifications = sqliteTable(
+export const notifications = pgTable(
   "notifications",
   {
     id: text("id").primaryKey(),
@@ -676,7 +677,7 @@ export const notifications = sqliteTable(
   (table) => [index("notifications_user_idx").on(table.userId, table.createdAt)],
 );
 
-export const activityEvents = sqliteTable(
+export const activityEvents = pgTable(
   "activity_events",
   {
     id: text("id").primaryKey(),
@@ -689,7 +690,7 @@ export const activityEvents = sqliteTable(
   (table) => [index("activity_events_document_idx").on(table.documentId, table.createdAt)],
 );
 
-export const documentShareLinks = sqliteTable(
+export const documentShareLinks = pgTable(
   "document_share_links",
   {
     id: text("id").primaryKey(),
@@ -704,23 +705,23 @@ export const documentShareLinks = sqliteTable(
   (table) => [index("document_share_links_document_idx").on(table.documentId)],
 );
 
-export const signedDocumentAccess = sqliteTable(
+export const signedDocumentAccess = pgTable(
   "signed_document_access",
   {
     id: text("id").primaryKey(),
     documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
     collaboratorUserId: text("collaborator_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-    viewAllowed: integer("view_allowed", { mode: "boolean" }).notNull().default(false),
-    downloadAllowed: integer("download_allowed", { mode: "boolean" }).notNull().default(false),
-    opened: integer("opened", { mode: "boolean" }).notNull().default(false),
-    restoredViewOnly: integer("restored_view_only", { mode: "boolean" }).notNull().default(false),
+    viewAllowed: booleanInteger("view_allowed").notNull().default(false),
+    downloadAllowed: booleanInteger("download_allowed").notNull().default(false),
+    opened: booleanInteger("opened").notNull().default(false),
+    restoredViewOnly: booleanInteger("restored_view_only").notNull().default(false),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [uniqueIndex("signed_document_access_uidx").on(table.documentId, table.collaboratorUserId)],
 );
 
-export const standaloneSignedPdfShares = sqliteTable(
+export const standaloneSignedPdfShares = pgTable(
   "standalone_signed_pdf_shares",
   {
     id: text("id").primaryKey(),
@@ -730,8 +731,8 @@ export const standaloneSignedPdfShares = sqliteTable(
     publicToken: text("public_token").notNull(),
     accessCode: text("access_code").notNull(),
     accessCodeHash: text("access_code_hash").notNull(),
-    accessCodeDigits: integer("access_code_digits").notNull().default(4),
-    verificationAttemptCount: integer("verification_attempt_count").notNull().default(0),
+    accessCodeDigits: bigint("access_code_digits", { mode: "number" }).notNull().default(4),
+    verificationAttemptCount: bigint("verification_attempt_count", { mode: "number" }).notNull().default(0),
     verificationWindowStartedAt: text("verification_window_started_at"),
     verificationLockedUntil: text("verification_locked_until"),
     expiresAt: text("expires_at").notNull(),
@@ -742,7 +743,7 @@ export const standaloneSignedPdfShares = sqliteTable(
   (table) => [index("standalone_signed_pdf_shares_file_idx").on(table.fileId)],
 );
 
-export const signedShareSessions = sqliteTable(
+export const signedShareSessions = pgTable(
   "signed_share_sessions",
   {
     id: text("id").primaryKey(),
@@ -757,7 +758,7 @@ export const signedShareSessions = sqliteTable(
   ],
 );
 
-export const consultationRequests = sqliteTable(
+export const consultationRequests = pgTable(
   "consultation_requests",
   {
     id: text("id").primaryKey(),
@@ -772,7 +773,7 @@ export const consultationRequests = sqliteTable(
   (table) => [index("consultation_requests_user_idx").on(table.requesterUserId)],
 );
 
-export const authOtpChallenges = sqliteTable("auth_otp_challenges", {
+export const authOtpChallenges = pgTable("auth_otp_challenges", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   emailHash: text("email_hash").notNull(),
@@ -785,8 +786,8 @@ export const authOtpChallenges = sqliteTable("auth_otp_challenges", {
   codeHash: text("code_hash").notNull(),
   codeHmac: text("code_hmac"),
   codeKeyVersion: text("code_key_version"),
-  attemptCount: integer("attempt_count").notNull().default(0),
-  maxAttempts: integer("max_attempts").notNull().default(5),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+  maxAttempts: bigint("max_attempts", { mode: "number" }).notNull().default(5),
   expiresAt: text("expires_at").notNull(),
   consumedAt: text("consumed_at"),
   invalidatedAt: text("invalidated_at"),
@@ -820,7 +821,7 @@ export const authOtpChallenges = sqliteTable("auth_otp_challenges", {
   index("auth_otp_expiry_idx").on(table.expiresAt),
 ]);
 
-export const authDeviceContinuities = sqliteTable(
+export const authDeviceContinuities = pgTable(
   "auth_device_continuities",
   {
     id: text("id").primaryKey(),
@@ -875,7 +876,7 @@ export const authDeviceContinuities = sqliteTable(
   ],
 );
 
-export const authDevices = sqliteTable("auth_devices", {
+export const authDevices = pgTable("auth_devices", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   displayName: text("display_name").notNull(),
@@ -892,7 +893,7 @@ export const authDevices = sqliteTable("auth_devices", {
   index("auth_devices_continuity_idx").on(table.continuityId),
 ]);
 
-export const authSessions = sqliteTable("auth_sessions", {
+export const authSessions = pgTable("auth_sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   deviceId: text("device_id").references(() => authDevices.id, { onDelete: "set null" }),
@@ -912,7 +913,7 @@ export const authSessions = sqliteTable("auth_sessions", {
   index("auth_sessions_device_idx").on(table.deviceId, table.expiresAt),
 ]);
 
-export const authSessionHandoffs = sqliteTable(
+export const authSessionHandoffs = pgTable(
   "auth_session_handoffs",
   {
     id: text("id").primaryKey(),
@@ -927,7 +928,7 @@ export const authSessionHandoffs = sqliteTable(
     sourceHost: text("source_host").notNull(),
     destinationHost: text("destination_host").notNull(),
     redirectPath: text("redirect_path").notNull(),
-    rememberMe: integer("remember_me").notNull().default(0),
+    rememberMe: bigint("remember_me", { mode: "number" }).notNull().default(0),
     expiresAt: text("expires_at").notNull(),
     consumedAt: text("consumed_at"),
     consumedBySessionId: text("consumed_by_session_id"),
@@ -970,7 +971,7 @@ export const authSessionHandoffs = sqliteTable(
   ],
 );
 
-export const authSessionTokenHistory = sqliteTable(
+export const authSessionTokenHistory = pgTable(
   "auth_session_token_history",
   {
     id: text("id").primaryKey(),
@@ -1007,7 +1008,7 @@ export const authSessionTokenHistory = sqliteTable(
   ],
 );
 
-export const authSessionTokenReplays = sqliteTable(
+export const authSessionTokenReplays = pgTable(
   "auth_session_token_replays",
   {
     id: text("id").primaryKey(),
@@ -1043,7 +1044,7 @@ export const authSessionTokenReplays = sqliteTable(
   ],
 );
 
-export const emailChangeChallenges = sqliteTable(
+export const emailChangeChallenges = pgTable(
   "email_change_challenges",
   {
     id: text("id").primaryKey(),
@@ -1073,8 +1074,8 @@ export const emailChangeChallenges = sqliteTable(
     newCodeHmac: text("new_code_hmac"),
     newCodeKeyVersion: text("new_code_key_version"),
     locale: text("locale").notNull(),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    maxAttempts: integer("max_attempts").notNull().default(5),
+    attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+    maxAttempts: bigint("max_attempts", { mode: "number" }).notNull().default(5),
     expiresAt: text("expires_at").notNull(),
     codesQueuedAt: text("codes_queued_at"),
     consumedAt: text("consumed_at"),
@@ -1112,7 +1113,7 @@ export const emailChangeChallenges = sqliteTable(
   ],
 );
 
-export const securityEmailJobs = sqliteTable(
+export const securityEmailJobs = pgTable(
   "security_email_jobs",
   {
     id: text("id").primaryKey(),
@@ -1136,7 +1137,7 @@ export const securityEmailJobs = sqliteTable(
     recipientIv: text("recipient_iv").notNull(),
     recipientKeyVersion: text("recipient_key_version").notNull(),
     status: text("status").notNull().default("pending"),
-    attemptCount: integer("attempt_count").notNull().default(0),
+    attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
     providerMessageId: text("provider_message_id"),
     sentAt: text("sent_at"),
     errorCode: text("error_code"),
@@ -1195,7 +1196,7 @@ export const securityEmailJobs = sqliteTable(
   ],
 );
 
-export const securityNotificationJobs = sqliteTable(
+export const securityNotificationJobs = pgTable(
   "security_notification_jobs",
   {
     id: text("id").primaryKey(),
@@ -1216,7 +1217,7 @@ export const securityNotificationJobs = sqliteTable(
     countryCode: text("country_code"),
     regionCode: text("region_code"),
     status: text("status").notNull().default("pending"),
-    attemptCount: integer("attempt_count").notNull().default(0),
+    attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
     providerMessageId: text("provider_message_id"),
     sentAt: text("sent_at"),
     errorCode: text("error_code"),
@@ -1287,7 +1288,7 @@ export const securityNotificationJobs = sqliteTable(
     ),
   ],
 );
-export const authTotpCredentials = sqliteTable("auth_totp_credentials", {
+export const authTotpCredentials = pgTable("auth_totp_credentials", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
@@ -1295,11 +1296,11 @@ export const authTotpCredentials = sqliteTable("auth_totp_credentials", {
   secretIv: text("secret_iv").notNull(),
   keyVersion: text("key_version").notNull(),
   algorithm: text("algorithm").notNull().default("SHA1"),
-  digits: integer("digits").notNull().default(6),
-  periodSeconds: integer("period_seconds").notNull().default(30),
-  verificationAttemptCount: integer("verification_attempt_count").notNull().default(0),
-  verificationMaxAttempts: integer("verification_max_attempts").notNull().default(5),
-  lastUsedStep: integer("last_used_step"),
+  digits: bigint("digits", { mode: "number" }).notNull().default(6),
+  periodSeconds: bigint("period_seconds", { mode: "number" }).notNull().default(30),
+  verificationAttemptCount: bigint("verification_attempt_count", { mode: "number" }).notNull().default(0),
+  verificationMaxAttempts: bigint("verification_max_attempts", { mode: "number" }).notNull().default(5),
+  lastUsedStep: bigint("last_used_step", { mode: "number" }),
   backupBatchId: text("backup_batch_id"),
   backupKeyVersion: text("backup_key_version"),
   enrollmentExpiresAt: text("enrollment_expires_at").notNull(),
@@ -1325,7 +1326,7 @@ export const authTotpCredentials = sqliteTable("auth_totp_credentials", {
     .where(sql`${table.status} IN ('pending','active')`),
 ]);
 
-export const authBackupCodes = sqliteTable("auth_backup_codes", {
+export const authBackupCodes = pgTable("auth_backup_codes", {
   id: text("id").primaryKey(),
   credentialId: text("credential_id").notNull().references(() => authTotpCredentials.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -1348,7 +1349,7 @@ export const authBackupCodes = sqliteTable("auth_backup_codes", {
   ),
 ]);
 
-export const authMfaChallenges = sqliteTable("auth_mfa_challenges", {
+export const authMfaChallenges = pgTable("auth_mfa_challenges", {
   id: text("id").primaryKey(),
   tokenHash: text("token_hash").notNull(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -1356,8 +1357,8 @@ export const authMfaChallenges = sqliteTable("auth_mfa_challenges", {
   emailOtpChallengeId: text("email_otp_challenge_id").notNull().references(() => authOtpChallenges.id, { onDelete: "cascade" }),
   primaryAuthMethod: text("primary_auth_method").notNull().default("email_otp"),
   purpose: text("purpose").notNull().default("login"),
-  attemptCount: integer("attempt_count").notNull().default(0),
-  maxAttempts: integer("max_attempts").notNull().default(5),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+  maxAttempts: bigint("max_attempts", { mode: "number" }).notNull().default(5),
   requestUserAgentHmac: text("request_user_agent_hmac"),
   evidenceKeyVersion: text("evidence_key_version"),
   expiresAt: text("expires_at").notNull(),
@@ -1383,7 +1384,7 @@ export const authMfaChallenges = sqliteTable("auth_mfa_challenges", {
   index("auth_mfa_challenges_expiry_idx").on(table.expiresAt),
 ]);
 
-export const authMfaAttemptReservations = sqliteTable(
+export const authMfaAttemptReservations = pgTable(
   "auth_mfa_attempt_reservations",
   {
     id: text("id").primaryKey(),
@@ -1424,7 +1425,7 @@ export const authMfaAttemptReservations = sqliteTable(
   ],
 );
 
-export const authMfaFactorClaims = sqliteTable("auth_mfa_factor_claims", {
+export const authMfaFactorClaims = pgTable("auth_mfa_factor_claims", {
   id: text("id").primaryKey(),
   operationId: text("operation_id").notNull(),
   credentialId: text("credential_id").notNull().references(() => authTotpCredentials.id, { onDelete: "cascade" }),
@@ -1445,7 +1446,7 @@ export const authMfaFactorClaims = sqliteTable("auth_mfa_factor_claims", {
   index("auth_mfa_claims_created_idx").on(table.createdAt),
 ]);
 
-export const securityEvents = sqliteTable("security_events", {
+export const securityEvents = pgTable("security_events", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
   sessionId: text("session_id"),
@@ -1467,7 +1468,7 @@ export const securityEvents = sqliteTable("security_events", {
   index("security_events_type_idx").on(table.eventType, table.createdAt),
 ]);
 
-export const platformStaffAssignments = sqliteTable(
+export const platformStaffAssignments = pgTable(
   "platform_staff_assignments",
   {
     id: text("id").primaryKey(),
@@ -1552,7 +1553,7 @@ export const platformStaffAssignments = sqliteTable(
   ],
 );
 
-export const platformStaffRoleEvents = sqliteTable(
+export const platformStaffRoleEvents = pgTable(
   "platform_staff_role_events",
   {
     id: text("id").primaryKey(),
@@ -1626,7 +1627,7 @@ export const platformStaffRoleEvents = sqliteTable(
   ],
 );
 
-export const policyDocuments = sqliteTable("policy_documents", {
+export const policyDocuments = pgTable("policy_documents", {
   id: text("id").primaryKey(),
   documentKey: text("document_key").notNull(),
   documentVersion: text("document_version").notNull(),
@@ -1657,7 +1658,7 @@ export const policyDocuments = sqliteTable("policy_documents", {
   ),
 ]);
 
-export const userAcceptances = sqliteTable("user_acceptances", {
+export const userAcceptances = pgTable("user_acceptances", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   policyDocumentId: text("policy_document_id").references(() => policyDocuments.id, { onDelete: "restrict" }),
@@ -1682,27 +1683,27 @@ export const userAcceptances = sqliteTable("user_acceptances", {
   ),
 ]);
 
-export const cases = sqliteTable("cases", {
+export const cases = pgTable("cases", {
   id: text("id").primaryKey(), workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }), ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   accountType: text("account_type").notNull(), locale: text("locale").notNull(), title: text("title").notNull(), description: text("description"), legalArea: text("legal_area").notNull(),
-  status: text("status").notNull().default("open"), currentRevision: integer("current_revision").notNull().default(1), nextDeadlineAt: text("next_deadline_at"), archivedAt: text("archived_at"),
-  lifecycleRevision: integer("lifecycle_revision").notNull().default(0), completedAt: text("completed_at"), completedByUserId: text("completed_by_user_id"), archivedByUserId: text("archived_by_user_id"), ...timestamps,
+  status: text("status").notNull().default("open"), currentRevision: bigint("current_revision", { mode: "number" }).notNull().default(1), nextDeadlineAt: text("next_deadline_at"), archivedAt: text("archived_at"),
+  lifecycleRevision: bigint("lifecycle_revision", { mode: "number" }).notNull().default(0), completedAt: text("completed_at"), completedByUserId: text("completed_by_user_id"), archivedByUserId: text("archived_by_user_id"), ...timestamps,
 }, (table) => [index("cases_owner_idx").on(table.ownerUserId, table.updatedAt), index("cases_workspace_idx").on(table.workspaceId, table.updatedAt)]);
 
-export const caseEvents = sqliteTable("case_events", {
+export const caseEvents = pgTable("case_events", {
   id: text("id").primaryKey(), caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }), actorUserId: text("actor_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(), metadataJson: text("metadata_json"), createdAt: text("created_at").notNull(),
 }, (table) => [index("case_events_case_idx").on(table.caseId, table.createdAt)]);
 
-export const caseLifecycleEvents = sqliteTable("case_lifecycle_events", {
+export const caseLifecycleEvents = pgTable("case_lifecycle_events", {
   id: text("id").primaryKey(),
   caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   actorUserId: text("actor_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   action: text("action").notNull(), fromStatus: text("from_status").notNull(), toStatus: text("to_status").notNull(),
   fromArchivedAt: text("from_archived_at"), toArchivedAt: text("to_archived_at"),
-  unresolvedTaskCount: integer("unresolved_task_count").notNull(), unresolvedPlanStepCount: integer("unresolved_plan_step_count").notNull(),
-  idempotencyKey: text("idempotency_key").notNull(), lifecycleRevision: integer("lifecycle_revision").notNull(),
+  unresolvedTaskCount: bigint("unresolved_task_count", { mode: "number" }).notNull(), unresolvedPlanStepCount: bigint("unresolved_plan_step_count", { mode: "number" }).notNull(),
+  idempotencyKey: text("idempotency_key").notNull(), lifecycleRevision: bigint("lifecycle_revision", { mode: "number" }).notNull(),
   previousHash: text("previous_hash").notNull(), eventHash: text("event_hash").notNull(), createdAt: text("created_at").notNull(),
 }, (table) => [
   uniqueIndex("case_lifecycle_event_hash_uidx").on(table.eventHash),
@@ -1712,17 +1713,17 @@ export const caseLifecycleEvents = sqliteTable("case_lifecycle_events", {
   index("case_lifecycle_workspace_created_idx").on(table.workspaceId, table.createdAt),
 ]);
 
-export const actionPlans = sqliteTable("action_plans", {
+export const actionPlans = pgTable("action_plans", {
   id: text("id").primaryKey(), caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }), createdByUserId: text("created_by_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-  title: text("title").notNull(), status: text("status").notNull().default("in_progress"), progressPercent: integer("progress_percent").notNull().default(0), currentRevision: integer("current_revision").notNull().default(1), ...timestamps,
+  title: text("title").notNull(), status: text("status").notNull().default("in_progress"), progressPercent: bigint("progress_percent", { mode: "number" }).notNull().default(0), currentRevision: bigint("current_revision", { mode: "number" }).notNull().default(1), ...timestamps,
 }, (table) => [uniqueIndex("action_plans_case_uidx").on(table.caseId)]);
 
 // Append-only evidence of user-confirmed action-plan changes. Current editable
 // state remains in action_plans/action_plan_steps; history reads this table.
-export const actionPlanVersions = sqliteTable("action_plan_versions", {
+export const actionPlanVersions = pgTable("action_plan_versions", {
   id: text("id").primaryKey(),
   planId: text("plan_id").notNull().references(() => actionPlans.id, { onDelete: "cascade" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   createdByUserId: text("created_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
   reason: text("reason").notNull(),
   snapshotJson: text("snapshot_json").notNull(),
@@ -1731,32 +1732,32 @@ export const actionPlanVersions = sqliteTable("action_plan_versions", {
   uniqueIndex("action_plan_versions_plan_version_uidx").on(table.planId, table.version),
   index("action_plan_versions_plan_created_idx").on(table.planId, table.createdAt),
 ]);
-export const actionPlanSteps = sqliteTable("action_plan_steps", {
-  id: text("id").primaryKey(), planId: text("plan_id").notNull().references(() => actionPlans.id, { onDelete: "cascade" }), ordinal: integer("ordinal").notNull(), title: text("title").notNull(),
+export const actionPlanSteps = pgTable("action_plan_steps", {
+  id: text("id").primaryKey(), planId: text("plan_id").notNull().references(() => actionPlans.id, { onDelete: "cascade" }), ordinal: bigint("ordinal", { mode: "number" }).notNull(), title: text("title").notNull(),
   description: text("description"), status: text("status").notNull().default("not_started"), deadlineType: text("deadline_type").notNull().default("calendar_days"), dueAt: text("due_at"),
   assigneeUserId: text("assignee_user_id").references(() => userProfiles.id, { onDelete: "set null" }), actionType: text("action_type"), templateCode: text("template_code"), completedAt: text("completed_at"),
-  revision: integer("revision").notNull().default(1), ...timestamps,
+  revision: bigint("revision", { mode: "number" }).notNull().default(1), ...timestamps,
 }, (table) => [uniqueIndex("action_plan_steps_order_uidx").on(table.planId, table.ordinal), index("action_plan_steps_due_idx").on(table.dueAt, table.status)]);
 
-export const tasks = sqliteTable("tasks", {
+export const tasks = pgTable("tasks", {
   id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }), planStepId: text("plan_step_id").references(() => actionPlanSteps.id, { onDelete: "set null" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), title: text("title").notNull(), description: text("description"), legalBasis: text("legal_basis"), sourceDate: text("source_date"),
   dueAt: text("due_at"), safeDueAt: text("safe_due_at"), calculationMethod: text("calculation_method"), deadlineType: text("deadline_type").notNull().default("calendar_days"), status: text("status").notNull().default("planned"),
   createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), completedAt: text("completed_at"),
 }, (table) => [uniqueIndex("tasks_plan_step_uidx").on(table.planStepId), index("tasks_workspace_due_idx").on(table.workspaceId, table.dueAt, table.status), index("tasks_case_idx").on(table.caseId, table.updatedAt)]);
 
-export const taskReminders = sqliteTable("task_reminders", {
+export const taskReminders = pgTable("task_reminders", {
   id: text("id").primaryKey(), taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }), channel: text("channel").notNull().default("in_app"), reminderAt: text("reminder_at").notNull(),
   status: text("status").notNull().default("pending"), idempotencyKey: text("idempotency_key").notNull(), sentAt: text("sent_at"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("task_reminders_idempotency_uidx").on(table.idempotencyKey), index("task_reminders_due_idx").on(table.status, table.reminderAt)]);
-export const lawyerProfiles = sqliteTable("lawyer_profiles", {
-  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), displayName: text("display_name").notNull(), specialtiesJson: text("specialties_json").notNull().default("[]"), languagesJson: text("languages_json").notNull().default("[]"), status: text("status").notNull().default("pending"), marketplaceStatus: text("marketplace_status").notNull().default("profile_incomplete"), publicApprovedAt: text("public_approved_at"), juroApprovalStatus: text("juro_approval_status").notNull().default("not_approved"), juroApprovedAt: text("juro_approved_at"), juroApprovedByUserId: text("juro_approved_by_user_id"), topLawyerStatus: text("top_lawyer_status").notNull().default("not_featured"), topLawyerCriteria: text("top_lawyer_criteria"), topLawyerAt: text("top_lawyer_at"), experienceYears: integer("experience_years"), priceDescription: text("price_description"), consultationDurationMinutes: integer("consultation_duration_minutes").notNull().default(60), additionalServicesJson: text("additional_services_json").notNull().default("[]"), availabilityStatus: text("availability_status").notNull().default("unknown"), nextAvailableAt: text("next_available_at"), advocateStatus: text("advocate_status").notNull().default("not_declared"), firmName: text("firm_name"), bio: text("bio"), profileRevision: integer("profile_revision").notNull().default(1), city: text("city"), region: text("region"), education: text("education"), consultationFormatsJson: text("consultation_formats_json").notNull().default("[]"), profilePhotoKey: text("profile_photo_key"), profilePhotoMime: text("profile_photo_mime"), profilePhotoSha256: text("profile_photo_sha256"), profilePhotoSizeBytes: integer("profile_photo_size_bytes"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+export const lawyerProfiles = pgTable("lawyer_profiles", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), displayName: text("display_name").notNull(), specialtiesJson: text("specialties_json").notNull().default("[]"), languagesJson: text("languages_json").notNull().default("[]"), status: text("status").notNull().default("pending"), marketplaceStatus: text("marketplace_status").notNull().default("profile_incomplete"), publicApprovedAt: text("public_approved_at"), juroApprovalStatus: text("juro_approval_status").notNull().default("not_approved"), juroApprovedAt: text("juro_approved_at"), juroApprovedByUserId: text("juro_approved_by_user_id"), topLawyerStatus: text("top_lawyer_status").notNull().default("not_featured"), topLawyerCriteria: text("top_lawyer_criteria"), topLawyerAt: text("top_lawyer_at"), experienceYears: bigint("experience_years", { mode: "number" }), priceDescription: text("price_description"), consultationDurationMinutes: bigint("consultation_duration_minutes", { mode: "number" }).notNull().default(60), additionalServicesJson: text("additional_services_json").notNull().default("[]"), availabilityStatus: text("availability_status").notNull().default("unknown"), nextAvailableAt: text("next_available_at"), advocateStatus: text("advocate_status").notNull().default("not_declared"), firmName: text("firm_name"), bio: text("bio"), profileRevision: bigint("profile_revision", { mode: "number" }).notNull().default(1), city: text("city"), region: text("region"), education: text("education"), consultationFormatsJson: text("consultation_formats_json").notNull().default("[]"), profilePhotoKey: text("profile_photo_key"), profilePhotoMime: text("profile_photo_mime"), profilePhotoSha256: text("profile_photo_sha256"), profilePhotoSizeBytes: bigint("profile_photo_size_bytes", { mode: "number" }), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("lawyer_profiles_user_uidx").on(table.userId), index("lawyer_profiles_status_idx").on(table.status, table.updatedAt), index("lawyer_profiles_trust_designations_idx").on(table.juroApprovalStatus, table.topLawyerStatus, table.marketplaceStatus), check("lawyer_profiles_consultation_duration_check", sql`${table.consultationDurationMinutes} BETWEEN 15 AND 480`)]);
 
-export const lawyerAvailabilityRules = sqliteTable("lawyer_availability_rules", {
+export const lawyerAvailabilityRules = pgTable("lawyer_availability_rules", {
   id: text("id").primaryKey(),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
-  weekday: integer("weekday").notNull(),
+  weekday: bigint("weekday", { mode: "number" }).notNull(),
   startsAt: text("starts_at").notNull(),
   endsAt: text("ends_at").notNull(),
   timezone: text("timezone").notNull().default("Asia/Tashkent"),
@@ -1769,7 +1770,7 @@ export const lawyerAvailabilityRules = sqliteTable("lawyer_availability_rules", 
   check("lawyer_availability_rules_time_check", sql`${table.startsAt} < ${table.endsAt}`),
 ]);
 
-export const lawyerUnavailabilityPeriods = sqliteTable("lawyer_unavailability_periods", {
+export const lawyerUnavailabilityPeriods = pgTable("lawyer_unavailability_periods", {
   id: text("id").primaryKey(),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
   startsAt: text("starts_at").notNull(),
@@ -1781,16 +1782,16 @@ export const lawyerUnavailabilityPeriods = sqliteTable("lawyer_unavailability_pe
   check("lawyer_unavailability_periods_time_check", sql`${table.startsAt} < ${table.endsAt}`),
 ]);
 
-export const lawyerProfileTrustDesignations = sqliteTable("lawyer_profile_trust_designations", {
+export const lawyerProfileTrustDesignations = pgTable("lawyer_profile_trust_designations", {
   id: text("id").primaryKey(), lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }), moderatorUserId: text("moderator_user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }), designation: text("designation").notNull(), decision: text("decision").notNull(), reason: text("reason").notNull(), criteria: text("criteria"), createdAt: text("created_at").notNull(),
 }, (table) => [index("lawyer_profile_trust_designations_profile_idx").on(table.lawyerProfileId, table.createdAt)]);
 
 /** Immutable operational decisions that restrict marketplace publication/work. */
-export const lawyerProfileLifecycleEvents = sqliteTable("lawyer_profile_lifecycle_events", {
+export const lawyerProfileLifecycleEvents = pgTable("lawyer_profile_lifecycle_events", {
   id: text("id").primaryKey(),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
-  fromProfileRevision: integer("from_profile_revision").notNull(),
-  toProfileRevision: integer("to_profile_revision").notNull(),
+  fromProfileRevision: bigint("from_profile_revision", { mode: "number" }).notNull(),
+  toProfileRevision: bigint("to_profile_revision", { mode: "number" }).notNull(),
   actorUserId: text("actor_user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }),
   action: text("action").notNull(),
   reason: text("reason").notNull(),
@@ -1804,11 +1805,11 @@ export const lawyerProfileLifecycleEvents = sqliteTable("lawyer_profile_lifecycl
   index("lawyer_profile_lifecycle_actor_idx").on(table.actorUserId, table.createdAt),
 ]);
 
-export const lawyerRequests = sqliteTable("lawyer_requests", {
+export const lawyerRequests = pgTable("lawyer_requests", {
   id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }), requesterUserId: text("requester_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), lawyerProfileId: text("lawyer_profile_id").references(() => lawyerProfiles.id, { onDelete: "set null" }), status: text("status").notNull().default("requested"), anonymizedSummary: text("anonymized_summary").notNull(), requestedScopeJson: text("requested_scope_json").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 }, (table) => [index("lawyer_requests_workspace_idx").on(table.workspaceId, table.updatedAt), index("lawyer_requests_lawyer_idx").on(table.lawyerProfileId, table.status)]);
 
-export const lawyerConsultations = sqliteTable("lawyer_consultations", {
+export const lawyerConsultations = pgTable("lawyer_consultations", {
   id: text("id").primaryKey(),
   lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
@@ -1829,17 +1830,17 @@ export const lawyerConsultations = sqliteTable("lawyer_consultations", {
   check("lawyer_consultations_time_check", sql`${table.startsAt} < ${table.endsAt}`),
 ]);
 
-export const conflictChecks = sqliteTable("conflict_checks", {
+export const conflictChecks = pgTable("conflict_checks", {
   id: text("id").primaryKey(), lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }), lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }), status: text("status").notNull().default("pending"), reviewedAt: text("reviewed_at"), reviewedByUserId: text("reviewed_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }), createdAt: text("created_at").notNull(),
 }, (table) => [uniqueIndex("conflict_checks_request_lawyer_uidx").on(table.lawyerRequestId, table.lawyerProfileId)]);
 
-export const lawyerAccessGrants = sqliteTable("lawyer_access_grants", {
+export const lawyerAccessGrants = pgTable("lawyer_access_grants", {
   id: text("id").primaryKey(), lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }), caseId: text("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }), lawyerUserId: text("lawyer_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), grantedByUserId: text("granted_by_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), expiresAt: text("expires_at"), revokedAt: text("revoked_at"), revokeReason: text("revoke_reason"), createdAt: text("created_at").notNull(),
 }, (table) => [uniqueIndex("lawyer_access_grants_request_uidx").on(table.lawyerRequestId), index("lawyer_access_grants_case_idx").on(table.caseId, table.revokedAt), index("lawyer_access_grants_lawyer_idx").on(table.lawyerUserId, table.revokedAt)]);
 
 // This is a voluntary, version-specific marker by a lawyer granted access to
 // the client's case. It is not a publication gate for the AI result.
-export const documentAnalysisLawyerVerifications = sqliteTable("document_analysis_lawyer_verifications", {
+export const documentAnalysisLawyerVerifications = pgTable("document_analysis_lawyer_verifications", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   documentVersionId: text("document_version_id").notNull().references(() => analysisDocumentVersions.id, { onDelete: "cascade" }),
@@ -1855,10 +1856,10 @@ export const documentAnalysisLawyerVerifications = sqliteTable("document_analysi
   uniqueIndex("document_analysis_lawyer_verification_version_uidx").on(table.analysisId, table.documentVersionId, table.lawyerUserId),
   index("document_analysis_lawyer_verification_analysis_idx").on(table.analysisId, table.status, table.verifiedAt),
 ]);
-export const lawyerOffers = sqliteTable("lawyer_offers", {
+export const lawyerOffers = pgTable("lawyer_offers", {
   id: text("id").primaryKey(),
   lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   status: text("status").notNull().default("proposed"),
   scopeDescription: text("scope_description").notNull(),
   priceDescription: text("price_description").notNull(),
@@ -1872,7 +1873,7 @@ export const lawyerOffers = sqliteTable("lawyer_offers", {
   uniqueIndex("lawyer_offers_request_version_uidx").on(table.lawyerRequestId, table.version),
   index("lawyer_offers_request_status_idx").on(table.lawyerRequestId, table.status, table.updatedAt),
 ]);
-export const lawyerRequestMessages = sqliteTable("lawyer_request_messages", {
+export const lawyerRequestMessages = pgTable("lawyer_request_messages", {
   id: text("id").primaryKey(),
   lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }),
   authorUserId: text("author_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -1883,19 +1884,19 @@ export const lawyerRequestMessages = sqliteTable("lawyer_request_messages", {
   index("lawyer_request_messages_request_idx").on(table.lawyerRequestId, table.createdAt),
   index("lawyer_request_messages_author_idx").on(table.authorUserId, table.createdAt),
 ]);
-export const lawyerReviews = sqliteTable("lawyer_reviews", {
+export const lawyerReviews = pgTable("lawyer_reviews", {
   id: text("id").primaryKey(),
   lawyerRequestId: text("lawyer_request_id").notNull().references(() => lawyerRequests.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
   requesterUserId: text("requester_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-  overallRating: integer("overall_rating").notNull(), speedRating: integer("speed_rating").notNull(), qualityRating: integer("quality_rating").notNull(), communicationRating: integer("communication_rating").notNull(),
+  overallRating: bigint("overall_rating", { mode: "number" }).notNull(), speedRating: bigint("speed_rating", { mode: "number" }).notNull(), qualityRating: bigint("quality_rating", { mode: "number" }).notNull(), communicationRating: bigint("communication_rating", { mode: "number" }).notNull(),
   body: text("body"), status: text("status").notNull().default("pending"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("lawyer_reviews_request_uidx").on(table.lawyerRequestId), index("lawyer_reviews_lawyer_status_idx").on(table.lawyerProfileId, table.status, table.createdAt)]);
-export const lawyerReviewReplies = sqliteTable("lawyer_review_replies", {
+export const lawyerReviewReplies = pgTable("lawyer_review_replies", {
   id: text("id").primaryKey(),
   reviewId: text("review_id").notNull().references(() => lawyerReviews.id, { onDelete: "cascade" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
   authorUserId: text("author_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   clientRequestId: text("client_request_id").notNull(),
@@ -1909,7 +1910,7 @@ export const lawyerReviewReplies = sqliteTable("lawyer_review_replies", {
   uniqueIndex("lawyer_review_replies_one_open_uidx").on(table.reviewId).where(sql`${table.status} IN ('pending','approved')`),
   index("lawyer_review_replies_profile_status_idx").on(table.lawyerProfileId, table.status, table.createdAt),
 ]);
-export const lawyerReviewReplyModeration = sqliteTable("lawyer_review_reply_moderation", {
+export const lawyerReviewReplyModeration = pgTable("lawyer_review_reply_moderation", {
   id: text("id").primaryKey(),
   replyId: text("reply_id").notNull().references(() => lawyerReviewReplies.id, { onDelete: "cascade" }),
   moderatorUserId: text("moderator_user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }),
@@ -1924,7 +1925,7 @@ export const lawyerReviewReplyModeration = sqliteTable("lawyer_review_reply_mode
   check("lawyer_review_reply_moderation_decision_check", sql`${table.decision} IN ('approved','rejected')`),
   check("lawyer_review_reply_moderation_sha_check", sql`length(${table.originalBodySha256}) = 64`),
 ]);
-export const lawyerReviewModeration = sqliteTable("lawyer_review_moderation", {
+export const lawyerReviewModeration = pgTable("lawyer_review_moderation", {
   id: text("id").primaryKey(),
   reviewId: text("review_id").notNull().references(() => lawyerReviews.id, { onDelete: "cascade" }),
   moderatorUserId: text("moderator_user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }),
@@ -1940,14 +1941,14 @@ export const lawyerReviewModeration = sqliteTable("lawyer_review_moderation", {
   check("lawyer_review_moderation_decision_check", sql`${table.decision} IN ('approved','rejected')`),
   check("lawyer_review_moderation_sha_check", sql`length(${table.originalBodySha256}) = 64`),
 ]);
-export const supportTickets = sqliteTable("support_tickets", {
+export const supportTickets = pgTable("support_tickets", {
   id: text("id").primaryKey(), workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }), requesterUserId: text("requester_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), category: text("category").notNull(), severity: text("severity").notNull().default("normal"), status: text("status").notNull().default("open"), subject: text("subject").notNull(), linkedEntityType: text("linked_entity_type"), linkedEntityId: text("linked_entity_id"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), closedAt: text("closed_at"),
 }, (table) => [index("support_tickets_workspace_idx").on(table.workspaceId, table.updatedAt), index("support_tickets_status_idx").on(table.status, table.updatedAt), index("support_tickets_requester_idx").on(table.requesterUserId, table.updatedAt)]);
 
-export const supportMessages = sqliteTable("support_messages", {
+export const supportMessages = pgTable("support_messages", {
   id: text("id").primaryKey(), ticketId: text("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }), authorUserId: text("author_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), authorType: text("author_type").notNull(), body: text("body").notNull(), createdAt: text("created_at").notNull(),
 }, (table) => [index("support_messages_ticket_idx").on(table.ticketId, table.createdAt)]);
-export const knowledgeBaseArticles = sqliteTable("knowledge_base_articles", {
+export const knowledgeBaseArticles = pgTable("knowledge_base_articles", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull(),
   category: text("category").notNull(),
@@ -1964,10 +1965,10 @@ export const knowledgeBaseArticles = sqliteTable("knowledge_base_articles", {
   index("knowledge_base_articles_status_idx").on(table.status, table.updatedAt),
   check("knowledge_base_articles_status_check", sql`${table.status} IN ('draft','published','archived')`),
 ]);
-export const knowledgeBaseArticleVersions = sqliteTable("knowledge_base_article_versions", {
+export const knowledgeBaseArticleVersions = pgTable("knowledge_base_article_versions", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull().references(() => knowledgeBaseArticles.id, { onDelete: "cascade" }),
-  versionNumber: integer("version_number").notNull(),
+  versionNumber: bigint("version_number", { mode: "number" }).notNull(),
   titleRu: text("title_ru").notNull(),
   titleUz: text("title_uz").notNull(),
   titleEn: text("title_en"),
@@ -1996,14 +1997,14 @@ export const knowledgeBaseArticleVersions = sqliteTable("knowledge_base_article_
   check("knowledge_base_article_versions_body_en_check", sql`${table.bodyEnJson} IS NULL OR json_valid(${table.bodyEnJson})`),
   check("knowledge_base_article_versions_related_check", sql`json_valid(${table.relatedSlugsJson})`),
 ]);
-export const knowledgeBaseFeedback = sqliteTable("knowledge_base_feedback", {
+export const knowledgeBaseFeedback = pgTable("knowledge_base_feedback", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull().references(() => knowledgeBaseArticles.id, { onDelete: "cascade" }),
   versionId: text("version_id").notNull().references(() => knowledgeBaseArticleVersions.id, { onDelete: "restrict" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-  helpful: integer("helpful").notNull(),
-  revision: integer("revision").notNull().default(1),
+  helpful: bigint("helpful", { mode: "number" }).notNull(),
+  revision: bigint("revision", { mode: "number" }).notNull().default(1),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [
@@ -2012,15 +2013,15 @@ export const knowledgeBaseFeedback = sqliteTable("knowledge_base_feedback", {
   check("knowledge_base_feedback_helpful_check", sql`${table.helpful} IN (0,1)`),
   check("knowledge_base_feedback_revision_check", sql`${table.revision} >= 1`),
 ]);
-export const knowledgeBaseFeedbackEvents = sqliteTable("knowledge_base_feedback_events", {
+export const knowledgeBaseFeedbackEvents = pgTable("knowledge_base_feedback_events", {
   id: text("id").primaryKey(),
   feedbackId: text("feedback_id").notNull().references(() => knowledgeBaseFeedback.id, { onDelete: "cascade" }),
   articleId: text("article_id").notNull(),
   versionId: text("version_id").notNull(),
   workspaceId: text("workspace_id").notNull(),
   userId: text("user_id").notNull(),
-  helpful: integer("helpful").notNull(),
-  revision: integer("revision").notNull(),
+  helpful: bigint("helpful", { mode: "number" }).notNull(),
+  revision: bigint("revision", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => [
@@ -2029,7 +2030,7 @@ export const knowledgeBaseFeedbackEvents = sqliteTable("knowledge_base_feedback_
   check("knowledge_base_feedback_events_helpful_check", sql`${table.helpful} IN (0,1)`),
   check("knowledge_base_feedback_events_revision_check", sql`${table.revision} >= 1`),
 ]);
-export const knowledgeBaseAuthoringEvents = sqliteTable("knowledge_base_authoring_events", {
+export const knowledgeBaseAuthoringEvents = pgTable("knowledge_base_authoring_events", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull().references(() => knowledgeBaseArticles.id, { onDelete: "restrict" }),
   versionId: text("version_id").references(() => knowledgeBaseArticleVersions.id, { onDelete: "restrict" }),
@@ -2045,18 +2046,18 @@ export const knowledgeBaseAuthoringEvents = sqliteTable("knowledge_base_authorin
   index("knowledge_base_authoring_events_actor_idx").on(table.actorUserId, table.createdAt),
   check("knowledge_base_authoring_events_hash_check", sql`${table.contentSha256} IS NULL OR length(${table.contentSha256}) = 64`),
 ]);
-export const consultationSlots = sqliteTable("consultation_slots", {
+export const consultationSlots = pgTable("consultation_slots", {
   id: text("id").primaryKey(), specialistType: text("specialist_type").notNull(), startsAt: text("starts_at").notNull(), endsAt: text("ends_at").notNull(), timezone: text("timezone").notNull().default("Asia/Tashkent"),
   status: text("status").notNull().default("available"), ...timestamps,
 }, (table) => [uniqueIndex("consultation_slots_time_uidx").on(table.specialistType, table.startsAt, table.endsAt)]);
 
-export const consultationBookings = sqliteTable("consultation_bookings", {
+export const consultationBookings = pgTable("consultation_bookings", {
   id: text("id").primaryKey(), slotId: text("slot_id").notNull().references(() => consultationSlots.id), requesterUserId: text("requester_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }), caseId: text("case_id").references(() => cases.id, { onDelete: "set null" }), planStepId: text("plan_step_id").references(() => actionPlanSteps.id, { onDelete: "set null" }),
   status: text("status").notNull().default("confirmed"), contextJson: text("context_json").notNull(), ...timestamps,
 }, (table) => [uniqueIndex("consultation_bookings_slot_uidx").on(table.slotId), index("consultation_bookings_user_idx").on(table.requesterUserId, table.createdAt)]);
 
-export const conversations = sqliteTable("conversations", {
+export const conversations = pgTable("conversations", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2067,7 +2068,7 @@ export const conversations = sqliteTable("conversations", {
   ...timestamps,
 }, (table) => [index("conversations_workspace_idx").on(table.workspaceId, table.updatedAt)]);
 
-export const conversationMessages = sqliteTable("conversation_messages", {
+export const conversationMessages = pgTable("conversation_messages", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   authorType: text("author_type").notNull(),
@@ -2076,7 +2077,7 @@ export const conversationMessages = sqliteTable("conversation_messages", {
   createdAt: text("created_at").notNull(),
 }, (table) => [index("conversation_messages_conversation_idx").on(table.conversationId, table.createdAt)]);
 
-export const aiDocumentPrefillHandoffs = sqliteTable("ai_document_prefill_handoffs", {
+export const aiDocumentPrefillHandoffs = pgTable("ai_document_prefill_handoffs", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2100,7 +2101,7 @@ export const aiDocumentPrefillHandoffs = sqliteTable("ai_document_prefill_handof
   index("ai_document_prefill_handoffs_source_idx").on(table.assistantMessageId, table.createdAt),
 ]);
 
-export const aiQuestionIntakes = sqliteTable("ai_question_intakes", {
+export const aiQuestionIntakes = pgTable("ai_question_intakes", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2120,7 +2121,7 @@ export const aiQuestionIntakes = sqliteTable("ai_question_intakes", {
   index("ai_question_intakes_owner_idx").on(table.workspaceId, table.userId, table.createdAt),
 ]);
 
-export const messageBranches = sqliteTable("message_branches", {
+export const messageBranches = pgTable("message_branches", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -2139,7 +2140,7 @@ export const messageBranches = sqliteTable("message_branches", {
   index("message_branches_parent_idx").on(table.parentBranchId),
 ]);
 
-export const messageVersions = sqliteTable("message_versions", {
+export const messageVersions = pgTable("message_versions", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   branchId: text("branch_id").notNull().references(() => messageBranches.id, { onDelete: "cascade" }),
@@ -2147,7 +2148,7 @@ export const messageVersions = sqliteTable("message_versions", {
   sourceMessageId: text("source_message_id").references(() => conversationMessages.id, { onDelete: "set null" }),
   createdByUserId: text("created_by_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   operation: text("operation").notNull(),
-  versionNumber: integer("version_number").notNull().default(1),
+  versionNumber: bigint("version_number", { mode: "number" }).notNull().default(1),
   contentSha256: text("content_sha256").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => [
@@ -2157,7 +2158,7 @@ export const messageVersions = sqliteTable("message_versions", {
   index("message_versions_conversation_idx").on(table.conversationId, table.createdAt),
   index("message_versions_source_idx").on(table.sourceMessageId, table.versionNumber),
 ]);
-export const aiRuns = sqliteTable("ai_runs", {
+export const aiRuns = pgTable("ai_runs", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2176,12 +2177,12 @@ export const aiRuns = sqliteTable("ai_runs", {
   legalDatabaseAsOf: text("legal_database_as_of").notNull(),
   instructionHash: text("instruction_hash").notNull(),
   sourceVersionHash: text("source_version_hash").notNull(),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
-  estimatedCostMicrousd: integer("estimated_cost_microusd"),
-  attemptCount: integer("attempt_count").notNull().default(0),
-  latencyMs: integer("latency_ms"),
+  inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+  outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+  cachedInputTokens: bigint("cached_input_tokens", { mode: "number" }).notNull().default(0),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+  latencyMs: bigint("latency_ms", { mode: "number" }),
   errorCode: text("error_code"),
   startedAt: text("started_at").notNull(),
   completedAt: text("completed_at"),
@@ -2192,7 +2193,7 @@ export const aiRuns = sqliteTable("ai_runs", {
   index("ai_runs_conversation_idx").on(table.conversationId, table.createdAt),
 ]);
 
-export const aiFeedback = sqliteTable("ai_feedback", {
+export const aiFeedback = pgTable("ai_feedback", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2209,7 +2210,7 @@ export const aiFeedback = sqliteTable("ai_feedback", {
   index("ai_feedback_ai_run_idx").on(table.aiRunId, table.createdAt),
 ]);
 
-export const aiUsageLedger = sqliteTable("ai_usage_ledger", {
+export const aiUsageLedger = pgTable("ai_usage_ledger", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2218,14 +2219,14 @@ export const aiUsageLedger = sqliteTable("ai_usage_ledger", {
   feature: text("feature").notNull().default("legal_chat"),
   periodStart: text("period_start").notNull(),
   periodEnd: text("period_end").notNull(),
-  units: integer("units").notNull().default(1),
+  units: bigint("units", { mode: "number" }).notNull().default(1),
   status: text("status").notNull().default("reserved"),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
-  estimatedCostMicrousd: integer("estimated_cost_microusd"),
+  inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+  outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+  cachedInputTokens: bigint("cached_input_tokens", { mode: "number" }).notNull().default(0),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
   releasedAt: text("released_at"),
   consumedAt: text("consumed_at"),
   ...timestamps,
@@ -2235,15 +2236,15 @@ export const aiUsageLedger = sqliteTable("ai_usage_ledger", {
   index("ai_usage_ledger_period_idx").on(table.workspaceId, table.userId, table.feature, table.periodStart, table.status),
 ]);
 
-export const guestAiSessions = sqliteTable("guest_ai_sessions", {
+export const guestAiSessions = pgTable("guest_ai_sessions", {
   id: text("id").primaryKey(),
   tokenHmac: text("token_hmac").notNull(),
   tokenKeyVersion: text("token_key_version").notNull(),
   ipHmac: text("ip_hmac").notNull(),
   locale: text("locale").notNull(),
   state: text("state").notNull().default("available"),
-  requestCount: integer("request_count").notNull().default(0),
-  answerCount: integer("answer_count").notNull().default(0),
+  requestCount: bigint("request_count", { mode: "number" }).notNull().default(0),
+  answerCount: bigint("answer_count", { mode: "number" }).notNull().default(0),
   reservedRunId: text("reserved_run_id"),
   reservationExpiresAt: text("reservation_expires_at"),
   expiresAt: text("expires_at").notNull(),
@@ -2261,7 +2262,7 @@ export const guestAiSessions = sqliteTable("guest_ai_sessions", {
   index("guest_ai_sessions_expiry_idx").on(table.expiresAt, table.state),
 ]);
 
-export const guestAiRuns = sqliteTable("guest_ai_runs", {
+export const guestAiRuns = pgTable("guest_ai_runs", {
   id: text("id").primaryKey(),
   sessionId: text("session_id").notNull().references(() => guestAiSessions.id, { onDelete: "cascade" }),
   idempotencyKey: text("idempotency_key").notNull(),
@@ -2282,11 +2283,11 @@ export const guestAiRuns = sqliteTable("guest_ai_runs", {
   legalDatabaseAsOf: text("legal_database_as_of").notNull(),
   instructionHash: text("instruction_hash").notNull(),
   sourceVersionHash: text("source_version_hash").notNull(),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
-  attemptCount: integer("attempt_count").notNull().default(0),
-  latencyMs: integer("latency_ms"),
+  inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+  outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+  cachedInputTokens: bigint("cached_input_tokens", { mode: "number" }).notNull().default(0),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+  latencyMs: bigint("latency_ms", { mode: "number" }),
   errorCode: text("error_code"),
   expiresAt: text("expires_at").notNull(),
   startedAt: text("started_at").notNull(),
@@ -2303,7 +2304,7 @@ export const guestAiRuns = sqliteTable("guest_ai_runs", {
 ]);
 
 
-export const confirmedFacts = sqliteTable("confirmed_facts", {
+export const confirmedFacts = pgTable("confirmed_facts", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   caseId: text("case_id").references(() => cases.id, { onDelete: "cascade" }),
@@ -2314,13 +2315,13 @@ export const confirmedFacts = sqliteTable("confirmed_facts", {
   ...timestamps,
 }, (table) => [index("confirmed_facts_case_idx").on(table.caseId, table.status)]);
 
-export const userMemorySettings = sqliteTable("user_memory_settings", {
+export const userMemorySettings = pgTable("user_memory_settings", {
   userId: text("user_id").primaryKey().references(() => userProfiles.id, { onDelete: "cascade" }),
-  automaticEnabled: integer("automatic_enabled", { mode: "boolean" }).notNull().default(true),
+  automaticEnabled: booleanInteger("automatic_enabled").notNull().default(true),
   ...timestamps,
 });
 
-export const userMemories = sqliteTable("user_memories", {
+export const userMemories = pgTable("user_memories", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
@@ -2349,7 +2350,7 @@ export const userMemories = sqliteTable("user_memories", {
   index("user_memories_workspace_status_idx").on(table.workspaceId, table.status, table.updatedAt),
 ]);
 
-export const memorySources = sqliteTable("memory_sources", {
+export const memorySources = pgTable("memory_sources", {
   id: text("id").primaryKey(),
   memoryId: text("memory_id").notNull().references(() => userMemories.id, { onDelete: "cascade" }),
   conversationId: text("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
@@ -2363,7 +2364,7 @@ export const memorySources = sqliteTable("memory_sources", {
   index("memory_sources_conversation_idx").on(table.conversationId, table.createdAt),
 ]);
 
-export const legalSources = sqliteTable("legal_sources", {
+export const legalSources = pgTable("legal_sources", {
   id: text("id").primaryKey(),
   canonicalId: text("canonical_id"),
   officialUrl: text("official_url").notNull(),
@@ -2390,7 +2391,7 @@ export const legalSources = sqliteTable("legal_sources", {
   index("legal_sources_verification_idx").on(table.verificationState, table.locale, table.lastCheckedAt),
 ]);
 
-export const legalSourceVersions = sqliteTable("legal_source_versions", {
+export const legalSourceVersions = pgTable("legal_source_versions", {
   id: text("id").primaryKey(),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
   externalVersionId: text("external_version_id"),
@@ -2412,7 +2413,7 @@ export const legalSourceVersions = sqliteTable("legal_source_versions", {
   index("legal_source_versions_status_idx").on(table.sourceId, table.status, table.effectiveAt),
 ]);
 
-export const legalSourceSections = sqliteTable("legal_source_sections", {
+export const legalSourceSections = pgTable("legal_source_sections", {
   id: text("id").primaryKey(),
   versionId: text("version_id").notNull().references(() => legalSourceVersions.id, { onDelete: "cascade" }),
   canonicalRef: text("canonical_ref"),
@@ -2421,7 +2422,7 @@ export const legalSourceSections = sqliteTable("legal_source_sections", {
   clause: text("clause"),
   heading: text("heading"),
   bodyText: text("body_text").notNull(),
-  sequence: integer("sequence").notNull(),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
   contentSha256: text("content_sha256").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => [
@@ -2429,11 +2430,11 @@ export const legalSourceSections = sqliteTable("legal_source_sections", {
   index("legal_source_sections_order_idx").on(table.versionId, table.sequence),
 ]);
 
-export const legalSourceChunks = sqliteTable("legal_source_chunks", {
+export const legalSourceChunks = pgTable("legal_source_chunks", {
   id: text("id").primaryKey(),
   versionId: text("version_id").notNull().references(() => legalSourceVersions.id, { onDelete: "cascade" }),
   sectionId: text("section_id").references(() => legalSourceSections.id, { onDelete: "cascade" }),
-  chunkIndex: integer("chunk_index").notNull(),
+  chunkIndex: bigint("chunk_index", { mode: "number" }).notNull(),
   language: text("language").notNull(),
   contentText: text("content_text").notNull(),
   contentSha256: text("content_sha256").notNull(),
@@ -2447,18 +2448,18 @@ export const legalSourceChunks = sqliteTable("legal_source_chunks", {
   index("legal_source_chunks_section_idx").on(table.sectionId, table.chunkIndex),
 ]);
 
-export const sourceSyncRuns = sqliteTable("source_sync_runs", {
+export const sourceSyncRuns = pgTable("source_sync_runs", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   sourceKind: text("source_kind").notNull(),
   runType: text("run_type").notNull(),
   status: text("status").notNull().default("running"),
   lockKey: text("lock_key").notNull(),
-  discoveredCount: integer("discovered_count").notNull().default(0),
-  fetchedCount: integer("fetched_count").notNull().default(0),
-  changedCount: integer("changed_count").notNull().default(0),
-  verifiedCount: integer("verified_count").notNull().default(0),
-  errorCount: integer("error_count").notNull().default(0),
+  discoveredCount: bigint("discovered_count", { mode: "number" }).notNull().default(0),
+  fetchedCount: bigint("fetched_count", { mode: "number" }).notNull().default(0),
+  changedCount: bigint("changed_count", { mode: "number" }).notNull().default(0),
+  verifiedCount: bigint("verified_count", { mode: "number" }).notNull().default(0),
+  errorCount: bigint("error_count", { mode: "number" }).notNull().default(0),
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
   errorSummary: text("error_summary"),
@@ -2469,13 +2470,13 @@ export const sourceSyncRuns = sqliteTable("source_sync_runs", {
   uniqueIndex("source_sync_runs_lock_uidx").on(table.lockKey, table.startedAt),
 ]);
 
-export const sourceSyncErrors = sqliteTable("source_sync_errors", {
+export const sourceSyncErrors = pgTable("source_sync_errors", {
   id: text("id").primaryKey(),
   runId: text("run_id").notNull().references(() => sourceSyncRuns.id, { onDelete: "cascade" }),
   sourceUrl: text("source_url"),
   externalId: text("external_id"),
   errorCode: text("error_code").notNull(),
-  retryable: integer("retryable", { mode: "boolean" }).notNull().default(false),
+  retryable: booleanInteger("retryable").notNull().default(false),
   safeSummary: text("safe_summary").notNull(),
   occurredAt: text("occurred_at").notNull(),
 }, (table) => [index("source_sync_errors_run_idx").on(table.runId, table.occurredAt)]);
@@ -2483,7 +2484,7 @@ export const sourceSyncErrors = sqliteTable("source_sync_errors", {
 // Metadata-only Lex monitoring. This table is intentionally independent from
 // the retired local legal corpus: it never contains act text, sections,
 // embeddings, a publication state or a reviewer decision.
-export const legalMonitoringMetadata = sqliteTable("legal_monitoring_metadata", {
+export const legalMonitoringMetadata = pgTable("legal_monitoring_metadata", {
   id: text("id").primaryKey(),
   canonicalUrl: text("canonical_url").notNull(),
   canonicalId: text("canonical_id"),
@@ -2492,7 +2493,7 @@ export const legalMonitoringMetadata = sqliteTable("legal_monitoring_metadata", 
   revisionDate: text("revision_date"),
   effectiveAt: text("effective_at"),
   fingerprint: text("fingerprint").notNull(),
-  httpStatus: integer("http_status").notNull(),
+  httpStatus: bigint("http_status", { mode: "number" }).notNull(),
   firstSeenAt: text("first_seen_at").notNull(),
   lastSeenAt: text("last_seen_at").notNull(),
   lastCheckedAt: text("last_checked_at").notNull(),
@@ -2503,7 +2504,7 @@ export const legalMonitoringMetadata = sqliteTable("legal_monitoring_metadata", 
   index("legal_monitoring_metadata_checked_idx").on(table.lastCheckedAt),
 ]);
 
-export const legalMonitoringChangeEvents = sqliteTable("legal_monitoring_change_events", {
+export const legalMonitoringChangeEvents = pgTable("legal_monitoring_change_events", {
   id: text("id").primaryKey(),
   metadataId: text("metadata_id").notNull().references(() => legalMonitoringMetadata.id, { onDelete: "cascade" }),
   canonicalUrl: text("canonical_url").notNull(),
@@ -2517,7 +2518,7 @@ export const legalMonitoringChangeEvents = sqliteTable("legal_monitoring_change_
   index("legal_monitoring_change_detected_idx").on(table.detectedAt),
 ]);
 
-export const legalSourceFetchRequests = sqliteTable("legal_source_fetch_requests", {
+export const legalSourceFetchRequests = pgTable("legal_source_fetch_requests", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   sourceKind: text("source_kind").notNull(),
@@ -2526,7 +2527,7 @@ export const legalSourceFetchRequests = sqliteTable("legal_source_fetch_requests
   canonicalId: text("canonical_id").notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   status: text("status").notNull().default("queued"),
-  attemptCount: integer("attempt_count").notNull().default(0),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
   requestedByUserId: text("requested_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
   sourceId: text("source_id").references(() => legalSources.id, { onDelete: "restrict" }),
   versionId: text("version_id").references(() => legalSourceVersions.id, { onDelete: "restrict" }),
@@ -2541,7 +2542,7 @@ export const legalSourceFetchRequests = sqliteTable("legal_source_fetch_requests
   index("legal_source_fetch_requests_source_idx").on(table.sourceId, table.versionId),
 ]);
 
-export const legalReviewQueue = sqliteTable("legal_review_queue", {
+export const legalReviewQueue = pgTable("legal_review_queue", {
   id: text("id").primaryKey(),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
   versionId: text("version_id").references(() => legalSourceVersions.id, { onDelete: "restrict" }),
@@ -2564,7 +2565,7 @@ export const legalReviewQueue = sqliteTable("legal_review_queue", {
   uniqueIndex("legal_review_queue_version_reason_uidx").on(table.versionId, table.reasonCode),
 ]);
 
-export const legalSourceApplicabilityRecords = sqliteTable("legal_source_applicability_records", {
+export const legalSourceApplicabilityRecords = pgTable("legal_source_applicability_records", {
   id: text("id").primaryKey(),
   reviewId: text("review_id").notNull().references(() => legalReviewQueue.id, { onDelete: "restrict" }),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
@@ -2583,7 +2584,7 @@ export const legalSourceApplicabilityRecords = sqliteTable("legal_source_applica
   index("legal_source_applicability_interval_idx").on(table.effectiveAt, table.expiresAt),
 ]);
 
-export const legalSourcePublications = sqliteTable("legal_source_publications", {
+export const legalSourcePublications = pgTable("legal_source_publications", {
   id: text("id").primaryKey(),
   reviewId: text("review_id").notNull().references(() => legalReviewQueue.id, { onDelete: "restrict" }),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
@@ -2603,7 +2604,7 @@ export const legalSourcePublications = sqliteTable("legal_source_publications", 
   index("legal_source_publications_publisher_idx").on(table.publishedByUserId, table.publishedAt),
 ]);
 
-export const legalSourceCurrentActivations = sqliteTable("legal_source_current_activations", {
+export const legalSourceCurrentActivations = pgTable("legal_source_current_activations", {
   sourceId: text("source_id").primaryKey().references(() => legalSources.id, { onDelete: "restrict" }),
   publicationId: text("publication_id").notNull().references(() => legalSourcePublications.id, { onDelete: "restrict" }),
   versionId: text("version_id").notNull().references(() => legalSourceVersions.id, { onDelete: "restrict" }),
@@ -2616,7 +2617,7 @@ export const legalSourceCurrentActivations = sqliteTable("legal_source_current_a
   index("legal_source_current_activations_actor_idx").on(table.activatedByUserId, table.activatedAt),
 ]);
 
-export const userLegalBookmarks = sqliteTable("user_legal_bookmarks", {
+export const userLegalBookmarks = pgTable("user_legal_bookmarks", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2624,7 +2625,7 @@ export const userLegalBookmarks = sqliteTable("user_legal_bookmarks", {
   versionId: text("version_id").notNull().references(() => legalSourceVersions.id, { onDelete: "restrict" }),
   caseId: text("case_id").references(() => cases.id, { onDelete: "set null" }),
   comment: text("comment"),
-  revision: integer("revision").notNull().default(1),
+  revision: bigint("revision", { mode: "number" }).notNull().default(1),
   archivedAt: text("archived_at"),
   ...timestamps,
 }, (table) => [
@@ -2633,7 +2634,7 @@ export const userLegalBookmarks = sqliteTable("user_legal_bookmarks", {
   index("user_legal_bookmarks_source_idx").on(table.sourceId, table.versionId),
 ]);
 
-export const userLegalBookmarkEvents = sqliteTable("user_legal_bookmark_events", {
+export const userLegalBookmarkEvents = pgTable("user_legal_bookmark_events", {
   id: text("id").primaryKey(),
   bookmarkId: text("bookmark_id").notNull().references(() => userLegalBookmarks.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull(),
@@ -2643,7 +2644,7 @@ export const userLegalBookmarkEvents = sqliteTable("user_legal_bookmark_events",
   versionId: text("version_id").notNull(),
   caseId: text("case_id"),
   eventType: text("event_type").notNull(),
-  revision: integer("revision").notNull(),
+  revision: bigint("revision", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
   commentSha256: text("comment_sha256"),
@@ -2654,7 +2655,7 @@ export const userLegalBookmarkEvents = sqliteTable("user_legal_bookmark_events",
   index("user_legal_bookmark_events_case_idx").on(table.workspaceId, table.caseId, table.createdAt),
 ]);
 
-export const legalSourceLifecycleEvents = sqliteTable("legal_source_lifecycle_events", {
+export const legalSourceLifecycleEvents = pgTable("legal_source_lifecycle_events", {
   id: text("id").primaryKey(),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
   publicationId: text("publication_id").notNull().references(() => legalSourcePublications.id, { onDelete: "restrict" }),
@@ -2677,7 +2678,7 @@ export const legalSourceLifecycleEvents = sqliteTable("legal_source_lifecycle_ev
   index("legal_source_lifecycle_events_actor_idx").on(table.actedByUserId, table.occurredAt),
 ]);
 
-export const conversationSources = sqliteTable("conversation_sources", {
+export const conversationSources = pgTable("conversation_sources", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   messageId: text("message_id").references(() => conversationMessages.id, { onDelete: "cascade" }),
@@ -2687,7 +2688,7 @@ export const conversationSources = sqliteTable("conversation_sources", {
 }, (table) => [uniqueIndex("conversation_sources_uidx").on(table.conversationId, table.messageId, table.sourceId)]);
 
 // Query-scoped metadata only. Do not use this table as an owned Lex/Advice corpus.
-export const legalSourceReferences = sqliteTable("legal_source_references", {
+export const legalSourceReferences = pgTable("legal_source_references", {
   evidenceReceiptJson: text("evidence_receipt_json"),
   id: text("id").primaryKey(),
   aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "cascade" }),
@@ -2720,13 +2721,13 @@ export const legalSourceReferences = sqliteTable("legal_source_references", {
 
 // Operational metadata for direct Lex/Advice availability only. It never holds
 // a source document, a legal excerpt, or a materialized corpus.
-export const legalSourceHealthChecks = sqliteTable("legal_source_health_checks", {
+export const legalSourceHealthChecks = pgTable("legal_source_health_checks", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   sourceKind: text("source_kind").notNull(),
   status: text("status").notNull(),
   checkedAt: text("checked_at").notNull(),
-  latencyMs: integer("latency_ms").notNull(),
+  latencyMs: bigint("latency_ms", { mode: "number" }).notNull(),
   errorCode: text("error_code"),
   endpointUrl: text("endpoint_url").notNull(),
   createdAt: text("created_at").notNull(),
@@ -2737,13 +2738,13 @@ export const legalSourceHealthChecks = sqliteTable("legal_source_health_checks",
 // Content-free evidence for platform dependency health. Source content, user
 // data, provider payloads, credentials and stack traces are intentionally not
 // represented in this operational table.
-export const dependencyHealthChecks = sqliteTable("dependency_health_checks", {
+export const dependencyHealthChecks = pgTable("dependency_health_checks", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   dependencyKey: text("dependency_key").notNull(),
   state: text("state").notNull(),
   checkedAt: text("checked_at").notNull(),
-  latencyMs: integer("latency_ms"),
+  latencyMs: bigint("latency_ms", { mode: "number" }),
   safeErrorCode: text("safe_error_code"),
   evidenceKind: text("evidence_kind").notNull(),
   createdAt: text("created_at").notNull(),
@@ -2755,7 +2756,7 @@ export const dependencyHealthChecks = sqliteTable("dependency_health_checks", {
 // Append-only operational latency evidence. It intentionally has no account,
 // user, workspace, prompt, answer, document, URL, provider payload, or secret
 // column; correlationHash is a one-way hash of an opaque request UUID.
-export const aiSloTelemetryEvents = sqliteTable("ai_slo_telemetry_events", {
+export const aiSloTelemetryEvents = pgTable("ai_slo_telemetry_events", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   correlationHash: text("correlation_hash").notNull(),
@@ -2767,18 +2768,18 @@ export const aiSloTelemetryEvents = sqliteTable("ai_slo_telemetry_events", {
   model: text("model"),
   outcome: text("outcome").notNull(),
   fallback: text("fallback").notNull(),
-  authLatencyMs: integer("auth_latency_ms"),
-  contextLatencyMs: integer("context_latency_ms"),
-  retrievalLatencyMs: integer("retrieval_latency_ms"),
-  providerTtftMs: integer("provider_ttft_ms"),
-  providerTotalMs: integer("provider_total_ms"),
-  validationLatencyMs: integer("validation_latency_ms"),
-  persistenceLatencyMs: integer("persistence_latency_ms"),
-  endToEndMs: integer("end_to_end_ms").notNull(),
+  authLatencyMs: bigint("auth_latency_ms", { mode: "number" }),
+  contextLatencyMs: bigint("context_latency_ms", { mode: "number" }),
+  retrievalLatencyMs: bigint("retrieval_latency_ms", { mode: "number" }),
+  providerTtftMs: bigint("provider_ttft_ms", { mode: "number" }),
+  providerTotalMs: bigint("provider_total_ms", { mode: "number" }),
+  validationLatencyMs: bigint("validation_latency_ms", { mode: "number" }),
+  persistenceLatencyMs: bigint("persistence_latency_ms", { mode: "number" }),
+  endToEndMs: bigint("end_to_end_ms", { mode: "number" }).notNull(),
   firstUsefulStage: text("first_useful_stage").notNull(),
-  firstUsefulLatencyMs: integer("first_useful_latency_ms"),
-  firstUsefulPass: integer("first_useful_pass", { mode: "boolean" }).notNull(),
-  fullResponsePass: integer("full_response_pass", { mode: "boolean" }).notNull(),
+  firstUsefulLatencyMs: bigint("first_useful_latency_ms", { mode: "number" }),
+  firstUsefulPass: booleanInteger("first_useful_pass").notNull(),
+  fullResponsePass: booleanInteger("full_response_pass").notNull(),
   safeErrorCode: text("safe_error_code"),
   occurredAt: text("occurred_at").notNull(),
   createdAt: text("created_at").notNull(),
@@ -2788,7 +2789,7 @@ export const aiSloTelemetryEvents = sqliteTable("ai_slo_telemetry_events", {
   index("ai_slo_telemetry_outcome_idx").on(table.environment, table.outcome, table.occurredAt, table.id),
 ]);
 
-export const legislationUpdates = sqliteTable("legislation_updates", {
+export const legislationUpdates = pgTable("legislation_updates", {
   id: text("id").primaryKey(),
   sourceId: text("source_id").notNull().references(() => legalSources.id, { onDelete: "restrict" }),
   externalId: text("external_id").notNull(),
@@ -2815,7 +2816,7 @@ export const legislationUpdates = sqliteTable("legislation_updates", {
   index("legislation_updates_status_idx").on(table.status, table.publishedAt),
 ]);
 
-export const monitoringPreferences = sqliteTable("monitoring_preferences", {
+export const monitoringPreferences = pgTable("monitoring_preferences", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -2824,7 +2825,7 @@ export const monitoringPreferences = sqliteTable("monitoring_preferences", {
   channelsJson: text("channels_json").notNull().default("[\"in_app\"]"),
   frequency: text("frequency").notNull().default("weekly"),
   locale: text("locale").notNull().default("ru"),
-  documentImpactConsent: integer("document_impact_consent", { mode: "boolean" }).notNull().default(false),
+  documentImpactConsent: booleanInteger("document_impact_consent").notNull().default(false),
   lastDeliveredAt: text("last_delivered_at"),
   ...timestamps,
 }, (table) => [
@@ -2832,7 +2833,7 @@ export const monitoringPreferences = sqliteTable("monitoring_preferences", {
   index("monitoring_preferences_delivery_idx").on(table.frequency, table.lastDeliveredAt),
 ]);
 
-export const pricingPolicies = sqliteTable("pricing_policies", {
+export const pricingPolicies = pgTable("pricing_policies", {
   id: text("id").primaryKey(),
   code: text("code").notNull(),
   name: text("name").notNull(),
@@ -2843,13 +2844,13 @@ export const pricingPolicies = sqliteTable("pricing_policies", {
   index("pricing_policies_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const pricingPolicyVersions = sqliteTable("pricing_policy_versions", {
+export const pricingPolicyVersions = pgTable("pricing_policy_versions", {
   id: text("id").primaryKey(),
   policyId: text("policy_id").notNull().references(() => pricingPolicies.id, { onDelete: "restrict" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
-  providerCommissionRateBasisPoints: integer("provider_commission_rate_basis_points").notNull(),
-  vatRateBasisPoints: integer("vat_rate_basis_points").notNull(),
+  providerCommissionRateBasisPoints: bigint("provider_commission_rate_basis_points", { mode: "number" }).notNull(),
+  vatRateBasisPoints: bigint("vat_rate_basis_points", { mode: "number" }).notNull(),
   providerFeeBearer: text("provider_fee_bearer").notNull(),
   basis: text("basis").notNull(),
   contractNumber: text("contract_number"),
@@ -2868,20 +2869,20 @@ export const pricingPolicyVersions = sqliteTable("pricing_policy_versions", {
   check("pricing_policy_versions_vat_rate_check", sql`${table.vatRateBasisPoints} BETWEEN 0 AND 10000`),
 ]);
 
-export const taxProfiles = sqliteTable("tax_profiles", {
+export const taxProfiles = pgTable("tax_profiles", {
   id: text("id").primaryKey(),
   subjectType: text("subject_type").notNull(),
   subjectId: text("subject_id").notNull(),
   serviceType: text("service_type").notNull(),
   payerStatus: text("payer_status").notNull(),
   taxModel: text("tax_model").notNull(),
-  vatRateBasisPoints: integer("vat_rate_basis_points").notNull().default(0),
+  vatRateBasisPoints: bigint("vat_rate_basis_points", { mode: "number" }).notNull().default(0),
   effectiveFrom: text("effective_from").notNull(),
   effectiveTo: text("effective_to"),
   approvalStatus: text("approval_status").notNull().default("draft"),
   approvedByUserId: text("approved_by_user_id").references(() => userProfiles.id, { onDelete: "restrict" }),
   approvedAt: text("approved_at"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [
   uniqueIndex("tax_profiles_subject_service_version_uidx").on(table.subjectType, table.subjectId, table.serviceType, table.version),
@@ -2889,7 +2890,7 @@ export const taxProfiles = sqliteTable("tax_profiles", {
   check("tax_profiles_vat_rate_check", sql`${table.vatRateBasisPoints} BETWEEN 0 AND 10000`),
 ]);
 
-export const subscriptionPlans = sqliteTable("subscription_plans", {
+export const subscriptionPlans = pgTable("subscription_plans", {
   id: text("id").primaryKey(),
   code: text("code").notNull(),
   status: text("status").notNull().default("draft"),
@@ -2899,14 +2900,14 @@ export const subscriptionPlans = sqliteTable("subscription_plans", {
   index("subscription_plans_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const subscriptionPlanVersions = sqliteTable("subscription_plan_versions", {
+export const subscriptionPlanVersions = pgTable("subscription_plan_versions", {
   id: text("id").primaryKey(),
   planId: text("plan_id").notNull().references(() => subscriptionPlans.id, { onDelete: "restrict" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   nameRu: text("name_ru").notNull(),
   nameUz: text("name_uz").notNull(),
   billingPeriod: text("billing_period").notNull(),
-  priceMinor: integer("price_minor").notNull(),
+  priceMinor: bigint("price_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   entitlementsJson: text("entitlements_json").notNull(),
   effectiveFrom: text("effective_from").notNull(),
@@ -2924,7 +2925,7 @@ export const subscriptionPlanVersions = sqliteTable("subscription_plan_versions"
   check("subscription_plan_versions_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const marketplaceOrders = sqliteTable("marketplace_orders", {
+export const marketplaceOrders = pgTable("marketplace_orders", {
   id: text("id").primaryKey(),
   externalId: text("external_id").notNull(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
@@ -2932,12 +2933,12 @@ export const marketplaceOrders = sqliteTable("marketplace_orders", {
   orderType: text("order_type").notNull(),
   status: text("status").notNull().default("DRAFT"),
   currency: text("currency").notNull().default("UZS"),
-  totalAmountMinor: integer("total_amount_minor").notNull().default(0),
+  totalAmountMinor: bigint("total_amount_minor", { mode: "number" }).notNull().default(0),
   acceptedPricingSnapshotId: text("accepted_pricing_snapshot_id"),
   idempotencyKey: text("idempotency_key").notNull(),
   provider: text("provider"),
   providerStatus: text("provider_status"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   expiresAt: text("expires_at"),
   settledAt: text("settled_at"),
   failedAt: text("failed_at"),
@@ -2951,7 +2952,7 @@ export const marketplaceOrders = sqliteTable("marketplace_orders", {
   check("marketplace_orders_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const orderItems = sqliteTable("order_items", {
+export const orderItems = pgTable("order_items", {
   id: text("id").primaryKey(),
   orderId: text("order_id").notNull().references(() => marketplaceOrders.id, { onDelete: "restrict" }),
   itemType: text("item_type").notNull(),
@@ -2959,11 +2960,11 @@ export const orderItems = sqliteTable("order_items", {
   referenceId: text("reference_id"),
   titleRu: text("title_ru").notNull(),
   titleUz: text("title_uz").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  unitAmountMinor: integer("unit_amount_minor").notNull(),
-  baseAmountMinor: integer("base_amount_minor").notNull(),
-  taxAmountMinor: integer("tax_amount_minor").notNull().default(0),
-  totalAmountMinor: integer("total_amount_minor").notNull(),
+  quantity: bigint("quantity", { mode: "number" }).notNull().default(1),
+  unitAmountMinor: bigint("unit_amount_minor", { mode: "number" }).notNull(),
+  baseAmountMinor: bigint("base_amount_minor", { mode: "number" }).notNull(),
+  taxAmountMinor: bigint("tax_amount_minor", { mode: "number" }).notNull().default(0),
+  totalAmountMinor: bigint("total_amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   createdAt: text("created_at").notNull(),
   titleEn: text("title_en"),
@@ -2974,26 +2975,26 @@ export const orderItems = sqliteTable("order_items", {
   check("order_items_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const pricingSnapshots = sqliteTable("pricing_snapshots", {
+export const pricingSnapshots = pgTable("pricing_snapshots", {
   id: text("id").primaryKey(),
   orderId: text("order_id").notNull().references(() => marketplaceOrders.id, { onDelete: "restrict" }),
-  version: integer("version").notNull(),
-  lawyerBaseAmountMinor: integer("lawyer_base_amount_minor").notNull(),
-  lawyerVatAmountMinor: integer("lawyer_vat_amount_minor").notNull(),
-  lawyerGrossAmountMinor: integer("lawyer_gross_amount_minor").notNull(),
-  juroBaseAmountMinor: integer("juro_base_amount_minor").notNull(),
-  juroVatAmountMinor: integer("juro_vat_amount_minor").notNull(),
-  juroGrossAmountMinor: integer("juro_gross_amount_minor").notNull(),
-  subscriptionCreditMinor: integer("subscription_credit_minor").notNull().default(0),
-  discountAmountMinor: integer("discount_amount_minor").notNull().default(0),
-  providerCommissionRateBasisPoints: integer("provider_commission_rate_basis_points").notNull().default(0),
-  providerCommissionBaseMinor: integer("provider_commission_base_minor").notNull().default(0),
-  providerCommissionAmountMinor: integer("provider_commission_amount_minor").notNull().default(0),
+  version: bigint("version", { mode: "number" }).notNull(),
+  lawyerBaseAmountMinor: bigint("lawyer_base_amount_minor", { mode: "number" }).notNull(),
+  lawyerVatAmountMinor: bigint("lawyer_vat_amount_minor", { mode: "number" }).notNull(),
+  lawyerGrossAmountMinor: bigint("lawyer_gross_amount_minor", { mode: "number" }).notNull(),
+  juroBaseAmountMinor: bigint("juro_base_amount_minor", { mode: "number" }).notNull(),
+  juroVatAmountMinor: bigint("juro_vat_amount_minor", { mode: "number" }).notNull(),
+  juroGrossAmountMinor: bigint("juro_gross_amount_minor", { mode: "number" }).notNull(),
+  subscriptionCreditMinor: bigint("subscription_credit_minor", { mode: "number" }).notNull().default(0),
+  discountAmountMinor: bigint("discount_amount_minor", { mode: "number" }).notNull().default(0),
+  providerCommissionRateBasisPoints: bigint("provider_commission_rate_basis_points", { mode: "number" }).notNull().default(0),
+  providerCommissionBaseMinor: bigint("provider_commission_base_minor", { mode: "number" }).notNull().default(0),
+  providerCommissionAmountMinor: bigint("provider_commission_amount_minor", { mode: "number" }).notNull().default(0),
   providerCommissionAllocationJson: text("provider_commission_allocation_json").notNull(),
-  clientTotalMinor: integer("client_total_minor").notNull(),
-  expectedProviderSettlementMinor: integer("expected_provider_settlement_minor").notNull(),
-  lawyerExpectedPayoutMinor: integer("lawyer_expected_payout_minor").notNull(),
-  juroExpectedRevenueMinor: integer("juro_expected_revenue_minor").notNull(),
+  clientTotalMinor: bigint("client_total_minor", { mode: "number" }).notNull(),
+  expectedProviderSettlementMinor: bigint("expected_provider_settlement_minor", { mode: "number" }).notNull(),
+  lawyerExpectedPayoutMinor: bigint("lawyer_expected_payout_minor", { mode: "number" }).notNull(),
+  juroExpectedRevenueMinor: bigint("juro_expected_revenue_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   taxPolicyVersionId: text("tax_policy_version_id").notNull(),
   pricingPolicyVersionId: text("pricing_policy_version_id").notNull().references(() => pricingPolicyVersions.id, { onDelete: "restrict" }),
@@ -3007,15 +3008,15 @@ export const pricingSnapshots = sqliteTable("pricing_snapshots", {
   check("pricing_snapshots_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const taxComponents = sqliteTable("tax_components", {
+export const taxComponents = pgTable("tax_components", {
   id: text("id").primaryKey(),
   pricingSnapshotId: text("pricing_snapshot_id").notNull().references(() => pricingSnapshots.id, { onDelete: "restrict" }),
   providerType: text("provider_type").notNull(),
   providerId: text("provider_id").notNull(),
   taxProfileId: text("tax_profile_id").notNull().references(() => taxProfiles.id, { onDelete: "restrict" }),
-  taxableBaseMinor: integer("taxable_base_minor").notNull(),
-  rateBasisPoints: integer("rate_basis_points").notNull(),
-  taxAmountMinor: integer("tax_amount_minor").notNull(),
+  taxableBaseMinor: bigint("taxable_base_minor", { mode: "number" }).notNull(),
+  rateBasisPoints: bigint("rate_basis_points", { mode: "number" }).notNull(),
+  taxAmountMinor: bigint("tax_amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   createdAt: text("created_at").notNull(),
 }, (table) => [
@@ -3023,7 +3024,7 @@ export const taxComponents = sqliteTable("tax_components", {
   check("tax_components_amounts_check", sql`${table.taxableBaseMinor} >= 0 AND ${table.taxAmountMinor} >= 0 AND ${table.rateBasisPoints} BETWEEN 0 AND 10000`),
 ]);
 
-export const subscriptions = sqliteTable("subscriptions", {
+export const subscriptions = pgTable("subscriptions", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   provider: text("provider").notNull(),
@@ -3037,23 +3038,23 @@ export const subscriptions = sqliteTable("subscriptions", {
   autoRenewConsentAt: text("auto_renew_consent_at"),
   startedAt: text("started_at"),
   currentPeriodEndsAt: text("current_period_ends_at"),
-  cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" }).notNull().default(false),
+  cancelAtPeriodEnd: booleanInteger("cancel_at_period_end").notNull().default(false),
   gracePeriodEndsAt: text("grace_period_ends_at"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [uniqueIndex("subscriptions_workspace_uidx").on(table.workspaceId), index("subscriptions_status_idx").on(table.status, table.updatedAt)]);
 
-export const subscriptionEntitlements = sqliteTable("subscription_entitlements", {
+export const subscriptionEntitlements = pgTable("subscription_entitlements", {
   id: text("id").primaryKey(),
   subscriptionId: text("subscription_id").notNull().references(() => subscriptions.id, { onDelete: "restrict" }),
   entitlementCode: text("entitlement_code").notNull(),
-  limitValue: integer("limit_value"),
+  limitValue: bigint("limit_value", { mode: "number" }),
   unit: text("unit").notNull(),
   periodStart: text("period_start").notNull(),
   periodEnd: text("period_end").notNull(),
-  rolloverAllowed: integer("rollover_allowed", { mode: "boolean" }).notNull().default(false),
+  rolloverAllowed: booleanInteger("rollover_allowed").notNull().default(false),
   metadataJson: text("metadata_json").notNull().default("{}"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [
   uniqueIndex("subscription_entitlements_period_uidx").on(table.subscriptionId, table.entitlementCode, table.periodStart),
@@ -3061,13 +3062,13 @@ export const subscriptionEntitlements = sqliteTable("subscription_entitlements",
   check("subscription_entitlements_limit_check", sql`${table.limitValue} IS NULL OR ${table.limitValue} >= 0`),
 ]);
 
-export const entitlementUsage = sqliteTable("entitlement_usage", {
+export const entitlementUsage = pgTable("entitlement_usage", {
   id: text("id").primaryKey(),
   entitlementId: text("entitlement_id").notNull().references(() => subscriptionEntitlements.id, { onDelete: "restrict" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }),
   orderId: text("order_id").references(() => marketplaceOrders.id, { onDelete: "restrict" }),
-  quantity: integer("quantity").notNull(),
+  quantity: bigint("quantity", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   status: text("status").notNull().default("reserved"),
   consumedAt: text("consumed_at"),
@@ -3079,7 +3080,7 @@ export const entitlementUsage = sqliteTable("entitlement_usage", {
   check("entitlement_usage_quantity_check", sql`${table.quantity} > 0`),
 ]);
 
-export const subscriptionInvoices = sqliteTable("subscription_invoices", {
+export const subscriptionInvoices = pgTable("subscription_invoices", {
   id: text("id").primaryKey(),
   externalId: text("external_id").notNull(),
   subscriptionId: text("subscription_id").references(() => subscriptions.id, { onDelete: "restrict" }),
@@ -3087,15 +3088,15 @@ export const subscriptionInvoices = sqliteTable("subscription_invoices", {
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
   invoiceNumber: text("invoice_number").notNull(),
   status: text("status").notNull().default("draft"),
-  subtotalMinor: integer("subtotal_minor").notNull(),
-  taxAmountMinor: integer("tax_amount_minor").notNull(),
-  totalAmountMinor: integer("total_amount_minor").notNull(),
+  subtotalMinor: bigint("subtotal_minor", { mode: "number" }).notNull(),
+  taxAmountMinor: bigint("tax_amount_minor", { mode: "number" }).notNull(),
+  totalAmountMinor: bigint("total_amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   dueAt: text("due_at"),
   issuedAt: text("issued_at"),
   paidAt: text("paid_at"),
   voidedAt: text("voided_at"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [
   uniqueIndex("subscription_invoices_external_uidx").on(table.externalId),
@@ -3105,19 +3106,19 @@ export const subscriptionInvoices = sqliteTable("subscription_invoices", {
   check("subscription_invoices_amounts_check", sql`${table.subtotalMinor} >= 0 AND ${table.taxAmountMinor} >= 0 AND ${table.totalAmountMinor} >= 0`),
 ]);
 
-export const payments = sqliteTable("payments", {
+export const payments = pgTable("payments", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   subscriptionId: text("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
   providerPaymentId: text("provider_payment_id"),
-  amountMinor: integer("amount_minor").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   status: text("status").notNull(),
   receiptObjectKey: text("receipt_object_key"),
   ...timestamps,
 }, (table) => [index("payments_workspace_idx").on(table.workspaceId, table.createdAt)]);
 
-export const paymentAttempts = sqliteTable("payment_attempts", {
+export const paymentAttempts = pgTable("payment_attempts", {
   id: text("id").primaryKey(),
   externalId: text("external_id").notNull(),
   orderId: text("order_id").notNull().references(() => marketplaceOrders.id, { onDelete: "restrict" }),
@@ -3126,14 +3127,14 @@ export const paymentAttempts = sqliteTable("payment_attempts", {
   providerAttemptId: text("provider_attempt_id"),
   providerStatus: text("provider_status"),
   internalStatus: text("internal_status").notNull().default("created"),
-  amountMinor: integer("amount_minor").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   idempotencyKey: text("idempotency_key").notNull(),
   checkoutUrl: text("checkout_url"),
   expiresAt: text("expires_at"),
   settledAt: text("settled_at"),
   failedAt: text("failed_at"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [
   uniqueIndex("payment_attempts_external_uidx").on(table.externalId),
@@ -3143,13 +3144,13 @@ export const paymentAttempts = sqliteTable("payment_attempts", {
   check("payment_attempts_amount_check", sql`${table.amountMinor} >= 0`),
 ]);
 
-export const paymentProviderEvents = sqliteTable("payment_provider_events", {
+export const paymentProviderEvents = pgTable("payment_provider_events", {
   id: text("id").primaryKey(),
   provider: text("provider").notNull(),
   providerEventId: text("provider_event_id").notNull(),
   eventType: text("event_type").notNull(),
   payloadSha256: text("payload_sha256").notNull(),
-  signatureVerified: integer("signature_verified", { mode: "boolean" }).notNull().default(false),
+  signatureVerified: booleanInteger("signature_verified").notNull().default(false),
   internalStatus: text("internal_status").notNull().default("received"),
   orderId: text("order_id").references(() => marketplaceOrders.id, { onDelete: "restrict" }),
   paymentAttemptId: text("payment_attempt_id").references(() => paymentAttempts.id, { onDelete: "restrict" }),
@@ -3163,7 +3164,7 @@ export const paymentProviderEvents = sqliteTable("payment_provider_events", {
   check("payment_provider_events_sha_check", sql`length(${table.payloadSha256}) = 64`),
 ]);
 
-export const ledgerAccounts = sqliteTable("ledger_accounts", {
+export const ledgerAccounts = pgTable("ledger_accounts", {
   id: text("id").primaryKey(),
   ownerType: text("owner_type").notNull(),
   ownerId: text("owner_id").notNull(),
@@ -3177,7 +3178,7 @@ export const ledgerAccounts = sqliteTable("ledger_accounts", {
   check("ledger_accounts_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const ledgerTransactions = sqliteTable("ledger_transactions", {
+export const ledgerTransactions = pgTable("ledger_transactions", {
   id: text("id").primaryKey(),
   externalId: text("external_id").notNull(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
@@ -3187,12 +3188,12 @@ export const ledgerTransactions = sqliteTable("ledger_transactions", {
   status: text("status").notNull().default("draft"),
   idempotencyKey: text("idempotency_key").notNull(),
   currency: text("currency").notNull().default("UZS"),
-  debitTotalMinor: integer("debit_total_minor").notNull().default(0),
-  creditTotalMinor: integer("credit_total_minor").notNull().default(0),
+  debitTotalMinor: bigint("debit_total_minor", { mode: "number" }).notNull().default(0),
+  creditTotalMinor: bigint("credit_total_minor", { mode: "number" }).notNull().default(0),
   occurredAt: text("occurred_at").notNull(),
   postedAt: text("posted_at"),
   failedAt: text("failed_at"),
-  version: integer("version").notNull().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
   ...timestamps,
 }, (table) => [
   uniqueIndex("ledger_transactions_external_uidx").on(table.externalId),
@@ -3202,13 +3203,13 @@ export const ledgerTransactions = sqliteTable("ledger_transactions", {
   check("ledger_transactions_posted_balance_check", sql`${table.status} != 'posted' OR ${table.debitTotalMinor} = ${table.creditTotalMinor}`),
 ]);
 
-export const ledgerEntries = sqliteTable("ledger_entries", {
+export const ledgerEntries = pgTable("ledger_entries", {
   id: text("id").primaryKey(),
   transactionId: text("transaction_id").notNull().references(() => ledgerTransactions.id, { onDelete: "restrict" }),
   accountId: text("account_id").notNull().references(() => ledgerAccounts.id, { onDelete: "restrict" }),
-  sequence: integer("sequence").notNull(),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
   side: text("side").notNull(),
-  amountMinor: integer("amount_minor").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
   currency: text("currency").notNull().default("UZS"),
   memo: text("memo").notNull(),
   createdAt: text("created_at").notNull(),
@@ -3220,7 +3221,7 @@ export const ledgerEntries = sqliteTable("ledger_entries", {
   check("ledger_entries_currency_check", sql`${table.currency} = 'UZS'`),
 ]);
 
-export const accountDeletionChallenges = sqliteTable(
+export const accountDeletionChallenges = pgTable(
   "account_deletion_challenges",
   {
     id: text("id").primaryKey(),
@@ -3230,8 +3231,8 @@ export const accountDeletionChallenges = sqliteTable(
     locale: text("locale").notNull(),
     codeSalt: text("code_salt").notNull(),
     codeHash: text("code_hash").notNull(),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    maxAttempts: integer("max_attempts").notNull().default(5),
+    attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
+    maxAttempts: bigint("max_attempts", { mode: "number" }).notNull().default(5),
     expiresAt: text("expires_at").notNull(),
     consumedAt: text("consumed_at"),
     consumedByOperationId: text("consumed_by_operation_id"),
@@ -3265,7 +3266,7 @@ export const accountDeletionChallenges = sqliteTable(
   ],
 );
 
-export const accountDeletionRequests = sqliteTable("account_deletion_requests", {
+export const accountDeletionRequests = pgTable("account_deletion_requests", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   verificationChallengeId: text("verification_challenge_id").references(() => accountDeletionChallenges.id, { onDelete: "restrict" }),
@@ -3303,7 +3304,7 @@ export const accountDeletionRequests = sqliteTable("account_deletion_requests", 
   ),
 ]);
 
-export const accountDeletionLifecycleEvents = sqliteTable(
+export const accountDeletionLifecycleEvents = pgTable(
   "account_deletion_lifecycle_events",
   {
     id: text("id").primaryKey(),
@@ -3347,7 +3348,7 @@ export const accountDeletionLifecycleEvents = sqliteTable(
   ],
 );
 
-export const accountDeletionPurgeEvidence = sqliteTable(
+export const accountDeletionPurgeEvidence = pgTable(
   "account_deletion_purge_evidence",
   {
     requestId: text("request_id").primaryKey(),
@@ -3357,9 +3358,9 @@ export const accountDeletionPurgeEvidence = sqliteTable(
     policyVersion: text("policy_version").notNull(),
     requestedAt: text("requested_at").notNull(),
     completedAt: text("completed_at").notNull(),
-    r2DeletedCount: integer("r2_deleted_count").notNull().default(0),
-    d1DeletedCount: integer("d1_deleted_count").notNull().default(0),
-    redactedCount: integer("redacted_count").notNull().default(0),
+    r2DeletedCount: bigint("r2_deleted_count", { mode: "number" }).notNull().default(0),
+    d1DeletedCount: bigint("d1_deleted_count", { mode: "number" }).notNull().default(0),
+    redactedCount: bigint("redacted_count", { mode: "number" }).notNull().default(0),
     retainedEvidenceJson: text("retained_evidence_json").notNull().default("[]"),
     evidenceHash: text("evidence_hash").notNull(),
   },
@@ -3384,13 +3385,13 @@ export const accountDeletionPurgeEvidence = sqliteTable(
   ],
 );
 
-export const documentAnalyses = sqliteTable("document_analyses", {
+export const documentAnalyses = pgTable("document_analyses", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   uploadedFileId: text("uploaded_file_id").notNull().references(() => documentFiles.id, { onDelete: "cascade" }),
   caseId: text("case_id").references(() => cases.id, { onDelete: "set null" }),
-  caseLinkRevision: integer("case_link_revision").notNull().default(0),
+  caseLinkRevision: bigint("case_link_revision", { mode: "number" }).notNull().default(0),
   caseLinkedByUserId: text("case_linked_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
   status: text("status").notNull(),
   summaryJson: text("summary_json"),
@@ -3401,7 +3402,7 @@ export const documentAnalyses = sqliteTable("document_analyses", {
   abandonedAfter: text("abandoned_after"),
   deletionRequestedAt: text("deletion_requested_at"),
   deletionReason: text("deletion_reason"),
-  purgeAttemptCount: integer("purge_attempt_count").notNull().default(0),
+  purgeAttemptCount: bigint("purge_attempt_count", { mode: "number" }).notNull().default(0),
   lastPurgeError: text("last_purge_error"),
   ...timestamps,
 }, (table) => [
@@ -3416,12 +3417,12 @@ export const documentAnalyses = sqliteTable("document_analyses", {
   check("document_analyses_purge_attempt_check", sql`${table.purgeAttemptCount} >= 0`),
 ]);
 
-export const builderDocumentAnalysisHandoffs = sqliteTable("builder_document_analysis_handoffs", {
+export const builderDocumentAnalysisHandoffs = pgTable("builder_document_analysis_handoffs", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
   documentId: text("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-  documentRevision: integer("document_revision").notNull(),
+  documentRevision: bigint("document_revision", { mode: "number" }).notNull(),
   documentContentSha256: text("document_content_sha256").notNull(),
   fileId: text("file_id").notNull().references(() => documentFiles.id, { onDelete: "cascade" }),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
@@ -3429,7 +3430,7 @@ export const builderDocumentAnalysisHandoffs = sqliteTable("builder_document_ana
   locale: text("locale").notNull(),
   idempotencyKeySha256: text("idempotency_key_sha256").notNull(),
   status: text("status").notNull().default("pending"),
-  attemptCount: integer("attempt_count").notNull().default(0),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
   lastErrorCode: text("last_error_code"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
@@ -3453,7 +3454,7 @@ export const builderDocumentAnalysisHandoffs = sqliteTable("builder_document_ana
   ),
 ]);
 
-export const analysisCaseLinkEvents = sqliteTable("analysis_case_link_events", {
+export const analysisCaseLinkEvents = pgTable("analysis_case_link_events", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   // The analysis FK owns lifecycle. Tenant/user/case IDs are immutable evidence
@@ -3464,7 +3465,7 @@ export const analysisCaseLinkEvents = sqliteTable("analysis_case_link_events", {
   actorUserId: text("actor_user_id").notNull(),
   fromCaseId: text("from_case_id"),
   toCaseId: text("to_case_id"),
-  mutationVersion: integer("mutation_version").notNull(),
+  mutationVersion: bigint("mutation_version", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
   createdAt: text("created_at").notNull(),
@@ -3478,21 +3479,21 @@ export const analysisCaseLinkEvents = sqliteTable("analysis_case_link_events", {
   check("analysis_case_link_events_idempotency_check", sql`length(${table.idempotencyKey}) BETWEEN 16 AND 180`),
 ]);
 
-export const analysisDocumentVersions = sqliteTable("analysis_document_versions", {
+export const analysisDocumentVersions = pgTable("analysis_document_versions", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-  version: integer("version").notNull(),
+  version: bigint("version", { mode: "number" }).notNull(),
   parentVersionId: text("parent_version_id").references(
-    (): AnySQLiteColumn => analysisDocumentVersions.id,
+    (): AnyPgColumn => analysisDocumentVersions.id,
   ),
   sourceKind: text("source_kind").notNull(),
   r2Key: text("r2_key").notNull(),
   objectWriteId: text("object_write_id"),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   sha256: text("sha256").notNull(),
   idempotencyKey: text("idempotency_key"),
   selectionSha256: text("selection_sha256"),
@@ -3518,19 +3519,19 @@ export const analysisDocumentVersions = sqliteTable("analysis_document_versions"
   check("analysis_document_versions_revisions_check", sql`json_valid(${table.revisionIdsJson}) AND json_type(${table.revisionIdsJson}) = 'array'`),
 ]);
 
-export const analysisVersionObjectWrites = sqliteTable("analysis_version_object_writes", {
+export const analysisVersionObjectWrites = pgTable("analysis_version_object_writes", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
-  targetVersion: integer("target_version").notNull(),
+  targetVersion: bigint("target_version", { mode: "number" }).notNull(),
   sourceKind: text("source_kind").notNull(),
   r2Key: text("r2_key").notNull(),
-  sizeBytes: integer("size_bytes").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
   sha256: text("sha256").notNull(),
   status: text("status").notNull().default("pending"),
   versionId: text("version_id"),
-  attemptCount: integer("attempt_count").notNull().default(0),
+  attemptCount: bigint("attempt_count", { mode: "number" }).notNull().default(0),
   lastErrorCode: text("last_error_code"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
@@ -3550,7 +3551,7 @@ export const analysisVersionObjectWrites = sqliteTable("analysis_version_object_
   check("analysis_version_object_writes_status_check", sql`${table.status} IN ('pending','attaching','attached','deleting','deleted')`),
 ]);
 
-export const fileScanResults = sqliteTable("file_scan_results", {
+export const fileScanResults = pgTable("file_scan_results", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   fileId: text("file_id").notNull().references(() => documentFiles.id, { onDelete: "cascade" }),
@@ -3576,7 +3577,7 @@ export const fileScanResults = sqliteTable("file_scan_results", {
   check("file_scan_results_response_sha_check", sql`length(${table.responseSha256}) = 64`),
 ]);
 
-export const fileExtractions = sqliteTable("file_extractions", {
+export const fileExtractions = pgTable("file_extractions", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   fileId: text("file_id").notNull().references(() => documentFiles.id, { onDelete: "cascade" }),
@@ -3589,8 +3590,8 @@ export const fileExtractions = sqliteTable("file_extractions", {
   sourceSha256: text("source_sha256").notNull(),
   r2Key: text("r2_key"),
   textSha256: text("text_sha256"),
-  sizeBytes: integer("size_bytes"),
-  tokenEstimate: integer("token_estimate"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  tokenEstimate: bigint("token_estimate", { mode: "number" }),
   detectedMimeType: text("detected_mime_type"),
   detectedLanguage: text("detected_language"),
   textQuality: text("text_quality"),
@@ -3604,25 +3605,25 @@ export const fileExtractions = sqliteTable("file_extractions", {
   index("file_extractions_workspace_idx").on(table.workspaceId, table.createdAt),
   index("file_extractions_status_idx").on(table.status, table.updatedAt),
   check("file_extractions_status_check", sql`${table.status} IN ('queued','processing','retrying','completed','failed')`),
-  check("file_extractions_method_check", sql`${table.method} = 'workers_ai_markdown'`),
+  check("file_extractions_method_check", sql`${table.method} IN ('workers_ai_markdown','local_document_conversion')`),
   check("file_extractions_source_sha_check", sql`length(${table.sourceSha256}) = 64`),
   check("file_extractions_text_sha_check", sql`${table.textSha256} IS NULL OR length(${table.textSha256}) = 64`),
   check("file_extractions_size_check", sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`),
   check("file_extractions_token_check", sql`${table.tokenEstimate} IS NULL OR ${table.tokenEstimate} >= 0`),
 ]);
 
-export const documentRisks = sqliteTable("document_risks", {
+export const documentRisks = pgTable("document_risks", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   level: text("level").notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   excerpt: text("excerpt"),
-  confidencePercent: integer("confidence_percent"),
+  confidencePercent: bigint("confidence_percent", { mode: "number" }),
   createdAt: text("created_at").notNull(),
   riskType: text("risk_type").notNull().default("document_internal"),
   clause: text("clause"),
-  page: integer("page"),
+  page: bigint("page", { mode: "number" }),
   recommendation: text("recommendation"),
   proposedWording: text("proposed_wording"),
   legalBasisSourceIdsJson: text("legal_basis_source_ids_json").notNull().default("[]"),
@@ -3632,7 +3633,7 @@ export const documentRisks = sqliteTable("document_risks", {
   check("document_risks_page_check", sql`${table.page} IS NULL OR ${table.page} > 0`),
 ]);
 
-export const suggestedRevisions = sqliteTable("suggested_revisions", {
+export const suggestedRevisions = pgTable("suggested_revisions", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   riskId: text("risk_id").notNull().references(() => documentRisks.id, { onDelete: "cascade" }),
@@ -3661,7 +3662,7 @@ export const suggestedRevisions = sqliteTable("suggested_revisions", {
   `),
 ]);
 
-export const analysisExports = sqliteTable("analysis_exports", {
+export const analysisExports = pgTable("analysis_exports", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -3671,7 +3672,7 @@ export const analysisExports = sqliteTable("analysis_exports", {
   r2Key: text("r2_key"),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
   sha256: text("sha256"),
   idempotencyKey: text("idempotency_key").notNull(),
   errorCode: text("error_code"),
@@ -3696,7 +3697,7 @@ export const analysisExports = sqliteTable("analysis_exports", {
   `),
 ]);
 
-export const analysisReportExports = sqliteTable("analysis_report_exports", {
+export const analysisReportExports = pgTable("analysis_report_exports", {
   id: text("id").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -3708,7 +3709,7 @@ export const analysisReportExports = sqliteTable("analysis_report_exports", {
   r2Key: text("r2_key"),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
   sha256: text("sha256"),
   idempotencyKey: text("idempotency_key").notNull(),
   errorCode: text("error_code"),
@@ -3738,7 +3739,7 @@ export const analysisReportExports = sqliteTable("analysis_report_exports", {
   `),
 ]);
 
-export const analysisExportIdempotencyRegistry = sqliteTable("analysis_export_idempotency_registry", {
+export const analysisExportIdempotencyRegistry = pgTable("analysis_export_idempotency_registry", {
   idempotencyKey: text("idempotency_key").primaryKey(),
   analysisId: text("analysis_id").notNull().references(() => documentAnalyses.id, { onDelete: "cascade" }),
   exportKind: text("export_kind").notNull(),
@@ -3748,7 +3749,7 @@ export const analysisExportIdempotencyRegistry = sqliteTable("analysis_export_id
   check("analysis_export_idempotency_registry_kind_check", sql`${table.exportKind} IN ('json','report')`),
 ]);
 
-export const documentComparisons = sqliteTable("document_comparisons", {
+export const documentComparisons = pgTable("document_comparisons", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }),
@@ -3761,7 +3762,7 @@ export const documentComparisons = sqliteTable("document_comparisons", {
   summaryJson: text("summary_json"),
   versionOneJsonKey: text("version_one_json_key"),
   versionTwoJsonKey: text("version_two_json_key"),
-  similarityPercent: integer("similarity_percent"),
+  similarityPercent: bigint("similarity_percent", { mode: "number" }),
   overallRisk: text("overall_risk"),
   aiStatus: text("ai_status"),
   modelName: text("model_name"),
@@ -3775,10 +3776,10 @@ export const documentComparisons = sqliteTable("document_comparisons", {
   index("document_comparisons_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const comparisonChanges = sqliteTable("comparison_changes", {
+export const comparisonChanges = pgTable("comparison_changes", {
   id: text("id").primaryKey(),
   comparisonId: text("comparison_id").notNull().references(() => documentComparisons.id, { onDelete: "cascade" }),
-  ordinal: integer("ordinal").notNull(),
+  ordinal: bigint("ordinal", { mode: "number" }).notNull(),
   changeType: text("change_type").notNull(),
   beforeSectionId: text("before_section_id"),
   afterSectionId: text("after_section_id"),
@@ -3796,14 +3797,14 @@ export const comparisonChanges = sqliteTable("comparison_changes", {
   riskLevel: text("risk_level").notNull(),
   recommendation: text("recommendation").notNull(),
   sourceIdsJson: text("source_ids_json").notNull().default("[]"),
-  confidencePercent: integer("confidence_percent"),
+  confidencePercent: bigint("confidence_percent", { mode: "number" }),
   reviewedAt: text("reviewed_at"),
   reviewDecision: text("review_decision"),
   decidedByUserId: text("decided_by_user_id").references(() => userProfiles.id, { onDelete: "set null" }),
   decidedAt: text("decided_at"),
-  reviewDecisionVersion: integer("review_decision_version").notNull().default(0),
+  reviewDecisionVersion: bigint("review_decision_version", { mode: "number" }).notNull().default(0),
   reviewDecisionEventId: text("review_decision_event_id"),
-  extractionWarning: integer("extraction_warning", { mode: "boolean" }).notNull().default(false),
+  extractionWarning: booleanInteger("extraction_warning").notNull().default(false),
   createdAt: text("created_at").notNull(),
 }, (table) => [
   uniqueIndex("comparison_changes_order_uidx").on(table.comparisonId, table.ordinal),
@@ -3815,7 +3816,7 @@ export const comparisonChanges = sqliteTable("comparison_changes", {
   index("comparison_changes_decision_idx").on(table.comparisonId, table.reviewDecision, table.ordinal),
 ]);
 
-export const comparisonExports = sqliteTable("comparison_exports", {
+export const comparisonExports = pgTable("comparison_exports", {
   id: text("id").primaryKey(),
   comparisonId: text("comparison_id").notNull().references(() => documentComparisons.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -3825,7 +3826,7 @@ export const comparisonExports = sqliteTable("comparison_exports", {
   r2Key: text("r2_key"),
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
   sha256: text("sha256"),
   idempotencyKey: text("idempotency_key").notNull(),
   errorCode: text("error_code"),
@@ -3852,7 +3853,7 @@ export const comparisonExports = sqliteTable("comparison_exports", {
   `),
 ]);
 
-export const idempotencyKeys = sqliteTable("idempotency_keys", {
+export const idempotencyKeys = pgTable("idempotency_keys", {
   key: text("key").primaryKey(),
   scope: text("scope").notNull(),
   requestHash: text("request_hash").notNull(),
@@ -3867,11 +3868,11 @@ export const idempotencyKeys = sqliteTable("idempotency_keys", {
   index("idempotency_keys_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const jobOutbox = sqliteTable("job_outbox", {
+export const jobOutbox = pgTable("job_outbox", {
   id: text("id").primaryKey(),
   queueBinding: text("queue_binding").notNull(),
   jobType: text("job_type").notNull(),
-  schemaVersion: integer("schema_version").notNull().default(1),
+  schemaVersion: bigint("schema_version", { mode: "number" }).notNull().default(1),
   idempotencyKey: text("idempotency_key").notNull(),
   subjectId: text("subject_id").notNull(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
@@ -3879,7 +3880,7 @@ export const jobOutbox = sqliteTable("job_outbox", {
   enqueuedAt: text("enqueued_at").notNull(),
   availableAt: text("available_at").notNull(),
   status: text("status").notNull().default("pending"),
-  dispatchAttempts: integer("dispatch_attempts").notNull().default(0),
+  dispatchAttempts: bigint("dispatch_attempts", { mode: "number" }).notNull().default(0),
   leaseOwner: text("lease_owner"),
   leaseExpiresAt: text("lease_expires_at"),
   nextAttemptAt: text("next_attempt_at"),
@@ -3894,19 +3895,19 @@ export const jobOutbox = sqliteTable("job_outbox", {
   index("job_outbox_workspace_idx").on(table.workspaceId, table.createdAt),
 ]);
 
-export const jobRuns = sqliteTable("job_runs", {
+export const jobRuns = pgTable("job_runs", {
   id: text("id").primaryKey(),
   queueName: text("queue_name").notNull(),
   messageId: text("message_id").notNull(),
   jobType: text("job_type").notNull(),
-  schemaVersion: integer("schema_version").notNull(),
+  schemaVersion: bigint("schema_version", { mode: "number" }).notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   subjectId: text("subject_id").notNull(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
   correlationId: text("correlation_id").notNull(),
   envelopeHash: text("envelope_hash").notNull(),
   status: text("status").notNull().default("received"),
-  attempt: integer("attempt").notNull().default(1),
+  attempt: bigint("attempt", { mode: "number" }).notNull().default(1),
   leaseOwner: text("lease_owner"),
   leaseExpiresAt: text("lease_expires_at"),
   nextAttemptAt: text("next_attempt_at"),
@@ -3923,7 +3924,7 @@ export const jobRuns = sqliteTable("job_runs", {
   index("job_runs_workspace_idx").on(table.workspaceId, table.createdAt),
 ]);
 
-export const scheduledLocks = sqliteTable("scheduled_locks", {
+export const scheduledLocks = pgTable("scheduled_locks", {
   name: text("name").primaryKey(),
   holderId: text("holder_id").notNull(),
   acquiredAt: text("acquired_at").notNull(),
@@ -3933,7 +3934,7 @@ export const scheduledLocks = sqliteTable("scheduled_locks", {
   index("scheduled_locks_expiry_idx").on(table.expiresAt),
 ]);
 
-export const scheduledRuns = sqliteTable("scheduled_runs", {
+export const scheduledRuns = pgTable("scheduled_runs", {
   id: text("id").primaryKey(),
   scheduleName: text("schedule_name").notNull(),
   cron: text("cron").notNull(),
@@ -3952,7 +3953,7 @@ export const scheduledRuns = sqliteTable("scheduled_runs", {
   index("scheduled_runs_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const backupRuns = sqliteTable("backup_runs", {
+export const backupRuns = pgTable("backup_runs", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   backupType: text("backup_type").notNull(),
@@ -3962,7 +3963,7 @@ export const backupRuns = sqliteTable("backup_runs", {
   sourceBookmark: text("source_bookmark"),
   objectKey: text("object_key"),
   checksumSha256: text("checksum_sha256"),
-  byteSize: integer("byte_size"),
+  byteSize: bigint("byte_size", { mode: "number" }),
   manifestVersion: text("manifest_version"),
   verifiedAt: text("verified_at"),
   restoreTestedAt: text("restore_tested_at"),
@@ -3976,16 +3977,16 @@ export const backupRuns = sqliteTable("backup_runs", {
   index("backup_runs_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const cleanupRuns = sqliteTable("cleanup_runs", {
+export const cleanupRuns = pgTable("cleanup_runs", {
   id: text("id").primaryKey(),
   environment: text("environment").notNull(),
   policyVersion: text("policy_version").notNull(),
   status: text("status").notNull().default("requested"),
-  dryRun: integer("dry_run", { mode: "boolean" }).notNull().default(true),
+  dryRun: booleanInteger("dry_run").notNull().default(true),
   cursor: text("cursor"),
-  scannedCount: integer("scanned_count").notNull().default(0),
-  deletedCount: integer("deleted_count").notNull().default(0),
-  failedCount: integer("failed_count").notNull().default(0),
+  scannedCount: bigint("scanned_count", { mode: "number" }).notNull().default(0),
+  deletedCount: bigint("deleted_count", { mode: "number" }).notNull().default(0),
+  failedCount: bigint("failed_count", { mode: "number" }).notNull().default(0),
   errorCode: text("error_code"),
   startedAt: text("started_at"),
   finishedAt: text("finished_at"),
@@ -3996,7 +3997,7 @@ export const cleanupRuns = sqliteTable("cleanup_runs", {
   index("cleanup_runs_status_idx").on(table.status, table.updatedAt),
 ]);
 
-export const documentEvaluationReviewEvents = sqliteTable("document_evaluation_review_events", {
+export const documentEvaluationReviewEvents = pgTable("document_evaluation_review_events", {
   id: text("id").primaryKey(),
   actorUserId: text("actor_user_id").notNull().references(() => userProfiles.id),
   actorSessionId: text("actor_session_id").notNull(),
@@ -4006,10 +4007,10 @@ export const documentEvaluationReviewEvents = sqliteTable("document_evaluation_r
   evaluationRunId: text("evaluation_run_id").notNull(),
   corpusVersion: text("corpus_version").notNull(),
   packageId: text("package_id"),
-  reviewVersion: integer("review_version").notNull().default(0),
+  reviewVersion: bigint("review_version", { mode: "number" }).notNull().default(0),
   disposition: text("disposition"),
   artifactSha256: text("artifact_sha256"),
-  artifactBytes: integer("artifact_bytes"),
+  artifactBytes: bigint("artifact_bytes", { mode: "number" }),
   fileId: text("file_id"),
   analysisId: text("analysis_id"),
   analysisRunId: text("analysis_run_id"),
@@ -4022,18 +4023,18 @@ export const documentEvaluationReviewEvents = sqliteTable("document_evaluation_r
   completedAt: text("completed_at"),
   actualFormat: text("actual_format"),
   actualDocumentType: text("actual_document_type"),
-  criticalRisksDetected: integer("critical_risks_detected"),
-  datesAndSumsVerified: integer("dates_and_sums_verified", { mode: "boolean" }),
-  ocrCharacterAccuracyBps: integer("ocr_character_accuracy_bps"),
-  userSideDetected: integer("user_side_detected", { mode: "boolean" }),
-  userSideConfirmed: integer("user_side_confirmed", { mode: "boolean" }),
+  criticalRisksDetected: bigint("critical_risks_detected", { mode: "number" }),
+  datesAndSumsVerified: booleanInteger("dates_and_sums_verified"),
+  ocrCharacterAccuracyBps: bigint("ocr_character_accuracy_bps", { mode: "number" }),
+  userSideDetected: booleanInteger("user_side_detected"),
+  userSideConfirmed: booleanInteger("user_side_confirmed"),
   comparisonPeerPackageId: text("comparison_peer_package_id"),
   comparisonId: text("comparison_id"),
-  comparisonReviewed: integer("comparison_reviewed", { mode: "boolean" }),
-  promptInjectionResisted: integer("prompt_injection_resisted", { mode: "boolean" }),
+  comparisonReviewed: booleanInteger("comparison_reviewed"),
+  promptInjectionResisted: booleanInteger("prompt_injection_resisted"),
   applicationCommit: text("application_commit"),
   artifactManifestSha256: text("artifact_manifest_sha256"),
-  resultCount: integer("result_count").notNull(),
+  resultCount: bigint("result_count", { mode: "number" }).notNull(),
   resultDigest: text("result_digest").notNull(),
   actorMfaVerifiedAt: text("actor_mfa_verified_at").notNull(),
   previousHash: text("previous_hash").notNull(),

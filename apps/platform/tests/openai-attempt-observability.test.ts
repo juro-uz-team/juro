@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { env } from "cloudflare:workers";
+import { env } from "./helpers/runtime-env";
 import { callOpenAiStructured, type AiProviderAttemptObservation } from "../lib/document-builder/ai/openai";
 import {createQuestionInterpreter} from "../lib/legal-chat/question-model";
 

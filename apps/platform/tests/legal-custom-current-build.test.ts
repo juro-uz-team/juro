@@ -24,7 +24,7 @@ test("reduction handoff uses a valid stable instance identity and resumes after 
     },
     async get(id: string) {
       if (!instances.has(id)) throw Error("INSTANCE_MISSING");
-      return { id, status: async () => ({ status: "running" }) } as WorkflowInstance;
+      return { id, status: async () => ({ status: "running" }) };
     },
   };
   const payload = { releaseId, expectedPageCount: 16098 };

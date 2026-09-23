@@ -1,6 +1,6 @@
 import type { PublicLanguage } from "../../../content/types";
 
-const PLATFORM_ORIGIN = "https://app.juro.uz";
+const PLATFORM_ORIGIN = process.env.NEXT_PUBLIC_PLATFORM_ORIGIN ?? "http://localhost:3000";
 
 export function platformAuthHref(
   locale: PublicLanguage,

@@ -70,19 +70,9 @@ import {
 } from "./staging-account-deletion-probe";
 import { recordDependencyHealthEvidence } from "./dependency-health-evidence";
 
-export const JOB_KINDS = [
-  "document.analyze",
-  "document.index",
-  "ocr.process",
-  "document.export",
-  "email.send",
-  "legal.sync",
-  "legal.parse",
-  "legal.index",
-  "cleanup.run",
-  "notification.dispatch",
-  "malware.scan",
-] as const;
+export { JOB_KINDS } from "../lib/jobs/contract";
+import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../lib/jobs/contract";
+export { QUEUE_BINDING_BY_KIND, expectedQueueName } from "../lib/jobs/contract";
 
 export const LEGACY_JOB_KINDS = [
   "platform.probe",
@@ -234,34 +224,6 @@ class SafeJobError extends Error {
   }
 }
 
-const queueStemByKind: Record<JobKind, string> = {
-  "document.analyze": "document-analysis",
-  "document.index": "document-analysis",
-  "ocr.process": "ocr-processing",
-  "document.export": "document-export",
-  "email.send": "email-notifications",
-  "legal.sync": "legal-sources-sync",
-  "legal.parse": "legal-sources-sync",
-  "legal.index": "legal-sources-sync",
-  "cleanup.run": "data-retention-cleanup",
-  "notification.dispatch": "notifications",
-  "malware.scan": "malware-scan",
-};
-
-export const QUEUE_BINDING_BY_KIND = {
-  "document.analyze": "DOCUMENT_ANALYSIS_QUEUE",
-  "document.index": "DOCUMENT_ANALYSIS_QUEUE",
-  "ocr.process": "OCR_PROCESSING_QUEUE",
-  "document.export": "DOCUMENT_EXPORT_QUEUE",
-  "email.send": "EMAIL_NOTIFICATIONS_QUEUE",
-  "legal.sync": "LEGAL_SOURCES_SYNC_QUEUE",
-  "legal.parse": "LEGAL_SOURCES_SYNC_QUEUE",
-  "legal.index": "LEGAL_SOURCES_SYNC_QUEUE",
-  "cleanup.run": "DATA_RETENTION_CLEANUP_QUEUE",
-  "notification.dispatch": "NOTIFICATIONS_QUEUE",
-  "malware.scan": "MALWARE_SCAN_QUEUE",
-} as const satisfies Record<JobKind, string>;
-
 export const PLATFORM_QUEUE_BINDINGS = [
   "DOCUMENT_ANALYSIS_QUEUE",
   "OCR_PROCESSING_QUEUE",
@@ -304,7 +266,7 @@ export type PlatformJobEnv = Omit<
   LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED?: string;
   LEGAL_LEX_RSS_DISCOVERY_ENABLED?: string;
   ACCOUNT_DELETION_PURGE_ENABLED: string;
-  AI?: Ai;
+  OCR?: import("../lib/runtime/document-converter").DocumentConverter;
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
   OPERATIONS_ALERT_EMAIL?: string;
@@ -322,17 +284,6 @@ export type PlatformJobEnv = Omit<
   MALWARE_SCANNER?: Fetcher;
   MALWARE_SCAN_ENABLED?: string;
 };
-
-export function expectedQueueName(
-  kind: JobKind,
-  environment: PlatformJobEnv["APP_ENV"],
-): string {
-  const stem = queueStemByKind[kind];
-  if (!stem) {
-    throw new TypeError("Unsupported job kind.");
-  }
-  return `${environment}-${stem}`;
-}
 
 /**
  * `document.analyze` and `document.index` deliberately share one source

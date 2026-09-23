@@ -118,36 +118,10 @@ test("embedding budget enforces provider ceilings, rate and authorized cost", ()
   });
 });
 
-test("document workers use only the privacy-configured regular Gateway transport", async () => {
-  for (const name of ["legal-custom-current-build-worker.ts", "legal-custom-history-build-worker.ts"]) {
-    const worker = await readFile(new URL(`../worker/${name}`, import.meta.url), "utf8");
-    assert.match(worker, /\.gateway\(/u);
-    assert.match(worker, /requestGatewayDocumentEmbeddings/u);
-    assert.match(worker, /DOCUMENT_EMBEDDINGS_ENABLED !== "true"/u);
-    assert.doesNotMatch(worker, /api\.openai\.com|\/batches|assertOfflineEmbeddingArtifactsAvailable/u);
-  }
-});
-
-test("historical build configuration is private, isolated and exactly budgeted", async () => {
-  const config = JSON.parse(await readFile(
-    new URL("../wrangler.legal-custom-history.jsonc", import.meta.url), "utf8",
-  ));
-  assert.equal(config.name, "juro-legal-history-custom-20260906");
-  assert.equal(config.workers_dev, false);
-  assert.equal(config.preview_urls, false);
-  assert.equal(config.routes, undefined);
-  assert.equal(config.vars.AUTHORIZED_PROVIDER_TOKENS, "15042720");
-  assert.match(config.vars.ACCEPTED_INPUT_MANIFEST_KEY,
-    /^accepted-inputs\/history\/[a-f0-9]{64}\/manifest-[a-f0-9]{64}\.json$/u);
-  assert.equal(config.vars.ACCEPTED_INPUT_MANIFEST_KEY.endsWith(
-    `manifest-${config.vars.ACCEPTED_INPUT_MANIFEST_SHA256}.json`,
-  ), true);
-  assert.equal(config.queues.producers[0].queue, "juro-legal-history-custom-20260906");
-  assert.equal(config.queues.consumers[0].dead_letter_queue,
-    "juro-legal-history-custom-20260906-dlq");
-  assert.equal(config.vectorize[0].index_name, "juro-legal-history-custom-20260906");
-  assert.equal(config.r2_buckets.find((binding: { binding: string }) =>
-    binding.binding === "ARTIFACTS")?.bucket_name, "juro-legal-current-custom-20260903");
+test("document embeddings use the direct provider transport", async () => {
+  const source = await readFile(new URL("../lib/legal-corpus/document-embedding-build.ts", import.meta.url), "utf8");
+  assert.match(source, /https:\/\/api\.openai\.com\/v1\/embeddings/u);
+  assert.doesNotMatch(source, /gateway\.ai\.cloudflare|\.gateway\(/u);
 });
 
 test("seal requires all lanes, terminal Vectorize mutations and exact inventory", () => {

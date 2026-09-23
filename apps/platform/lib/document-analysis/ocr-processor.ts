@@ -1,3 +1,4 @@
+import type { DocumentConverter, DocumentConversion } from "../runtime/document-converter";
 import {
   detectDocumentLanguage,
   structureDocument,
@@ -16,9 +17,9 @@ import {
 } from "./package-extractor";
 import { DOCUMENT_ANALYSIS_PDF_PAGE_LIMIT, inspectPdfPageCount, PdfPreflightError } from "./pdf-preflight";
 
-const EXTRACTION_METHOD = "workers_ai_markdown";
-const EXTRACTION_PROVIDER = "cloudflare_workers_ai";
-const EXTRACTION_MODEL = "to-markdown";
+const EXTRACTION_METHOD = "local_document_conversion";
+const EXTRACTION_PROVIDER = "juro-local-ocr";
+const EXTRACTION_MODEL = "tesseract-poppler-v1";
 const ZIP_MIME_TYPE = "application/zip";
 
 type OcrAnalysisRow = {
@@ -56,7 +57,7 @@ type StoredExtraction = {
 export type OcrProcessorEnv = {
   DB: D1Database;
   BUCKET: R2Bucket;
-  AI?: Ai;
+  OCR?: DocumentConverter;
 };
 
 export class OcrProcessingError extends Error {
@@ -324,7 +325,7 @@ async function convertAndStore(
   tokenEstimate: number;
   warnings: string[];
 }> {
-  if (!env.AI) throw new OcrProcessingError("OCR_PROVIDER_UNAVAILABLE", true);
+  if (!env.OCR) throw new OcrProcessingError("OCR_PROVIDER_UNAVAILABLE", true);
   const sourceSha256 = requiredSourceSha(row);
   const object = await env.BUCKET.get(row.r2Key);
   if (!object) throw new OcrProcessingError("OCR_OBJECT_MISSING", false);
@@ -333,7 +334,7 @@ async function convertAndStore(
     throw new OcrProcessingError("OCR_INTEGRITY_FAILED", false);
   }
 
-  const converted = await convertSourceWithWorkersAi(env.AI, row, sourceBytes);
+  const converted = await convertSourceLocally(env.OCR, row, sourceBytes);
   const { extracted, tokenEstimate, warnings } = converted;
   const completedAt = new Date().toISOString();
   const stored: StoredExtraction = {
@@ -393,18 +394,18 @@ type ConvertedSource = {
   warnings: string[];
 };
 
-async function convertSourceWithWorkersAi(
-  ai: Ai,
+async function convertSourceLocally(
+  ai: DocumentConverter,
   row: OcrAnalysisRow,
   sourceBytes: Uint8Array,
 ): Promise<ConvertedSource> {
-  if (row.mimeType === ZIP_MIME_TYPE) return convertPackageWithWorkersAi(ai, row, sourceBytes);
+  if (row.mimeType === ZIP_MIME_TYPE) return convertPackageLocally(ai, row, sourceBytes);
 
   const name = opaqueFileName(row.mimeType);
   const pageCount = row.mimeType === "application/pdf"
     ? await preflightPdf(sourceBytes)
     : row.mimeType.startsWith("image/") ? 1 : null;
-  let response: ConversionResponse;
+  let response: DocumentConversion;
   try {
     response = await ai.toMarkdown({
       name,
@@ -413,9 +414,9 @@ async function convertSourceWithWorkersAi(
   } catch {
     throw new OcrProcessingError("OCR_PROVIDER_UNAVAILABLE", true);
   }
-  const converted = normalizeConversionResponse(response, name, row.mimeType);
+  const converted = normalizeDocumentConversion(response, name, row.mimeType);
   const imageInput = row.mimeType.startsWith("image/");
-  const warnings = ["CLOUDFLARE_CONVERSION_USED"];
+  const warnings = ["LOCAL_DOCUMENT_CONVERSION_USED"];
   if (imageInput) warnings.push("AI_OCR_REVIEW_REQUIRED");
   return {
     tokenEstimate: converted.tokens,
@@ -434,8 +435,8 @@ async function convertSourceWithWorkersAi(
   };
 }
 
-async function convertPackageWithWorkersAi(
-  ai: Ai,
+async function convertPackageLocally(
+  ai: DocumentConverter,
   row: OcrAnalysisRow,
   sourceBytes: Uint8Array,
 ): Promise<ConvertedSource> {
@@ -468,7 +469,7 @@ async function convertPackageWithWorkersAi(
     }
     memberPageCounts.push(pageCount);
   }
-  let responses: ConversionResponse[];
+  let responses: DocumentConversion[];
   try {
     responses = await ai.toMarkdown(requests);
   } catch {
@@ -478,7 +479,7 @@ async function convertPackageWithWorkersAi(
     throw new OcrProcessingError("OCR_PROVIDER_REJECTED", false);
   }
   const expectedNames = new Set(requests.map((request) => request.name));
-  const responsesByName = new Map<string, ConversionResponse>();
+  const responsesByName = new Map<string, DocumentConversion>();
   for (const response of responses) {
     if (!expectedNames.has(response.name) || responsesByName.has(response.name)) {
       throw new OcrProcessingError("OCR_PROVIDER_REJECTED", false);
@@ -492,7 +493,7 @@ async function convertPackageWithWorkersAi(
   let tokenEstimate = 0;
   let limited = false;
   for (const [index, member] of members.entries()) {
-    const converted = normalizeConversionResponse(
+    const converted = normalizeDocumentConversion(
       responsesByName.get(requests[index]!.name),
       requests[index]!.name,
       member.mimeType,
@@ -503,7 +504,7 @@ async function convertPackageWithWorkersAi(
     }
     texts.push(`===== ФАЙЛ: ${JSON.stringify(member.name)} =====\n\n${converted.text}`);
     const memberSections = structureDocument(converted.text);
-    const memberWarnings = ["CLOUDFLARE_CONVERSION_USED"];
+    const memberWarnings = ["LOCAL_DOCUMENT_CONVERSION_USED"];
     if (member.mimeType.startsWith("image/")) memberWarnings.push("AI_OCR_REVIEW_REQUIRED");
     memberDocuments.push({
       fileName: member.name,
@@ -528,7 +529,7 @@ async function convertPackageWithWorkersAi(
   }
 
   const text = texts.join("\n\n");
-  const warnings = ["PACKAGE_MULTI_DOCUMENT", "CLOUDFLARE_CONVERSION_USED"];
+  const warnings = ["PACKAGE_MULTI_DOCUMENT", "LOCAL_DOCUMENT_CONVERSION_USED"];
   if (limited) warnings.push("AI_OCR_REVIEW_REQUIRED");
   return {
     tokenEstimate,
@@ -561,8 +562,8 @@ async function preflightPdf(bytes: Uint8Array, limit = DOCUMENT_ANALYSIS_PDF_PAG
   }
 }
 
-function normalizeConversionResponse(
-  response: ConversionResponse | undefined,
+function normalizeDocumentConversion(
+  response: DocumentConversion | undefined,
   expectedName: string,
   expectedMimeType: string,
 ): { text: string; tokens: number } {

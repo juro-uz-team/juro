@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test,{type TestContext} from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {GET,POST,DELETE} from "../app/api/platform/ai/route";
 import {POST as updateFact} from "../app/api/platform/ai/facts/route";
 import {reserveAiRun} from "../lib/ai/run-store";

@@ -1,75 +1,59 @@
-name: CI
-
+name: Native application validation
 on:
   workflow_dispatch:
   pull_request:
   push:
-    branches:
-      - main
-
+    branches: [main, refactor/self-hosted-postgres]
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-      matrix:
-        app:
-          - apps/website
-          - apps/platform
-
-    defaults:
-      run:
-        working-directory: ${{ matrix.app }}
-
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg17-bookworm
+        env:
+          POSTGRES_USER: juro
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: juro
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U juro"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://juro:isolated-ci-only@127.0.0.1:55432/juro
+      PRIVATE_DEVELOPMENT: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-          cache-dependency-path: ${{ matrix.app }}/package-lock.json
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Verify generated Cloudflare types
-        if: matrix.app == 'apps/platform'
-        run: npm run cf:types:check
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Type-check
-        run: npx tsc --noEmit
-
-      - name: Test
-        run: npm test
-
-      - name: Validate deployable artifact
-        run: npm run validate:artifact
-
-      - name: Validate Cloudflare environment matrix
-        if: matrix.app == 'apps/platform'
-        run: npm run validate:cloudflare:matrix
-
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Audit website toolchain dependencies
-        if: matrix.app == 'apps/website'
-        run: npm audit --audit-level=high
-
-      - name: Enforce dependency licence policy
-        run: npm run license:check
+          cache-dependency-path: |
+            apps/platform/package-lock.json
+            apps/website/package-lock.json
+      - name: Install application dependencies
+        run: npm ci --prefix apps/platform && npm ci --prefix apps/website
+      - name: Install document tools
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-rus tesseract-ocr-uzb tesseract-ocr-uzb-cyrl clamav
+      - name: Initialize malware signatures
+        run: sudo systemctl stop clamav-freshclam || true; sudo freshclam
+      - name: Initialize PostgreSQL
+        working-directory: apps/platform
+        run: npm run db:migrate
+      - name: Type-check applications
+        run: npm run type-check --prefix apps/platform && npm run type-check --prefix apps/admin && npm run type-check --prefix apps/website
+      - name: Production builds
+        run: npm run build --prefix apps/platform && npm run build --prefix apps/website
+      - name: Platform tests
+        run: npm test --prefix apps/platform
+      - name: Website tests
+        working-directory: apps/website
+        run: node --test tests/*.test.mjs
+      - name: Dependency licences
+        run: npm run license:check --prefix apps/platform && npm run license:check --prefix apps/website

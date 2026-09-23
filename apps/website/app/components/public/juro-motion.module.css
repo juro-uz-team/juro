@@ -97,23 +97,6 @@
   }
 }
 
-:global(header nav a),
-:global(header a[aria-label="O‘zbekcha"]),
-:global(header a[aria-label="Русский"]),
-:global(header a[href*="/auth/login"]) {
-  align-items: center;
-  display: inline-flex;
-  min-height: 44px;
-  min-width: 44px;
-}
-
-:global(footer a) {
-  align-items: center;
-  display: inline-flex;
-  min-height: 44px;
-  min-width: 44px;
-}
-
 .heroMotion {
   --pointer-x: 0;
   --pointer-y: 0;
@@ -214,36 +197,6 @@
 .caseMapMotion .caseOutputMotion article:nth-of-type(2) { animation-delay: 230ms; }
 .caseMapMotion .caseOutputMotion article:nth-of-type(3) { animation-delay: 340ms; }
 .caseMapMotion .caseOutputMotion article:nth-of-type(4) { animation-delay: 450ms; }
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal]) {
-  opacity: 0;
-  transform: translate3d(0, 42px, 0);
-  transition: opacity 680ms var(--ease-story), transform 780ms var(--ease-story), clip-path 820ms var(--ease-story);
-}
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="left"]) {
-  transform: translate3d(0, 24px, 0);
-}
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="right"]) {
-  transform: translate3d(0, 24px, 0);
-}
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="mask"]) {
-  clip-path: inset(0 0 0 0 round 18px);
-  opacity: 0;
-  transform: translate3d(0, 34px, 0) scale(.985);
-}
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal][data-reveal-state="visible"]) {
-  clip-path: none;
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-}
-
-:global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="mask"][data-reveal-state="visible"]) {
-  clip-path: inset(0 0 0 0 round 18px);
-}
 
 .storySection {
   min-height: 145vh;
@@ -366,8 +319,7 @@
 
 .audienceCardMotion a,
 .investorMotion a,
-.planMotion a,
-:global([data-handoff-story] a) {
+.planMotion a {
   align-items: center;
   display: inline-flex;
   min-height: 44px;
@@ -702,19 +654,6 @@
     max-width: 100%;
   }
 
-  :global([data-juro-motion-root][data-motion-ready="true"] [data-reveal]) {
-    transform: translate3d(0, 24px, 0);
-  }
-
-  :global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="left"]),
-  :global([data-juro-motion-root][data-motion-ready="true"] [data-reveal="right"]) {
-    transform: translate3d(0, 20px, 0);
-  }
-
-  :global([data-juro-motion-root][data-motion-ready="true"] [data-reveal][data-reveal-state="visible"]) {
-    transform: translate3d(0, 0, 0);
-  }
-
   .storyRail::before,
   .storyRail::after,
   .storyStep::after { display: none; }
@@ -742,12 +681,6 @@
   .documentLabMotion,
   .continuityVisualMotion,
   .dossierMotion {
-    opacity: 1;
-    transform: none;
-  }
-
-  :global([data-juro-motion-root] [data-reveal]) {
-    clip-path: none;
     opacity: 1;
     transform: none;
   }

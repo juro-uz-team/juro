@@ -1,4 +1,3 @@
-import {WorkerEntrypoint} from "cloudflare:workers";
 import {corpusSessionSchema, type CorpusSessionInput} from "../lib/legal-chat/corpus-session";
 import {LegalResearchSession} from "./legal-research-session";
 import {createCorpusResearch} from "../lib/legal-chat/corpus-research";
@@ -53,8 +52,9 @@ export function rejectDisabledLegacyCorpusWrite(
     : null;
 }
 
-export default class LegalCorpusWorker extends WorkerEntrypoint<LegalCorpusWorkerEnv> {
-  openLegalResearch(input:CorpusSessionInput) {
+export default class LegalCorpusWorker {
+  constructor(readonly env: LegalCorpusWorkerEnv) {}
+  async openLegalResearch(input:CorpusSessionInput) {
     const scope=corpusSessionSchema.parse(input);
     if(scope.environment!==this.env.APP_ENV)throw new Error("CORPUS_RESEARCH_ENVIRONMENT_MISMATCH");
     return new LegalResearchSession(scope,formulate=>createCorpusResearch({
@@ -62,7 +62,8 @@ export default class LegalCorpusWorker extends WorkerEntrypoint<LegalCorpusWorke
     }));
   }
 
-  async fetch(request: Request): Promise<Response> {
+  async fetch(input: Request | string | URL, init?: RequestInit): Promise<Response> {
+    const request = input instanceof Request && !init ? input : new Request(input, init);
     const env=this.env;
     const url = new URL(request.url);
     const legacyWriteRejection = rejectDisabledLegacyCorpusWrite(request, env);

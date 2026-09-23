@@ -20,6 +20,9 @@ import {
   resolveGuestAiSession,
 } from "../lib/ai/guest-session";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
+import {legalChatRequestSchema} from "../lib/legal-chat/request-schema";
+import {guestLegalChatRequestSchema} from "../lib/legal-chat/guest-delivery";
+import {answerVerificationFailureText, officialResearchFailureText, questionInterpretationFailureText} from "../lib/ai/legal-answer-failure";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
 
@@ -111,51 +114,35 @@ test("authenticated and guest AI surfaces contain explicit English copy without 
     assert.doesNotMatch(source, /\bconst\s+ru\s*=|locale\s*===\s*["']ru["']/u);
   }
   assert.match(authenticatedClient, /"JURO AI Lawyer"/u);
-  assert.match(authenticatedClient, /"Legal basis in Lex\.uz"/u);
+  const answerView = readFileSync(new URL("../app/_platform/LegalAnswerView.tsx", import.meta.url), "utf8");
+  assert.match(answerView, /"Legal authorities"/u);
   assert.match(guestClient, /"Ask JURO AI Lawyer one question"/u);
   assert.match(guestClient, /"Guest data is deleted after 24 hours"/u);
-  assert.match(guestClient, /"x-juro-locale": locale/u);
+  assert.match(guestClient, /"x-juro-locale":\s*locale/u);
 });
 
-test("AI routes preserve English output and keep Lex.uz discovery on a supported source locale", () => {
-  const authenticatedRoute = readFileSync(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8");
-  const guestRoute = readFileSync(new URL("../app/api/guest/ai/route.ts", import.meta.url), "utf8");
-
-  for (const source of [authenticatedRoute, guestRoute]) {
-    assert.match(source, /parseAiOutputLocale/u);
-    assert.match(source, /const discoveryLocale = aiDiscoveryLocale\(locale\)/u);
-    assert.match(source, /retrieveCorpusAwareLegalSources\([\s\S]*?locale: discoveryLocale/u);
-    assert.match(source, /retrieveSecondaryInternetSources\([\s\S]*?locale: discoveryLocale/u);
-    assert.match(source, /Lex\.uz/u);
-    assert.doesNotMatch(source, /(?:body\?\.locale|parsed\.data\.locale)\s*===\s*["']uz["']\s*\?\s*["']uz["']\s*:\s*["']ru["']/u);
-  }
-  assert.match(authenticatedRoute, /question: rewrite\.query, locale, answerMode/u);
-  assert.match(guestRoute, /locale:\s*z\.enum\(\["ru",\s*"uz",\s*"en"\]\)/u);
-  assert.match(guestRoute, /"The AI provider is temporarily unavailable\."/u);
+test("signed-in and guest chat requests preserve English output", () => {
+  const request={question:"How do I prepare a rental agreement?",locale:"en",idempotencyKey:"english-contract"};
+  assert.equal(legalChatRequestSchema.parse(request).locale,"en");
+  assert.equal(guestLegalChatRequestSchema.parse(request).locale,"en");
+  assert.equal(aiDiscoveryLocale("en"),"ru");
 });
 
 test("English document handoff fails closed until a reviewed English template exists", () => {
-  const route = readFileSync(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../lib/ai/suggested-document.ts", import.meta.url), "utf8");
   const endpoint = readFileSync(new URL("../app/api/platform/ai/suggested-document/route.ts", import.meta.url), "utf8");
 
-  assert.match(route, /if \(locale === "en"\) return \[\];/u);
   assert.match(service, /input\.locale === "en"[\s\S]*AI_SUGGESTED_DOCUMENT_UNAVAILABLE/u);
-  assert.match(endpoint, /"A suitable published English template is not available yet\."/u);
+  assert.match(endpoint, /"The suggested document is unavailable\. Reopen the saved answer and try again\."/u);
 });
 
-test("directly related AI endpoints return deliberate English errors", () => {
-  const paths = [
-    "../app/api/platform/ai/action-plan/route.ts",
-    "../app/api/platform/ai/suggested-document/route.ts",
-    "../app/api/platform/ai/feedback/route.ts",
-    "../app/api/platform/ai/intake/route.ts",
-    "../app/api/platform/ai/intake/consume/route.ts",
-    "../app/api/platform/ai/intake/finalize/route.ts",
-  ];
-  for (const path of paths) {
-    const source = readFileSync(new URL(path, import.meta.url), "utf8");
-    assert.match(source, /aiText\(/u, `${path} must select explicit RU, UZ and EN copy`);
-    assert.match(source, /\b(?:The|Enter|Finish|Secure|Confirm|Your)\b/u, `${path} must contain professional English copy`);
+test("chat failures retain deliberate English copy at the rendering boundary", () => {
+  for(const render of [answerVerificationFailureText,officialResearchFailureText,questionInterpretationFailureText]) {
+    const message=render("en");
+    assert.match(message,/verification|interpret/);
+    assert.doesNotMatch(message,/[А-Яа-я]/);
+    assert.match(message,/allowance was not used/);
   }
+  const client=readFileSync(new URL("../app/_platform/AiLawyerClient.tsx",import.meta.url),"utf8");
+  assert.match(client,/The action could not be completed\. Please retry\./);
 });

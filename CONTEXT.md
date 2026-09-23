@@ -97,7 +97,7 @@ The request-scoped output of every candidate lane declared by one pinned Search 
 _Avoid_: search results, evidence packet, partial answer
 
 **Retrieval Eligibility**:
-The deterministic, capability-specific state derived from verified official-source provenance, exact D1/R2 integrity, supported extraction and stable identities, a verified current pointer when required, supported temporal state, public privacy classification, quarantine clearance, and conflict-free canonicalization. Textual authority and translation relationships are not inputs.
+The deterministic, capability-specific state derived from verified official-source provenance, exact catalog and evidence-object integrity, supported extraction and stable identities, a verified current pointer when required, supported temporal state, public privacy classification, quarantine clearance, and conflict-free canonicalization. Textual authority and translation relationships are not inputs.
 _Avoid_: human approval, model confidence, indexed status
 
 **Source Document**:
@@ -105,7 +105,7 @@ A stable identity assigned by an official publisher to one published document in
 _Avoid_: Legal Instrument, inferred language family, translated copy
 
 **Source Snapshot**:
-An immutable capture of a Source Document identified by publisher revision token, language, capture identity, content hash, capture time, and exact raw/normalized R2 evidence.
+An immutable capture of a Source Document identified by publisher revision token, language, capture identity, content hash, capture time, and exact raw/normalized evidence objects.
 _Avoid_: current pointer, mutable page, inferred Text Revision
 
 **Snapshot Provision**:

@@ -91,7 +91,7 @@ export async function handleCitationEvidenceRequest(request: Request, env: {
   } catch { return privateServiceJson({code: "CITATION_UNAVAILABLE"}, 503); }
 }
 
-export async function fetchCitationEvidence(service: Fetcher, environment: string, receipt: CitationEvidenceReceipt) {
+export async function fetchCitationEvidence(service: { fetch(input: Request | string | URL, init?: RequestInit): Promise<Response> }, environment: string, receipt: CitationEvidenceReceipt) {
   const response = await service.fetch(`http://legal-corpus.internal${CITATION_EVIDENCE_PATH}`, {
     method: "POST", headers: {"content-type": "application/json", "x-juro-service-binding": MARKER,
       "x-juro-legal-environment": environment}, body: JSON.stringify(receipt),

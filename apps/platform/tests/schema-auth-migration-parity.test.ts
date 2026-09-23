@@ -6,9 +6,9 @@ import test from "node:test";
 import { getTableName } from "drizzle-orm";
 import {
   getTableConfig,
-  SQLiteSyncDialect,
-  type SQLiteTable,
-} from "drizzle-orm/sqlite-core";
+  PgDialect,
+  type PgTable,
+} from "drizzle-orm/pg-core";
 
 import {
   accountDeletionChallenges,
@@ -130,10 +130,10 @@ function normalizeDefault(value: unknown): string | null {
   return rendered;
 }
 
-function declaredColumns(table: SQLiteTable) {
+function declaredColumns(table: PgTable) {
   return getTableConfig(table).columns.map((column) => ({
     name: column.name,
-    type: column.getSQLType().toLowerCase(),
+    type: column.getSQLType().toLowerCase().replace(/^bigint$/, "integer"),
     notNull: column.notNull,
     defaultValue: normalizeDefault(column.default),
     primaryKey: column.primary,
@@ -153,15 +153,17 @@ function migratedColumns(db: DatabaseSync, tableName: string) {
   }));
 }
 
-function declaredIndexes(table: SQLiteTable) {
-  return getTableConfig(table).indexes.map((entry) => ({
+function declaredIndexes(table: PgTable) {
+  return getTableConfig(table).indexes.map((entry) => {
+    assert.ok(entry.config.name, "Indexes must have stable names");
+    return ({
     name: entry.config.name,
     unique: entry.config.unique,
     columns: entry.config.columns.map((column) => {
       assert.ok("name" in column, `${entry.config.name} must use named columns`);
       return column.name;
     }),
-  })).sort((left, right) => left.name.localeCompare(right.name));
+  }); }).sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function migratedIndexes(db: DatabaseSync, tableName: string) {
@@ -182,7 +184,7 @@ function migratedIndexes(db: DatabaseSync, tableName: string) {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function declaredForeignKeys(table: SQLiteTable) {
+function declaredForeignKeys(table: PgTable) {
   return getTableConfig(table).foreignKeys.map((foreignKey) => {
     const reference = foreignKey.reference();
     return {
@@ -208,7 +210,7 @@ function migratedForeignKeys(db: DatabaseSync, tableName: string) {
   })).sort((left, right) => left.from.localeCompare(right.from));
 }
 
-function declaredCheckNames(table: SQLiteTable): string[] {
+function declaredCheckNames(table: PgTable): string[] {
   return getTableConfig(table).checks.map(({ name }) => name).sort();
 }
 
@@ -224,7 +226,7 @@ function migratedCheckNames(db: DatabaseSync, tableName: string): string[] {
 
 function assertColumnParity(
   db: DatabaseSync,
-  table: SQLiteTable,
+  table: PgTable,
   columnName: string,
 ): void {
   const tableName = getTableName(table);
@@ -269,7 +271,7 @@ test("db/schema.ts stays in parity with locale and authentication migrations 015
     assertColumnParity(db, userProfiles, "email_verified_at");
     assertColumnParity(db, authMfaChallenges, "primary_auth_method");
 
-    const dialect = new SQLiteSyncDialect();
+    const dialect = new PgDialect();
     const policyLocaleCheck = getTableConfig(policyDocuments).checks.find(
       ({ name }) => name === "policy_documents_locale_check",
     );

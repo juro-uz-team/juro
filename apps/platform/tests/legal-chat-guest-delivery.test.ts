@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {sqliteD1FixtureFromDirectory} from "./helpers/sqlite-d1";
 import {parseIdentityKeyring} from "../lib/auth/keyring";
 import {createGuestAiSession,guestAiClarificationRuns,revealGuestAiRunQuestion} from "../lib/ai/guest-session";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {executeRuntimeLegalChat} from "../lib/legal-chat/runtime-execution";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 

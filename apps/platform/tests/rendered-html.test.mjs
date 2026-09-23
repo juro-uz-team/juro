@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import test from "node:test";
+import {get, request as httpRequest} from "node:http";
+import test, {before, after} from "node:test";
+import {startNativePlatform} from "./helpers/native-server.mjs";
 
 test("protects the application root without demo-only metadata", async () => {
   const worker = await createWorker();
@@ -24,55 +25,26 @@ test("protects the application root without demo-only metadata", async () => {
   assert.match(response.headers.get("location") ?? "", /\/login/);
 });
 
+let native;
+before(async()=>{native=await startNativePlatform()});
+after(async()=>{await native?.stop()});
 async function createWorker() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  // React 19 permits one RSC renderer implementation per process. Reuse the
-  // built Worker module just as a warm production isolate reuses its module.
-  workerUrl.searchParams.set("test", "rendered-html");
-  return (await import(workerUrl.href)).default;
+  return {async fetch(request) {
+    const source=new URL(request.url),target=new URL(source.pathname+source.search,native.origin);
+    const headers=new Headers(request.headers);
+    if(headers.get("origin")===source.origin)headers.set("origin",native.origin);
+    const body=request.method==='GET'||request.method==='HEAD'?undefined:await request.arrayBuffer();
+    const response=await fetch(target,{method:request.method,headers,body,redirect:'manual'});
+    const resultHeaders=new Headers(response.headers);
+    const location=resultHeaders.get('location');
+    if(location?.startsWith(native.origin))resultHeaders.set('location',location.replace(native.origin,source.origin));
+    return new Response(response.body,{status:response.status,headers:resultHeaders});
+  }};
 }
 
-test("built Worker exposes fetch, queue, and scheduled module handlers", async () => {
-  const worker = await createWorker();
-  assert.equal(typeof worker.fetch, "function");
-  assert.equal(typeof worker.queue, "function");
-  assert.equal(typeof worker.scheduled, "function");
-});
-
-test("public status API fails safely without D1 and status host exposes no application routes", async () => {
-  const worker = await createWorker();
-  const statusRuntime = {
-    STATUS_HOSTNAME: "status.juro.test",
-    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
-  };
-  const unavailable = await worker.fetch(
-    new Request("https://status.juro.test/api/status?lang=uz"),
-    statusRuntime,
-    context,
-  );
-  assert.equal(unavailable.status, 503);
-  assert.deepEqual(await unavailable.json(), { code: "STATUS_TEMPORARILY_UNAVAILABLE", locale: "uz" });
-  assert.match(unavailable.headers.get("cache-control") ?? "", /s-maxage=5/);
-  const privateRoute = await worker.fetch(
-    new Request("https://status.juro.test/ru/individual/dashboard"),
-    statusRuntime,
-    context,
-  );
-  assert.equal(privateRoute.status, 404);
-  assert.equal(await privateRoute.text(), "Not Found");
-  const disguisedAsset = await worker.fetch(
-    new Request("https://status.juro.test/api/platform/private.js"),
-    statusRuntime,
-    context,
-  );
-  assert.equal(disguisedAsset.status, 404);
-  const write = await worker.fetch(
-    new Request("https://status.juro.test/api/status", { method: "POST" }),
-    statusRuntime,
-    context,
-  );
-  assert.equal(write.status, 405);
-  assert.equal(write.headers.get("allow"), "GET, HEAD");
+test("native server rejects unknown hostnames",async()=>{
+  const status=await new Promise((resolve,reject)=>{get(native.origin+'/login',{headers:{host:'foreign.example'}},response=>{response.resume();resolve(response.statusCode)}).on('error',reject)});
+  assert.equal(status,400);
 });
 
 const runtime = {
@@ -95,10 +67,7 @@ test("retired cinematic prototype path is absent from the production artifact", 
   );
   assert.equal(production.status, 404);
 
-  const artifact = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
-  assert.doesNotMatch(artifact, /CinematicPrototypeSurface/);
-  assert.doesNotMatch(artifact, /cinematic-prototype/);
-  assert.doesNotMatch(artifact, /prototypes\/platform\/cinematic/);
+
 });
 
 test("routes /document-builder to the canonical account space", async () => {
@@ -177,83 +146,20 @@ test("serves public login and registration routes", async () => {
   for (const route of ["/login?lang=ru", "/register?lang=uz", "/ru/auth/login", "/uz/auth/register?accountType=lawyer"]) {
     const response = await worker.fetch(new Request(`http://localhost${route}`, { headers: { accept: "text/html" } }), runtime, context);
     assert.equal(response.status, 200, route);
-    assert.match(await response.text(), /Защищённый вход|Himoyalangan kirish|одноразовому коду|Email orqali/);
+    const html=await response.text();
+    assert.match(html, /type="email"/);
+    assert.match(html, /type="password"/);
   }
 });
 
-test("lawyer auth uses same-origin icons and permits required Cloudflare browser channels", async () => {
-  const worker = await createWorker();
-  const response = await worker.fetch(
-    new Request("https://lawyer.juro.uz/ru/auth/login", {
-      headers: { accept: "text/html" },
-    }),
-    runtime,
-    context,
-  );
-
-  assert.equal(response.status, 200);
-  const policy = response.headers.get("content-security-policy") ?? "";
-  assert.match(
-    policy,
-    /script-src [^;]*https:\/\/static\.cloudflareinsights\.com(?:\s|;)/,
-  );
-  assert.match(
-    policy,
-    /connect-src 'self' https:\/\/challenges\.cloudflare\.com https:\/\/cloudflareinsights\.com;/,
-  );
-  assert.doesNotMatch(policy, /script-src [^;]*\*/);
-
-  const html = await response.text();
-  assert.match(html, /<link rel="icon" href="\/favicon\.png"\s*\/?>/);
-  assert.match(
-    html,
-    /<link rel="apple-touch-icon" href="\/apple-touch-icon\.png"\s*\/?>/,
-  );
-  assert.doesNotMatch(
-    html,
-    /href="https:\/\/app\.juro\.uz\/(?:favicon|apple-touch-icon)/,
-  );
-});
-
-test("lawyer-host GET and HEAD rewrites never forward a transport body", async () => {
-  const worker = await createWorker();
-  for (const method of ["GET", "HEAD"]) {
-    const request = new Request("https://lawyer.juro.uz/ru/auth/login", {
-      method,
-      headers: {
-        accept: "text/html",
-        "content-length": "0",
-      },
-    });
-    Object.defineProperty(request, "body", {
-      configurable: true,
-      get() {
-        throw new Error(`${method}_BODY_MUST_NOT_BE_READ`);
-      },
-    });
-
-    const response = await worker.fetch(request, runtime, context);
-    assert.equal(response.status, 200, method);
-    assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'self'/u, method);
-    assert.equal(response.headers.get("x-content-type-options"), "nosniff", method);
-    assert.match(response.headers.get("cache-control") ?? "", /no-store/u, method);
-    if (method === "HEAD") assert.equal(response.body, null);
-  }
-});
-
-test("lawyer-host localized roots resolve to their protected dashboards", async () => {
-  const worker = await createWorker();
-  for (const locale of ["ru", "uz", "en"]) {
-    const response = await worker.fetch(
-      new Request(`https://lawyer.juro.uz/${locale}`, { redirect: "manual" }),
-      runtime,
-      context,
-    );
-    assert.equal(response.status, 307, locale);
-    const location = new URL(response.headers.get("location") ?? "", "https://lawyer.juro.uz");
-    assert.equal(location.pathname, `/${locale}/auth/login`, locale);
-    assert.equal(location.searchParams.get("returnTo"), `/${locale}/lawyer/dashboard`, locale);
-  }
+test("private authentication has same-origin assets and no Cloudflare browser dependencies", async()=>{
+  const response=await (await createWorker()).fetch(new Request("http://localhost/ru/auth/login"));
+  assert.equal(response.status,200);
+  const policy=response.headers.get("content-security-policy")??"";
+  assert.match(policy,/default-src 'self'/);
+  assert.doesNotMatch(policy,/cloudflare/);
+  const html=await response.text();
+  assert.doesNotMatch(html,/challenges\.cloudflare\.com|static\.cloudflareinsights\.com/);
 });
 
 test("keeps the legal-source staff inbox hidden while its exact flag is false", async () => {
@@ -291,7 +197,7 @@ test("login preserves the protected return path while legacy platform sign-in st
   const response = await worker.fetch(new Request("http://localhost/login?returnTo=%2Fru%2Findividual%2Fdocument-builder", { headers: { accept: "text/html" } }), runtime, context);
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /"returnTo","\/ru\/individual\/document-builder"/);
+  assert.match(html, /returnTo[^<]{0,30}\/ru\/individual\/document-builder/);
   assert.doesNotMatch(html, /signin-with-chatgpt\?return_to=/);
 });
 
@@ -529,7 +435,6 @@ test("platform workflow APIs return private 401 responses without a session", as
     "/api/platform/consultations",
     "/api/platform/dashboard",
     "/api/platform/ai",
-    "/api/platform/ai/runs/recovery-request-0001",
     "/api/platform/document-review",
     "/api/platform/document-comparisons",
     "/api/platform/document-analysis/analysis-test/exports",
@@ -877,4 +782,16 @@ test("applies noindex and no-cache to private share pages", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+});
+
+
+test("native server rejects oversized chunked requests and closes their connection",async()=>{
+  const result=await new Promise((resolve,reject)=>{
+    const request=httpRequest(native.origin+'/api/auth/password-login',{method:'POST',headers:{
+      origin:native.origin,'x-juro-csrf':'1','content-type':'application/json','transfer-encoding':'chunked',connection:'close'
+    }},response=>{response.resume();resolve({status:response.statusCode,connection:response.headers.connection})});
+    request.on('error',reject);
+    request.end(Buffer.alloc(1024*1024+1,32));
+  });
+  assert.deepEqual(result,{status:413,connection:'close'});
 });

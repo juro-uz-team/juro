@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { matchesGlob } from "node:path";
 
 import { parseIdentityKeyring } from "../lib/auth/keyring";
 import {
@@ -282,7 +281,7 @@ test("dashboard-to-chat wiring carries only the opaque intake handle", () => {
 test("migration registers encrypted retryable handoff storage and production deployment includes it", () => {
   const migration = readFileSync(new URL("../drizzle/0149_ai_question_intakes.sql", import.meta.url), "utf8");
   const journal = JSON.parse(readFileSync(new URL("../drizzle/meta/_journal.json", import.meta.url), "utf8")) as { entries: Array<{ tag: string }> };
-  const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const postgres = readFileSync(new URL("../postgres/0002-application-storage.sql", import.meta.url), "utf8");
 
   assert.ok(journal.entries.some((entry) => entry.tag === "0149_ai_question_intakes"));
   assert.match(migration, /CREATE TABLE `ai_question_intakes`/);
@@ -292,7 +291,5 @@ test("migration registers encrypted retryable handoff storage and production dep
   assert.match(migration, /AI_QUESTION_INTAKE_ACCESS_DENIED/);
   assert.match(migration, /AI_QUESTION_INTAKE_CAPACITY_EXCEEDED/);
   assert.doesNotMatch(migration, /intake\.`consumed_at` IS NULL/);
-  const pattern = /"migrations_pattern":\s*"([^"]+)"/.exec(wrangler)?.[1];
-  assert.ok(pattern);
-  assert.equal(matchesGlob("./drizzle/0149_ai_question_intakes.sql", pattern), true);
+  assert.match(postgres, /CREATE TABLE.*ai_question_intakes/);
 });

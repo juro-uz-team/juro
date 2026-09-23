@@ -24,8 +24,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const requestHeaders = await headers();
-  const requestPath = requestHeaders.get("x-juro-request-path") ?? "";
+  const requestPath = (await headers()).get("x-juro-request-path") ?? "";
   const locale = /^\/uz(?:\/|$)/.test(requestPath) ? "uz" : /^\/en(?:\/|$)/.test(requestPath) ? "en" : "ru";
   return (
     <html lang={locale} suppressHydrationWarning>

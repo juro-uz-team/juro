@@ -20,7 +20,7 @@ import {
   safeProviderFailureReason,
 } from "../worker/production-dependency-probes";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {probeProviderContract} from "../worker/provider-contract-probe";
 
 test("provider connectivity uses the retained structured transports and rejects invalid output without retry",async context=>{

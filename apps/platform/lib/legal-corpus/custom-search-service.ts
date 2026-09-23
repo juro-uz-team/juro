@@ -88,8 +88,8 @@ export const customSearchBatchResponseSchema = z.object({
 export type CustomSearchEnv = {
   APP_ENV: string;
   CANDIDATE_MEMBERSHIP_PROOFS_ENABLED?: string;
-  AI: Ai;
-  AI_GATEWAY_ID: string;
+  OPENAI_API_KEY: string;
+  EMBEDDING_FETCH?: typeof fetch;
   DENSE: CustomVectorSearchIndex;
   ARTIFACTS: R2Bucket;
   CATALOG_DB: D1Database;
@@ -140,15 +140,14 @@ const embeddingResponseSchema = z.object({
 async function queryEmbeddings(env: CustomSearchEnv, queries: string[]): Promise<{
   vectors: number[][]; tokenUsage: number;
 }> {
-  const response = await env.AI.gateway(env.AI_GATEWAY_ID).run({
-    provider: "openai",
-    endpoint: "embeddings",
-    headers: { "Content-Type": "application/json", "cf-aig-skip-cache": true,
-      "cf-aig-collect-log": false, "cf-aig-max-attempts": 1 },
-    query: { model: CUSTOM_EMBEDDING_MODEL, dimensions: CUSTOM_EMBEDDING_DIMENSIONS,
-      encoding_format: "float", input: queries },
-  }, { signal: AbortSignal.timeout(60_000), gateway: { id: env.AI_GATEWAY_ID,
-    skipCache: true, collectLog: false, requestTimeoutMs: 55_000, retries: { maxAttempts: 1 } } });
+  if (!env.OPENAI_API_KEY) throw new TypeError("CUSTOM_QUERY_EMBEDDING_UNAVAILABLE");
+  const response = await (env.EMBEDDING_FETCH ?? fetch)("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+    body: JSON.stringify({ model: CUSTOM_EMBEDDING_MODEL, dimensions: CUSTOM_EMBEDDING_DIMENSIONS,
+      encoding_format: "float", input: queries }),
+    signal: AbortSignal.timeout(60_000),
+  });
   if (!response.ok) throw new TypeError("CUSTOM_QUERY_EMBEDDING_UNAVAILABLE");
   const contentLength = Number(response.headers.get("content-length") ?? 0);
   if (contentLength > 768 * 1024) throw new TypeError("CUSTOM_QUERY_EMBEDDING_RESPONSE_TOO_LARGE");

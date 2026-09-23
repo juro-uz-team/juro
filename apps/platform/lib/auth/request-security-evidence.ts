@@ -8,11 +8,6 @@ const MAX_USER_AGENT_CHARACTERS = 512;
 const COUNTRY_CODE_RE = /^[A-Z0-9]{2}$/;
 const REGION_CODE_RE = /^[A-Z0-9-]{1,12}$/;
 
-type IncomingRequestCf = {
-  country?: unknown;
-  regionCode?: unknown;
-};
-
 export type AuthRequestSecurityContext = {
   connectingIp: string | null;
   userAgent: string | null;
@@ -43,18 +38,18 @@ function locationCode(value: unknown, expression: RegExp): string | null {
 export function authRequestSecurityContext(
   request: Request,
 ): AuthRequestSecurityContext {
-  const cf = (request as Request & { cf?: IncomingRequestCf }).cf;
   return {
     connectingIp: boundedHeader(
-      request.headers.get("cf-connecting-ip"),
+      request.headers.get("x-juro-client-ip"),
       MAX_IP_CHARACTERS,
     ),
     userAgent: boundedHeader(
       request.headers.get("user-agent"),
       MAX_USER_AGENT_CHARACTERS,
     ),
-    countryCode: locationCode(cf?.country, COUNTRY_CODE_RE),
-    regionCode: locationCode(cf?.regionCode, REGION_CODE_RE),
+    // SSH access has no trustworthy end-user geolocation provider.
+    countryCode: null,
+    regionCode: null,
   };
 }
 

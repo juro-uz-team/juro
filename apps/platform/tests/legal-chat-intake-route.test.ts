@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {POST as create} from "../app/api/platform/ai/intake/route";
 import {POST as consume} from "../app/api/platform/ai/intake/consume/route";
 import {POST as finalize} from "../app/api/platform/ai/intake/finalize/route";

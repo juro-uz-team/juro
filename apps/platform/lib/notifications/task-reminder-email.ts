@@ -1,10 +1,10 @@
+import { captureEmailRequest } from "../runtime/email";
 import {
   createIdentityProtectionContext,
   userIdentityById,
 } from "../auth/identity-protection";
 
 const JOB_PREFIX = "task-reminder-email:";
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9:_-]+$/;
 
 export type TaskReminderEmailErrorCode =
@@ -137,7 +137,7 @@ export async function executeTaskReminderEmail(
   const copy = emailCopy(row);
   let response: Response | null = null;
   try {
-    response = await fetch(RESEND_ENDPOINT, {
+    response = await captureEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,

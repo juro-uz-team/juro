@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import styles from "./not-found.module.css";
 
 const copy = {
@@ -28,11 +29,13 @@ const copy = {
   },
 } as const;
 
-export default function NotFound() {
+export default async function NotFound() {
+  const path = (await headers()).get("x-juro-request-path") ?? "";
+  const language = /^\/uz(?:\/|$)/.test(path) ? "uz" : /^\/en(?:\/|$)/.test(path) ? "en" : "ru";
   return (
     <main className={styles.page}>
       <div aria-hidden="true" className={styles.grid} />
-      {Object.entries(copy).map(([locale, t]) => (
+      {Object.entries(copy).filter(([locale]) => locale === language).map(([locale, t]) => (
         <section className={styles.content} data-locale={locale} key={locale} lang={locale}>
           <div className={styles.brand}><span aria-hidden="true">J</span><strong>JURO</strong></div>
           <div className={styles.body}>

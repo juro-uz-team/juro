@@ -150,13 +150,12 @@ test("English auth routing and supporting controls are complete", () => {
   assert.match(localizedRegister, /generateMetadata[\s\S]*authPageMetadata\(locale, "register"\)/u);
 });
 
-test("Turnstile follows explicit theme changes without retaining a stale token", () => {
-  const turnstile = source("app/_auth/TurnstileWidget.tsx");
-
-  assert.match(turnstile, /window\.addEventListener\("juro-theme-change", updateTheme\)/);
-  assert.match(turnstile, /theme,/);
-  assert.match(turnstile, /callback\.current\(""\);[\s\S]*turnstileWindow\.turnstile\.render/);
-  assert.match(turnstile, /\[action, attempt, locale, siteKey, theme\]/);
+test("private authentication challenge clears tokens on reset without loading a provider script", () => {
+  const challenge = source("app/_auth/TurnstileWidget.tsx");
+  assert.match(challenge, /siteKey === "private-local"/);
+  assert.match(challenge, /return \(\) => callback\.current\(""\)/);
+  assert.match(challenge, /\[siteKey, resetSignal\]/);
+  assert.doesNotMatch(challenge, /challenges\.cloudflare|createElement\("script"/);
 });
 
 test("auth layout protects 320px width, touch targets, and reduced motion", () => {

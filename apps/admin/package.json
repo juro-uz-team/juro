@@ -4,12 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../platform/node_modules/wrangler/bin/wrangler.js dev --local --config wrangler.jsonc",
-    "types": "node ../platform/node_modules/wrangler/bin/wrangler.js types worker-configuration.d.ts --config wrangler.jsonc",
-    "type-check": "node ../platform/node_modules/typescript/bin/tsc --project tsconfig.json",
-    "check": "node ../platform/node_modules/wrangler/bin/wrangler.js deploy --dry-run --env staging --config wrangler.jsonc",
-    "deploy:staging": "node ../platform/node_modules/wrangler/bin/wrangler.js deploy --env staging --config wrangler.jsonc",
-    "check:production": "node ../platform/node_modules/wrangler/bin/wrangler.js deploy --dry-run --env production --config wrangler.jsonc",
-    "deploy:production": "node ../platform/node_modules/wrangler/bin/wrangler.js deploy --env production --config wrangler.jsonc"
+    "dev": "node ../../scripts/with-private-env.mjs --import ./../platform/node_modules/tsx/dist/loader.mjs src/server.ts",
+    "start": "node ../../scripts/with-private-env.mjs --production --import ./../platform/node_modules/tsx/dist/loader.mjs src/server.ts",
+    "type-check": "node ../platform/node_modules/typescript/bin/tsc --project tsconfig.json"
   }
 }

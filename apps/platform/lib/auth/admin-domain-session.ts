@@ -1,3 +1,4 @@
+import { validAdminOrigin } from "./admin-origin";
 import { randomToken, sha256 } from "./crypto";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -103,7 +104,7 @@ export async function consumeAdminDomainHandoff(
     throw new AdminDomainSessionError("TICKET_DENIED");
   }
   const destination = new URL(input.destinationOrigin);
-  if (destination.origin !== input.destinationOrigin || destination.protocol !== "https:") {
+  if (destination.origin !== input.destinationOrigin || !validAdminOrigin(destination, input.environment)) {
     throw new AdminDomainSessionError("TICKET_DENIED");
   }
   const now = input.now ?? new Date();

@@ -89,7 +89,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
 
   const db = requireD1();
   const identityContext = runtimeIdentityProtection();
-  const connectingIp = request.headers.get("cf-connecting-ip")?.trim() || null;
+  const connectingIp = request.headers.get("x-juro-client-ip")?.trim() || null;
   const turnstile = await validateAuthTurnstile({
     secretKey: env.TURNSTILE_SECRET_KEY,
     token: parsed.data.turnstileToken,

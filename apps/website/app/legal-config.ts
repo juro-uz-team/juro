@@ -3,8 +3,8 @@ export type LegalMode = "PRE_INCORPORATION_PREVIEW" | "INCORPORATED";
 export const legalConfig = {
   mode: "PRE_INCORPORATION_PREVIEW" as LegalMode,
   domains: {
-    public: "https://juro.uz",
-    app: "https://app.juro.uz",
+    public: process.env.NEXT_PUBLIC_WEBSITE_ORIGIN ?? "http://localhost:3001",
+    app: process.env.NEXT_PUBLIC_PLATFORM_ORIGIN ?? "http://localhost:3000",
   },
   contacts: {
     privacyEmail: "muzaffarbekmurodoff@gmail.com",

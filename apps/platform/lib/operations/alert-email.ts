@@ -1,6 +1,6 @@
+import { captureEmailRequest } from "../runtime/email";
 import { z } from "zod";
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
 const providerAlertRowSchema = z.object({
   id: z.string().uuid(),
@@ -192,7 +192,7 @@ export async function executeOperationalAlertEmail(
   const copy = alertCopy(row);
   let response: Response | null = null;
   try {
-    response = await fetch(RESEND_ENDPOINT, {
+    response = await captureEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,

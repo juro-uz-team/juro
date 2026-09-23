@@ -5,7 +5,7 @@ import {legalChatOwner} from "../../../../../lib/legal-chat/http-owner";
 import {speakAnswer} from "../../../../../lib/legal-chat/voice";
 import {voiceLocale, voiceProblem, voiceErrorResponse} from "../../../../../lib/ai/voice-http";
 import {assertOperationalFeatureEnabled, operationalEnvironment} from "../../../../../lib/operations/operational-feature-flags";
-import {parseJsonRequest} from "../../../../../lib/request-body";
+import {parseJsonRequest} from "../../../../../lib/auth/input";
 
 const schema = z.object({assistantMessageId: z.string().uuid(), voice: z.enum(["marin", "cedar"]), locale: z.enum(["ru", "uz", "en"])}).strict();
 export const POST = withApiErrors(async (request: Request) => {

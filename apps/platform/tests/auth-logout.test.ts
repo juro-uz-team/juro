@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { env } from "cloudflare:workers";
+import { env } from "./helpers/runtime-env";
 
 import {
   createLogoutAction,

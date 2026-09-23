@@ -527,13 +527,13 @@ function failureStatement(
      ) ${insert}
      ON CONFLICT(scope_key) DO UPDATE SET
        failure_count=CASE
-         WHEN window_started_at<=? THEN 1 ELSE failure_count+1 END,
+         WHEN auth_password_rate_limits.window_started_at<=? THEN 1 ELSE auth_password_rate_limits.failure_count+1 END,
        window_started_at=CASE
-         WHEN window_started_at<=? THEN ? ELSE window_started_at END,
+         WHEN auth_password_rate_limits.window_started_at<=? THEN ? ELSE auth_password_rate_limits.window_started_at END,
        locked_until=CASE
-         WHEN window_started_at<=? THEN NULL
-         WHEN failure_count+1>=? THEN ?
-         WHEN failure_count+1>=? THEN ?
+         WHEN auth_password_rate_limits.window_started_at<=? THEN NULL
+         WHEN auth_password_rate_limits.failure_count+1>=? THEN ?
+         WHEN auth_password_rate_limits.failure_count+1>=? THEN ?
          ELSE NULL END,
        updated_at=?${
          input.guard ? ` WHERE EXISTS (${input.guard.selectSql})` : ""

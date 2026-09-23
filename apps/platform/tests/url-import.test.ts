@@ -110,7 +110,7 @@ test("URL import route and RU/UZ/EN UI expose no credential forwarding or fake s
     readFile(new URL("../app/api/platform/document-analysis/url-import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/DocumentReviewClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/document-review-localization.ts", import.meta.url), "utf8"),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime/self-hosted.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /assertSafeWrite/);
   assert.match(route, /requireApiUser/);
@@ -133,8 +133,8 @@ test("URL import route and RU/UZ/EN UI expose no credential forwarding or fake s
   assert.match(ui, /uploadDocumentForAnalysis\(file, locale, setUploadProgress, uploadCaseId \|\| null, analysisLocale\)/);
   assert.match(ui, /!publicUrlImportEnabled \|\| !publicUrl\.trim\(\)/);
   assert.match(await readFile(new URL("../lib/document-analysis/client-upload.ts", import.meta.url), "utf8"), /"x-juro-locale": locale/);
-  assert.match(config, /global_fetch_strictly_public/);
-  assert.equal((config.match(/"PUBLIC_DOCUMENT_URL_IMPORT_ENABLED": "false"/g) ?? []).length, 3);
+
+  assert.match(config, /PUBLIC_DOCUMENT_URL_IMPORT_ENABLED: "false"/);
 });
 
 class MemoryBucket {

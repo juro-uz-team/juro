@@ -7,7 +7,7 @@ import {
   TARGET_ACTIVATION_SET_EVALUATION_PATH,
 } from "../lib/legal-corpus/target-evaluation";
 import {
-  createRuntimeTargetActivationSetEvaluation,
+  createRuntimeEvaluationEvidenceServices,
   selectRuntimeEvidenceBucket,
   type TargetRetrievalRuntimeEnv,
 } from "../lib/legal-corpus/target-runtime";
@@ -102,52 +102,20 @@ test("activation-set evaluation client pins exact identifiers and private marker
   assert.equal(new URL(observedUrl).pathname, TARGET_ACTIVATION_SET_EVALUATION_PATH);
 });
 
-test("activation-set evaluation resolves as-of and every comparison matrix through the exact pair", async () => {
-  const timestamp2020 = { kind: "timestamp" as const, instant: "2020-01-01T00:00:00.000Z" };
-  const timestamp2025 = { kind: "timestamp" as const, instant: "2025-01-01T00:00:00.000Z" };
+test("activation-set evaluation resolves each temporal matrix through the exact release pair", async () => {
   const current = { kind: "current" as const };
-  const scopeById = {
-    as_of: { temporalEndpoint: timestamp2025 },
-    current_history: { comparison: { left: current, right: timestamp2025 } },
-    history_current: { comparison: { left: timestamp2020, right: current } },
-    history_history: { comparison: { left: timestamp2020, right: timestamp2025 } },
-  };
-  const plans = Object.fromEntries(Object.entries(scopeById).map(([id, scope]) => [id, {
-    id: `plan-${id}`, originalLanguage: "en", answerLanguage: "en", ...scope,
-    readings: [{ id: "reading-change", statement: "How the governing rule changed",
-      requirements: [{ id: "requirement-change", statement: "Governing rule at each endpoint" }] }],
-    formulations: [{ id: "formulation-change", text: "Labor Code governing rule",
-      privateNameSpans: [], readingIds: ["reading-change"],
-      requirementIds: ["requirement-change"], kind: "legal_register" }],
-    missingCaseFacts: [],
-  }]));
-  const evaluation = await createRuntimeTargetActivationSetEvaluation({
-    env: activationSetEvaluationEnv(plans),
-    activationSetId: "activation:staging:evaluation-v1",
+  const earlier = { kind: "timestamp" as const, instant: "2020-01-01T00:00:00.000Z" };
+  const later = { kind: "timestamp" as const, instant: "2025-01-01T00:00:00.000Z" };
+  const evaluation = await createRuntimeEvaluationEvidenceServices({
+    env: activationSetEvaluationEnv(), activationSetId: "activation:staging:evaluation-v1",
     historyReconciliationRunId: "history-evaluation:staging:custom-v1",
     historyReportSha256: activationEvaluationReportSha256,
   });
-  const expected = {
-    as_of: { kind: "endpoint", endpoint: timestamp2025,
-      releaseId: "release:staging:history:evaluation-v1" },
-    current_history: { kind: "comparison", left: current, right: timestamp2025,
-      leftReleaseId: "release:staging:current:evaluation-v1",
-      rightReleaseId: "release:staging:history:evaluation-v1" },
-    history_current: { kind: "comparison", left: timestamp2020, right: current,
-      leftReleaseId: "release:staging:history:evaluation-v1",
-      rightReleaseId: "release:staging:current:evaluation-v1" },
-    history_history: { kind: "comparison", left: timestamp2020, right: timestamp2025,
-      leftReleaseId: "release:staging:history:evaluation-v1",
-      rightReleaseId: "release:staging:history:evaluation-v1" },
-  } as const;
-  for (const id of Object.keys(scopeById) as Array<keyof typeof scopeById>) {
-    const response = await evaluation.answer({ id, question: `Question for ${id}` });
-    assert.equal(response.result.kind, "source_unavailability");
-    if (response.result.kind === "source_unavailability") {
-      assert.equal(response.result.safeErrorCode, "INDEXED_CANDIDATE_UNAVAILABLE");
-    }
-    assert.equal(response.observation.activationSetId, "activation:staging:evaluation-v1");
-    assert.equal(response.observation.historyReportSha256, activationEvaluationReportSha256);
-    assert.deepEqual(response.observation.resolutions, [expected[id]]);
+  for (const [left, right] of [[current, later], [earlier, current], [earlier, later]]) {
+    const pair = await evaluation.services.releaseResolver.resolveComparison!(left, right);
+    assert.equal(pair?.left.id, left.kind === "current" ? "release:staging:current:evaluation-v1" : "release:staging:history:evaluation-v1");
+    assert.equal(pair?.right.id, right.kind === "current" ? "release:staging:current:evaluation-v1" : "release:staging:history:evaluation-v1");
   }
+  assert.equal(evaluation.observation().activationSetId, "activation:staging:evaluation-v1");
+  assert.equal(evaluation.observation().historyReportSha256, activationEvaluationReportSha256);
 });

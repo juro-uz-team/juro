@@ -36,15 +36,15 @@ export type DocumentEmbeddingRequest = {
   input: string[];
 };
 
-/** Stored-key Gateway only; one attempt keeps the durable reservation equal to one dispatch. */
-export async function requestGatewayDocumentEmbeddings(gateway: Pick<AiGateway, "run">,
-  gatewayId: string, request: DocumentEmbeddingRequest): Promise<Response> {
+/** One direct request keeps the durable reservation equal to one provider dispatch. */
+export async function requestDocumentEmbeddings(apiKey: string, request: DocumentEmbeddingRequest,
+  transport: typeof fetch = fetch): Promise<Response> {
+  if (!apiKey) throw new TypeError("CUSTOM_EMBEDDING_PROVIDER_UNAVAILABLE");
   try {
-    return await gateway.run({ provider: "openai", endpoint: "embeddings",
-      headers: { "Content-Type": "application/json", "cf-aig-skip-cache": true,
-        "cf-aig-collect-log": false, "cf-aig-max-attempts": 1 }, query: request },
-    { signal: AbortSignal.timeout(60000), gateway: { id: gatewayId, skipCache: true,
-      collectLog: false, requestTimeoutMs: 55000, retries: { maxAttempts: 1 } } });
+    return await transport("https://api.openai.com/v1/embeddings", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(request), signal: AbortSignal.timeout(60_000),
+    });
   } catch { return fail("OUTCOME_UNRESOLVED"); }
 }
 

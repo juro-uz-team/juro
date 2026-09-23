@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {sqliteD1FixtureFromDirectory} from "./helpers/sqlite-d1";
 import {deliverSignedInLegalChat} from "../lib/legal-chat/signed-in-delivery";
 import {legalChatRequestSchema} from "../lib/legal-chat/request-schema";

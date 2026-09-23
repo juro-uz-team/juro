@@ -55,9 +55,9 @@ test("every status page derives metadata from the Worker-owned status origin", a
   }
 });
 
-test("Worker replaces any client status-origin header and sets it only on the status host", async () => {
-  const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
-  assert.match(worker, /appHeaders\.delete\(STATUS_ORIGIN_HEADER\)/u);
-  assert.match(worker, /if \(isStatusHost\) appHeaders\.set\(STATUS_ORIGIN_HEADER, url\.origin\)/u);
+test("private native server strips untrusted status-origin metadata", async () => {
+  const server = await readFile(new URL("../server/index.ts", import.meta.url), "utf8");
+  assert.match(server, /name === STATUS_ORIGIN_HEADER/u);
+  assert.match(server, /delete request.headers\[name\]/u);
   assert.equal(STATUS_ORIGIN_HEADER, "x-juro-status-origin");
 });

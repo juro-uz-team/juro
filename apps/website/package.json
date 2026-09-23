@@ -6,21 +6,17 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "install:ci": "bash scripts/install-ci.sh",
-    "dev": "vite",
-    "build": "bash scripts/build-verified.sh",
-    "deploy:production": "node scripts/deploy-production.mjs",
-    "start": "vinext start",
+    "install:ci": "npm ci",
+    "dev": "node ../../scripts/with-private-env.mjs --import ./../platform/node_modules/tsx/dist/loader.mjs server/index.ts",
+    "build": "node ../../scripts/with-private-env.mjs node_modules/next/dist/bin/next build --webpack",
+    "start": "node ../../scripts/with-private-env.mjs --production --import ./../platform/node_modules/tsx/dist/loader.mjs server/index.ts",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "validate:artifact": "bash scripts/validate-artifact.sh",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "type-check": "bash scripts/sites-env.sh -- tsc --noEmit",
-    "license:check": "node ../../scripts/check-dependency-licenses.mjs .",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "type-check": "tsc --noEmit",
+    "license:check": "node ../../scripts/check-dependency-licenses.mjs ."
   },
   "dependencies": {
     "@fontsource-variable/manrope": "5.3.0",
-    "drizzle-orm": "0.45.2",
     "lucide-react": "^1.25.0",
     "motion": "^12.42.2",
     "next": "16.3.3",
@@ -28,23 +24,15 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.54.0",
-    "@cloudflare/workers-types": "5.20260827.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.34",
-    "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.3",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "1.0.0-beta.8",
-    "vite": "8.2.2",
-    "wrangler": "4.126.0"
+    "typescript": "5.9.3"
   },
   "overrides": {
     "sharp": "0.35.4"

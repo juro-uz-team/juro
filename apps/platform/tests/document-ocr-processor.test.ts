@@ -1,3 +1,4 @@
+import type { DocumentConverter, ConversionInput } from "../lib/runtime/document-converter";
 import assert from "node:assert/strict";
 import test from "node:test";
 import PizZip from "pizzip";
@@ -7,7 +8,7 @@ import {
   OcrProcessingError,
   scheduleOcrProcessing,
 } from "../lib/document-analysis/ocr-processor";
-import { sqliteD1Fixture } from "./helpers/sqlite-d1";
+import { localDocumentConversionFixture } from "./helpers/sqlite-d1";
 
 const now = "2026-07-31T00:00:00.000Z";
 
@@ -75,7 +76,7 @@ class FakeR2Bucket {
 }
 
 test("OCR queue stores a tenant-scoped derivative and chains analysis exactly once", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = new TextEncoder().encode("synthetic scanned contract image");
@@ -90,7 +91,7 @@ test("OCR queue stores a tenant-scoped derivative and chains analysis exactly on
 
     let aiCalls = 0;
     const ai = {
-      async toMarkdown(document: MarkdownDocument) {
+      async toMarkdown(document: ConversionInput) {
         aiCalls += 1;
         assert.equal(document.name, "document.png");
         assert.equal(document.blob.type, "image/png");
@@ -103,8 +104,8 @@ test("OCR queue stores a tenant-scoped derivative and chains analysis exactly on
           data: "# Договор\n\nСрок исполнения — 10 дней.",
         };
       },
-    } as unknown as Ai;
-    const env = { DB: d1, BUCKET: bucket as unknown as R2Bucket, AI: ai };
+    } as unknown as DocumentConverter;
+    const env = { DB: d1, BUCKET: bucket as unknown as R2Bucket, OCR: ai };
     assert.equal((await executeOcrProcessingJob(env, "analysis-a", "workspace-a")).status, "completed");
     assert.equal((await executeOcrProcessingJob(env, "analysis-a", "workspace-a")).status, "already_completed");
     assert.equal(aiCalls, 1);
@@ -138,7 +139,7 @@ test("OCR queue stores a tenant-scoped derivative and chains analysis exactly on
 });
 
 test("OCR queue converts every verified ZIP member in one bounded provider batch", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = packageBytes({
@@ -153,7 +154,7 @@ test("OCR queue converts every verified ZIP member in one bounded provider batch
 
     let aiCalls = 0;
     const ai = {
-      async toMarkdown(documents: MarkdownDocument | MarkdownDocument[]) {
+      async toMarkdown(documents: ConversionInput | ConversionInput[]) {
         aiCalls += 1;
         assert.ok(Array.isArray(documents));
         assert.deepEqual(documents.map((document) => document.name), ["document-01.docx", "document-02.png"]);
@@ -172,8 +173,8 @@ test("OCR queue converts every verified ZIP member in one bounded provider batch
             : "# ILOVA\n\nBuyurtmachi ilovani yozma shaklda qabul qiladi.",
         })).reverse();
       },
-    } as unknown as Ai;
-    const env = { DB: d1, BUCKET: bucket as unknown as R2Bucket, AI: ai };
+    } as unknown as DocumentConverter;
+    const env = { DB: d1, BUCKET: bucket as unknown as R2Bucket, OCR: ai };
     assert.equal((await executeOcrProcessingJob(env, "analysis-a", "workspace-a")).status, "completed");
     assert.equal(aiCalls, 1);
     assert.equal(bucket.putCalls, 1);
@@ -189,7 +190,7 @@ test("OCR queue converts every verified ZIP member in one bounded provider batch
     assert.equal(extracted?.textQuality, "limited");
     assert.equal(
       extracted?.warningCode,
-      "PACKAGE_MULTI_DOCUMENT,CLOUDFLARE_CONVERSION_USED,AI_OCR_REVIEW_REQUIRED",
+      "PACKAGE_MULTI_DOCUMENT,LOCAL_DOCUMENT_CONVERSION_USED,AI_OCR_REVIEW_REQUIRED",
     );
     assert.match(extracted?.text ?? "", /ФАЙЛ: "01-contract\.docx"/);
     assert.match(extracted?.text ?? "", /ФАЙЛ: "02-ilova\.png"/);
@@ -210,7 +211,7 @@ test("OCR queue converts every verified ZIP member in one bounded provider batch
 });
 
 test("package OCR rejects duplicate or missing provider member identities without persisting a derivative", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -224,8 +225,8 @@ test("package OCR rejects duplicate or missing provider member identities withou
       executeOcrProcessingJob({
         DB: d1,
         BUCKET: bucket as unknown as R2Bucket,
-        AI: {
-          async toMarkdown(documents: MarkdownDocument | MarkdownDocument[]) {
+        OCR: {
+          async toMarkdown(documents: ConversionInput | ConversionInput[]) {
             assert.ok(Array.isArray(documents));
             return documents.map(() => ({
               id: crypto.randomUUID(),
@@ -236,7 +237,7 @@ test("package OCR rejects duplicate or missing provider member identities withou
               data: "Readable synthetic scan.",
             }));
           },
-        } as unknown as Ai,
+        } as unknown as DocumentConverter,
       }, "analysis-a", "workspace-a"),
       (error: unknown) => error instanceof OcrProcessingError
         && error.code === "OCR_PROVIDER_REJECTED" && !error.retryable,
@@ -262,8 +263,8 @@ test("package OCR rejects duplicate or missing provider member identities withou
   }
 });
 
-test("OCR queue denies cross-tenant identifiers before R2 or AI access", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+test("OCR queue denies cross-tenant identifiers before object or converter access", async () => {
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = new TextEncoder().encode("synthetic image");
@@ -274,7 +275,7 @@ test("OCR queue denies cross-tenant identifiers before R2 or AI access", async (
       executeOcrProcessingJob({
         DB: d1,
         BUCKET: bucket as unknown as R2Bucket,
-        AI: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as Ai,
+        OCR: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as DocumentConverter,
       }, "analysis-a", "workspace-b"),
       (error: unknown) => error instanceof OcrProcessingError && error.code === "OCR_ANALYSIS_NOT_FOUND",
     );
@@ -285,8 +286,8 @@ test("OCR queue denies cross-tenant identifiers before R2 or AI access", async (
   }
 });
 
-test("missing Workers AI binding is retryable and never creates false success", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+test("missing local converter binding is retryable and never creates false success", async () => {
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = new TextEncoder().encode("synthetic image");
@@ -308,8 +309,8 @@ test("missing Workers AI binding is retryable and never creates false success", 
   }
 });
 
-test("source checksum mismatch fails closed before Workers AI", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+test("source checksum mismatch fails closed before local converter", async () => {
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = new TextEncoder().encode("original source");
@@ -321,7 +322,7 @@ test("source checksum mismatch fails closed before Workers AI", async () => {
       executeOcrProcessingJob({
         DB: d1,
         BUCKET: bucket as unknown as R2Bucket,
-        AI: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as Ai,
+        OCR: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as DocumentConverter,
       }, "analysis-a", "workspace-a"),
       (error: unknown) => error instanceof OcrProcessingError && error.code === "OCR_INTEGRITY_FAILED",
     );
@@ -338,8 +339,8 @@ test("source checksum mismatch fails closed before Workers AI", async () => {
   }
 });
 
-test("corrupt PDF structure fails closed before Workers AI", async () => {
-  const { sqlite, d1 } = sqliteD1Fixture();
+test("corrupt PDF structure fails closed before local converter", async () => {
+  const { sqlite, d1 } = localDocumentConversionFixture();
   const bucket = new FakeR2Bucket();
   try {
     const source = new TextEncoder().encode("%PDF-1.7 not a complete document");
@@ -353,7 +354,7 @@ test("corrupt PDF structure fails closed before Workers AI", async () => {
       executeOcrProcessingJob({
         DB: d1,
         BUCKET: bucket as unknown as R2Bucket,
-        AI: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as Ai,
+        OCR: { async toMarkdown() { aiCalls += 1; throw new Error("must not run"); } } as unknown as DocumentConverter,
       }, "analysis-a", "workspace-a"),
       (error: unknown) => error instanceof OcrProcessingError && error.code === "OCR_PDF_CORRUPT",
     );
@@ -376,7 +377,7 @@ test("corrupt PDF structure fails closed before Workers AI", async () => {
 });
 
 async function seedOcrAnalysis(
-  sqlite: ReturnType<typeof sqliteD1Fixture>["sqlite"],
+  sqlite: ReturnType<typeof localDocumentConversionFixture>["sqlite"],
   bucket: FakeR2Bucket,
   source: Uint8Array,
   options: { fileName?: string; mimeType?: string } = {},

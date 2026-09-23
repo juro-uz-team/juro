@@ -275,13 +275,13 @@ export async function recordProviderUsage(input: ProviderUsageInput): Promise<Pr
           estimated_cost_microusd,unpriced_request_count,created_at,updated_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
-          request_count=request_count+1,
-          failed_request_count=failed_request_count+excluded.failed_request_count,
-          input_tokens=input_tokens+excluded.input_tokens,
-          output_tokens=output_tokens+excluded.output_tokens,
-          cached_input_tokens=cached_input_tokens+excluded.cached_input_tokens,
-          estimated_cost_microusd=estimated_cost_microusd+excluded.estimated_cost_microusd,
-          unpriced_request_count=unpriced_request_count+excluded.unpriced_request_count,
+          request_count=ai_cost_daily_aggregates.request_count+1,
+          failed_request_count=ai_cost_daily_aggregates.failed_request_count+excluded.failed_request_count,
+          input_tokens=ai_cost_daily_aggregates.input_tokens+excluded.input_tokens,
+          output_tokens=ai_cost_daily_aggregates.output_tokens+excluded.output_tokens,
+          cached_input_tokens=ai_cost_daily_aggregates.cached_input_tokens+excluded.cached_input_tokens,
+          estimated_cost_microusd=ai_cost_daily_aggregates.estimated_cost_microusd+excluded.estimated_cost_microusd,
+          unpriced_request_count=ai_cost_daily_aggregates.unpriced_request_count+excluded.unpriced_request_count,
           updated_at=excluded.updated_at`,
       ).bind(
         dailyId,

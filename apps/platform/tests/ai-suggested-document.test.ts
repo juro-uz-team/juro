@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {POST} from "../app/api/platform/ai/suggested-document/route";
 import { DOCUMENT_REGISTRY } from "../lib/document-builder/registry";
 import {

@@ -1,0 +1,22 @@
+name: juro-self-hosted
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: juro
+      POSTGRES_USER: juro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the private environment file}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U juro -d juro"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "work_mem=16MB", "-c", "maintenance_work_mem=256MB"]
+volumes:
+  postgres-data:

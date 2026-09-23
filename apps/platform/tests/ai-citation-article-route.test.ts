@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url";
 test("the authenticated citation route executes pinned evidence and fragment fallbacks", async () => {
   await promisify(execFile)(process.execPath, ["--experimental-test-module-mocks",
     "--import", new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url).href,
-    "--experimental-loader", new URL("../scripts/cloudflare-workers-loader.mjs", import.meta.url).href,
+    "--import", new URL("./helpers/runtime-env.ts", import.meta.url).href,
     fileURLToPath(new URL("./fixtures/citation-route-runtime.mts", import.meta.url))]);
 });
 

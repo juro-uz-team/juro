@@ -22,7 +22,7 @@ export type PublicLawyer = {
 };
 
 function platformOrigin() {
-  return (process.env.JURO_PUBLIC_PLATFORM_ORIGIN || "https://app.juro.uz").replace(/\/$/, "");
+  return (process.env.JURO_PUBLIC_PLATFORM_ORIGIN || "http://localhost:3000").replace(/\/$/, "");
 }
 
 function asLawyer(value: unknown): PublicLawyer | null {

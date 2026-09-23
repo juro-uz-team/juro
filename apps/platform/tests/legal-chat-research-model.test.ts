@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {privateDocumentContext} from "./helpers/private-document-context";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {createLegalResearchModel} from "../lib/legal-chat/research-model";
 import type {ResearchRequest} from "../lib/legal-chat/research";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { env } from "cloudflare:workers";
+import { env } from "./helpers/runtime-env";
 import { POST as passwordLogin } from "../app/api/auth/password-login/route";
 import { POST as requestOtp } from "../app/api/auth/request-otp/route";
 import { POST as resetPassword } from "../app/api/auth/reset-password/route";
@@ -193,26 +193,13 @@ test("new registration persists its pending account and sends one confirmation e
     APP_ENV: "production",
     IDENTITY_PROTECTION_MODE: "dual_write",
     IDENTITY_KEYRING: PASSWORD_RESET_KEYRING,
-    TURNSTILE_SECRET_KEY: "turnstile-server-secret",
+    TURNSTILE_SECRET_KEY: "private-local",
     RESEND_API_KEY: "resend-api-key",
     EMAIL_FROM: "JURO <no-reply@juro.uz>",
   });
   let emailRequests = 0;
   globalThis.fetch = async (input, init) => {
-    if (String(input) === "https://challenges.cloudflare.com/turnstile/v0/siteverify") {
-      const payload = JSON.parse(String(init?.body)) as {
-        secret?: string;
-        response?: string;
-      };
-      assert.equal(payload.secret, "turnstile-server-secret");
-      assert.equal(payload.response, "turnstile-registration-token");
-      return Response.json({
-        success: true,
-        hostname: "app.juro.uz",
-        action: "auth_registration",
-      });
-    }
-    assert.equal(String(input), "https://api.resend.com/emails");
+    assert.equal(String(input), "http://captured-email.local/emails");
     emailRequests += 1;
     const payload = JSON.parse(String(init?.body)) as {
       from?: string;
@@ -227,15 +214,15 @@ test("new registration persists its pending account and sends one confirmation e
 
   try {
     const response = await requestOtp(new Request(
-      "https://app.juro.uz/api/auth/request-otp",
+      "http://localhost:3000/api/auth/request-otp",
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "https://app.juro.uz",
+          origin: "http://localhost:3000",
           "sec-fetch-site": "same-origin",
           "x-juro-csrf": "1",
-          "cf-connecting-ip": requestIp,
+          "x-juro-client-ip": requestIp,
         },
         body: JSON.stringify({
           purpose: "register",
@@ -248,7 +235,7 @@ test("new registration persists its pending account and sends one confirmation e
           acceptTerms: true,
           acceptPrivacy: true,
           acceptPersonalData: true,
-          turnstileToken: "turnstile-registration-token",
+          turnstileToken: "private-local",
         }),
       },
     ));
@@ -457,12 +444,12 @@ test("a committed password reset keeps an encrypted durable email job when the f
 
   try {
     const response = await resetPassword(new Request(
-      "https://app.juro.uz/api/auth/reset-password",
+      "http://localhost:3000/api/auth/reset-password",
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "https://app.juro.uz",
+          origin: "http://localhost:3000",
           "sec-fetch-site": "same-origin",
           "x-juro-csrf": "1",
         },
@@ -564,12 +551,12 @@ test("password reset provisions a password for a legacy identity during dual-wri
     });
 
     const response = await resetPassword(new Request(
-      "https://app.juro.uz/api/auth/reset-password",
+      "http://localhost:3000/api/auth/reset-password",
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "https://app.juro.uz",
+          origin: "http://localhost:3000",
           "sec-fetch-site": "same-origin",
           "x-juro-csrf": "1",
         },
@@ -983,35 +970,9 @@ test("password-login route issues a remembered opaque session accepted by protec
     ALLOW_PLATFORM_AUTH_HEADERS: "false",
     IDENTITY_PROTECTION_MODE: "dual_write",
     IDENTITY_KEYRING: PASSWORD_RESET_KEYRING,
-    TURNSTILE_SECRET_KEY: "turnstile-server-secret",
+    TURNSTILE_SECRET_KEY: "private-local",
   });
-  const turnstileTokens: string[] = [];
-  globalThis.fetch = async (input, init) => {
-    assert.equal(
-      String(input),
-      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-    );
-    assert.equal(init?.method, "POST");
-    assert.equal(
-      new Headers(init?.headers).get("content-type"),
-      "application/json",
-    );
-    const payload = JSON.parse(String(init?.body)) as {
-      secret?: string;
-      response?: string;
-      remoteip?: string;
-      idempotency_key?: string;
-    };
-    assert.equal(payload.secret, "turnstile-server-secret");
-    assert.equal(payload.remoteip, requestIp);
-    assert.match(payload.idempotency_key ?? "", /^[0-9a-f-]{36}$/u);
-    turnstileTokens.push(payload.response ?? "");
-    return Response.json({
-      success: true,
-      hostname: "app.juro.uz",
-      action: "auth_password_login",
-    });
-  };
+  globalThis.fetch = async () => { throw new Error("Private password login must not call a challenge provider"); };
 
   const request = (
     requestEmail: string,
@@ -1020,15 +981,15 @@ test("password-login route issues a remembered opaque session accepted by protec
     locale: "ru" | "uz" | "en" = "ru",
   ) =>
     passwordLogin(new Request(
-      "https://app.juro.uz/api/auth/password-login",
+      "http://localhost:3000/api/auth/password-login",
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          origin: "https://app.juro.uz",
+          origin: "http://localhost:3000",
           "sec-fetch-site": "same-origin",
           "x-juro-csrf": "1",
-          "cf-connecting-ip": requestIp,
+          "x-juro-client-ip": requestIp,
           "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0",
         },
         body: JSON.stringify({
@@ -1045,12 +1006,12 @@ test("password-login route issues a remembered opaque session accepted by protec
     const wrongPassword = await request(
       email,
       "definitely wrong passphrase",
-      "turnstile-wrong-password",
+      "private-local",
     );
     const missingAccount = await request(
       "missing-password-route@example.test",
       "definitely wrong passphrase",
-      "turnstile-missing-account",
+      "private-local",
     );
     assert.equal(wrongPassword.status, 401);
     assert.equal(missingAccount.status, 401);
@@ -1078,7 +1039,7 @@ test("password-login route issues a remembered opaque session accepted by protec
     const response = await request(
       `  ${email.toUpperCase()}  `,
       password,
-      "turnstile-valid-password",
+      "private-local",
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
@@ -1087,11 +1048,6 @@ test("password-login route issues a remembered opaque session accepted by protec
       handoff: null,
       themePreference: "dark",
     });
-    assert.deepEqual(turnstileTokens, [
-      "turnstile-wrong-password",
-      "turnstile-missing-account",
-      "turnstile-valid-password",
-    ]);
 
     const activeSessionCookie = setCookies(response).find(cookie =>
       cookie.startsWith(`${SESSION_COOKIE}=`)
@@ -1148,7 +1104,7 @@ test("password-login route issues a remembered opaque session accepted by protec
     assert.equal(session.expiresAt, persisted.expiresAt);
 
     const protectedResponse = await dashboard(new Request(
-      "https://app.juro.uz/api/platform/dashboard",
+      "http://localhost:3000/api/platform/dashboard",
       { headers: { cookie: cookieHeader } },
     ));
     assert.equal(protectedResponse.status, 200);
@@ -1165,7 +1121,7 @@ test("password-login route issues a remembered opaque session accepted by protec
     const englishResponse = await request(
       email,
       password,
-      "turnstile-valid-password-en",
+      "private-local",
       "en",
     );
     assert.equal(englishResponse.status, 200);
@@ -1175,12 +1131,6 @@ test("password-login route issues a remembered opaque session accepted by protec
       handoff: null,
       themePreference: "dark",
     });
-    assert.deepEqual(turnstileTokens, [
-      "turnstile-wrong-password",
-      "turnstile-missing-account",
-      "turnstile-valid-password",
-      "turnstile-valid-password-en",
-    ]);
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of envKeys) {
@@ -1279,34 +1229,27 @@ test("registration confirmation resend verifies the password without recreating 
     APP_ENV: "production",
     IDENTITY_PROTECTION_MODE: "dual_write",
     IDENTITY_KEYRING: PASSWORD_RESET_KEYRING,
-    TURNSTILE_SECRET_KEY: "turnstile-server-secret",
+    TURNSTILE_SECRET_KEY: "private-local",
     RESEND_API_KEY: "resend-server-secret",
     EMAIL_FROM: "JURO <security@juro.uz>",
   });
   const providerRecipients: string[] = [];
   globalThis.fetch = async (input, init) => {
-    if (String(input).includes("challenges.cloudflare.com")) {
-      return Response.json({
-        success: true,
-        hostname: "app.juro.uz",
-        action: "auth_registration_resend",
-      });
-    }
-    assert.equal(String(input), "https://api.resend.com/emails");
+    assert.equal(String(input), "http://captured-email.local/emails");
     const payload = JSON.parse(String(init?.body)) as { to?: string[] };
     providerRecipients.push(payload.to?.[0] ?? "");
     return Response.json({ id: "resend_registration_confirmation" });
   };
 
   const send = (requestEmail: string, requestPassword: string, ip: string) =>
-    requestOtp(new Request("https://app.juro.uz/api/auth/request-otp", {
+    requestOtp(new Request("http://localhost:3000/api/auth/request-otp", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        origin: "https://app.juro.uz",
+        origin: "http://localhost:3000",
         "sec-fetch-site": "same-origin",
         "x-juro-csrf": "1",
-        "cf-connecting-ip": ip,
+        "x-juro-client-ip": ip,
       },
       body: JSON.stringify({
         purpose: "registration_resend",
@@ -1317,7 +1260,7 @@ test("registration confirmation resend verifies the password without recreating 
         acceptTerms: true,
         acceptPrivacy: true,
         acceptPersonalData: true,
-        turnstileToken: `turnstile-${ip}`,
+        turnstileToken: "private-local",
       }),
     }));
 

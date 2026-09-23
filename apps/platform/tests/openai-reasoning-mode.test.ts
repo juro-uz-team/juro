@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {callOpenAiStructured} from "../lib/document-builder/ai/openai";
 
 test("provider reasoning mode is opt-in and preserves the selected model and effort",async context=>{

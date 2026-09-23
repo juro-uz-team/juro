@@ -1,5 +1,6 @@
 import type { PlatformLocale } from "../platform/routing";
 import type { VoiceRecorderPhase } from "./voice-ui";
+import { z } from "zod";
 
 function headers(locale: PlatformLocale, workspaceId?: string) {
   return {"x-juro-csrf": "1", "x-juro-locale": locale,
@@ -26,9 +27,10 @@ export async function uploadAndTranscribeVoice(input: {blob: Blob; durationMs: n
     .map(byte => byte.toString(16).padStart(2, "0")).join("");
   input.signal.throwIfAborted();
   const mimeType = input.blob.type.split(";")[0];
-  const created = await json("/api/platform/voice/recordings", {mimeType, sizeBytes: input.blob.size,
-    durationMs: input.durationMs, locale: input.locale, sha256});
-  const recordingId = created.recording.id as string;
+  const created = z.object({recording: z.object({id: z.string().uuid(), status: z.string()})}).parse(
+    await json("/api/platform/voice/recordings", {mimeType, sizeBytes: input.blob.size,
+      durationMs: input.durationMs, locale: input.locale, sha256}));
+  const recordingId = created.recording.id;
   input.onRecording(recordingId);
   const base = `/api/platform/voice/recordings/${encodeURIComponent(recordingId)}`;
   if (created.recording.status === "initiated") {
@@ -40,6 +42,6 @@ export async function uploadAndTranscribeVoice(input: {blob: Blob; durationMs: n
     input.onPhase("finalizing"); await json(`${base}/finalize`);
   }
   input.onPhase("transcribing");
-  const result = await json(`${base}/transcribe`);
-  return {recordingId, transcript: result.transcript as string};
+  const result = z.object({transcript: z.string()}).parse(await json(`${base}/transcribe`));
+  return {recordingId, transcript: result.transcript};
 }

@@ -93,7 +93,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
     }, 503);
   }
   const db = requireD1();
-  const requestIp = request.headers.get("cf-connecting-ip")?.trim() || null;
+  const requestIp = request.headers.get("x-juro-client-ip")?.trim() || null;
   const limit = await passwordLoginRateLimit(db, { email, requestIp });
   if (!limit.allowed) {
     return json({

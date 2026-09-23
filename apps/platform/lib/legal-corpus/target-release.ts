@@ -991,7 +991,7 @@ async function resolveActiveCapability(
   }
 }
 
-export type ReleaseLifecycleEnv = Pick<LegalCorpusDevelopmentEnv, "APP_ENV"> & {
+export type ReleaseLifecycleEnv = Pick<Env, "APP_ENV"> & {
   LEGAL_DB?: D1Database;
 };
 

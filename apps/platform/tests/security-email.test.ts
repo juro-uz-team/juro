@@ -371,7 +371,7 @@ test("encrypted security email outbox dispatches identifiers only and sends once
     assert.equal(first.state.acknowledgements, 1);
     assert.deepEqual(first.state.retries, []);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.url, "https://api.resend.com/emails");
+    assert.equal(calls[0]?.url, "http://captured-email.local/emails");
     assert.equal(
       calls[0]?.headers.get("idempotency-key"),
       `juro_security_email_${prepared.jobId}`,

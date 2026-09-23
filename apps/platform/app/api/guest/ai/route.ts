@@ -65,7 +65,7 @@ export const POST=withApiErrors(async(request:Request)=>{
     catch(error){
       if(!(error instanceof GuestAiError)||!["GUEST_SESSION_REQUIRED","GUEST_SESSION_INVALID","GUEST_SESSION_EXPIRED"].includes(error.code))throw error;
       if(!env.TURNSTILE_SECRET_KEY||!env.TURNSTILE_SITE_KEY)return response({code:"GUEST_CONFIGURATION_UNAVAILABLE"},503);
-      const connectingIp=request.headers.get("cf-connecting-ip")?.trim()||null;
+      const connectingIp=request.headers.get("x-juro-client-ip")?.trim()||null;
       const challenge=await validateTurnstile({secretKey:env.TURNSTILE_SECRET_KEY,token:parsed.data.turnstileToken??"",
         remoteIp:connectingIp,expectedHostname:new URL(request.url).hostname,expectedAction:guestAiTurnstileAction});
       if(challenge.status!=="verified")return response({code:challenge.status==="unavailable"?"TURNSTILE_UNAVAILABLE":"TURNSTILE_INVALID"},challenge.status==="unavailable"?503:400);

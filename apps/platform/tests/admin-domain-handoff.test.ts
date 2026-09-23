@@ -398,7 +398,7 @@ test("restricted lawyer lifecycle is append-only, blocks work, and restores only
 });
 
 test("admin handoff route requires same-origin write protection and current MFA", async () => {
-  const [route, launchPage, accessPage, authPage, localizedLogin, migration, internal, adminWorker, reviewService, platformWorker, platformConfig, adminConfig] = await Promise.all([
+  const [route, launchPage, accessPage, authPage, localizedLogin, migration, internal, adminWorker, reviewService, platformWorker, adminConfig] = await Promise.all([
     readFile(new URL("../app/api/platform/admin/handoff/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/[locale]/admin/console/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_staff/AdminConsoleAccess.tsx", import.meta.url), "utf8"),
@@ -408,9 +408,8 @@ test("admin handoff route requires same-origin write protection and current MFA"
     readFile(new URL("../lib/auth/admin-internal-api.ts", import.meta.url), "utf8"),
     readFile(new URL("../../admin/src/worker.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/platform/lawyer-review-moderation-service.ts", import.meta.url), "utf8"),
-    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
-    readFile(new URL("../../admin/wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../server/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../admin/src/server.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /assertSafeWrite\(request\)/u);
   assert.match(route, /requirePlatformStaffRequest\(request, "staff\.console\.view"/u);
@@ -449,12 +448,8 @@ test("admin handoff route requires same-origin write protection and current MFA"
   assert.match(reviewService, /LIKELY_PERSONAL_DATA/u);
   assert.match(reviewService, /lawyer_review_moderated/u);
   assert.doesNotMatch(adminWorker, /D1Database|d1_databases/u);
-  assert.match(platformWorker, /url\.hostname\.toLowerCase\(\) === "admin\.juro\.uz"/u);
-  assert.match(platformWorker, /ADMIN_CONSOLE\.fetch\(request\)/u);
-  assert.match(platformConfig, /"binding": "ADMIN_CONSOLE"/u);
-  assert.match(platformConfig, /"service": "juro-admin"/u);
-  assert.match(adminConfig, /"name": "juro-admin"/u);
-  assert.match(adminConfig, /"PLATFORM_ORIGIN": "https:\/\/staging\.app\.juro\.uz"/u);
-  assert.match(adminConfig, /"APP_ENV": "production"/u);
-  assert.match(adminConfig, /"service": "juro"/u);
+  assert.match(platformWorker, /handleInternalAdminRequest/);
+  assert.match(adminConfig, /127\.0\.0\.1/);
+  assert.match(adminConfig, /ADMIN_INTERNAL_TOKEN/);
+
 });

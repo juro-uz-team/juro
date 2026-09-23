@@ -1,3 +1,4 @@
+import { captureEmailRequest } from "../runtime/email";
 export type AuthEmailLocale = "ru" | "uz" | "en";
 export type AuthEmailPurpose =
   | "registration"
@@ -157,7 +158,7 @@ export async function sendJuroAuthEmail(input: {
   // result in two verification emails.
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const response = await fetch("https://api.resend.com/emails", {
+      const response = await captureEmailRequest({
         method: "POST",
         headers: {
           authorization: `Bearer ${input.apiKey}`,

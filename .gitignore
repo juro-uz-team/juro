@@ -43,3 +43,10 @@ docs/codemie/
 
 # Local agent issue tracker and operational evidence
 /.scratch/
+
+# Self-hosted media is restored from the verified server archive.
+/apps/website/public/investor/
+.env.self-hosted
+.data/
+
+!.env.self-hosted.example

@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { getSelfHostedRuntime } from "../../runtime/self-hosted";
 import type LegalCorpusWorker from "../../../worker/legal-corpus-worker";
 
 export interface BuilderRuntimeEnv {
@@ -20,7 +20,7 @@ export interface BuilderRuntimeEnv {
   LEGAL_DIRECT_RETRIEVAL_ENABLED?: string;
   LEGAL_SOURCE_STAFF_API_ENABLED?: string;
   LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST?: string;
-  LEGAL_RETRIEVAL_SERVICE?: Service<typeof LegalCorpusWorker>;
+  LEGAL_RETRIEVAL_SERVICE?: LegalCorpusWorker;
   LEGAL_RETRIEVAL_ENVIRONMENT?: "development" | "staging" | "production";
   LAWYER_PROFILE_DIRECTORY_ENABLED?: string;
   OPENAI_API_KEY?: string;
@@ -38,6 +38,7 @@ export interface BuilderRuntimeEnv {
   AI_PROVIDER?: string;
   AI_PROVIDER_API_KEY?: string;
   RESEND_API_KEY?: string;
+  EMAIL_DELIVERY?: Fetcher;
   EMAIL_FROM?: string;
   OPERATIONS_ALERT_EMAIL?: string;
   STATUS_HOSTNAME?: string;
@@ -84,7 +85,7 @@ export class ServiceUnavailableError extends Error {
 }
 
 export function runtimeEnv(): BuilderRuntimeEnv {
-  return env as unknown as BuilderRuntimeEnv;
+  return getSelfHostedRuntime();
 }
 
 export function requireD1(): D1Database {

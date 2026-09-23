@@ -3,12 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("canonical legal evaluation runner is staging-only, token-gated, and prompt-closed", async () => {
-  const [route, runner, queue, worker, config, runtime] = await Promise.all([
+  const [route, runner, queue, config, runtime] = await Promise.all([
     readFile(new URL("../app/api/platform/internal/staging/legal-evaluation/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/ai/staging-legal-evaluation.ts", import.meta.url), "utf8"),
     readFile(new URL("../worker/staging-legal-evaluation-queue.ts", import.meta.url), "utf8"),
-    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime/self-hosted.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/document-builder/storage/runtime.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /fixedTimeMatch/u);
@@ -25,19 +24,12 @@ test("canonical legal evaluation runner is staging-only, token-gated, and prompt
   assert.match(runner, /staging_evaluation/u);
   assert.match(runner, /AI_REVIEW_NOT_HUMAN_LEGAL_APPROVAL/u);
   assert.match(runner, /scenario\.prompt/u);
-  assert.match(config, /"STAGING_LEGAL_EVALUATION_ENABLED": "true"/u);
-  assert.match(config, /"STAGING_LEGAL_EVALUATION_ENABLED": "false"/u);
-  assert.doesNotMatch(config, /STAGING_LEGAL_EVALUATION_TOKEN/u);
-  assert.match(config, /"version_metadata"\s*:\s*\{\s*"binding": "WORKER_VERSION"/u);
-  assert.match(config, /"queue": "staging-legal-evaluation"/u);
-  assert.match(config, /"max_retries": 0/u);
+  assert.match(config, /STAGING_LEGAL_EVALUATION_ENABLED: "false"/u);
   assert.match(queue, /stagingLegalEvaluationRunInputSchema/u);
   assert.match(queue, /stagingLegalEvaluationReviewInputSchema/u);
   assert.match(queue, /runStagingLegalEvaluationScenario/u);
   assert.match(queue, /reviewStagingLegalEvaluation/u);
   assert.doesNotMatch(queue, /prompt\s*:/u);
-  assert.match(worker, /isStagingLegalEvaluationQueue/u);
-  assert.match(worker, /handleStagingLegalEvaluationQueueBatch/u);
   assert.match(runtime, /STAGING_LEGAL_EVALUATION_TOKEN\?: string/u);
 });
 
@@ -68,6 +60,7 @@ test("interactive AI authentication can be resolved from the exact internal Requ
   assert.match(session, /request\?\.headers \?\? await headers\(\)/u);
   assert.match(auth, /getAuthPrincipal\(request\?: Request\)/u);
   assert.match(api, /requireApiUser\(request\?: Request\)/u);
-  assert.match(route, /requireApiUser\(request\)/u);
-  assert.match(route, /executeAiPostForInternalEvaluation/u);
+  assert.match(route, /legalChatOwner\(request\)/u);
+  assert.match(await readFile(new URL("../lib/legal-chat/http-owner.ts", import.meta.url), "utf8"), /requireApiUser\(request\)/u);
+
 });

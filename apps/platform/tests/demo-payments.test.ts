@@ -94,7 +94,7 @@ test("demo payment route and UI retain auth, CSRF, tenant and truthful-label con
     readFile(new URL("../app/_platform/DemoPaymentsClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/BillingClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0111_production_demo_payments.sql", import.meta.url), "utf8"),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime/self-hosted.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /requireApiUser/);
   assert.match(route, /assertSafeWrite/);
@@ -108,5 +108,5 @@ test("demo payment route and UI retain auth, CSRF, tenant and truthful-label con
   assert.match(migration, /`provider` text DEFAULT 'demo'/);
   assert.match(migration, /`is_simulation` integer DEFAULT 1/);
   assert.match(migration, /DEMO_PAYMENT_EVENT_IMMUTABLE/);
-  assert.match(config, /"PAYMENT_PRODUCTION_DEMO_ENABLED": "true"/);
+  assert.match(config, /PAYMENT_FOUNDATION_ENABLED: "false"/);
 });

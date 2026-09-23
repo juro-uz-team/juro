@@ -196,7 +196,7 @@ test("every comparison result surface checks current source scan evidence before
   assert.ok(processRoute.indexOf("sourceFiles = await assertComparisonSourceFilesClean(db") < processRoute.indexOf('comparison.status === "completed"'));
   assert.ok(detailRoute.indexOf("await assertComparisonSourceFilesClean(db") < detailRoute.indexOf("const changes = await comparisonChanges(db"));
   assert.ok(fileRoute.indexOf("assertStoredComparisonFileIsClean(file)") < fileRoute.indexOf("const object = await getPrivateObject(file.r2Key)"));
-  assert.ok(decisionRoute.indexOf("await assertComparisonSourceFilesClean(db") < decisionRoute.indexOf("const parsed = decisionSchema.safeParse"));
+  assert.ok(decisionRoute.indexOf("await assertComparisonSourceFilesClean(db") < decisionRoute.indexOf("await decideComparisonChange(db"));
   assert.ok(exportRoute.indexOf("await assertComparisonSourceFilesClean(db") < exportRoute.indexOf("const result = await requestComparisonExport"));
   assert.ok(exportDownload.indexOf("assertComparisonSourceFilesCleanById(db") < exportDownload.indexOf("const object = await verifyComparisonExportObject"));
   assert.ok(exporter.indexOf("await assertComparisonSourceFilesClean(env.DB") < exporter.indexOf('if (row.status === "completed")'));

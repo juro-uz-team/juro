@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {GET as chatStatus,POST as signedInChat} from "../app/api/platform/ai/route";
 import {POST as guestChat} from "../app/api/guest/ai/route";
 import {setOperationalFeature} from "../lib/operations/operational-feature-flags";

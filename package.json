@@ -8,14 +8,14 @@
   },
   "scripts": {
     "dev": "npm run dev:platform",
-    "install:all": "npm --prefix apps/website ci && npm --prefix apps/platform run install:ci",
+    "install:all": "npm --prefix apps/platform ci && npm --prefix apps/website ci",
     "dev:website": "npm --prefix apps/website run dev",
     "dev:platform": "npm --prefix apps/platform run dev",
     "dev:admin": "npm --prefix apps/admin run dev",
     "lint": "npm --prefix apps/website run lint && npm --prefix apps/platform run lint",
-    "type-check": "npm --prefix apps/website run type-check && npm --prefix apps/platform run type-check",
+    "type-check": "npm --prefix apps/website run type-check && npm --prefix apps/platform run type-check && npm --prefix apps/admin run type-check",
     "build": "npm --prefix apps/website run build && npm --prefix apps/platform run build",
     "test": "npm --prefix apps/website test && npm --prefix apps/platform test",
-    "validate:artifact": "npm --prefix apps/website run validate:artifact && npm --prefix apps/platform run validate:artifact"
+    "services:install": "node scripts/install-self-hosted-services.mjs"
   }
 }

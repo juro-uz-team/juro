@@ -115,9 +115,7 @@ function securityHeaders(): Headers {
   });
 }
 
-// Wrangler's generated Env intentionally contains only declarative bindings;
-// dashboard secrets are injected at runtime. Reflect keeps Env generated from
-// wrangler.jsonc instead of maintaining a second hand-written binding type.
+// Secrets are injected by the native server and validated before use.
 function requiredSecret(env: Env, name: string): string {
   const value: unknown = Reflect.get(env, name);
   if (typeof value !== "string" || value.length < 32) {
@@ -309,7 +307,7 @@ export default {
       return page(env.APP_ENV, "Временно недоступно", "<p>Защищённая операция не выполнена. Повторите позже или обновите MFA.</p>");
     }
   },
-} satisfies ExportedHandler<Env>;
+} satisfies { fetch(request: Request, env: Env): Promise<Response> };
 
 function profileIdValid(value: string | undefined): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);

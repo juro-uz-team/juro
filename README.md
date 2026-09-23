@@ -99,12 +99,9 @@ The hand-off model is simple: preserve the question, sources, documents and acti
 
 ## Built for production
 
-<picture>
-  <source media="(max-width: 900px)" srcset="docs/github/showcase/technology-architecture-mobile.svg">
-  <img src="docs/github/showcase/technology-architecture.svg" width="100%" alt="JURO technology architecture with React, Next.js, TypeScript, Cloudflare Workers, Node.js, D1, private R2, OpenAI and CI/CD">
-</picture>
+The self-hosted architecture and operating procedures are described in [Self-hosted operations](docs/self-hosted-operations.md).
 
-The monorepo separates public, protected and administrative surfaces while keeping credentials and data access behind server boundaries. React, Next.js and TypeScript power the frontend; Cloudflare Workers, Node.js, D1 and private R2 support the runtime and data layer; OpenAI configuration remains server-side; CI/CD and artifact checks support release discipline.
+The monorepo separates public, protected and administrative surfaces while keeping credentials and data access behind server boundaries. React, Next.js and TypeScript power the frontend; Node.js, PostgreSQL, pgvector and local content-addressed files support the runtime and data layer; OpenAI configuration remains server-side; CI/CD and artifact checks support release discipline.
 
 <a name="product-experience"></a>
 
@@ -131,15 +128,25 @@ These are repository-maintained product captures without customer data. They com
 
 ## Architecture and product boundaries
 
-<img src="docs/github/platform-architecture.svg" width="100%" alt="JURO monorepo and Cloudflare architecture">
+```mermaid
+flowchart LR
+  Website[Public website] --> Platform[Platform Node.js server]
+  Admin[Admin Node.js server] --> Platform
+  Platform --> PG[PostgreSQL and pgvector]
+  Platform --> Files[Private local files]
+  Jobs[Background jobs] --> PG
+  Jobs --> Files
+  Platform --> AI[Direct AI providers]
+  Jobs --> AI
+```
 
 JURO is a monorepo with independently deployable surfaces:
 
-- apps/website powers the public website through React, Next.js, Vite/Vinext and Cloudflare Worker tooling.
+- apps/website powers the public website through React, Next.js and a native Node.js server.
 - apps/platform provides protected route handlers, AI evidence, document workflows, cases, authorization boundaries and generated-file flows.
-- apps/admin is a separate Worker-based administrative surface and remains **PARTIAL**.
-- Cloudflare D1 and private R2 back persisted platform data and files; AI and email configuration remain server-side.
-- The platform includes DOCX, PDF and ZIP generation paths; email/OTP delivery uses server-side provider configuration when enabled.
+- apps/admin is a separate Node.js administrative surface and remains **PARTIAL**.
+- PostgreSQL, pgvector and private local files back persisted platform data and files; AI and email configuration remain server-side.
+- The platform includes DOCX, PDF and ZIP generation paths; email/OTP delivery is captured locally in this private environment.
 
 <img src="docs/github/product-overview.svg" width="100%" alt="JURO product ecosystem showing working, partial and planned components">
 
@@ -149,7 +156,7 @@ Solid connections denote implemented or working repository paths; dashed connect
 
 <img src="docs/github/trust-layer.svg" width="100%" alt="JURO trust, privacy and legal-safety boundaries">
 
-The repository keeps several operating boundaries inspectable: server-side credentials, backend-mediated D1/R2 access, ownership and workspace checks, source display, and explicit limitations around AI output. No GDPR, ISO, SOC 2, data-residency or legal-outcome claim is made here.
+The repository keeps several operating boundaries inspectable: server-side credentials, backend-mediated database and file access, ownership and workspace checks, source display, and explicit limitations around AI output. No GDPR, ISO, SOC 2, data-residency or legal-outcome claim is made here.
 
 Report a vulnerability privately through [SECURITY.md](SECURITY.md). Do not put secrets, personal data, user documents or production logs in an issue or pull request.
 
@@ -165,7 +172,7 @@ Report a vulnerability privately through [SECURITY.md](SECURITY.md). Do not put 
 | Cases and action plans | WORKING | Case, task and action-plan workflows are implemented. |
 | Lawyer directory and consultations | PARTIAL | Controlled profiles, directory and hand-off lifecycle work is incomplete. |
 | AI Avatar | IN DEVELOPMENT | The visual assistant is a declared development track; no production avatar, approved rigged character or completed live voice path is claimed. |
-| Administration | PARTIAL | A separate admin Worker and protected administrative flows exist. |
+| Administration | PARTIAL | A separate admin server and protected administrative flows exist. |
 | Production payments | PLANNED | No live payment provider is claimed in this repository. |
 
 ## Repository map
@@ -174,85 +181,41 @@ Report a vulnerability privately through [SECURITY.md](SECURITY.md). Do not put 
     ├── apps/
     │   ├── website/       # juro.uz public website
     │   ├── platform/      # app.juro.uz and legal workflows
-    │   └── admin/         # separate administrative Worker
+    │   └── admin/         # separate administrative server
     ├── docs/              # architecture, migrations and operations
     ├── .github/           # CI, contribution and issue templates
-    ├── .env.example       # configuration names only; no secrets
+    ├── .env.self-hosted.example # configuration names only; no secrets
     ├── SECURITY.md
     ├── package.json
     └── README.md
 
 ## Quick start
 
-### Requirements
+This branch runs privately on a Linux server with Node.js 22.13+, PostgreSQL 17 with pgvector, Poppler, Tesseract and ClamAV. See [Self-hosted operations](docs/self-hosted-operations.md) for installation, configuration, migrations, service startup and backup verification.
 
-- Node.js 22.13 or later.
-- npm compatible with the committed lockfiles.
-- Bash and documented POSIX tools for the legacy `apps/website` lifecycle; `apps/platform` uses shell-neutral Node launchers.
-- Cloudflare-compatible bindings for persisted platform features.
-
-Clone and install the website and platform:
-
-    git clone https://github.com/MoozUpus/juro.git
-    cd juro
     npm run install:all
-
-Run locally:
-
-    npm run dev
-
-The default command starts the platform with a loopback-only developer login
-and its legal retrieval service bound read-only to the current production
-corpus. Run `wrangler login` once before the first start. Legal questions leave
-the local machine for retrieval; do not use private client facts in local
-testing. The remote corpus can incur Cloudflare and AI-provider usage charges.
-
-Other applications can be started explicitly:
-
-    npm run dev:website
+    # Configure the ignored .env.self-hosted using .env.self-hosted.example.
+    docker compose --env-file .env.self-hosted up -d
+    npm --prefix apps/platform run db:migrate
     npm run dev:platform
-    npm run dev:admin
 
-Copy `.env.example` to a local ignored environment file. Never commit `.env` files, API keys, access tokens, database exports, user documents or logs.
+Start `npm run dev:website` and `npm run dev:admin` in separate terminals. All three services bind to loopback. The application uses local storage and direct AI provider APIs; imported legal collections remain unavailable until their integrity checks pass. Email is captured locally, and payments, automatic legal ingestion and production probes are disabled.
 
-<details>
-<summary>Environment variables and Cloudflare bindings</summary>
-
-| Name | Required | Scope | Purpose |
-|---|---:|---|---|
-| `OPENAI_API_KEY` | For live AI only | Server | OpenAI Responses API authentication |
-| `OPENAI_MODEL` | No | Server | Optional model override |
-| `RESEND_API_KEY` | For email OTP | Server | Email-provider authentication |
-| `EMAIL_FROM` | For email OTP | Server | Verified sender address |
-| `JURO_SMOKE_BASE_URL` | No | Test process | Document-builder smoke-test base URL |
-| `CLOUDFLARE_REMOTE_BINDINGS` | No | Local development | Opt additional supported bindings into remote mode; the read-only production legal corpus service is remote by default and requires Wrangler login |
-| `DB` | Persisted features | Worker binding | Cloudflare D1 |
-| `BUCKET` | File workflows | Worker binding | Private Cloudflare R2 |
-| `ASSETS` / `IMAGES` | Hosting managed | Worker binding | Static assets and image optimization |
-
-`DB`, `BUCKET`, `ASSETS` and `IMAGES` are platform bindings, not secrets to place in an environment file. AI and email keys are server-only configuration and must never be exposed through public browser variables.
-
-</details>
+Never commit environment files, keys, database exports, user documents or logs.
 
 ## Quality and testing
 
-From the repository root:
+From the repository root, with PostgreSQL and document tools available:
 
-    npm run lint
     npm run type-check
-    npm test
     npm run build
-    npm run validate:artifact
+    npm test
 
-CI is defined in [.github/workflows/ci.yml](.github/workflows/ci.yml). It covers locked installs, linting, TypeScript checks, tests, artifact validation and the platform Cloudflare environment matrix. For platform-only matrix and dry-run coverage, use:
-
-    npm --prefix apps/platform run validate:cloudflare:matrix
+[CI](.github/workflows/ci.yml) checks locked installs, migrations, TypeScript, production builds, native application tests and dependency licences. The rendered application tests require production builds.
 
 ## Deployment
 
-Website and platform deployments are intentionally independent. The platform needs D1 migrations, private R2 bindings, server-side secrets and explicit permission checks; both targets should be preview-tested before any production approval.
-
-Read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the release sequence, rollback expectations, DNS safeguards and backup requirements. [docs/MIGRATION.md](docs/MIGRATION.md) retains the source-migration and alternative-hosting audit.
+This branch is an isolated server migration. It does not authorize production cutover, DNS changes or changes to existing Cloudflare resources. The [operations guide](docs/self-hosted-operations.md) covers private systemd services and verified backups. Historical deployment documents describe the prior architecture and are not startup instructions for this branch.
 
 ## Roadmap
 

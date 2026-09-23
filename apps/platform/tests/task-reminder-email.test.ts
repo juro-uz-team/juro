@@ -18,7 +18,7 @@ test("email reminder resolves protected identity at delivery and is idempotent",
     const jobId = seed(sqlite, "en");
     globalThis.fetch = async (input, init) => {
       calls += 1;
-      assert.equal(String(input), "https://api.resend.com/emails");
+      assert.equal(String(input), "http://captured-email.local/emails");
       assert.equal(new Headers(init?.headers).get("idempotency-key"), `juro_task_reminder_${jobId}`);
       const body = JSON.parse(String(init?.body)) as { to: string[]; subject: string; html: string; text: string };
       assert.deepEqual(body.to, ["user-a@example.invalid"]);

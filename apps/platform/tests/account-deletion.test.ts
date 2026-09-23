@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { env } from "cloudflare:workers";
+import { env } from "./helpers/runtime-env";
 import { POST as requestAccountDeletion } from "../app/api/platform/privacy/deletion-request/route";
 import {
   confirmAccountDeletion,
@@ -722,7 +722,7 @@ test("account-deletion route sends the branded HTML and text bodies through Rese
   let providerHeaders = new Headers();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), "https://api.resend.com/emails");
+    assert.equal(String(input), "http://captured-email.local/emails");
     providerHeaders = new Headers(init?.headers);
     delivery = JSON.parse(String(init?.body)) as Delivery;
     return new Response(JSON.stringify({ id: "resend_deletion_test" }), {

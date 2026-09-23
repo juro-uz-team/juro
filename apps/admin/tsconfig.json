@@ -1,12 +1,25 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "typeRoots": [
+      "../platform/node_modules/@types"
+    ],
+    "types": [
+      "node"
+    ]
   },
-  "files": ["worker-configuration.d.ts", "src/worker.ts"]
+  "include": [
+    "runtime-contracts.d.ts",
+    "src/**/*.ts"
+  ]
 }

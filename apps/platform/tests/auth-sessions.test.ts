@@ -427,7 +427,7 @@ test("device display names are deterministic and avoid raw user-agent output", (
 test("session request evidence stores only keyed hashes and coarse location", async () => {
   const request = new Request("https://app.juro.uz/api/auth/verify-otp", {
     headers: {
-      "cf-connecting-ip": "203.0.113.18",
+      "x-juro-client-ip": "203.0.113.18",
       "user-agent": "Browser/9.0 private-build",
     },
   });
@@ -438,8 +438,8 @@ test("session request evidence stores only keyed hashes and coarse location", as
   assert.deepEqual(context, {
     connectingIp: "203.0.113.18",
     userAgent: "Browser/9.0 private-build",
-    countryCode: "UZ",
-    regionCode: "TK",
+    countryCode: null,
+    regionCode: null,
   });
   const evidence = await prepareAuthRequestSecurityEvidence(
     securityEvidenceKeyring(),
@@ -475,7 +475,7 @@ test("session request evidence stores only keyed hashes and coarse location", as
 
   const invalid = new Request("https://app.juro.uz/", {
     headers: {
-      "cf-connecting-ip": "x".repeat(65),
+      "x-juro-client-ip": "x".repeat(65),
       "user-agent": "x".repeat(513),
     },
   });
@@ -507,8 +507,8 @@ test("session request evidence stores only keyed hashes and coarse location", as
       deviceName: "Browser · Unknown device",
       requestEvidence: {
         keyVersion: "v1",
-        countryCode: "UZ",
-        regionCode: "TK",
+        countryCode: null,
+        regionCode: null,
       },
     });
     assert.doesNotMatch(

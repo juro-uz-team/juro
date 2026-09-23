@@ -93,6 +93,7 @@ type ExistingHandoff = {
 type SuggestedScope={db:D1Database;workspaceId:string;userId:string;assistantMessageId:string;locale:AiOutputLocale};
 
 async function storedSuggestion(input:SuggestedScope):Promise<StoredSuggestedDocumentMessage>{
+  if (input.locale === "en") throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
   const row=await input.db.prepare(`SELECT message.structured_json AS structuredJson,conversation.case_id AS caseId,member.role AS workspaceRole
     FROM conversation_messages message JOIN conversations conversation ON conversation.id=message.conversation_id
     JOIN workspace_members member ON member.workspace_id=conversation.workspace_id AND member.user_id=conversation.owner_user_id

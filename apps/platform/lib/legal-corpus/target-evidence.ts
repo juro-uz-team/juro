@@ -286,7 +286,7 @@ export type LegalEvidenceBucket = {
   ): Promise<LegalEvidenceHead | null>;
 };
 
-export type OfficialEvidenceEnv = Pick<LegalCorpusDevelopmentEnv, "APP_ENV">
+export type OfficialEvidenceEnv = Pick<Env, "APP_ENV">
   & {
     LEGAL_DB?: D1Database;
     LEGAL_EVIDENCE_BUCKET?: Pick<LegalEvidenceBucket, "get">;

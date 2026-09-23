@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test, {type TestContext} from "node:test";
-import {env} from "cloudflare:workers";
+import {env} from "./helpers/runtime-env";
 import {GET,POST} from "../app/api/platform/ai/memory/route";
 import {POST as submitChat} from "../app/api/platform/ai/route";
 import {sqliteD1FixtureFromDirectory} from "./helpers/sqlite-d1";

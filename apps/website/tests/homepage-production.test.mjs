@@ -99,7 +99,8 @@ test("public chrome exposes every primary public destination in all three locale
   assert.match(chrome, /languageHref/);
   assert.match(chrome, /const languages: Locale\[\] = \["ru", "uz", "en"\]/);
   assert.match(chrome, /localeHref\(target\)/);
-  assert.match(chrome + platformHrefs, /app\.juro\.uz/);
+  assert.match(platformHrefs, /NEXT_PUBLIC_PLATFORM_ORIGIN/);
+  assert.match(platformHrefs, /localhost:3000/);
   assert.match(sitemap, /\/lawyers/);
   assert.doesNotMatch(sitemap, /prototype/);
 });
@@ -288,8 +289,8 @@ test("laptop layouts prevent large headline and product-grid clipping", () => {
   assert.match(motionStyles, /100% \{ clip-path: none; opacity: 1; transform: translateY\(0\); \}/);
   assert.match(laptopStyles, /font-size: clamp\(2\.05rem, 8vw, 3\.25rem\)/);
   assert.match(laptopStyles, /\.transitionTitle\.transitionTitle[\s\S]*?max-width: 100%/);
-  assert.match(motionStyles, /\[data-reveal\]\[data-reveal-state="visible"\]\) \{\s*clip-path: none/);
-  assert.match(motionStyles, /\[data-reveal="mask"\]\[data-reveal-state="visible"\]\) \{\s*clip-path: inset/);
+  assert.match(globalStyles, /\[data-reveal\]\[data-reveal-state="visible"\] \{\s*clip-path: none/);
+  assert.match(globalStyles, /\[data-reveal="mask"\]\[data-reveal-state="visible"\] \{\s*clip-path: inset/);
 });
 
 test("public header language links keep a 44px touch target at every viewport", () => {

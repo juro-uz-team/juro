@@ -459,7 +459,7 @@ test("local development login is explicit, loopback-only, and creates a real ses
     readFile(new URL("../lib/auth/development-auth.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/_auth/AuthPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_auth/AuthForm.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/platform-tasks.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime/self-hosted.ts", import.meta.url), "utf8"),
     readFile(new URL("../../../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(developmentAuth, /NODE_ENV !== "production"/);
@@ -471,13 +471,13 @@ test("local development login is explicit, loopback-only, and creates a real ses
   assert.match(route, /sessionCookie\(session\.token\)/);
   assert.match(authPage, /developmentAuthEnabled/);
   assert.match(authForm, /\/api\/auth\/dev-login\?returnTo=/);
-  assert.match(launcher, /LOCAL_AUTH_BYPASS: process\.env\.LOCAL_AUTH_BYPASS \?\? "true"/);
+  assert.match(launcher, /LOCAL_AUTH_BYPASS: "false"/);
   assert.equal(JSON.parse(rootPackageText).scripts.dev, "npm run dev:platform");
   assert.match(
-    await readFile(new URL("../vite.config.ts", import.meta.url), "utf8"),
-    /host: "127\.0\.0\.1"/,
+    await readFile(new URL("../server/index.ts", import.meta.url), "utf8"),
+    /listen\(port, "127\.0\.0\.1"/,
   );
-  assert.match(launcher, /CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false"/);
+
 });
 
 test("canonical identity expand stays disabled and public projections omit protected fields", async () => {
@@ -517,19 +517,12 @@ test("canonical identity expand stays disabled and public projections omit prote
       new URL("../lib/auth/identity-evidence.ts", import.meta.url),
       "utf8",
     ),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime/self-hosted.ts", import.meta.url), "utf8"),
   ]);
   assert.match(identity, /"legacy" \| "dual_write"/);
   assert.match(identity, /backfillUserIdentityBatch/);
   assert.match(identity, /IDENTITY_VALUE_DIVERGED/);
-  assert.equal(
-    (config.match(/"IDENTITY_PROTECTION_MODE": "legacy"/g) ?? []).length,
-    1,
-  );
-  assert.equal(
-    (config.match(/"IDENTITY_PROTECTION_MODE": "dual_write"/g) ?? []).length,
-    2,
-  );
+  assert.match(config, /\.\.\.process\.env/);
   assert.match(session, /return \{\s*sessionId:/);
   assert.doesNotMatch(storage, /\.\.\.existing/);
   assert.match(storage, /!existing\.onboardingCompletedAt/);
@@ -725,7 +718,8 @@ test("successful OTP and MFA routes record bounded request evidence", async () =
   assert.match(evidence, /identityLookupHmac/);
   assert.match(evidence, /MAX_IP_CHARACTERS = 64/);
   assert.match(evidence, /MAX_USER_AGENT_CHARACTERS = 512/);
-  assert.match(evidence, /\{ cf\?: IncomingRequestCf \}/);
+  assert.match(evidence, /x-juro-client-ip/);
+  assert.doesNotMatch(evidence, /IncomingRequestCf|cf-connecting-ip/);
   assert.match(evidence, /countryCode/);
   assert.match(evidence, /regionCode/);
   assert.doesNotMatch(evidence, /city|postalCode|latitude|longitude/);

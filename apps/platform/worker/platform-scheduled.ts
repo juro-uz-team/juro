@@ -1,3 +1,4 @@
+import { setTimeout as wait } from "node:timers/promises";
 import { dispatchOutbox } from "./platform-outbox";
 import {
   LEX_METADATA_DISCOVERY_CRON,
@@ -521,7 +522,7 @@ export async function handleScheduled(
       return;
     }
     const summary = await runLexMetadataMonitor(env, {
-      wait: (delayMs) => scheduler.wait(delayMs),
+      wait: (delayMs) => wait(delayMs),
     });
     logScheduled("info", {
       event: "scheduled.lex_metadata_monitor_finished",
@@ -596,7 +597,7 @@ export async function handleScheduled(
         ? await runLexMetadataMonitor(env, {
           now: new Date(now),
           runType: "metadata_retry",
-          wait: (delayMs) => scheduler.wait(delayMs),
+          wait: (delayMs) => wait(delayMs),
         })
         : null;
     }

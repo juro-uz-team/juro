@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {privateDocumentContext} from "./helpers/private-document-context";
 import { createHash } from "node:crypto";
-import { env } from "cloudflare:workers";
+import { env } from "./helpers/runtime-env";
 import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
 import { answerFromEvidence, type AnswerQuestion } from "../lib/legal-chat/answer-engine";
 import { legalDraftClaims, legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";

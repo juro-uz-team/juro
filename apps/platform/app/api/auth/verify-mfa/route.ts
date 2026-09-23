@@ -84,7 +84,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
         deviceToken: deviceContinuityTokenFromCookie(
           request.headers.get("cookie"),
         ),
-        requestIp: request.headers.get("cf-connecting-ip")?.trim() || null,
+        requestIp: request.headers.get("x-juro-client-ip")?.trim() || null,
         rememberMe,
       },
     );

@@ -211,3 +211,88 @@ summary {
     display: none;
   }
 }
+
+/* Global motion and accessibility rules, outside CSS Module local scope. */
+header nav a,
+header a[aria-label="O‘zbekcha"],
+header a[aria-label="Русский"],
+header a[href*="/auth/login"] {
+  align-items: center;
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+footer a {
+  align-items: center;
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, 42px, 0);
+  transition: opacity 680ms var(--ease-story), transform 780ms var(--ease-story), clip-path 820ms var(--ease-story);
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal="left"] {
+  transform: translate3d(0, 24px, 0);
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal="right"] {
+  transform: translate3d(0, 24px, 0);
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal="mask"] {
+  clip-path: inset(0 0 0 0 round 18px);
+  opacity: 0;
+  transform: translate3d(0, 34px, 0) scale(.985);
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal][data-reveal-state="visible"] {
+  clip-path: none;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-juro-motion-root][data-motion-ready="true"] [data-reveal="mask"][data-reveal-state="visible"] {
+  clip-path: inset(0 0 0 0 round 18px);
+}
+
+@media (max-width: 620px) {
+
+  [data-juro-motion-root][data-motion-ready="true"] [data-reveal] {
+    transform: translate3d(0, 24px, 0);
+  }
+}
+
+@media (max-width: 620px) {
+
+  [data-juro-motion-root][data-motion-ready="true"] [data-reveal="left"],
+  [data-juro-motion-root][data-motion-ready="true"] [data-reveal="right"] {
+    transform: translate3d(0, 20px, 0);
+  }
+}
+
+@media (max-width: 620px) {
+
+  [data-juro-motion-root][data-motion-ready="true"] [data-reveal][data-reveal-state="visible"] {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  [data-juro-motion-root] [data-reveal] {
+    clip-path: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-handoff-story] a {
+  align-items: center;
+  display: inline-flex;
+  min-height: 44px;
+}

@@ -1,3 +1,4 @@
+import { captureEmailRequest } from "../runtime/email";
 import { normalizeEmail } from "./crypto";
 import {
   parseIdentityKeyring,
@@ -13,7 +14,6 @@ import {
 } from "./transactional-email";
 
 const RECIPIENT_PURPOSE = "security-email-recipient";
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
 export type SecurityEmailErrorCode =
   | "EMAIL_CONFIGURATION_UNAVAILABLE"
@@ -302,7 +302,7 @@ export async function notifyPasswordChangedWithRetry(
   let response: Response | null = null;
   let providerMessageId: string | null = null;
   try {
-    response = await fetch(RESEND_ENDPOINT, {
+    response = await captureEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${input.apiKey}`,
@@ -543,7 +543,7 @@ export async function executeSecurityEmailJob(
   const copy = emailCopy(row);
   let response: Response | null = null;
   try {
-    response = await fetch(RESEND_ENDPOINT, {
+    response = await captureEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,
