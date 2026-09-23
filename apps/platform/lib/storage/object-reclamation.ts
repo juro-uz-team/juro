@@ -1,17 +1,27 @@
 import { readdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 import type { Pool } from "pg";
 
 /** Writers and backup snapshots hold the shared lock; reclamation holds it exclusively. */
 export function objectStorageLock(root: string) { return `juro:objects:${resolve(root)}`; }
 
-export async function reclaimObjects(pool: Pool, root: string, digests?: string[]) {
+export async function reclaimObjects(pool: Pool, root: string, digests?: string[], options: { wait?: boolean } = {}) {
   root = resolve(root);
   const client = await pool.connect();
   let removed = 0;
   try {
     await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [objectStorageLock(root)]);
+    const deadline = Date.now() + 10_000;
+    while (true) {
+      // Never queue an exclusive lock behind a long backup: that would also
+      // block subsequent shared readers and writers through lock fairness.
+      const lock = await client.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired", [objectStorageLock(root)]);
+      if (lock.rows[0].acquired) break;
+      if (options.wait === false) { await client.query("ROLLBACK"); return {removed:0,processed:0}; }
+      if (Date.now() >= deadline) throw new Error("Object reclamation is pinned by active storage work");
+      await pause(100);
+    }
     // Every active writer holds the shared lock from before creating its temp file.
     const entries = await readdir(root,{withFileTypes:true}).catch(error => {
       if (error.code === "ENOENT") return [];

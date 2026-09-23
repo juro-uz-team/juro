@@ -163,7 +163,7 @@ export class LocalObjectStore {
         try { if (locked) await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); }
         finally { client.release(); }
       }
-      if (registered) await reclaimObjects(this.pool,this.root,garbage);
+      if (registered) await reclaimObjects(this.pool,this.root,garbage,{wait:false});
     }
   }
 

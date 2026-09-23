@@ -93,13 +93,45 @@ export class PostgresVectorIndex {
     if (options.namespace !== undefined) { parameters.push(options.namespace); where.push(`namespace=$${parameters.length}`); }
     if (options.filter) where.push(filterSql(options.filter, parameters));
     const operator = { cosine: "<=>", euclidean: "<->", "dot-product": "<#>" }[configuration.metric];
-    const score = configuration.metric === "cosine" ? `1 - (embedding ${operator} $2::vector)`
-      : configuration.metric === "dot-product" ? `-(embedding ${operator} $2::vector)` : `(embedding ${operator} $2::vector)`;
+    const operand = `embedding::vector(${configuration.dimensions})`;
+    const distance = `${operand} ${operator} $2::vector(${configuration.dimensions})`;
+    const score = configuration.metric === "cosine" ? `1 - (${distance})`
+      : configuration.metric === "dot-product" ? `-(${distance})` : `(${distance})`;
     parameters.push(topK);
-    const { rows } = await this.pool.query<{ id: string; namespace: string; score: number; metadata?: Record<string, unknown>; values?: string }>(
-      `SELECT id,namespace,${score} AS score${options.returnMetadata && options.returnMetadata !== "none" ? ",metadata" : ""}
-      ${options.returnValues ? ",embedding::text AS values" : ""} FROM storage.embeddings
-      WHERE ${where.join(" AND ")} ORDER BY embedding ${operator} $2::vector,id LIMIT $${parameters.length}`, parameters);
+    const client = await this.pool.connect();
+    let rows: Array<{ id: string; namespace: string; score: number; metadata?: Record<string, unknown>; values?: string }>;
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await client.query("SET LOCAL statement_timeout = '15s'");
+      await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
+      await client.query("SET LOCAL hnsw.ef_search = 200");
+      await client.query("SET LOCAL hnsw.max_scan_tuples = 100000");
+      const select = `SELECT id,namespace,${score} AS score${options.returnMetadata && options.returnMetadata !== "none" ? ",metadata" : ""}
+        ${options.returnValues ? ",embedding::text AS values" : ""} FROM storage.embeddings
+        WHERE ${where.join(" AND ")}`;
+      // Small eligible sets are faster and complete with exact distances. Probe
+      // IDs only, avoiding vector decompression while estimating selectivity.
+      const eligible = where.length > 1 ? (await client.query(
+        `SELECT id FROM storage.embeddings WHERE ${where.join(" AND ")} AND $2::text IS NOT NULL LIMIT 10001`, parameters.slice(0, -1))).rows : null;
+      if (eligible && eligible.length <= 10000) {
+        const exactParameters = [...parameters, eligible.map(row => row.id)];
+        rows = (await client.query(`${select} AND id=ANY($${exactParameters.length}::text[])
+          ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, exactParameters)).rows;
+      } else {
+        // JSON metadata selectivity estimates can otherwise prefer an expensive
+        // exact sort even when most of the collection is eligible.
+        await client.query("SET LOCAL enable_sort = off");
+        rows = (await client.query(`${select} ORDER BY ${distance} LIMIT $${parameters.length}`, parameters)).rows;
+        await client.query("SET LOCAL enable_sort = on");
+      }
+      // Selective filters can exhaust an ANN scan's budget. An exact fallback
+      // distinguishes genuinely small result sets from missed eligible rows.
+      if ((!eligible || eligible.length > 10000) && rows.length < topK) rows = (await client.query(
+        `${select} ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, parameters)).rows;
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+    rows.sort((left,right) => (configuration.metric === "euclidean" ? left.score-right.score : right.score-left.score) || left.id.localeCompare(right.id));
     return { count: rows.length, matches: rows.map(row => ({ ...row, ...(row.values ? { values: JSON.parse(row.values) as number[] } : {}) })) };
   }
 

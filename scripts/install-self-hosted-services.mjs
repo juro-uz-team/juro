@@ -56,7 +56,8 @@ for (const [name, port, path] of [
   ["admin", configuration.ADMIN_PORT ?? 3002, "/"],
 ]) {
   let ready = false;
-  for (let attempt = 0; attempt < 40; attempt++) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
     try {
       const response = await fetch(`http://localhost:${port}${path}`, { redirect: "manual", signal: AbortSignal.timeout(1000) });
       await response.body?.cancel();

@@ -32,6 +32,10 @@ Object deletion records durable reclamation candidates and removes unreferenced 
 
 Email is captured in `storage.captured_emails`; only authorized operators should inspect it because messages may contain authentication codes. Payments, automatic legal ingestion, development authentication bypasses and synthetic production probes are disabled. User-triggered document work uses local malware scanning and conversion. AI calls go directly to the configured providers.
 
+## Vector search
+
+The active current collection has a partial HNSW cosine index over the original 1,536-dimensional vectors. Large eligible sets use approximate nearest-neighbor search with iterative filtering; filtered sets of at most 10,000 candidates use exact distances. Namespace, release and evidence predicates apply before results are returned. An underfilled approximate scan retries with exact ordering, and a 15-second statement timeout fails the lane rather than silently accepting incomplete results. Validate recall and filtered-query plans when adding a collection or materially changing its distribution. Archived collections remain unavailable until verified; a new active collection also needs an index appropriate to its dimensions and metric.
+
 ## Backup and recovery verification
 
 Run `npm run backup --prefix apps/platform -- /absolute/new/backup-directory --verify-restore`. Add `--sudo-docker` when the service account requires sudo for Docker. The destination must not exist. The command exports a consistent PostgreSQL snapshot, records table counts, preserves every referenced immutable object, copies public assets (including locally preserved investor media) and the private environment file, and records hashes. Verification restores into a fresh temporary database, compares every table count and object hash, then removes only that temporary database.

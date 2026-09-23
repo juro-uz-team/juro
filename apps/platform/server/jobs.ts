@@ -24,7 +24,7 @@ while (!stopping) {
   try {
     if (Date.now() - lastHousekeeping >= 300_000) {
       lastHousekeeping = Date.now();
-      await reclaimObjects(pool, resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects"));
+      await reclaimObjects(pool, resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects"), undefined, {wait:false});
       try { await handleScheduled({ cron: "*/5 * * * *", scheduledTime: Date.now(), noRetry() {} }, env); }
       catch (error) { console.error("Scheduled housekeeping failed", error instanceof Error ? error.message : "Unknown error"); }
     }

@@ -67,10 +67,18 @@ test("backup pins delay reclamation and interrupted deletions resume from durabl
     const object = await store.put("private",crypto.randomUUID());
     const path=join(root,object!.etag.slice(0,2),object!.etag);
     await backup.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))",[objectStorageLock(root)]);
+    assert.deepEqual(await reclaimObjects(db.pool,root,undefined,{wait:false}),{removed:0,processed:0});
     let completed=false;
     deletion=store.delete("private").then(()=>{completed=true;});
     await pause(100);
     assert.equal(completed,false);
+    // A waiting deletion must not prevent a new backup-compatible reader.
+    const probe=await db.pool.connect();
+    try {
+      const lock=await probe.query("SELECT pg_try_advisory_lock_shared(hashtextextended($1,0)) AS acquired",[objectStorageLock(root)]);
+      assert.equal(lock.rows[0].acquired,true);
+      await probe.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))",[objectStorageLock(root)]);
+    } finally {probe.release();}
     assert.ok((await stat(path)).size>0);
     await backup.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))",[objectStorageLock(root)]);
     await deletion;
