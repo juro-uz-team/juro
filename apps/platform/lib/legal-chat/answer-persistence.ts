@@ -7,6 +7,7 @@ import {completeGuestAiRun} from "../ai/guest-session";
 import {automaticMemoryStatements} from "../ai/user-memory";
 import type {IdentityKeyring} from "../auth/keyring";
 import {privateDocumentCitationGuards} from "./private-document-persistence";
+import {linkVoiceRecordingStatement,type VoiceRecordingRow} from "../ai/voice-recording";
 
 type Completion=Pick<CompleteAiRunInput,"db"|"runId"|"ledgerId"|"workspaceId"|"userId"|"idempotencyKey"
   |"providerResponseId"|"provider"|"fallbackFromProvider"|"model"|"inputTokens"|"outputTokens"
@@ -40,6 +41,7 @@ export async function saveSignedInLegalAnswer(input:Completion&{
   branch:AiBranchInput;
   result:LegalChatResponse;
   sources:readonly LegalSourceContext[];
+  voiceRecording?:VoiceRecordingRow;
   proposedFacts?:readonly string[];
   memoryKeyring?:IdentityKeyring|null;
 }) {
@@ -90,6 +92,18 @@ export async function saveSignedInLegalAnswer(input:Completion&{
     ...completeAiRunStatements({...input,conversationId,requestMessageId,responseMessageId:messageId,
       chargeable:result.responseKind==="answer"&&!result.failureReason,sourceVersionHash,legalDatabaseAsOf:result.legalDatabaseAsOf}),
   );
+  if(input.voiceRecording){
+    const recording=input.voiceRecording;
+    // The transcript may be edited, deleted or submitted while research runs.
+    // Fence its exact encrypted revision in the same transaction as the answer.
+    statements.push(input.db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM voice_recordings
+      WHERE id=? AND workspace_id=? AND user_id=? AND status='transcribed' AND deleted_at IS NULL
+      AND expires_at>? AND transcript_ciphertext=? AND transcript_iv=?)
+      THEN 1 ELSE json_extract('VOICE_TRANSCRIPT_CHANGED','$') END`)
+      .bind(recording.id,input.workspaceId,input.userId,now,recording.transcriptCiphertext,recording.transcriptIv),
+      linkVoiceRecordingStatement({db:input.db,recordingId:recording.id,workspaceId:input.workspaceId,userId:input.userId,
+        conversationId,messageId:requestMessageId,caseId:null,now}));
+  }
   if(input.memoryKeyring&&input.branch.operation!=="regenerate") {
     statements.push(...await automaticMemoryStatements({...input,keyring:input.memoryKeyring,
       conversationId,messageId:requestMessageId,question:input.branch.question,locale:result.language}));

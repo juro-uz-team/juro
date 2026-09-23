@@ -124,10 +124,88 @@ export function VoiceMessageControls(props: {
   onTranscript: (value: { recordingId: string; transcript: string }) => void;
   onClear: () => void;
   recordingId: string;
+  workspaceId?: string;
   presentation?: "inline" | "stage";
   onPhaseChange?: (phase: VoiceRecorderPhase) => void;
 }) {
-  // Presentation bindings are supplied by the replacement voice controller.
+  const t = voiceCopy[props.locale];
+  const [phase, setPhase] = useState<VoiceRecorderPhase>("idle");
+  const [error, setError] = useState("");
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const uploadRef = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const recordingRef = useRef("");
+  const propsRef = useRef(props); propsRef.current = props;
+  const busy = ["hashing", "uploading", "finalizing", "transcribing"].includes(phase);
+  useEffect(() => {propsRef.current.onPhaseChange?.(phase);}, [phase]);
+  useEffect(() => () => {
+    generation.current++;
+    uploadRef.current?.abort();
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") {recorder.onstop = null; recorder.stop();}
+    streamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
+  useEffect(() => {
+    if (phase !== "listening") return;
+    const timer = setInterval(() => setElapsedMs(value => Math.min(value + 250, 300_000)), 250);
+    return () => clearInterval(timer);
+  }, [phase]);
+  useEffect(() => {if (elapsedMs >= 300_000 && recorderRef.current?.state === "recording") recorderRef.current.stop();}, [elapsedMs]);
+  const durationRef = useRef(elapsedMs); durationRef.current = elapsedMs;
+  function cancel() {
+    generation.current++; uploadRef.current?.abort();
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") {recorder.onstop = null; recorder.stop();}
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    setPhase("idle"); setElapsedMs(0); setError("");
+  }
+  function resetRecording() {cancel();}
+  async function clear() {
+    try {await deleteVoiceRecording(props.recordingId || recordingRef.current, props.locale, props.workspaceId);
+      recordingRef.current = ""; props.onClear(); cancel();
+    } catch (cause) {setError(cause instanceof Error ? cause.message : t.emptyRecording); setPhase("error");}
+  }
+  async function start() {
+    if (props.disabled || busy || recorderRef.current?.state === "recording") return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {setError(t.unsupported); setPhase("error"); return;}
+    const current = ++generation.current;
+    setError(""); setElapsedMs(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      if (generation.current !== current) {stream.getTracks().forEach(track => track.stop()); return;}
+      streamRef.current = stream;
+      const mimeType = ["audio/webm", "audio/mp4"].find(type => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, mimeType ? {mimeType} : undefined);
+      recorderRef.current = recorder;
+      const chunks: Blob[] = []; let bytes = 0;
+      recorder.ondataavailable = event => {if (event.data.size) {chunks.push(event.data); bytes += event.data.size;
+        if (bytes > 25 * 1024 * 1024 && recorder.state !== "inactive") recorder.stop();}};
+      recorder.onerror = () => {cancel(); setError(t.microphoneUnavailable); setPhase("error");};
+      recorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        if (generation.current !== current) return;
+        const blob = new Blob(chunks, {type: recorder.mimeType});
+        if (!blob.size || blob.size > 25 * 1024 * 1024) {setError(t.emptyRecording); setPhase("error"); return;}
+        const controller = new AbortController(); uploadRef.current = controller;
+        void uploadAndTranscribeVoice({blob, durationMs: Math.max(1, durationRef.current), locale: props.locale,
+          workspaceId: props.workspaceId, idempotencyKey: crypto.randomUUID(), signal: controller.signal,
+          onPhase: value => {if (generation.current === current) setPhase(value);},
+          onRecording: id => {recordingRef.current = id;}}).then(result => {
+            if (generation.current !== current) return;
+            propsRef.current.onTranscript(result); setPhase("ready");
+          }).catch(cause => {if (generation.current === current) {setError(cause instanceof Error ? cause.message : t.emptyRecording); setPhase("error");}});
+      };
+      recorder.start(1000); setPhase("listening");
+    } catch {streamRef.current?.getTracks().forEach(track => track.stop());
+      if (generation.current === current) {setError(t.microphoneUnavailable); setPhase("error");}}
+  }
+  function pauseOrResume() {
+    const recorder = recorderRef.current;
+    if (recorder?.state === "recording") {recorder.pause(); setPhase("paused");}
+    else if (recorder?.state === "paused") {recorder.resume(); setPhase("listening");}
+  }
   return <section className={`ai-voice-controls ${props.presentation === "stage" ? "is-stage" : ""}`} data-phase={phase} aria-label={t.inputAria}>
     <div className="ai-voice-actions">
       {phase === "idle" && <button type="button" disabled={props.disabled} aria-label={t.recordQuestionAria} title={t.recordQuestionAria} onClick={() => void start()}><Mic /><span>{t.recordQuestion}</span></button>}
@@ -147,8 +225,33 @@ export function VoiceMessageControls(props: {
   </section>;
 }
 
-export function AssistantSpeechControls(props: { locale: PlatformLocale; assistantMessageId: string; disabled?: boolean; onPhaseChange?: (phase: VoiceSpeechPhase) => void }) {
-  // Presentation bindings are supplied by the replacement voice controller.
+export function AssistantSpeechControls(props: { locale: PlatformLocale; assistantMessageId: string; workspaceId?: string; disabled?: boolean; onPhaseChange?: (phase: VoiceSpeechPhase) => void }) {
+  const t = voiceCopy[props.locale], {onPhaseChange} = props;
+  const [voice, setVoice] = useState<"marin" | "cedar">("marin");
+  const [loading, setLoading] = useState(false), [muted, setMuted] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(""), [error, setError] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => {requestRef.current?.abort();}, [props.assistantMessageId, props.workspaceId]);
+  useEffect(() => () => {if (audioUrl) URL.revokeObjectURL(audioUrl);}, [audioUrl]);
+  async function speak() {
+    requestRef.current?.abort(); const controller = new AbortController(); requestRef.current = controller;
+    setLoading(true); setError(""); onPhaseChange?.("preparing");
+    try {
+      const response = await fetch("/api/platform/voice/speech", {method: "POST", signal: controller.signal,
+        headers: {"content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": props.locale,
+          ...(props.workspaceId ? {"x-juro-workspace-id": props.workspaceId} : {})},
+        body: JSON.stringify({assistantMessageId: props.assistantMessageId, locale: props.locale, voice})});
+      if (!response.ok) throw Error(t.speechUnavailable);
+      const blob = await response.blob(); if (controller.signal.aborted) return;
+      setAudioUrl(URL.createObjectURL(blob)); onPhaseChange?.("paused");
+    } catch {if (!controller.signal.aborted) {setError(t.speechUnavailable); onPhaseChange?.("error");}}
+    finally {if (!controller.signal.aborted) setLoading(false);}
+  }
+  function stop() {audioRef.current?.pause(); if (audioRef.current) audioRef.current.currentTime = 0; onPhaseChange?.("completed");}
+  function replay() {if (!audioRef.current) return; audioRef.current.currentTime = 0;
+    void audioRef.current.play().catch(() => {setError(t.playbackBlocked); onPhaseChange?.("error");});}
+  function handleAudioPause() {onPhaseChange?.(audioRef.current?.ended ? "completed" : "paused");}
   return <div className="ai-speech-controls">
     <label>{t.aiVoice}<select value={voice} onChange={(event) => setVoice(event.target.value as "marin" | "cedar")}><option value="marin">Marin</option><option value="cedar">Cedar</option></select></label>
     <button type="button" disabled={props.disabled || loading} onClick={() => void speak()}><Volume2 />{loading ? t.preparingAudio : t.speakAnswer}</button>

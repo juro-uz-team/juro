@@ -1,4 +1,4 @@
-import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../lib/document-builder/auth/api";
+import { assertSafeWrite, withApiErrors } from "../../../../../lib/document-builder/auth/api";
 import { requireD1, runtimeEnv } from "../../../../../lib/document-builder/storage/runtime";
 import {
   hashVoiceIntent,
@@ -7,13 +7,14 @@ import {
   parseVoiceIntent,
 } from "../../../../../lib/ai/voice-recording";
 import { publicVoiceRecording, voiceErrorResponse, voiceLocale, voiceProblem, voiceResponse } from "../../../../../lib/ai/voice-http";
-import { workspaceForUser } from "../../../../../lib/platform/workspace";
+import { legalChatOwner } from "../../../../../lib/legal-chat/http-owner";
 import { assertOperationalFeatureEnabled, operationalEnvironment, OperationalFeatureError, operationalFeatureMessage } from "../../../../../lib/operations/operational-feature-flags";
 
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
-  const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const owner = await legalChatOwner(request);
+  if (!owner) throw new Error("WORKSPACE_UNAVAILABLE");
+  const user = {id: owner.userId}, workspace = {id: owner.workspaceId};
   const locale = voiceLocale(request);
   try {
     try {

@@ -244,6 +244,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     if(streamAbortRef.current)return;const controller=new AbortController();streamAbortRef.current=controller;retryRef.current=payload;
     setSending(true);setCanRetry(false);setError("");setOptimisticQuestion(payload.question||answer?.question||"");
     try {
+      if(payload.voiceRecordingId)await requestJson(`/api/platform/voice/recordings/${encodeURIComponent(payload.voiceRecordingId)}`,{method:"PATCH",body:JSON.stringify({transcript:payload.question}),signal:controller.signal});
       const response=await fetch("/api/platform/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale,"x-juro-workspace-id":workspaceId},body:JSON.stringify(payload),signal:controller.signal});
       const saved=await readLegalChatStream(response,stage=>{if(streamAbortRef.current===controller)setStreamStatus(chatStageLabel(stage,locale));});
       if(controller.signal.aborted)return;
@@ -378,7 +379,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               {answer.result.responseKind === "answer" && answer.result.suggestedDocument && <button type="button" disabled={!answer.messageId || sending || openingSuggestedDocument} onClick={() => void openSuggestedDocument()}><FilePlus2 />{openingSuggestedDocument ? text("Проверяем шаблон…", "Shablon tekshirilmoqda…", "Verifying template…") : text("Открыть шаблон JURO", "JURO shablonini ochish", "Open JURO template")}</button>}
               <button type="button" disabled={!answer.requestMessageId || sending} onClick={editQuestion}><Pencil />{text("Редактировать вопрос", "Savolni tahrirlash", "Edit question")}</button>
               <button type="button" disabled={!answer.messageId || sending || !status?.configured} onClick={regenerateAnswer}><RotateCcw />{sourceWasUnavailable ? text("Повторить поиск источников", "Manbalarni qayta qidirish", "Retry source search") : text("Повторить ответ", "Javobni qayta yaratish", "Regenerate answer")}</button>
-              {answer.messageId && answer.result.responseKind === "answer" && <AssistantSpeechControls locale={locale} assistantMessageId={answer.messageId} disabled={sending} onPhaseChange={setVoiceSpeechPhase} />}
+              {answer.messageId && answer.result.responseKind === "answer" && <AssistantSpeechControls key={`${workspaceId}:${answer.messageId}`} workspaceId={workspaceId} locale={locale} assistantMessageId={answer.messageId} disabled={sending} onPhaseChange={setVoiceSpeechPhase} />}
             </div>
             {documentPrefill && documentPrefillMessageId === answer.messageId && <section className="ai-document-prefill" aria-labelledby="ai-document-prefill-title" aria-busy={creatingSuggestedDocument}>
               <header><div><small>{text("Проверка перед созданием", "Yaratishdan oldin tekshirish", "Review before creation")}</small><h2 id="ai-document-prefill-title">{documentPrefill.title}</h2><p>{documentPrefill.reason}</p></div><button type="button" aria-label={text("Закрыть проверку заполнения", "To‘ldirish tekshiruvini yopish", "Close prefill review")} disabled={creatingSuggestedDocument} onClick={dismissDocumentPrefill}><X /></button></header>
@@ -429,6 +430,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           </details>
           <div className="ai-composer-input">
             <VoiceMessageControls
+              key={`${workspaceId}:${selectedConversationId}`}
+              workspaceId={workspaceId}
               locale={locale}
               disabled={!status?.configured || sending}
               recordingId={voiceRecordingId}

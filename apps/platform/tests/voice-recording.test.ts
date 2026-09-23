@@ -13,10 +13,9 @@ import {
   parseVoiceIntent,
   purgeExpiredVoiceRecordings,
   saveEditedVoiceTranscript,
-  synthesizeAssistantSpeech,
-  transcribeVoiceRecording,
   VoiceRecordingError,
 } from "../lib/ai/voice-recording";
+import { transcribeRecording as transcribeVoiceRecording, speakAnswer as synthesizeAssistantSpeech } from "../lib/legal-chat/voice";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const NOW = "2026-08-04T12:00:00.000Z";
@@ -162,6 +161,10 @@ test("voice upload, private R2 finalize, provider transcription, encrypted edit,
     assert.ok(primary.objects.has(ready.objectKey));
 
     const providerRequest: { current: Request | null } = { current: null };
+    await assert.rejects(transcribeVoiceRecording({db:fixture.d1,bucket:primary as unknown as R2Bucket,
+      keyring:keyring(),apiKey:"test-openai-key",model:"gpt-4o-transcribe",recording:ready,now:NOW,
+      fetcher:async()=>{throw Error("Provider unavailable");}}),VoiceRecordingError);
+    assert.equal(fixture.sqlite.prepare("SELECT status FROM voice_recordings WHERE id=?").get(ready.id)?.status,"failed");
     const transcribed = await transcribeVoiceRecording({
       db: fixture.d1,
       bucket: primary as unknown as R2Bucket,
@@ -185,6 +188,14 @@ test("voice upload, private R2 finalize, provider transcription, encrypted edit,
       .get(ready.id) as { ciphertext: string; iv: string; status: string };
     assert.equal(stored.status, "transcribed");
     assert.doesNotMatch(stored.ciphertext, /Работодатель|зарплату/iu);
+    const replay=await transcribeVoiceRecording({db:fixture.d1,bucket:primary as unknown as R2Bucket,
+      keyring:keyring(),apiKey:"test-openai-key",model:"gpt-4o-transcribe",recording:ready,now:NOW,
+      fetcher:async()=>assert.fail("A replay must not call the provider")});
+    assert.equal(replay.transcript,transcribed.transcript);
+    await assert.rejects(transcribeVoiceRecording({db:fixture.d1,bucket:primary as unknown as R2Bucket,
+      keyring:keyring(),apiKey:"test-openai-key",model:"gpt-4o-transcribe",recording:{...ready,userId:"other-user"},now:NOW,
+      fetcher:async()=>assert.fail("Another user must not reach the provider")}),
+      (error:unknown)=>error instanceof VoiceRecordingError&&error.code==='VOICE_RECORDING_NOT_FOUND');
 
     await saveEditedVoiceTranscript({
       db: fixture.d1,

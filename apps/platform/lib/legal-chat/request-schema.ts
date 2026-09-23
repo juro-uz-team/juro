@@ -4,6 +4,7 @@ export const legalChatRequestSchema=z.object({
   question:z.string().trim().max(8_000).default(""),
   conversationId:z.string().uuid().nullable().default(null),
   sourceMessageId:z.string().uuid().nullable().default(null),
+  voiceRecordingId:z.string().uuid().optional(),
   operation:z.enum(["new","follow_up","edit","regenerate"]).optional(),
   locale:z.enum(["ru","uz","en"]),
   answerMode:z.enum(["short","detailed"]).default("detailed"),

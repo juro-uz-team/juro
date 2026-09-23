@@ -268,7 +268,7 @@ export async function saveEditedVoiceTranscript(input: {
   if (input.recording.status !== "transcribed") {
     throw new VoiceRecordingError("VOICE_UPLOAD_STATE_INVALID", 409, "Запись уже отправлена или недоступна.");
   }
-  const protectedTranscript = await protectIdentityValue(input.keyring, input.transcript, transcriptContext(input.recording));
+  const protectedTranscript = await protectIdentityValue(input.keyring, input.transcript, voiceTranscriptContext(input.recording));
   const now = input.now ?? new Date().toISOString();
   const result = await input.db.prepare(`UPDATE voice_recordings SET
     transcript_ciphertext=?,transcript_iv=?,transcript_key_version=?,updated_at=?
@@ -293,7 +293,7 @@ export async function assertVoiceTranscriptMatches(input: {
   if (!recording || recording.status !== "transcribed") {
     throw new VoiceRecordingError("VOICE_RECORDING_NOT_FOUND", 404, "Голосовая запись недоступна.");
   }
-  if (await revealTranscript(input.keyring, recording) !== input.question.trim()) {
+  if (await revealVoiceTranscript(input.keyring, recording) !== input.question.trim()) {
     throw new VoiceRecordingError("VOICE_TRANSCRIPT_MISMATCH", 409, "Сначала подтвердите изменённый текст голосовой записи.");
   }
   return recording;
@@ -366,7 +366,7 @@ async function byIdempotency(db: D1Database, userId: string, key: string) {
     .bind(userId, key).first<VoiceRecordingRow>();
 }
 
-async function revealTranscript(keyring: IdentityKeyring, recording: VoiceRecordingRow): Promise<string> {
+export async function revealVoiceTranscript(keyring: IdentityKeyring, recording: VoiceRecordingRow): Promise<string> {
   if (!recording.transcriptCiphertext || !recording.transcriptIv || !recording.transcriptKeyVersion) {
     throw new VoiceRecordingError("VOICE_TRANSCRIPT_INVALID", 409, "Распознанный текст недоступен.");
   }
@@ -375,20 +375,14 @@ async function revealTranscript(keyring: IdentityKeyring, recording: VoiceRecord
       ciphertext: recording.transcriptCiphertext,
       iv: recording.transcriptIv,
       keyVersion: recording.transcriptKeyVersion,
-    }, transcriptContext(recording));
+    }, voiceTranscriptContext(recording));
   } catch {
     throw new VoiceRecordingError("VOICE_ENCRYPTION_UNAVAILABLE", 503, "Распознанный текст временно недоступен.");
   }
 }
 
-function transcriptContext(recording: Pick<VoiceRecordingRow, "id" | "userId">) {
+export function voiceTranscriptContext(recording: Pick<VoiceRecordingRow, "id" | "userId">) {
   return { purpose: "voice-transcript-v1", subjectId: recording.userId, recordId: recording.id };
-}
-
-async function markTranscriptionFailed(db: D1Database, recording: VoiceRecordingRow, code: string, now: string) {
-  await db.prepare(`UPDATE voice_recordings SET status='failed',error_code=?,updated_at=?
-    WHERE id=? AND workspace_id=? AND user_id=? AND status='transcribing'`)
-    .bind(code, now, recording.id, recording.workspaceId, recording.userId).run();
 }
 
 async function voiceSchemaAvailable(db: D1Database): Promise<boolean> {
