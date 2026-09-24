@@ -10,9 +10,24 @@ const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
  * to replace a numbered instrument with arbitrary surrounding text. */
 export function completeUnnumberedDocumentText(snapshot: NormalizedLegalSourceSnapshot): string | null {
   if (snapshot.blocks.some(block => block.semanticRole === "article" || isLegalArticleHeading(block))) return null;
+  return completeDocumentText(snapshot);
+}
+
+/** Whole-instrument evidence retains every block and makes no article claim. */
+export function completeDocumentText(snapshot: NormalizedLegalSourceSnapshot): string | null {
   if (snapshot.blocks.length < 2) return null;
   const text = normalize(snapshot.blocks.map(block => block.text).join(" "));
   return !text || text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text) ? null : text;
+}
+
+/** Imported publication footers can carry spurious article numbers. Accept only
+ * complete, recognizable publication metadata, never a normative fragment. */
+export function isPublicationMetadataText(text: string): boolean {
+  const value = normalize(text);
+  const russian = /^(?:[1-9]|[12]\d|3[01]) (?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря) \d{4} г\.,? № [\p{L}\d-]+\.?$/u;
+  const month = "(?:yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sentabr|sentyabr|oktabr|oktyabr|noyabr|dekabr)";
+  const date = `\\d{4}-yil (?:[1-9]|[12]\\d|3[01])-${month}da`;
+  return russian.test(value) || new RegExp(`^${date} qabul qilingan Senat tomonidan ${date} ma[ʼ‘’ʻ']qullangan\\.?$`, "u").test(value);
 }
 
 /** Extract an unambiguous article without mistaking numbered list items for

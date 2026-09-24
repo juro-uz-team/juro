@@ -11,6 +11,35 @@ import {MemoryEvidenceBucket} from "./helpers/legal-target";
 const currentAt = "2026-09-20T10:00:00.000Z";
 const url = "https://lex.uz/docs/777";
 const hash = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
+
+test("publication dates recover the complete numbered instrument without becoming article numbers",async()=>{
+  for(const footer of ["14 января 1992 г., № 524-XII",
+    "2006-yil 20-aprelda qabul qilingan Senat tomonidan 2006-yil 9-iyunda maʼqullangan"]) {
+    const {bucket,resolution}=await fixture();
+    const key="corpus/normalized/revision:one.json";
+    const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+    snapshot.blocks.push({index:snapshot.blocks.length,kind:"paragraph",text:footer});
+    snapshot.plainText=snapshot.blocks.map((block:{text:string})=>block.text).join(" ");
+    const bytes=new TextEncoder().encode(JSON.stringify(snapshot));
+    bucket.objects.set(key,{bytes,customMetadata:{}});
+    const original={...resolution.controlling,provisionText:footer,
+      evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+    const read=createNormalizedDocumentEvidenceReader(bucket);
+    const documentContext=await read(original);
+    assert.ok(documentContext);
+    const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,
+      materialCitation:documentContext.officialCitation},currentAt,
+      endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}});
+    assert.equal(evidence.text,snapshot.plainText);
+    assert.equal(evidence.source.article,null);
+    const reopened=await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!);
+    assert.equal(reopened.text,snapshot.plainText);
+    assert.equal(reopened.fullArticle,false);
+    assert.equal(await read({...original,provisionText:"Article 7. Synthetic filing rule"}),null);
+    assert.equal(await read({...original,provisionText:footer+" establishes a filing requirement."}),null);
+    assert.equal(await read({...original,provisionText:"15 января 1992 г., № 999-XII"}),null);
+  }
+});
 test("an unnumbered instrument is reopened as a whole document without inventing an article",async()=>{
   const {bucket,resolution}=await fixture();
   const key="corpus/normalized/revision:one.json";
@@ -61,7 +90,7 @@ test("an unnumbered instrument is reopened as a whole document without inventing
     evidence:{...original.evidence,sourceNormalizedSha256:hash(numberedBytes)}}),null,
   "An unavailable or ambiguous numbered article cannot fall back to a whole document");
   await assert.rejects(resolveCitationEvidence(bucket,{...evidence.source.citationEvidenceReceipt!,
-    byteCount:numberedBytes.length,sha256:hash(numberedBytes)}),/CITATION_DOCUMENT_UNAVAILABLE/);
+    byteCount:numberedBytes.length,sha256:hash(numberedBytes)}),/CITATION_EVIDENCE_TEXT_MISMATCH/);
   await assert.rejects(resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!));
 });
 async function fixture() {

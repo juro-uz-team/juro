@@ -1,4 +1,4 @@
-import { createCompleteArticleReader, completeUnnumberedDocumentText } from "../legal/article-context";
+import { createCompleteArticleReader, completeUnnumberedDocumentText, completeDocumentText, isPublicationMetadataText } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
 
@@ -10,8 +10,9 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
     if (!parent || parent.snapshot.source.sourceKind !== "lex"
       || parent.snapshot.source.canonicalUrl !== original.officialCitation.url
       || ({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
-    const text = completeUnnumberedDocumentText(parent.snapshot);
     const fragment = original.provisionText.replace(/\s+/gu," ").trim();
+    const text = isPublicationMetadataText(fragment)
+      ? completeDocumentText(parent.snapshot) : completeUnnumberedDocumentText(parent.snapshot);
     if (!text || !fragment || !text.includes(fragment)) return null;
     return {...original, provisionText:text,
       officialCitation:{url:original.officialCitation.url,label:parent.snapshot.documentTitle},
