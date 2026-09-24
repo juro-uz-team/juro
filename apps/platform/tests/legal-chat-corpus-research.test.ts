@@ -264,6 +264,97 @@ function articleResolution(id:string,article="7") {
     evidence:{...original.evidence,r2Key:`corpus/normalized/${article}`,sha256:original.evidence.sourceNormalizedSha256}}};
 }
 
+test("independent evidence reads overlap while ranked admission waits for the earlier source",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:6},(_,index)=>anotherCandidate(`rendition:${index}`));
+  let releaseFirst!:()=>void;
+  const first=new Promise<void>(resolve=>{releaseFirst=resolve;});
+  const started:string[]=[];
+  services.evidenceResolver.resolveControlling=async id=>{
+    started.push(id);
+    if(id==="rendition:0")await first;
+    return articleResolution(id,id.split(":")[1]!);
+  };
+  let completed=false;
+  const pending=search(request).then(result=>{completed=true;return result;});
+  try {
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.ok(started.length>1,"An independent source must start while the first is pending");
+    assert.ok(started.length<6,"Pending source reads must be bounded");
+    assert.equal(completed,false);
+  } finally {releaseFirst();}
+  const result=await pending;
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["0","1","2","3","4","5"]);
+  assert.deepEqual(result.needs,[]);
+});
+
+test("overlapping article fragments retain the first ranked canonical source despite reverse completion",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:first"),anotherCandidate("rendition:later")];
+  let releaseFirst!:()=>void;
+  const first=new Promise<void>(resolve=>{releaseFirst=resolve;});
+  services.evidenceResolver.resolveControlling=async id=>{
+    if(id==="rendition:first")await first;
+    return articleResolution(id);
+  };
+  const pending=search(request);
+  await new Promise(resolve=>setImmediate(resolve));
+  releaseFirst();
+  const result=await pending;
+  assert.equal(result.evidence.length,1);
+  const {services:baseline,search:baselineSearch}=fixture();
+  baseline.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:first")];
+  baseline.evidenceResolver.resolveControlling=async id=>articleResolution(id);
+  assert.deepEqual(result.evidence,(await baselineSearch(request)).evidence);
+});
+
+test("a failed later source is retained as a gap and can retry after ordered reads finish",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:0"),anotherCandidate("rendition:1")];
+  let releaseFirst!:()=>void,fail=true;
+  const first=new Promise<void>(resolve=>{releaseFirst=resolve;});
+  services.evidenceResolver.resolveControlling=async id=>{
+    if(id==="rendition:0")await first;
+    if(id==="rendition:1"&&fail)throw new Error("Transient source failure");
+    return articleResolution(id,id.split(":")[1]!);
+  };
+  const pending=search(request);
+  await new Promise(resolve=>setImmediate(resolve));
+  releaseFirst();
+  const failed=await pending;
+  assert.equal(failed.needs.length,1);
+  assert.equal(failed.needs[0]!.reason,"source_unavailable");
+  fail=false;
+  const recovered=await search({...request,round:1,needs:failed.needs});
+  assert.deepEqual(recovered.needs,[]);
+  assert.deepEqual(recovered.evidence.map(item=>item.source.article),["0","1"]);
+  assert.deepEqual(recovered.resolved?.map(item=>item.need),failed.needs);
+});
+
+test("cancellation stops all overlapping evidence reads before starting more or admitting sources",async()=>{
+  const {services,search}=fixture();
+  const controller=new AbortController();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:6},(_,index)=>anotherCandidate(`rendition:${index}`));
+  let started=0,verified=0;
+  services.evidenceResolver.resolveControlling=async()=>{
+    started++;
+    const signal=indexedRetrievalSignal()!;
+    await new Promise<void>((_resolve,reject)=>{signal.addEventListener("abort",()=>reject(signal.reason),{once:true});});
+    throw new Error("Aborted evidence read resumed");
+  };
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async(...args)=>{verified++;return verify(...args);};
+  const rejected=assert.rejects(search({...request,question:{...request.question,signal:controller.signal}}));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(started>1&&started<6);
+  const before=started;
+  controller.abort();
+  await rejected;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(started,before);
+  assert.equal(verified,0);
+});
+
 test("rediscovering an article in a later round preserves canonical metadata despite a later clock",async()=>{
   const {services}=fixture();
   let time=Date.parse(instant),round=0;

@@ -107,26 +107,27 @@ export function createCorpusResearch(input: {
     }
     let reads=0;
     let unreadCandidates=0;
-    const read=async(candidate:RevalidatedCandidate,index:number,reference=false)=>{
+    const prepareRead=(candidate:RevalidatedCandidate,index:number,reference=false):(()=>Promise<void>)=>{
       check();
       const {endpoint,release}=releases[index]!;
       const key=JSON.stringify([release.id,timeIdentity(endpoint),candidate.provisionRenditionId]);
       if(seen.has(key)) {
-        const item=readEvidence.get(key);
-        if(reference&&item)referenceEvidence.add(item.source.id);
-        return;
+        return async()=>{
+          const item=readEvidence.get(key);
+          if(reference&&item)referenceEvidence.add(item.source.id);
+        };
       }
       if(!saved.has(key)&&reads>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
+        return async()=>{
         if(reference) {
           const need:ResearchNeed={reason:"unresolved_reference",detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}: The source read budget did not cover this explicitly referenced provision.`};
           needs.push(need);
           pendingReads.set(key,[...new Map([...(pendingReads.get(key)??[]),need].map(value=>[JSON.stringify(value),value])).values()]);
         }
         else unreadCandidates++;
-        return;
+        };
       }
       seen.add(key);
-      try {
         let pending=saved.get(key);
         if(!pending) {
           reads++;
@@ -136,17 +137,20 @@ export function createCorpusResearch(input: {
             const currentSourceStatus=endpoint.kind==="current"
               ?await input.services.verifyCurrentSource(resolution.controlling):undefined;
             check();
-            const item=await corpusAnswerEvidence({resolution,endpoint,currentAt:new Date(now()).toISOString(),currentSourceStatus});
-            const canonical=articles.get(item.source.id)??item;
-            articles.set(item.source.id,canonical);
-            return canonical;
+            return corpusAnswerEvidence({resolution,endpoint,currentAt:new Date(now()).toISOString(),currentSourceStatus});
           })();
           saved.set(key,pending);
           // A transient reader failure may recover in a later bounded round.
           void pending.catch(()=>{if(saved.get(key)===pending)saved.delete(key);});
         }
-        const item=await pending;
+      // Capture failures immediately while earlier ranked reads are pending.
+      const outcome=pending.then(item=>({item}),error=>({error}));
+      return async()=>{try {
+        const result=await outcome;
+        if("error" in result)throw result.error;
         check();
+        const item=articles.get(result.item.source.id)??result.item;
+        articles.set(item.source.id,item);
         readEvidence.set(key,item);
         resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
         evidence.set(item.source.id,item);
@@ -172,14 +176,34 @@ export function createCorpusResearch(input: {
             :"A retrieved candidate could not be authenticated as complete official evidence.")};
         needs.push(need);
         pendingReads.set(key,[...new Map([...(pendingReads.get(key)??[]),need].map(value=>[JSON.stringify(value),value])).values()]);
+      }};
+    };
+    // Reserve reads in rank order, overlap only their I/O, and commit in the
+    // same order. Completion timing cannot choose canonical articles or spend
+    // another candidate's reserved read/context allowance.
+    const readOrdered=async(entries:Iterable<{candidate:RevalidatedCandidate;index:number}>,reference=false)=>{
+      const iterator=entries[Symbol.iterator]();
+      const pending:(()=>Promise<void>)[]=[];
+      let exhausted=false;
+      while(!exhausted||pending.length) {
+        check();
+        while(!exhausted&&pending.length<4) {
+          const entry=iterator.next();
+          if(entry.done)exhausted=true;
+          else pending.push(prepareRead(entry.value.candidate,entry.value.index,reference));
+        }
+        if(pending.length)await pending.shift()!();
       }
     };
+    function* rankedCandidates() {
     for(let rank=0;queues.some(queue=>rank<queue.length);rank++) {
       for(let index=0;index<queues.length;index++) {
         const candidate=queues[index]![rank];
-        if(candidate) await read(candidate,index);
+        if(candidate)yield {candidate,index};
       }
     }
+    }
+    await readOrdered(rankedCandidates());
     // References are resolved from authenticated complete text, and all added
     // candidates pass the same reader and capacity checks as search results.
     for(let index=0;index<releases.length;index++) {
@@ -199,7 +223,7 @@ export function createCorpusResearch(input: {
           needs.push(need);
           pendingReferences.set(JSON.stringify(need),{need,query:gap.query,endpoint});
         }
-        for(const candidate of references.candidates) await read(candidate,index,true);
+        await readOrdered(references.candidates.map(candidate=>({candidate,index})),true);
       } catch {
         check();
         needs.push({reason:"unresolved_reference",detail:"Official cross-reference lookup could not be completed."});
