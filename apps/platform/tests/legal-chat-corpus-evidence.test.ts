@@ -12,6 +12,24 @@ const currentAt = "2026-09-20T10:00:00.000Z";
 const url = "https://lex.uz/docs/777";
 const hash = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
 
+test("a complete inline article retains article evidence and exact citation reopening",async()=>{
+  const {bucket,resolution}=await fixture();
+  const key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const text="7-модда. Меҳнат кодексидаги «ўн саккиз» деган сўзлар «йигирма уч» деган сўзлар билан алмаштирилсин.";
+  snapshot.blocks=[{index:0,kind:"paragraph",text},...snapshot.blocks.slice(3)];
+  snapshot.plainText=snapshot.blocks.map((block:{text:string})=>block.text).join(" ");
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:text,
+    evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  const articleContext=await createNormalizedArticleEvidenceReader(bucket)(original,"7");assert.ok(articleContext);
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,articleContext,
+    materialCitation:original.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}});
+  const reopened=await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!);
+  assert.equal(reopened.text,text);assert.equal(reopened.fullArticle,true);
+  assert.equal(evidence.source.article,"7");
+});
+
 test("publication dates recover the complete numbered instrument without becoming article numbers",async()=>{
   for(const footer of ["14 января 1992 г., № 524-XII",
     "2006-yil 20-aprelda qabul qilingan Senat tomonidan 2006-yil 9-iyunda maʼqullangan"]) {

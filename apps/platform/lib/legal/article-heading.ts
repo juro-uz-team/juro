@@ -8,3 +8,15 @@ export function isLegalArticleHeading(block: {text:string;kind?:string;semanticR
   const text=block.text.trim();
   return PREFIX.test(text) && (block.semanticRole==="article" || block.kind==="heading" || !REFERENCE_PROSE.test(text));
 }
+
+/** Some amending laws put the article label and its entire operative sentence
+ * in one publisher paragraph. A title alone cannot establish completeness. */
+export function hasInlineArticleBody(block: {text:string;kind?:string}): boolean {
+  if(block.kind!=="paragraph")return false;
+  const prefix=block.text.trim().match(PREFIX);
+  if(!prefix)return false;
+  const body=block.text.trim().slice(prefix[0].length).replace(/^\s*[.:—-]\s*/u,"").trim();
+  if(!body.endsWith("."))return false;
+  return /^Внести\s+в\s+.+\s+(?:изменения|дополнения)(?!\p{L})/iu.test(body)
+    || /(?:^|\s)(?:алмаштирилсин|кучга киради|almashtirilsin|kuchga kiradi)\.$/iu.test(body);
+}

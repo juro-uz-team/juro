@@ -23,6 +23,24 @@ import { MemoryEvidenceBucket, representativeProvision } from "./helpers/legal-t
 
 const migrationCutoff = "2026-08-31T06:26:27.225Z";
 
+test("a single publisher paragraph can contain a complete operative article",()=>{
+  for(const text of [
+    "1-модда. Меҳнат кодексининг 192-моддасидаги «ўн саккиз» деган сўзлар «йигирма уч» деган сўзлар билан алмаштирилсин.",
+    "1-modda. Ushbu Qonun rasmiy eʼlon qilingan kundan eʼtiboran kuchga kiradi.",
+    "Статья 1. Внести в Закон Республики Узбекистан изменения и дополнения, утвердив его новую редакцию (прилагается).",
+  ]) {
+    const blocks=[text,"Статья 2. Следующее правило","Следующее правило имеет самостоятельное содержание."]
+      .map((text,index)=>({index,kind:"paragraph" as const,text}));
+    assert.equal(completeArticleText(blocks,"1")?.text,text);
+    assert.equal(completeArticleText([...blocks,...blocks],"1"),null);
+    assert.equal(completeArticleText([{...blocks[0]!,kind:"heading"},...blocks.slice(1)],"1"),null);
+  }
+  for(const text of ["Статья 1. Общие требования.","1-модда. Қуйидаги ўзгартишлар киритилсин:",
+    "Статья 1. Внесение изменений в закон."]) {
+    assert.equal(completeArticleText([{index:0,kind:"paragraph",text}],"1"),null);
+  }
+});
+
 test("a parent article reader preserves unique headings, section boundaries and its captured text",()=>{
   const blocks = ["Article 1. First", "First rule.", "Chapter boundary", "Unrelated text.",
     "Article 2. Duplicate", "Second rule.", "Article 2. Duplicate", "Other rule.",

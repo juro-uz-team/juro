@@ -1,7 +1,7 @@
 import { detectArticleNumbers } from "./legal-language";
 import { MAX_LEGAL_EVIDENCE_CHARACTERS } from "./legal-evidence-budget";
 import type { NormalizedLegalSourceSnapshot } from "./source-parser";
-import {isLegalArticleHeading} from "./article-heading";
+import {isLegalArticleHeading,hasInlineArticleBody} from "./article-heading";
 
 const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
 
@@ -58,7 +58,7 @@ export function createCompleteArticleReader(blocks: NormalizedLegalSourceSnapsho
   const range = ranges.get(article);
   if (!range) return null;
   const {start, end} = range;
-  if (end - start < 2) return null;
+  if (end - start < 2 && !hasInlineArticleBody(captured[start]!)) return null;
   const text = normalize(captured.slice(start, end).map(block => block.text).join(" "));
   if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return null;
   if (originalText && (!text.startsWith(normalize(originalText))
