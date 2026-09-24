@@ -727,6 +727,7 @@ export async function fetchLexPdfRepresentation(
     timeoutMs,
     maxRedirects,
     accept: "*/*",
+    allowNotFound: true,
     unavailableCode: "LEGAL_SOURCE_ROBOTS_UNAVAILABLE",
     validateUrl(candidate) {
       return candidate.protocol === "https:"
@@ -734,20 +735,23 @@ export async function fetchLexPdfRepresentation(
         && candidate.username === ""
         && candidate.password === ""
         && sourceHostKind(candidate.hostname) === "lex"
-        && candidate.pathname === "/robots.txt"
+        && (candidate.pathname === "/robots.txt"
+          || (candidate.origin === robotsInitialUrl.origin && candidate.pathname === "/Pages/404.aspx"))
         && candidate.search === ""
         && candidate.hash === "";
     },
   });
   const robotsType = responseContentType(robotsResult.response);
+  const robotsMissing=robotsResult.response.status===404;
   if (
-    robotsType.mediaType !== "text/plain"
-    || (robotsType.charset && !["utf-8", "utf8"].includes(robotsType.charset))
+    !robotsMissing && (robotsType.mediaType !== "text/plain"
+    || (robotsType.charset && !["utf-8", "utf8"].includes(robotsType.charset)))
   ) {
     await cancelBody(robotsResult.response);
     throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_UNAVAILABLE", false);
   }
-  const robotsBytes = await readBoundedLegalSourceBytes(
+  if(robotsMissing)await cancelBody(robotsResult.response);
+  const robotsBytes = robotsMissing?new Uint8Array():await readBoundedLegalSourceBytes(
     robotsResult.response,
     ROBOTS_MAX_BYTES,
     timeoutMs,

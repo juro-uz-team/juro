@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { lexDocumentIsRepealed, publisherTextFingerprint, readLexPublisherObservation } from "../lib/legal/lex-document-status";
 import {normalizeLegalSourceHtml} from "../lib/legal/source-parser";
+import {PDFDocument,StandardFonts} from "pdf-lib";
 import {createSourceObservationReader, isCurrentSourceObservation, sourceObservationSchema} from "../lib/legal/source-observation";
 
 test("official repeal banners exclude obsolete law in every corpus language", () => {
@@ -50,6 +51,26 @@ test("cancelled publisher observation aborts its pending request",async context=
   const rejected=assert.rejects(pending);
   await entered;controller.abort();await rejected;
   assert.equal(aborted,true);
+});
+
+test("PDF publisher observations authenticate the matching representation and document header",async context=>{
+  const pdf=await PDFDocument.create(),font=await pdf.embedFont(StandardFonts.Helvetica);
+  pdf.addPage().drawText("Official building regulation. The applicant must comply with the stated safety conditions. ".repeat(4),{font,size:10,x:40,y:750,maxWidth:500,lineHeight:14});
+  const bytes=await pdf.save();let documentId="777",status="Effective 03.07.2026";
+  context.mock.method(globalThis,"fetch",async(input:RequestInfo|URL)=>{
+    const url=String(input);
+    if(url.endsWith("/robots.txt"))return new Response("User-agent: *\nAllow: /",{headers:{"content-type":"text/plain"}});
+    if(url.includes("/pdffile/"))return new Response(new Uint8Array(bytes),{headers:{"content-type":"application/pdf"}});
+    return new Response(`<html><main><div class="docHeader"><div><span id="lblNEffectDate">${status}</span></div></div>
+      <div id="pdfBody"></div></main><script>PDFObject.embed("/pdffile/${documentId}", "#pdfBody");</script></html>`,
+      {headers:{"content-type":"text/html; charset=utf-8"}});
+  });
+  const first=await readLexPublisherObservation("https://lex.uz/ru/docs/777");
+  assert.equal(first.current,true);assert.match(first.normalizedTextSha256,/^[a-f0-9]{64}$/);
+  status="Документ утратил силу 03.07.2026";
+  assert.equal((await readLexPublisherObservation("https://lex.uz/ru/docs/777")).current,false);
+  documentId="778";
+  await assert.rejects(readLexPublisherObservation("https://lex.uz/ru/docs/777"),/LEX_DOCUMENT_STATUS_UNAVAILABLE/);
 });
 
 test("layered public observation caches never extend publisher observation age", async () => {

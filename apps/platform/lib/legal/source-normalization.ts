@@ -362,6 +362,7 @@ export async function normalizeLexPdfRepresentation(input: {
   bytes: Uint8Array;
   reference: ReturnType<typeof classifyLegalSourceUrl>;
   rawContentSha256: string;
+  signal?:AbortSignal;
 }): Promise<NormalizedLegalSourceSnapshot> {
   let extracted: Awaited<ReturnType<typeof extractDocument>>;
   try {
@@ -370,8 +371,10 @@ export async function normalizeLexPdfRepresentation(input: {
       fileName: `lex-${input.reference.canonicalId.replace(/^-/, "")}.pdf`,
       mimeType: "application/pdf",
       sizeBytes: input.bytes.byteLength,
+      signal:input.signal,
     });
   } catch {
+    input.signal?.throwIfAborted();
     throw new LegalSourceNormalizationError(
       "LEGAL_SOURCE_PDF_EXTRACTION_FAILED",
       false,

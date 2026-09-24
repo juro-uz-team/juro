@@ -1,6 +1,6 @@
 import PizZip from "pizzip";
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
-import { extractText, getDocumentProxy } from "unpdf";
+import { extractText, getResolvedPDFJS } from "unpdf";
 import {
   ComparisonProcessingError,
   type ExtractedDocument,
@@ -161,49 +161,69 @@ function extractJsonText(bytes: Uint8Array): string {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+async function withExtractionSignal<T>(promise: Promise<T>, signal:AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  let aborted!:()=>void;
   try {
     return await Promise.race([
       promise,
       new Promise<T>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new ComparisonProcessingError("PROCESSING_TIMEOUT", "Извлечение текста превысило допустимое время.")),
-          timeoutMs,
-        );
+        aborted=()=>reject(signal.reason);
+        signal.addEventListener("abort",aborted,{once:true});
       }),
     ]);
   } finally {
-    if (timeout) clearTimeout(timeout);
+    signal.removeEventListener("abort",aborted);
   }
 }
 
-async function extractPdfText(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
+async function extractPdfText(bytes: Uint8Array, callerSignal?:AbortSignal): Promise<{ text: string; pageCount: number }> {
+  const timeout=AbortSignal.timeout(EXTRACTION_TIMEOUT_MS);
+  const signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
+  let destroy:(()=>Promise<void>)|undefined;
+  let destruction:Promise<void>|undefined;
+  const stop=()=>{if(destroy)destruction??=destroy().catch(()=>undefined);};
   try {
-    const pdf = await withTimeout(
-      getDocumentProxy(bytes, { maxImageSize: 16_777_216 }),
-      EXTRACTION_TIMEOUT_MS,
-    );
+    const {getDocument}=await withExtractionSignal(getResolvedPDFJS(),signal);
+    signal.throwIfAborted();
+    let fontOptions:{standardFontDataUrl?:string;cMapUrl?:string;cMapPacked?:boolean}={};
+    // Preserve unpdf's optional Node font/CMap defaults while retaining the
+    // loading task handle needed to cancel processing, including loading.
+    if(typeof process!=="undefined"&&process.versions?.node)try {
+      const base=import.meta.resolve("pdfjs-dist/package.json");
+      fontOptions={standardFontDataUrl:new URL("./standard_fonts/",base).href,
+        cMapUrl:new URL("./cmaps/",base).href,cMapPacked:true};
+    } catch { /* unpdf works without the optional pdfjs-dist package. */ }
+    // PDF.js transfers its input buffer to the worker. Keep authenticated
+    // caller bytes intact for evidence persistence and hashing afterwards.
+    const task=getDocument({data:new Uint8Array(bytes),useSystemFonts:true,disableFontFace:true,maxImageSize:16_777_216,...fontOptions});
+    destroy=()=>task.destroy();
+    signal.addEventListener("abort",stop,{once:true});
+    const pdf=await withExtractionSignal(task.promise,signal);
     if (pdf.numPages > PDF_PAGE_LIMIT) {
-      await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.();
       throw new ComparisonProcessingError(
         "PAGE_LIMIT_EXCEEDED",
         `Документ содержит ${pdf.numPages} страниц. Максимум для одного сравнения — ${PDF_PAGE_LIMIT}.`,
       );
     }
-    const result = await withTimeout(
+    const result = await withExtractionSignal(
       extractText(pdf, { mergePages: true }),
-      EXTRACTION_TIMEOUT_MS,
+      signal,
     );
-    await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.();
     return { text: normalizeText(String(result.text)), pageCount: result.totalPages };
   } catch (error) {
+    callerSignal?.throwIfAborted();
+    if(timeout.aborted)throw new ComparisonProcessingError("PROCESSING_TIMEOUT", "Извлечение текста превысило допустимое время.");
     if (error instanceof ComparisonProcessingError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     if (/password|encrypted|PasswordException/i.test(message)) {
       throw new ComparisonProcessingError("PASSWORD_PROTECTED", "PDF защищён паролем. Снимите защиту и загрузите файл повторно.");
     }
     throw new ComparisonProcessingError("CORRUPT_FILE", "PDF повреждён или не может быть прочитан.");
+  } finally {
+    signal.removeEventListener("abort",stop);
+    stop();
+    await destruction;
   }
 }
 
@@ -212,11 +232,12 @@ export async function extractDocument(input: {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
+  signal?:AbortSignal;
 }): Promise<ExtractedDocument> {
   let text = "";
   let pageCount: number | null = null;
   if (input.mimeType === "application/pdf") {
-    const pdf = await extractPdfText(input.bytes);
+    const pdf = await extractPdfText(input.bytes,input.signal);
     text = pdf.text;
     pageCount = pdf.pageCount;
   } else if (input.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {

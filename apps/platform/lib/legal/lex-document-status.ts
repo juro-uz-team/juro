@@ -1,4 +1,5 @@
-import { classifyLegalSourceUrl, fetchLegalSource } from "./source-fetch";
+import {parse, type DefaultTreeAdapterTypes} from "parse5";
+import { classifyLegalSourceUrl, fetchLegalSource, fetchLexPdfRepresentation, type FetchedLegalSource } from "./source-fetch";
 import {normalizeLegalSourceHtml, type NormalizedLegalSourceSnapshot} from "./source-parser";
 import {createSourceObservationReader, type SourceObservation, type SourceObservationStore} from "./source-observation";
 
@@ -16,20 +17,56 @@ export async function publisherTextFingerprint(snapshot: NormalizedLegalSourceSn
 
 export async function readLexPublisherObservation(url: string, options?: {wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal}): Promise<SourceObservation> {
   options?.signal?.throwIfAborted();
-  const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",
+  const fetchOptions={
     ...(options?.wait ? {wait: options.wait} : {}),
     ...(options?.signal ? {fetchImpl:(input:RequestInfo|URL,init?:RequestInit)=>{
       options.signal!.throwIfAborted();
       return fetch(input,{...init,signal:init?.signal
         ?AbortSignal.any([options.signal!,init.signal]):options.signal});
     }} : {}),
-    timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024});
-  const html = new TextDecoder("utf-8", {fatal: true}).decode(fetched.bytes);
-  if (!/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html)) throw new Error("LEX_DOCUMENT_STATUS_UNAVAILABLE");
-  const snapshot = normalizeLegalSourceHtml({html, reference: fetched, rawContentSha256: fetched.contentSha256});
+    timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024};
+  const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",...fetchOptions});
+  const {snapshot,current}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal});
+  options?.signal?.throwIfAborted();
   return {version: 2, officialUrl: fetched.canonicalUrl, observedAt: fetched.fetchedAt,
-    current: !lexDocumentIsRepealed(html), rawContentSha256: fetched.contentSha256,
+    current, rawContentSha256: fetched.contentSha256,
     normalizedTextSha256: await publisherTextFingerprint(snapshot)};
+}
+
+/** Normalize the actual publisher representation while retaining the canonical
+ * HTML identity and returning PDF provenance for durable capture callers. */
+export async function normalizeLexPublisherDocument(fetched:FetchedLegalSource,
+  options:Parameters<typeof fetchLexPdfRepresentation>[1]&{signal?:AbortSignal}) {
+  options.signal?.throwIfAborted();
+  const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
+  const standard=/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html);
+  if(standard)return {snapshot:normalizeLegalSourceHtml({html,reference:fetched,rawContentSha256:fetched.contentSha256}),
+    current:!lexDocumentIsRepealed(html),representation:undefined};
+  const header=pdfHeaderText(html);
+  const reference=classifyLegalSourceUrl(fetched.canonicalUrl);
+  const representationIds=[...html.matchAll(/PDFObject\.embed\(\s*["']\/pdffile\/(\d+)["']\s*,\s*["']#pdfBody["']/gu)].map(match=>match[1]);
+  if(!header||representationIds.length!==1||representationIds[0]!==reference.canonicalId.replace(/^-/u,"")) {
+    throw new Error("LEX_DOCUMENT_STATUS_UNAVAILABLE");
+  }
+  const representation=await fetchLexPdfRepresentation(fetched.canonicalUrl,options);
+  const {normalizeLexPdfRepresentation}=await import("./source-normalization");
+  const snapshot=await normalizeLexPdfRepresentation({bytes:representation.bytes,reference,rawContentSha256:fetched.contentSha256,signal:options.signal});
+  return {snapshot,current:!isRepealedText(header),representation};
+}
+
+function pdfHeaderText(html:string):string|undefined {
+  const document=parse(html,{sourceCodeLocationInfo:true});
+  const text=(node:DefaultTreeAdapterTypes.Node):string=>node.nodeName==="#text"
+    ?(node as DefaultTreeAdapterTypes.TextNode).value
+    :"childNodes" in node?node.childNodes.map(text).join(" "):"";
+  const headers:DefaultTreeAdapterTypes.Element[]=[];
+  const visit=(node:DefaultTreeAdapterTypes.Node)=>{
+    if("tagName" in node&&node.tagName==="div"&&node.attrs.some(attr=>attr.name==="class"&&attr.value.split(/\s+/u).includes("docHeader")))headers.push(node);
+    if("childNodes" in node)node.childNodes.forEach(visit);
+  };
+  visit(document);
+  const header=headers.length===1?headers[0]:undefined;
+  return header?.sourceCodeLocation?.endTag?text(header):undefined;
 }
 
 export function createLexDocumentObservationReader(store?: SourceObservationStore) {
@@ -41,8 +78,11 @@ export const observeCurrentLexDocument = createLexDocumentObservationReader();
  * an operative provision (which may repeal a different instrument). */
 export function lexDocumentIsRepealed(html: string): boolean {
   const header = html.match(/<header\b[^>]*\bid=["']doc_header["'][^>]*>([\s\S]*?)<\/header>/iu)?.[1];
-  if (!header) return false;
-  const text = header.replace(/<[^>]+>/gu, " ").replace(/&nbsp;|&#160;/gu, " ")
-    .replace(/\s+/gu, " ");
+  if (!header) return isRepealedText(pdfHeaderText(html)??"");
+  return isRepealedText(header.replace(/<[^>]+>/gu, " ").replace(/&nbsp;|&#160;/gu, " "));
+}
+
+function isRepealedText(value:string):boolean {
+  const text=value.replace(/\s+/gu," ");
   return /(?:(?:документ|акт)\s+утратил\s+силу|hujjat\s+kuchini\s+yo[‘’ʼʻ']?qotgan|ҳужжат\s+кучини\s+йўқотган|document\s+(?:has\s+)?(?:lost\s+(?:its\s+)?force|ceased\s+to\s+be\s+in\s+force))/iu.test(text);
 }

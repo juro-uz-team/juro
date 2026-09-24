@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import PizZip from "pizzip";
+import {definePDFJSModule,getResolvedPDFJS} from "unpdf";
 
 import { compareDocuments, MAX_FUZZY_SECTION_COMPARISONS } from "../lib/document-comparison/diff";
 import { extractDocument, structureDocument } from "../lib/document-comparison/extract";
@@ -15,6 +16,32 @@ import {
 } from "../lib/document-builder/storage/file-validation";
 
 const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+test("cancelling PDF extraction destroys the loading task while page extraction is pending",async context=>{
+  const module=await getResolvedPDFJS(),controller=new AbortController();
+  const entered=Promise.withResolvers<void>();let destroyed=false;
+  await definePDFJSModule(async()=>({...module,getDocument:(...args:Parameters<typeof module.getDocument>)=>{
+    const task=module.getDocument(...args),destroy=task.destroy.bind(task);
+    task.destroy=async()=>{destroyed=true;return destroy();};
+    void task.promise.then(pdf=>{
+      context.mock.method(pdf,"getPage",async()=>{
+        entered.resolve();
+        return new Promise<Awaited<ReturnType<typeof pdf.getPage>>>((_,reject)=>{
+          controller.signal.addEventListener("abort",()=>reject(controller.signal.reason),{once:true});
+        });
+      });
+    });
+    return task;
+  }}));
+  context.after(()=>definePDFJSModule(async()=>module));
+  const document=await PDFDocument.create();document.addPage();const bytes=await document.save();
+  const originalBytes=new Uint8Array(bytes);
+  const pending=extractDocument({bytes,fileName:"official.pdf",mimeType:"application/pdf",sizeBytes:bytes.length,signal:controller.signal});
+  const rejected=assert.rejects(pending,/cancel extraction/);
+  await entered.promise;controller.abort(new Error("cancel extraction"));await rejected;
+  assert.equal(destroyed,true);
+  assert.deepEqual(bytes,originalBytes,"PDF processing must not detach authenticated caller bytes");
+});
 
 function extracted(text: string, fileName = "contract.docx"): ExtractedDocument {
   return {

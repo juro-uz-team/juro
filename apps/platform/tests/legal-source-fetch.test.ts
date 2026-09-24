@@ -331,6 +331,20 @@ test("Lex PDF representation is fetched only from the canonical official endpoin
   );
 });
 
+test("PDF fetching applies the canonical absent-robots policy without accepting other redirects",async()=>{
+  for(const redirect of [false,true]){
+    const synthetic=sequenceFetch([
+      ...(redirect?[new Response(null,{status:302,headers:{location:"/Pages/404.aspx"}})]:[]),
+      new Response("not found",{status:404,headers:{"content-type":"text/html"}}),pdf(),
+    ]);
+    assert.equal((await fetchLexPdfRepresentation("https://lex.uz/uz/docs/42",{fetchImpl:synthetic.fetchImpl})).canonicalId,"42");
+  }
+  for(const location of ["https://example.com/Pages/404.aspx","/Pages/login.aspx"]){
+    const synthetic=sequenceFetch([new Response(null,{status:302,headers:{location}})]);
+    await assert.rejects(fetchLexPdfRepresentation("https://lex.uz/uz/docs/42",{fetchImpl:synthetic.fetchImpl}),/LEGAL_SOURCE_REDIRECT_REJECTED/);
+  }
+});
+
 test("Lex archive representation is same-origin, robots-paced and magic-validated", async () => {
   const synthetic = sequenceFetch([
     robots("User-agent: *\nAllow: /\nCrawl-delay: 20\n"),
