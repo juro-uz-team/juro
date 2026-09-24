@@ -3,7 +3,7 @@ import test from "node:test";
 import {createHash} from "node:crypto";
 import {corpusAnswerEvidence} from "../lib/legal-chat/corpus-evidence";
 import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
-import {createNormalizedArticleEvidenceReader} from "../lib/legal-corpus/normalized-article-evidence";
+import {createNormalizedArticleEvidenceReader,createNormalizedDocumentEvidenceReader} from "../lib/legal-corpus/normalized-article-evidence";
 import {resolveCitationEvidence} from "../lib/legal-corpus/citation-evidence";
 import {assertAnswerEvidence} from "../lib/legal-chat/evidence-boundary";
 import {MemoryEvidenceBucket} from "./helpers/legal-target";
@@ -11,6 +11,59 @@ import {MemoryEvidenceBucket} from "./helpers/legal-target";
 const currentAt = "2026-09-20T10:00:00.000Z";
 const url = "https://lex.uz/docs/777";
 const hash = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
+test("an unnumbered instrument is reopened as a whole document without inventing an article",async()=>{
+  const {bucket,resolution}=await fixture();
+  const key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  snapshot.documentTitle="Decision on filing requirements";
+  snapshot.blocks=["The application must identify the requested record and include the applicant's correspondence address.",
+    "The authority shall provide a written decision explaining the applicable filing requirements and any information still required from the applicant.","16 January 1998"]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  snapshot.plainText=snapshot.blocks.map((block:{text:string})=>block.text).join(" ");
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));
+  bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:"16 January 1998",
+    officialCitation:{label:"Decision — Article 16",url},
+    evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  const documentContext=await createNormalizedDocumentEvidenceReader(bucket)(original);
+  assert.ok(documentContext);
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,
+    materialCitation:documentContext.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}});
+  assert.equal(evidence.text,snapshot.plainText);
+  assert.equal(evidence.source.article,null);
+  assert.equal(evidence.source.actTitle,snapshot.documentTitle);
+  assert.equal(evidence.source.citationEvidenceReceipt!.kind,"normalized-document");
+  const reopened=await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!);
+  assert.equal(reopened.text,evidence.text);
+  assert.equal(reopened.fullArticle,false);
+  await assertAnswerEvidence({question:"Filing requirements?",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"},evidence:[evidence],unresolved:[]});
+  await assert.rejects(corpusAnswerEvidence({resolution:{...resolution,documentContext},currentAt,
+    endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}}));
+  await assert.rejects(resolveCitationEvidence(bucket,{...evidence.source.citationEvidenceReceipt!,articleNumber:"16"}));
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,provisionText:"Absent fragment"}),null);
+  for(const changed of [{...original,languageTag:"ru" as const},
+    {...original,officialCitation:{...original.officialCitation,url:"https://lex.uz/docs/888"}},
+    {...original,evidence:{...original.evidence,sourceNormalizedSha256:"f".repeat(64)}}]) {
+    assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(changed),null);
+  }
+  for(const last of ["Required particulars:","Very long operative text. ".repeat(3000)]) {
+    const bounded={...snapshot,blocks:[...snapshot.blocks,{index:3,kind:"paragraph",text:last}]};
+    const boundedBytes=new TextEncoder().encode(JSON.stringify(bounded));
+    bucket.objects.set(key,{bytes:boundedBytes,customMetadata:{}});
+    assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,
+      evidence:{...original.evidence,sourceNormalizedSha256:hash(boundedBytes)}}),null);
+  }
+  snapshot.blocks.unshift({index:3,kind:"heading",semanticRole:"article",text:"Article 7. A numbered rule"});
+  const numberedBytes=new TextEncoder().encode(JSON.stringify(snapshot));
+  bucket.objects.set(key,{bytes:numberedBytes,customMetadata:{}});
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,
+    evidence:{...original.evidence,sourceNormalizedSha256:hash(numberedBytes)}}),null,
+  "An unavailable or ambiguous numbered article cannot fall back to a whole document");
+  await assert.rejects(resolveCitationEvidence(bucket,{...evidence.source.citationEvidenceReceipt!,
+    byteCount:numberedBytes.length,sha256:hash(numberedBytes)}),/CITATION_DOCUMENT_UNAVAILABLE/);
+  await assert.rejects(resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!));
+});
 async function fixture() {
   const blocks = ["Article 7. Synthetic filing rule", "An applicant may request a record.",
     "The application must identify the requested record.", "Article 8. Other rule",

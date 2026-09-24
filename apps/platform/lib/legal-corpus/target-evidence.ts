@@ -1345,10 +1345,11 @@ export async function resolveProvisionRendition(
 const controllingResolutionSchema = z.object({
   controlling: resolvedEvidenceSchema,
   articleContext: resolvedEvidenceSchema.optional(),
+  documentContext: resolvedEvidenceSchema.optional(),
   translation: resolvedEvidenceSchema.optional(),
   translationLabel: z.literal("Official Translation").optional(),
   materialCitation: resolvedEvidenceSchema.shape.officialCitation,
-}).strict();
+}).strict().refine(value => !(value.articleContext && value.documentContext), "Evidence context must have one scope");
 
 export type ControllingEvidenceResolution = z.infer<typeof controllingResolutionSchema>;
 export function parseControllingEvidenceResolution(value: unknown): ControllingEvidenceResolution {
@@ -1561,6 +1562,8 @@ export async function resolveCompleteCorpusEvidence(
 export async function resolveR2NativeCustomEvidence(
   dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string;
     readArticleContext?: (original: ResolvedOfficialEvidence, article: string,
+      sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null>;
+    readDocumentContext?: (original: ResolvedOfficialEvidence,
       sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null> },
   identity: CustomRuntimeLegalIdentity,
   untrustedEndpoint: TemporalEndpoint,
@@ -1628,9 +1631,12 @@ export async function resolveR2NativeCustomEvidence(
   // belongs to the original revision authenticated inside the sealed bytes.
   const articleContext = articleNumber && sourceRevisionId && dependencies.readArticleContext
     ? await dependencies.readArticleContext(evidence, articleNumber, sourceRevisionId) : null;
+  const documentContext = !articleContext && sourceRevisionId && dependencies.readDocumentContext
+    ? await dependencies.readDocumentContext(evidence, sourceRevisionId) : null;
   return controllingResolutionSchema.parse({ controlling: evidence,
     ...(articleContext ? { articleContext } : {}),
-    materialCitation: evidence.officialCitation });
+    ...(documentContext ? { documentContext } : {}),
+    materialCitation: documentContext?.officialCitation ?? evidence.officialCitation });
 }
 
 /** Compatibility name for callers that only select current complete-corpus releases. */

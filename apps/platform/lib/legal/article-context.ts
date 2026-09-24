@@ -5,6 +5,16 @@ import type { NormalizedLegalSourceSnapshot } from "./source-parser";
 const ARTICLE_HEADING = /^(?:(?:статья|модда|modda|article)\s+\d+(?:[.-]\d+)?|\d+(?:[.-]\d+)?\s*(?:-\s*)?(?:modda|модда)(?!\p{L}))/iu;
 const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
 
+/** Some official decisions have no numbered articles. Keep their full source
+ * distinct from article extraction; a failed article lookup is not permission
+ * to replace a numbered instrument with arbitrary surrounding text. */
+export function completeUnnumberedDocumentText(snapshot: NormalizedLegalSourceSnapshot): string | null {
+  if (snapshot.blocks.some(block => block.semanticRole === "article" || ARTICLE_HEADING.test(block.text.trim()))) return null;
+  if (snapshot.blocks.length < 2) return null;
+  const text = normalize(snapshot.blocks.map(block => block.text).join(" "));
+  return !text || text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text) ? null : text;
+}
+
 /** Extract an unambiguous article without mistaking numbered list items for
  * article boundaries. The caller authenticates the snapshot and its identity. */
 export function completeArticleText(

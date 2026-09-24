@@ -31,7 +31,7 @@ import { assertCompleteCorpusCurrentInterval, resolveCompleteCorpusEvidence, res
   resolveR2NativeCustomEvidence,
   type LegalEvidenceBucket } from "./target-evidence";
 import { resolveProvisionLineage } from "./target-lineage";
-import { createNormalizedArticleEvidenceReader } from "./normalized-article-evidence";
+import { createNormalizedArticleEvidenceReader, createNormalizedDocumentEvidenceReader } from "./normalized-article-evidence";
 import { createRuntimeReferenceDiscovery } from "./runtime-reference-discovery";
 import { createReleaseLifecycle, resolveStagingHistoryComparisonEvaluationSet } from "./target-release";
 import {
@@ -610,8 +610,10 @@ function createRuntimeEvidenceServices(
   const r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>();
   const readCurrentParent = createNormalizedSourceReader(evidenceBucket);
   const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket, readCurrentParent);
-  const historicalArticleContext = historyEvidenceBucket
-    ? createNormalizedArticleEvidenceReader(historyEvidenceBucket) : currentArticleContext;
+  const readHistoryParent = historyEvidenceBucket ? createNormalizedSourceReader(historyEvidenceBucket) : readCurrentParent;
+  const historicalArticleContext = createNormalizedArticleEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
+  const currentDocumentContext = createNormalizedDocumentEvidenceReader(evidenceBucket, readCurrentParent);
+  const historicalDocumentContext = createNormalizedDocumentEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
     {membershipProofsEnabled: dependencies.membershipProofsEnabled,preparedMembership:dependencies.preparedMembership});
   return {
@@ -640,7 +642,8 @@ evidenceResolver: {
           const r2Identity = r2IdentityByRendition.get(provisionRenditionId);
           if (r2Identity) return resolveR2NativeCustomEvidence(
             { bucket: releaseEvidenceBucket, currentAt: context.currentAt,
-              readArticleContext: context.release.capability === "history" ? historicalArticleContext : currentArticleContext },
+              readArticleContext: context.release.capability === "history" ? historicalArticleContext : currentArticleContext,
+              readDocumentContext: context.release.capability === "history" ? historicalDocumentContext : currentDocumentContext },
             r2Identity, endpoint,
           );
           return resolveCompleteCorpusEvidence(

@@ -1,6 +1,23 @@
-import { createCompleteArticleReader } from "../legal/article-context";
+import { createCompleteArticleReader, completeUnnumberedDocumentText } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
+
+export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenceBucket, "get">,
+  readParent: NormalizedSourceReader = createNormalizedSourceReader(bucket)) {
+  return async (original: ResolvedOfficialEvidence,
+    sourceRevisionId: string = original.textRevisionId): Promise<ResolvedOfficialEvidence | null> => {
+    const parent = await readParent(sourceRevisionId, original.evidence.sourceNormalizedSha256).catch(() => null);
+    if (!parent || parent.snapshot.source.sourceKind !== "lex"
+      || parent.snapshot.source.canonicalUrl !== original.officialCitation.url
+      || ({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
+    const text = completeUnnumberedDocumentText(parent.snapshot);
+    const fragment = original.provisionText.replace(/\s+/gu," ").trim();
+    if (!text || !fragment || !text.includes(fragment)) return null;
+    return {...original, provisionText:text,
+      officialCitation:{url:original.officialCitation.url,label:parent.snapshot.documentTitle},
+      evidence:{...original.evidence,r2Key:parent.r2Key,byteCount:parent.byteCount,sha256:parent.sha256}};
+  };
+}
 
 /** Request-local recovery from the exact accepted parent snapshot. No lookup
  * result or live page can replace the parent hash anchored by the rendition. */

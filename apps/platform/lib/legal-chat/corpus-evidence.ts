@@ -22,9 +22,9 @@ export async function corpusAnswerEvidence(input: {
   const original = resolution.controlling;
   // Textual authority is preserved audit metadata, not source eligibility.
   // Authenticated identities, complete text and temporal checks still apply.
-  const article = citationArticleNumber(original.officialCitation.label, original.provisionText);
+  const article = resolution.documentContext ? null : citationArticleNumber(original.officialCitation.label, original.provisionText);
   if (article && !resolution.articleContext) throw new Error("CORPUS_COMPLETE_ARTICLE_UNAVAILABLE");
-  const complete = resolution.articleContext ?? original;
+  const complete = resolution.articleContext ?? resolution.documentContext ?? original;
   if (complete.provisionRenditionId !== original.provisionRenditionId
     || complete.textRevisionId !== original.textRevisionId
     || complete.provisionConceptId !== original.provisionConceptId
@@ -38,7 +38,7 @@ export async function corpusAnswerEvidence(input: {
     || !complete.provisionText.replace(/\s+/gu, " ").includes(original.provisionText.replace(/\s+/gu, " ").trim())) {
     throw new Error("CORPUS_ARTICLE_IDENTITY_MISMATCH");
   }
-  if (resolution.articleContext && (!article
+  if ((resolution.articleContext || resolution.documentContext) && ((!article && !resolution.documentContext)
     || complete.evidence.sha256 !== complete.evidence.sourceNormalizedSha256)) {
     throw new Error("CORPUS_ARTICLE_RECEIPT_INVALID");
   }
@@ -52,7 +52,7 @@ export async function corpusAnswerEvidence(input: {
   const textSha256 = await digest(complete.provisionText);
   const receipt = citationEvidenceReceiptSchema.parse({
     version: 1, capability: input.endpoint.kind === "current" ? "current" : "history",
-    kind: resolution.articleContext ? "normalized-article" : "provision",
+    kind: resolution.articleContext ? "normalized-article" : resolution.documentContext ? "normalized-document" : "provision",
     r2Key: complete.evidence.r2Key, byteCount: complete.evidence.byteCount,
     sha256: complete.evidence.sha256, officialUrl: complete.officialCitation.url,
     languageTag: complete.languageTag, articleNumber: article, textSha256,
@@ -62,7 +62,7 @@ export async function corpusAnswerEvidence(input: {
   const id = `corpus-${await digest(JSON.stringify([timeIdentity(input.endpoint), receipt]))}`;
   return {
     source: {
-      id, actTitle: original.officialCitation.label, actIdentifier: original.legalInstrumentId,
+      id, actTitle: complete.officialCitation.label, actIdentifier: original.legalInstrumentId,
       officialUrl: original.officialCitation.url, article,
       revisionDate: null, publishedAt: null, lastCheckedAt: input.currentAt,
       verifiedAt: input.currentAt, locale: {ru:"ru", "uz-Latn":"uz", "uz-Cyrl":"uzc", en:"en"}[complete.languageTag],
