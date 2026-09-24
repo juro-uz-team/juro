@@ -28,6 +28,11 @@ test("a single publisher paragraph can contain a complete operative article",()=
     "1-модда. Меҳнат кодексининг 192-моддасидаги «ўн саккиз» деган сўзлар «йигирма уч» деган сўзлар билан алмаштирилсин.",
     "1-modda. Ushbu Qonun rasmiy eʼlon qilingan kundan eʼtiboran kuchga kiradi.",
     "Статья 1. Внести в Закон Республики Узбекистан изменения и дополнения, утвердив его новую редакцию (прилагается).",
+    "Статья 1. Настоящий Закон вступает в силу со дня его официального опубликования.",
+    "Статья 1. Министерству юстиции обеспечить исполнение, доведение до исполнителей, а также разъяснение среди населения сути и значения настоящего Закона.",
+    "1-модда. Манфаатдор ташкилотлар ушбу Қонуннинг ижросини таъминласин.",
+    "1-модда. Ўзбекистон Республикасининг Консуллик устави тасдиқлансин (илова қилинади).",
+    "Статья 1. В части третьей статьи 69 Семейного кодекса слова «имени отца» заменить словами «имени отца или деда».",
   ]) {
     const blocks=[text,"Статья 2. Следующее правило","Следующее правило имеет самостоятельное содержание."]
       .map((text,index)=>({index,kind:"paragraph" as const,text}));
@@ -38,6 +43,21 @@ test("a single publisher paragraph can contain a complete operative article",()=
   for(const text of ["Статья 1. Общие требования.","1-модда. Қуйидаги ўзгартишлар киритилсин:",
     "Статья 1. Внесение изменений в закон."]) {
     assert.equal(completeArticleText([{index:0,kind:"paragraph",text}],"1"),null);
+  }
+});
+
+test("a publisher annex starts a separate scope after the final article",()=>{
+  for(const marker of ["Qonuniga\n1-ILOVA","Қонунга\n2-ИЛОВА","ПРИЛОЖЕНИЕ № 3"]) {
+    const blocks=["Article 67. Commencement","The law takes effect immediately.",marker,"Annex content."]
+      .map((text,index)=>({index,kind:"paragraph" as const,text}));
+    assert.equal(completeArticleText(blocks,"67")?.text,"Article 67. Commencement The law takes effect immediately.");
+  }
+  const blocks=["Article 67. Commencement","The law refers to 1-ILOVA and additional conditions.","Those conditions apply immediately."]
+    .map((text,index)=>({index,kind:"paragraph" as const,text}));
+  assert.match(completeArticleText(blocks,"67")!.text,/Those conditions/);
+  for (const reference of ["Дополнительные условия приведены в\nПРИЛОЖЕНИЕ № 3", "Refer to\n1-ILOVA"]) {
+    const prose = blocks.map((block,index)=>index===1?{...block,text:reference}:block);
+    assert.match(completeArticleText(prose,"67")!.text,/Those conditions/);
   }
 });
 

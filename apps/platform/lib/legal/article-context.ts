@@ -1,7 +1,7 @@
 import { detectArticleNumbers } from "./legal-language";
 import { MAX_LEGAL_EVIDENCE_CHARACTERS } from "./legal-evidence-budget";
 import type { NormalizedLegalSourceSnapshot } from "./source-parser";
-import {isLegalArticleHeading,hasInlineArticleBody} from "./article-heading";
+import {isLegalArticleHeading,hasInlineArticleBody,isLegalAnnexHeading} from "./article-heading";
 
 const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
 
@@ -70,7 +70,7 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
         ranges.set(article, occurrences);
       }
       nextBoundary = index;
-    } else if (block.semanticRole === "chapter" || block.semanticRole === "section") nextBoundary = index;
+    } else if (block.semanticRole === "chapter" || block.semanticRole === "section" || isLegalAnnexHeading(block)) nextBoundary = index;
   }
   return (article: string) => {
     const occurrences = ranges.get(article) ?? [];
