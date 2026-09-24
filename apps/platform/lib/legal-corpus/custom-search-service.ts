@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import type {CustomRuntimeCache} from "./custom-runtime-cache";
+import type {PreparedOrdinalReader} from "./prepared-membership";
 import {candidateMembershipProofSchema} from "./candidate-membership-proof";
 import {loadCandidateMembershipProjection, readCandidateMembershipProofs} from "./candidate-membership-projection";
 
@@ -100,6 +101,7 @@ export type CustomSearchEnv = {
   DENSE: CustomVectorSearchIndex;
   ARTIFACTS: R2Bucket;
   RUNTIME_CACHE?: CustomRuntimeCache;
+  PREPARED_ORDINALS?: PreparedOrdinalReader;
   CATALOG_DB: D1Database;
   CUSTOM_SEARCH_CAPABILITY: "current" | "history";
   CUSTOM_SEARCH_RELEASE_ID: string;
@@ -176,14 +178,16 @@ async function loadDescriptor(env: CustomSearchEnv, releaseId: string) {
   const expectedKey = z.string().min(1).max(1_024).parse(env.CUSTOM_RUNTIME_DESCRIPTOR_KEY);
   const expectedSha256 = sha256Schema.parse(env.CUSTOM_RUNTIME_DESCRIPTOR_SHA256);
   const component = await env.CATALOG_DB.prepare(`SELECT runtime_descriptor_r2_key AS descriptorKey,
-      runtime_descriptor_sha256 AS descriptorSha256,sparse_manifest_sha256 AS sparseManifestSha256
+      runtime_descriptor_sha256 AS descriptorSha256,sparse_manifest_sha256 AS sparseManifestSha256,
+      mapping_inventory_sha256 AS mappingInventorySha256,mapping_count AS mappingCount
     FROM legal_custom_search_r2_runtime_roots WHERE search_release_id=?
     UNION ALL
-    SELECT runtime_descriptor_r2_key,runtime_descriptor_sha256,sparse_manifest_sha256
+    SELECT runtime_descriptor_r2_key,runtime_descriptor_sha256,sparse_manifest_sha256,mapping_inventory_sha256,mapping_count
     FROM legal_custom_search_runtime_components WHERE search_release_id=?
       AND NOT EXISTS (SELECT 1 FROM legal_custom_search_r2_runtime_roots WHERE search_release_id=?)
     LIMIT 1`).bind(releaseId, releaseId, releaseId)
-    .first<{ descriptorKey: string; descriptorSha256: string; sparseManifestSha256: string }>();
+    .first<{ descriptorKey: string; descriptorSha256: string; sparseManifestSha256: string;
+      mappingInventorySha256:string;mappingCount:number }>();
   if (!component || component.descriptorKey !== expectedKey
     || component.descriptorSha256 !== expectedSha256) {
     throw new TypeError("CUSTOM_SEARCH_RUNTIME_COMPONENT_MISMATCH");
@@ -199,7 +203,7 @@ async function loadDescriptor(env: CustomSearchEnv, releaseId: string) {
     || descriptor.sparseManifestSha256 !== component.sparseManifestSha256) {
     throw new TypeError("CUSTOM_SEARCH_DESCRIPTOR_IDENTITY_MISMATCH");
   }
-  return descriptor;
+  return {descriptor,component};
 }
 
 async function itemKeysForOrdinals(env: CustomSearchEnv, releaseId: string, ordinals: number[]) {
@@ -238,7 +242,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
     || (capability.data === "history" && input.endpoint.kind !== "timestamp")) {
     throw new TypeError("CUSTOM_SEARCH_RELEASE_REJECTED");
   }
-  const descriptor = await timed("descriptorMs", () => loadDescriptor(env, input.releaseId));
+  const {descriptor,component} = await timed("descriptorMs", () => loadDescriptor(env, input.releaseId));
   const denseMetadataReleaseId = descriptor.denseMetadataReleaseId ?? descriptor.releaseId;
   const queries = "query" in input ? [input.query] : input.queries;
   await reserveQueryBudget(env, input.releaseId, queries.length);
@@ -264,7 +268,9 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
   if (sparseLane.status === "rejected") throw sparseLane.reason;
   if (denseLane.status === "rejected") throw denseLane.reason;
   const ordinals = [...new Set(sparseLane.value.flatMap(hits => hits.map(hit => hit.ordinal)))];
-  const runtimeKeys = await resolveCustomBm25RuntimeItemKeys(env.ARTIFACTS, descriptor, ordinals,env.RUNTIME_CACHE);
+  const preparedKeys = await env.PREPARED_ORDINALS?.({releaseId:input.releaseId,
+    sourceInventorySha256:component.mappingInventorySha256,memberCount:component.mappingCount,ordinals});
+  const runtimeKeys = preparedKeys ?? await resolveCustomBm25RuntimeItemKeys(env.ARTIFACTS, descriptor, ordinals,env.RUNTIME_CACHE);
   const keys = runtimeKeys
     ? runtimeKeys.map(key => `search-releases/${input.releaseId}/${key}`)
     : await itemKeysForOrdinals(env, input.releaseId, ordinals);

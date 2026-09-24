@@ -113,6 +113,7 @@ test(physicalAlias
                 descriptorKey: runtime.descriptorReference.key,
                 descriptorSha256: runtime.descriptorReference.sha256,
                 sparseManifestSha256: "a".repeat(64),
+                mappingInventorySha256:"c".repeat(64),mappingCount:1,
               };
               return { reservedUsdMicros: 1_065 };
             },
@@ -232,6 +233,19 @@ test(physicalAlias
           "x-juro-service-binding": "custom-search-runtime-v1",
           "x-juro-legal-environment": "staging" }, body,
       }), searchEnv);
+    bucket.reads.clear();
+    const prepared=await send({...env,PREPARED_ORDINALS:async input=>{
+      assert.deepEqual(input,{releaseId:RELEASE_ID,sourceInventorySha256:"c".repeat(64),memberCount:1,ordinals:[0]});
+      return [ITEM_KEY];
+    }});
+    assert.equal(prepared.status,200);
+    assert.deepEqual((await prepared.json() as {hits:Array<{itemKey:string}>}).hits.map(hit=>hit.itemKey),[fullKey]);
+    assert.ok(runtime.ordinalMappingPages.every(page=>!bucket.reads.has(page.reference.key)));
+    const unavailable=await send({...env,PREPARED_ORDINALS:async()=>{throw new Error("CORPUS_ORDINAL_MISSING");}});
+    assert.notEqual(unavailable.status,200,"A broken verified inventory must not fall back to ordinal artifacts");
+    assert.ok(runtime.ordinalMappingPages.every(page=>!bucket.reads.has(page.reference.key)));
+    assert.equal((await send({...env,PREPARED_ORDINALS:async()=>null})).status,200);
+    assert.ok(runtime.ordinalMappingPages.some(page=>bucket.reads.has(page.reference.key)));
     delayNextEmbedding = true;
     measureSparseReads = true;
     const delayed = send();

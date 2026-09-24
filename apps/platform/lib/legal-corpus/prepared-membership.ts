@@ -5,3 +5,6 @@ export type PreparedMembership = {ordinal:number;legalIdentitySha256:string|null
  * generation with missing or invalid members must fail validation, not fallback. */
 export type PreparedMembershipReader = (input:{releaseId:string;sourceInventorySha256:string;
   memberCount:number;itemKeys:readonly string[]})=>Promise<Map<string,PreparedMembership>|null>;
+
+export type PreparedOrdinalReader = (input:{releaseId:string;sourceInventorySha256:string;
+  memberCount:number;ordinals:readonly number[]})=>Promise<string[]|null>;

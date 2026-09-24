@@ -1,10 +1,38 @@
 import {z} from "zod";
 import type {Pool} from "pg";
 import {customRuntimeLegalIdentitySchema} from "../legal-corpus/custom-bm25-runtime";
-import type {PreparedMembershipReader} from "../legal-corpus/prepared-membership";
+import type {PreparedMembershipReader,PreparedOrdinalReader} from "../legal-corpus/prepared-membership";
 import {retrievalQuery} from "./retrieval-connection";
 
 const digest=z.string().regex(/^[a-f0-9]{64}$/u);
+
+/** Resolve sparse ordinals from the same authenticated, immutable inventory as
+ * candidate validation. A missing ordinal in a verified generation is an error. */
+export function createPreparedOrdinalReader(pool:Pool):PreparedOrdinalReader {
+  return async input=>{
+    const hash=digest.parse(input.sourceInventorySha256);
+    const count=z.number().int().positive().max(2**24).parse(input.memberCount);
+    const ordinals=z.array(z.number().int().nonnegative().safe()).max(2000).parse(input.ordinals);
+    if(!ordinals.length)return [];
+    const {rows}=await retrievalQuery<{ordinal:string|null;item_key:string|null}>(pool,`WITH generation AS MATERIALIZED (
+      SELECT id FROM storage.corpus_membership_generations
+      WHERE release_id=$1 AND source_inventory_sha256=$2 AND member_count=$3 AND state='verified'
+      ORDER BY created_at DESC,id LIMIT 1
+    ) SELECT member.ordinal,member.item_key FROM generation
+      LEFT JOIN storage.corpus_members member ON member.generation_id=generation.id AND member.ordinal=ANY($4::bigint[])`,
+    [input.releaseId,hash,count,[...new Set(ordinals)]]);
+    if(!rows.length)return null;
+    const found=new Map<number,string>();
+    for(const row of rows){
+      if(row.ordinal===null&&row.item_key===null)continue;
+      const ordinal=Number(row.ordinal),key=z.string().min(1).max(700).parse(row.item_key);
+      if(!ordinals.includes(ordinal)||found.has(ordinal))throw new Error("CORPUS_ORDINAL_RESULT_INVALID");
+      found.set(ordinal,key);
+    }
+    if(ordinals.some(ordinal=>!found.has(ordinal)))throw new Error("CORPUS_ORDINAL_MISSING");
+    return ordinals.map(ordinal=>found.get(ordinal)!);
+  };
+}
 const memberSchema=z.object({itemKey:z.string().min(1).max(700),ordinal:z.number().int().nonnegative().safe(),
   legalIdentitySha256:digest.optional(),legalIdentity:customRuntimeLegalIdentitySchema.optional()}).strict()
   .refine(member=>!member.legalIdentitySha256||!member.legalIdentity

@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { database } from "../storage/connection";
 import { LocalObjectStore } from "../storage/objects";
 import { PostgresVectorIndex } from "../storage/vectors";
-import {createPreparedMembershipReader} from "../storage/corpus-membership";
+import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
 import { PostgresQueue } from "../storage/queue";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
 import LegalCorpusService from "../../worker/legal-corpus-worker";
@@ -51,7 +51,9 @@ export function getSelfHostedRuntime(): Runtime {
     LEGAL_RETRIEVAL_ENVIRONMENT: "production",
   };
   const search = (configuration: typeof releases.current) => {
-      const cache = new CustomRuntimeCache();
+      // The historical lexicons and document table alone occupy about 145 MB.
+      // Keep room for authenticated posting blocks without evicting that base.
+      const cache = new CustomRuntimeCache(512*1024*1024);
       return {
         async fetch(input: RequestInfo | URL, init?: RequestInit) {
           const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection);
@@ -60,6 +62,7 @@ export function getSelfHostedRuntime(): Runtime {
             ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,
             ARTIFACTS: bucket(configuration.artifactNamespace),
             RUNTIME_CACHE: cache,
+            PREPARED_ORDINALS:createPreparedOrdinalReader(application.pool),
             DENSE: index,
           } as unknown as CustomSearchEnv);
         },

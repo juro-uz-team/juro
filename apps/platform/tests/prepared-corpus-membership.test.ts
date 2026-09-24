@@ -3,7 +3,7 @@ import test from "node:test";
 import {createHash,randomUUID} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {PostgresDatabase} from "../lib/storage/postgres";
-import {createPreparedMembershipReader} from "../lib/storage/corpus-membership";
+import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../lib/storage/corpus-membership";
 
 test("prepared membership authenticates every source page and member before immutable publication",async()=>{
   const db=new PostgresDatabase(process.env.DATABASE_URL!);
@@ -23,6 +23,7 @@ test("prepared membership authenticates every source page and member before immu
     const value=Reflect.get(target,key);return typeof value==="function"?value.bind(target):value;
   }});
   const read=createPreparedMembershipReader(pool);
+  const readOrdinals=createPreparedOrdinalReader(pool);
   const input={releaseId:release,sourceInventorySha256:hash(manifest),memberCount:2,itemKeys:members.map(m=>m.itemKey)};
   try {
     await db.pool.query(`CREATE SCHEMA ${schema}`);
@@ -31,6 +32,7 @@ test("prepared membership authenticates every source page and member before immu
       (id,release_id,inventory_release_id,source_inventory_sha256,source_manifest,member_count) VALUES($1,$2,$3,$4,$5,2)`,
       [id,release,physical,hash(manifest),manifest]);
     assert.equal(await read(input),null,"Unpublished data cannot replace the accepted inventory");
+    assert.equal(await readOrdinals({...input,ordinals:[1,2]}),null);
     await assert.rejects(publish,/PAGE_COUNT_INVALID/);
     await query("INSERT INTO storage.corpus_membership_pages VALUES($1,'2a',$2)",[id,Buffer.from("corrupt")]);
     await assert.rejects(publish,/PAGE_INVALID/);
@@ -57,6 +59,11 @@ test("prepared membership authenticates every source page and member before immu
     } finally {await stale.query("ROLLBACK");stale.release();}
     await publish();
     assert.deepEqual(await read(input),new Map(members.map(member=>[member.itemKey,{ordinal:member.ordinal,legalIdentitySha256:member.legalIdentitySha256}])));
+    assert.deepEqual(await readOrdinals({...input,ordinals:[2,1,2]}),[members[1]!.itemKey,members[0]!.itemKey,members[1]!.itemKey]);
+    assert.equal(await readOrdinals({...input,sourceInventorySha256:"f".repeat(64),ordinals:[1]}),null);
+    assert.equal(await readOrdinals({...input,memberCount:3,ordinals:[1]}),null);
+    await assert.rejects(readOrdinals({...input,ordinals:[1,99]}),/CORPUS_ORDINAL_MISSING/);
+    await assert.rejects(readOrdinals({...input,ordinals:[-1]}));
     assert.equal(await read({...input,sourceInventorySha256:"f".repeat(64)}),null,"Changed accepted inventory cannot use an old projection");
     assert.equal(await read({...input,releaseId:"different"}),null,"Release identity is independently pinned");
     assert.equal((await read({...input,itemKeys:["missing"]}))!.size,0,"A verified generation cannot hide a missing identity via fallback");
@@ -67,6 +74,7 @@ test("prepared membership authenticates every source page and member before immu
     await assert.rejects(()=>query("DELETE FROM storage.corpus_membership_generations WHERE id=$1",[id]),/MUST_RETIRE/);
     await query("UPDATE storage.corpus_membership_generations SET state='retired' WHERE id=$1",[id]);
     assert.equal(await read(input),null);
+    assert.equal(await readOrdinals({...input,ordinals:[1]}),null);
     await query("DELETE FROM storage.corpus_membership_generations WHERE id=$1",[id]);
   } finally {await db.pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await db.close();}
 });
