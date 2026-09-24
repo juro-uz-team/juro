@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {beginVectorRead} from "./vector-read-snapshot";
+import {compactVectorScope, supportsCompactVector} from "./vector-search-generation";
 import type { Pool } from "pg";
 import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
 
@@ -131,6 +132,42 @@ export class PostgresVectorIndex {
         rows = (await client.query(`${select} AND id=ANY($${exactParameters.length}::text[])
           ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, exactParameters)).rows;
       } else {
+        const scope = configuration.metric === "cosine" && configuration.dimensions === 1536 && topK <= 50 && supportsCompactVector(values)
+          ? compactVectorScope(options.filter, options.namespace) : null;
+        const generation = scope ? (await client.query<{id: string; current: boolean}>(`SELECT g.id,c.source_revision=g.source_revision AS current
+          FROM storage.vector_search_generations g JOIN storage.vector_collections c
+          ON c.name=g.collection
+          WHERE g.collection=$1 AND g.state='verified'
+          ORDER BY (c.source_revision=g.source_revision) DESC,g.created_at DESC,g.id LIMIT 1`, [this.name])).rows[0] : undefined;
+        if (generation && !generation.current) {
+          // A stale prepared graph cannot silently lower recall. Exhaustive
+          // original-vector fallback remains subject to the shared deadline.
+          rows = (await client.query(`${select} ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, parameters)).rows;
+        } else if (generation && scope) {
+          await client.query("SET LOCAL hnsw.ef_search = 200");
+          const groupParameters = [...parameters, generation.id];
+          const generationParameter = `$${groupParameters.length}::uuid`;
+          let temporalPredicate = "";
+          if (scope.instant !== undefined) {
+            groupParameters.push(scope.instant);
+            temporalPredicate = `AND (g.coverage IS NULL OR g.coverage @> $${groupParameters.length}::numeric)`;
+          }
+          // Group selection is approximate; original identities, filters,
+          // full-precision scores and returned values remain authoritative.
+          // Materialize identity sets before reading originals. Freshly built
+          // generations may be absent from statistics; a join can otherwise
+          // scan the entire collection once for each duplicate member.
+          rows = (await client.query(`WITH nearest AS MATERIALIZED (
+            SELECT g.digest FROM storage.vector_search_groups g
+            WHERE g.generation_id=${generationParameter} ${temporalPredicate}
+            ORDER BY g.embedding::halfvec(1536) <=> $2::text::halfvec(1536) LIMIT 250
+          ) ${select} AND id=ANY(ARRAY(
+            SELECT id FROM storage.vector_search_members
+            WHERE generation_id=${generationParameter}
+              AND digest=ANY(ARRAY(SELECT digest FROM nearest))
+          ))
+            ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, groupParameters)).rows;
+        } else {
         // JSON metadata selectivity estimates can otherwise prefer an expensive
         // exact sort even when most of the collection is eligible.
         await client.query("SET LOCAL enable_sort = off");
@@ -139,6 +176,7 @@ export class PostgresVectorIndex {
         const candidateParameters=[...parameters.slice(0,-1),Math.min(1000,topK*10)];
         rows = (await client.query(`${select} ORDER BY ${distance} LIMIT $${parameters.length}`, candidateParameters)).rows;
         await client.query("SET LOCAL enable_sort = on");
+        }
       }
       // Selective filters can exhaust an ANN scan's budget. An exact fallback
       // distinguishes genuinely small result sets from missed eligible rows.

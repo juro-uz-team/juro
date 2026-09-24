@@ -3,6 +3,74 @@ import test from "node:test";
 import { PostgresDatabase } from "../lib/storage/postgres";
 import { PostgresVectorIndex } from "../lib/storage/vectors";
 
+test("compact generations expand original identities and become unusable after source changes", async () => {
+  const db = new PostgresDatabase(process.env.DATABASE_URL!);
+  const name = `test-${crypto.randomUUID()}`;
+  const generation = crypto.randomUUID();
+  const original = Array(1536).fill(0); original[1] = 1;
+  const question = Array(1536).fill(0); question[0] = 1; question[1] = 0.0001234567;
+  let groupReads = 0;
+  const pool = new Proxy(db.pool, {get(target, property) {
+    if (property === "connect") return async () => {
+      const client = await target.connect();
+      return new Proxy(client, {get(connection, member) {
+        if (member === "query") return (sql: string, parameters?: unknown[]) => {
+          if (sql.includes("FROM storage.vector_search_groups g")) groupReads++;
+          return connection.query(sql, parameters);
+        };
+        const value = Reflect.get(connection, member);
+        return typeof value === "function" ? value.bind(connection) : value;
+      }});
+    };
+    const value = Reflect.get(target, property);
+    return typeof value === "function" ? value.bind(target) : value;
+  }});
+  const index = new PostgresVectorIndex(pool, name);
+  try {
+    await index.create({dimensions: 1536, metric: "cosine"});
+    await db.pool.query(`INSERT INTO storage.embeddings(collection,id,embedding,metadata)
+      SELECT $1,lpad(n::text,5,'0'),$2::vector,
+        jsonb_build_object('valid_from_epoch',0,'valid_to_epoch',20,'originalId',n)
+      FROM generate_series(1,10002) n`, [name, JSON.stringify(original)]);
+    await db.pool.query(`INSERT INTO storage.vector_search_generations(id,collection,source_revision,member_count,group_count)
+      SELECT $1,name,source_revision,10002,1 FROM storage.vector_collections WHERE name=$2`, [generation, name]);
+    await db.pool.query(`INSERT INTO storage.vector_search_groups(generation_id,digest,embedding,coverage)
+      VALUES ($1,sha256(vector_send($2::vector)),$2::vector,'{[0,20)}')`, [generation, JSON.stringify(original)]);
+    await db.pool.query(`INSERT INTO storage.vector_search_members(generation_id,id,digest)
+      SELECT $1,id,sha256(vector_send(embedding)) FROM storage.embeddings WHERE collection=$2`, [generation, name]);
+    await db.pool.query("UPDATE storage.vector_search_generations SET state='verified' WHERE id=$1", [generation]);
+    const filter = {valid_from_epoch: {$lte: 10}, valid_to_epoch: {$gt: 10}};
+    const result = await index.query(question, {topK: 50, filter, returnMetadata: "all", returnValues: true});
+    assert.equal(groupReads, 1, "the real adapter must execute prepared group search");
+    assert.deepEqual(result.matches.map(row => row.id), Array.from({length: 50}, (_, i) => String(i + 1).padStart(5, "0")));
+    const exactScore = (await db.pool.query("SELECT 1-($1::vector <=> $2::vector) AS score",
+      [JSON.stringify(original), JSON.stringify(question)])).rows[0].score;
+    assert.equal(result.matches[0]!.score, exactScore, "query coordinates must not be rounded through halfvec before full-precision scoring");
+    assert.equal(result.matches[0]!.metadata!.originalId, 1);
+    assert.deepEqual(result.matches[0]!.values, original);
+    await index.query(question, {topK: 1, namespace: "", filter});
+    await index.query(question, {topK: 1, filter: {$and: [filter]}});
+    assert.equal(groupReads, 1, "unqualified namespace/nested scopes must retain the generic path");
+    for (const coordinate of [1_000_000, 1e-9]) {
+      const outsideHalf = Array(1536).fill(0); outsideHalf[0] = coordinate;
+      assert.equal((await index.query(outsideHalf, {topK: 1, filter})).count, 1);
+    }
+    assert.equal(groupReads, 1, "valid original queries outside halfvec representation must use the generic path");
+    await db.pool.query("UPDATE storage.embeddings SET embedding=$3::vector WHERE collection=$1 AND id=$2",
+      [name, "10002", JSON.stringify(question)]);
+    const refreshed = await index.query(question, {topK: 1, filter});
+    assert.equal(groupReads, 1, "a changed source cannot use the old generation");
+    assert.equal(refreshed.matches[0]!.id, "10002");
+    assert.equal(refreshed.matches[0]!.score, 1);
+  } finally {
+    await db.pool.query("UPDATE storage.vector_search_generations SET state='retired' WHERE id=$1", [generation]);
+    await db.pool.query("DELETE FROM storage.vector_search_generations WHERE id=$1", [generation]);
+    await db.pool.query("DELETE FROM storage.embeddings WHERE collection=$1", [name]);
+    await db.pool.query("DELETE FROM storage.vector_collections WHERE name=$1", [name]);
+    await db.close();
+  }
+});
+
 test("dense retrieval applies namespace and evidence filters before selecting nearest candidates", async () => {
   const db = new PostgresDatabase(process.env.DATABASE_URL!);
   const name = `test-${crypto.randomUUID()}`;

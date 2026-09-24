@@ -69,7 +69,7 @@ test("vector source revisions track direct mutations and truncation", async () =
 });
 
 test("vector generation publication requires complete original identity, digest and temporal parity", async () => {
-  const migrations = await Promise.all(["0020-vector-source-revisions.sql", "0021-vector-search-generations.sql"]
+  const migrations = await Promise.all(["0020-vector-source-revisions.sql", "0021-vector-search-generations.sql", "0022-compact-vector-representations.sql"]
     .map(name => readFile(new URL(`../postgres/${name}`, import.meta.url), "utf8")));
   const db = new PostgresDatabase(process.env.DATABASE_URL!);
   const schema = `vector_generation_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -127,6 +127,21 @@ test("vector generation publication requires complete original identity, digest 
     await db.pool.query(`UPDATE ${schema}.vector_search_generations SET state='retired' WHERE id=$1`, [generation]);
     await db.pool.query(`DELETE FROM ${schema}.vector_search_generations WHERE id=$1`, [generation]);
     assert.equal((await db.pool.query(`SELECT count(*)::int AS n FROM ${schema}.vector_search_members`)).rows[0].n, 0);
+    await db.pool.query(`INSERT INTO ${schema}.vector_collections(name,dimensions,metric) VALUES ('wide',1536,'cosine')`);
+    for (const coordinate of [1_000_000, 1e-9]) {
+      const values = Array(1536).fill(0); values[0] = coordinate;
+      const id = crypto.randomUUID();
+      await db.pool.query(`INSERT INTO ${schema}.embeddings(collection,id,embedding) VALUES ('wide','only',$1::vector)
+        ON CONFLICT(collection,id) DO UPDATE SET embedding=excluded.embedding`, [JSON.stringify(values)]);
+      await db.pool.query(`INSERT INTO ${schema}.vector_search_generations(id,collection,source_revision,member_count,group_count)
+        SELECT $1,name,source_revision,1,1 FROM ${schema}.vector_collections WHERE name='wide'`, [id]);
+      await db.pool.query(`INSERT INTO ${schema}.vector_search_groups(generation_id,digest,embedding)
+        SELECT $1,sha256(vector_send(embedding)),embedding FROM ${schema}.embeddings WHERE collection='wide'`, [id]);
+      await db.pool.query(`INSERT INTO ${schema}.vector_search_members(generation_id,id,digest)
+        SELECT $1,id,sha256(vector_send(embedding)) FROM ${schema}.embeddings WHERE collection='wide'`, [id]);
+      await assert.rejects(() => db.pool.query(`UPDATE ${schema}.vector_search_generations SET state='verified' WHERE id=$1`, [id]),
+        /halfvec|HALF_PRECISION_ZERO/);
+    }
   } finally {
     await db.pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
     await db.close();
