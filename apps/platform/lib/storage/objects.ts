@@ -17,6 +17,9 @@ type PutOptions = { onlyIf?: Headers | Conditions; customMetadata?: Record<strin
 type ObjectRow = { key: string; sha256: string; size: string | number; version: string; uploaded: Date;
   http_metadata: HttpMetadata; custom_metadata: Record<string, string> };
 type Range = { offset?: number; length?: number; suffix?: number };
+type PreparedRead = { deliver: () => void; dispose: () => Promise<void> };
+type PendingRead = { key: string; prepare: (row: ObjectRow | undefined) => Promise<PreparedRead>;
+  reject: (error: unknown) => void };
 
 function conditions(input?: Headers | Conditions): Conditions {
   return input instanceof Headers ? {
@@ -31,6 +34,7 @@ const headerNames = { contentType: "content-type", contentLanguage: "content-lan
 /** Object keys are database identities; only content hashes become filesystem paths. */
 export class LocalObjectStore {
   readonly root: string;
+  private readonly pendingReads = new Map<AbortSignal | undefined, PendingRead[]>();
   constructor(readonly pool: Pool, root: string, readonly bucket: string) { this.root = resolve(root); }
 
   private path(digest: string) {
@@ -58,12 +62,7 @@ export class LocalObjectStore {
   }
 
   async get(key: string, options?: { range?: Range; onlyIf?: Headers | Conditions }) {
-    const lease = await acquireRetrievalClient(this.pool);
-    const client = lease.client;
-    try {
-      await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]);
-      const { rows } = await client.query<ObjectRow>("SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
-      const row = rows[0];
+    return this.readObject(key, async row => {
       if (!row) return null;
       const gate = conditions(options?.onlyIf);
       if ((gate.etagMatches && gate.etagMatches !== "*" && gate.etagMatches !== row.sha256)
@@ -96,9 +95,56 @@ export class LocalObjectStore {
         text: () => response.text(),
         json: <T>() => response.json() as Promise<T>, blob: () => response.blob(),
       };
-    } finally {
-      try { await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); }
-      finally { lease.release(); }
+    });
+  }
+
+  private readObject<T extends {body: ReadableStream<Uint8Array>} | null>(key: string,
+    read: (row: ObjectRow | undefined) => Promise<T>): Promise<T> {
+    const signal = indexedRetrievalSignal();
+    return new Promise<T>((resolve, reject) => {
+      let batch = this.pendingReads.get(signal);
+      if (!batch || batch.length >= 16) {
+        batch = [];
+        this.pendingReads.set(signal, batch);
+        const pending = batch;
+        queueMicrotask(() => {
+          if (this.pendingReads.get(signal) === pending) this.pendingReads.delete(signal);
+          void this.readBatch(pending);
+        });
+      }
+      batch.push({key, reject, prepare: async row => {
+        const value = await read(row);
+        return {deliver: () => resolve(value), dispose: async () => {await value?.body.cancel();}};
+      }});
+    });
+  }
+
+  /** Share only a fresh metadata query, never object bytes. Requests with
+   * different cancellation scopes cannot share a database lease. Reclamation
+   * remains pinned until every returned file descriptor has been opened. */
+  private async readBatch(batch: readonly PendingRead[]): Promise<void> {
+    const prepared: PreparedRead[] = [];
+    try {
+      const lease = await acquireRetrievalClient(this.pool);
+      const client = lease.client;
+      try {
+        await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]);
+        const {rows} = await client.query<ObjectRow>(
+          "SELECT * FROM storage.objects WHERE bucket=$1 AND key=ANY($2::text[])",
+          [this.bucket, [...new Set(batch.map(read => read.key))]]);
+        const objects = new Map(rows.map(row => [row.key, row]));
+        await Promise.all(batch.map(async read => {
+          try {prepared.push(await read.prepare(objects.get(read.key)));}
+          catch (error) {read.reject(error);}
+        }));
+      } finally {
+        try {await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]);}
+        finally {lease.release();}
+      }
+      for (const read of prepared) read.deliver();
+    } catch (error) {
+      await Promise.allSettled(prepared.map(read => read.dispose()));
+      for (const read of batch) read.reject(error);
     }
   }
 

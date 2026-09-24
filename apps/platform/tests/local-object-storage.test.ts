@@ -11,6 +11,33 @@ import { PostgresDatabase } from "../lib/storage/postgres";
 import { LocalObjectStore } from "../lib/storage/objects";
 import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
+test("parallel retrieval reads share bounded metadata leases and retain fresh ranged bytes",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const root=await mkdtemp(join(tmpdir(),"juro-batched-objects-"));
+  const store=new LocalObjectStore(db.pool,root,`test-${crypto.randomUUID()}`);
+  let acquisitions=0;
+  const acquired=()=>{acquisitions++;};
+  try {
+    const first=await store.put("first","abcdef");
+    await store.put("second","uvwxyz");
+    db.pool.on("acquire",acquired);
+    await runIndexedRetrieval(undefined,()=>Promise.all(Array.from({length:32},async(_,index)=>{
+      const text=index%2?"uvwxyz":"abcdef";
+      const offset=index%3;
+      const object=await store.get(index%2?"second":"first",{range:{offset,length:3}});
+      assert.equal(await object!.text(),text.slice(offset,offset+3));
+    })));
+    db.pool.off("acquire",acquired);
+    assert.ok(acquisitions<=2,`32 simultaneous reads acquired ${acquisitions} metadata leases`);
+    await writeFile(join(root,first!.etag.slice(0,2),first!.etag),"broken");
+    assert.equal(await (await store.get("first"))!.text(),"broken",
+      "a later request reads physical bytes again rather than reusing an earlier object body");
+  }finally{
+    db.pool.off("acquire",acquired);
+    await store.delete(["first","second"]);await db.close();await rm(root,{recursive:true,force:true});
+  }
+});
+
 test("finishing retrieval cancels an unconsumed object stream without crashing the process",async()=>{
   const db=new PostgresDatabase(process.env.DATABASE_URL!);
   const root=await mkdtemp(join(tmpdir(),"juro-cancelled-object-"));
@@ -22,6 +49,62 @@ test("finishing retrieval cancels an unconsumed object stream without crashing t
     await assert.rejects(object.bytes(),{name:"AbortError"});
     await pause(10);
   }finally{await store.delete("evidence");await db.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("batched reads retain independent conditions, missing keys and range errors",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const root=await mkdtemp(join(tmpdir(),"juro-object-conditions-"));
+  const store=new LocalObjectStore(db.pool,root,`test-${crypto.randomUUID()}`);
+  try {
+    const written=await store.put("evidence","abcdef");
+    await runIndexedRetrieval(undefined,async()=>{
+      const results=await Promise.allSettled([
+        store.get("evidence",{onlyIf:{etagMatches:written!.etag},range:{suffix:3}}),
+        store.get("evidence",{onlyIf:{etagMatches:"different"}}),
+        store.get("missing"),
+        store.get("evidence",{range:{offset:100}}),
+      ]);
+      const first=results[0]!;
+      assert.equal(first.status,"fulfilled");
+      assert.equal(await first.value!.text(),"def");
+      assert.deepEqual(results.slice(1,3),[{status:"fulfilled",value:null},{status:"fulfilled",value:null}]);
+      const invalid=results[3]!;
+      assert.equal(invalid.status,"rejected");
+      if(invalid.status==="rejected")assert.ok(invalid.reason instanceof RangeError);
+    });
+  }finally{await store.delete("evidence");await db.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("cancelling one queued object reader does not cancel another retrieval scope",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const root=await mkdtemp(join(tmpdir(),"juro-object-scopes-"));
+  const store=new LocalObjectStore(db.pool,root,`test-${crypto.randomUUID()}`);
+  const locker=await db.pool.connect();
+  let locked=false;
+  try {
+    await store.put("evidence","fresh evidence");
+    await locker.query("SELECT pg_advisory_lock(hashtextextended($1,0))",[objectStorageLock(root)]);
+    locked=true;
+    const controller=new AbortController();
+    const cancelled=runIndexedRetrieval(controller.signal,async()=>
+      (await store.get("evidence"))!.text());
+    const rejected=assert.rejects(cancelled,{name:"AbortError"});
+    let peerFinished=false;
+    const peer=runIndexedRetrieval(undefined,async()=>
+      (await store.get("evidence"))!.text()).then(value=>{
+        peerFinished=true;return {value};
+      },error=>{peerFinished=true;return {error};});
+    await pause(25);
+    controller.abort(new DOMException("Cancel one reader","AbortError"));
+    await rejected;
+    assert.equal(peerFinished,false,"the other reader remains pinned behind reclamation");
+    await locker.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[objectStorageLock(root)]);
+    locked=false;
+    assert.deepEqual(await peer,{value:"fresh evidence"});
+  }finally{
+    if(locked)await locker.query("SELECT pg_advisory_unlock(hashtextextended($1,0))",[objectStorageLock(root)]);
+    locker.release();await store.delete("evidence");await db.close();await rm(root,{recursive:true,force:true});
+  }
 });
 
 test("concurrent immutable evidence writes create one object and retain exact ranged bytes", async () => {
