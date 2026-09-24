@@ -121,16 +121,32 @@ test("cancellation after retrieval prevents authentication, source reads and pub
   assert.equal(calls.reads,0);
 });
 
-test("unknown source authority remains unavailable without an unnecessary live observation",async()=>{
+test("unknown source authority preserves metadata and verifies current publication before admitting evidence",async()=>{
   const {services,search}=fixture();
   let observations=0;
+  const original={...controlling,textualAuthority:"unknown" as const};
+  services.evidenceResolver.resolveControlling=async()=>({controlling:original,
+    materialCitation:controlling.officialCitation});
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async evidence=>{observations++;assert.equal(evidence.textualAuthority,"unknown");return verify(evidence);};
+  const result=await search(request);
+  assert.equal(result.evidence.length,1);
+  assert.equal(result.evidence[0]!.text,controlling.provisionText);
+  assert.equal(result.needs.some(need=>need.reason==="source_unavailable"),false);
+  assert.equal(observations,1);
+  assert.equal(original.textualAuthority,"unknown");
+});
+
+test("unknown source authority cannot bypass an unavailable current publication check",async()=>{
+  const {services,search}=fixture();
   services.evidenceResolver.resolveControlling=async()=>({controlling:{...controlling,textualAuthority:"unknown"},
     materialCitation:controlling.officialCitation});
-  services.verifyCurrentSource=async()=>{observations++;throw new Error("unnecessary publisher read");};
+  let observations=0;
+  services.verifyCurrentSource=async()=>{observations++;throw new Error("Publisher unavailable");};
   const result=await search(request);
+  assert.equal(observations,1);
   assert.equal(result.evidence.length,0);
   assert.ok(result.needs.some(need=>need.reason==="source_unavailable"));
-  assert.equal(observations,0);
 });
 
 test("indexed retrieval expires after one total deadline and cannot publish late results",async context=>{

@@ -76,6 +76,20 @@ test("historical evidence preserves endpoint identity and does not require curre
   assert.equal(first.source.currentSourceStatus,undefined);
 });
 
+test("historical source evidence does not require a textual authority classification",async()=>{
+  const {resolution,bucket}=await fixture();
+  const original={...resolution.controlling,textualAuthority:"unknown" as const};
+  const articleContext={...resolution.articleContext,textualAuthority:"unknown" as const};
+  const evidence=await corpusAnswerEvidence({resolution:{...resolution,controlling:original,articleContext},
+    currentAt,endpoint:{kind:"timestamp",instant:"2025-01-01T00:00:00Z"}});
+  assert.equal(evidence.source.status,"historical");
+  assert.equal(evidence.text,articleContext.provisionText);
+  assert.equal(original.textualAuthority,"unknown");
+  assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+  await assert.rejects(corpusAnswerEvidence({resolution:{...resolution,controlling:original,articleContext:undefined},
+    currentAt,endpoint:{kind:"timestamp",instant:"2025-01-01T00:00:00Z"}}),/COMPLETE_ARTICLE_UNAVAILABLE/);
+});
+
 test("different chunks of the same authenticated article share one evidence identity",async()=>{
   const {resolution,currentSourceStatus}=await fixture();
   const first=await corpusAnswerEvidence({resolution,currentSourceStatus,currentAt,endpoint:{kind:"current"}});

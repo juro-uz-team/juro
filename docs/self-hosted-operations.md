@@ -46,7 +46,9 @@ Each native corpus search binding keeps at most 256 MiB of authenticated immutab
 
 Membership lookup readers accept existing three-nibble leaves and new four-nibble leaves. Derived lookup roots remain catalog-pinned and hash-checked against the original mapping inventory. Retain these lookup objects with the operational corpus and include them in backup verification. Creating a lookup or index does not qualify source authority or open a collection's readiness gate.
 
-Acceptance requires at least 95% dense recall@50 on every fixed benchmark query and full Indexed Retrieval p95 at most five seconds at five simultaneous questions. A timeout, fallback or unavailable attempt does not satisfy that benchmark. Legal-answer correctness and authority remain separate checks.
+Temporal eligibility probes use a metadata index before selecting exact or approximate search. The probe's index order does not change the distance ranking; namespace and metadata predicates still apply within the same repeatable-read transaction.
+
+Acceptance requires at least 95% dense recall@50 on every fixed benchmark query and full Indexed Retrieval p95 at most five seconds at five simultaneous questions. A timeout, fallback or unavailable attempt does not satisfy that benchmark. Legal-answer correctness remains a separate check. Textual authority is preserved audit metadata, not a source eligibility gate, as specified in ADR 0005. Current evidence still requires a verified publisher observation; historical evidence retains its original endpoint and authenticated source identity. Neither pathway may bypass complete-article, hash or citation checks.
 
 ## Backup and recovery verification
 

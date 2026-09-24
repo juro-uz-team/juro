@@ -133,7 +133,7 @@ export function createCorpusResearch(input: {
           pending=(async()=>{
             const resolution=await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt});
             check();
-            const currentSourceStatus=endpoint.kind==="current"&&resolution.controlling.textualAuthority==="controlling"
+            const currentSourceStatus=endpoint.kind==="current"
               ?await input.services.verifyCurrentSource(resolution.controlling):undefined;
             check();
             const item=await corpusAnswerEvidence({resolution,endpoint,currentAt:new Date(now()).toISOString(),currentSourceStatus});

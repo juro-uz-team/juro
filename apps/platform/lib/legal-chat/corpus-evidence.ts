@@ -20,7 +20,8 @@ export async function corpusAnswerEvidence(input: {
 }): Promise<LegalEvidence> {
   const resolution = parseControllingEvidenceResolution(input.resolution);
   const original = resolution.controlling;
-  if (original.textualAuthority !== "controlling") throw new Error("CORPUS_AUTHORITY_UNRESOLVED");
+  // Textual authority is preserved audit metadata, not source eligibility.
+  // Authenticated identities, complete text and temporal checks still apply.
   const article = citationArticleNumber(original.officialCitation.label, original.provisionText);
   if (article && !resolution.articleContext) throw new Error("CORPUS_COMPLETE_ARTICLE_UNAVAILABLE");
   const complete = resolution.articleContext ?? original;

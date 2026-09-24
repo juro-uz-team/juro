@@ -113,8 +113,14 @@ export class PostgresVectorIndex {
         WHERE ${where.join(" AND ")}`;
       // Small eligible sets are faster and complete with exact distances. Probe
       // IDs only, avoiding vector decompression while estimating selectivity.
+      // Temporal probes follow the metadata index instead of repeatedly scanning
+      // the historical heap. Order does not affect the small-set count or IDs;
+      // large sets discard these probe IDs and perform their own ANN search.
+      const probeOrder=options.filter && Object.hasOwn(options.filter,"valid_from_epoch")
+        && Object.hasOwn(options.filter,"valid_to_epoch")
+        ? " ORDER BY metadata #> '{valid_to_epoch}',metadata #> '{valid_from_epoch}'" : "";
       const eligible = where.length > 1 ? (await client.query(
-        `SELECT id FROM storage.embeddings WHERE ${where.join(" AND ")} AND $2::text IS NOT NULL LIMIT 10001`, parameters.slice(0, -1))).rows : null;
+        `SELECT id FROM storage.embeddings WHERE ${where.join(" AND ")} AND $2::text IS NOT NULL${probeOrder} LIMIT 10001`, parameters.slice(0, -1))).rows : null;
       if (eligible && eligible.length <= 10000) {
         const exactParameters = [...parameters, eligible.map(row => row.id)];
         rows = (await client.query(`${select} AND id=ANY($${exactParameters.length}::text[])
