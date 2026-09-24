@@ -43,26 +43,43 @@ export function completeArticleText(
 /** Capture one authenticated parent's article boundaries once. The returned
  * reader owns its text references; later caller mutation cannot stale the index. */
 export function createCompleteArticleReader(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
+  const index = createCompleteArticleIndex(blocks);
+  return (article: string, originalText?: string): {heading: string; text: string} | null => {
+    const {candidates, occurrences} = index(article);
+    if (occurrences !== 1 || candidates.length !== 1) return null;
+    const context = candidates[0]!;
+    if (originalText && (!context.text.startsWith(normalize(originalText))
+      || context.text.length <= normalize(originalText).length)) return null;
+    return context;
+  };
+}
+
+/** An enacting law and its annex can reuse article numbers. Keep every complete
+ * occurrence; callers must resolve one using authenticated text, never order. */
+export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
   const captured = blocks.map(block => ({text: block.text, kind:block.kind, semanticRole: block.semanticRole}));
-  const ranges = new Map<string, {start: number; end: number} | null>();
+  const ranges = new Map<string, {start: number; end: number}[]>();
   let nextBoundary = captured.length;
   for (let index = captured.length - 1; index >= 0; index--) {
     const block = captured[index]!;
     if (isLegalArticleHeading(block)) {
       const article = detectArticleNumbers(block.text)[0];
-      if (article !== undefined) ranges.set(article, ranges.has(article) ? null : {start: index, end: nextBoundary});
+      if (article !== undefined) {
+        const occurrences = ranges.get(article) ?? [];
+        occurrences.unshift({start: index, end: nextBoundary});
+        ranges.set(article, occurrences);
+      }
       nextBoundary = index;
     } else if (block.semanticRole === "chapter" || block.semanticRole === "section") nextBoundary = index;
   }
-  return (article: string, originalText?: string): {heading: string; text: string} | null => {
-  const range = ranges.get(article);
-  if (!range) return null;
-  const {start, end} = range;
-  if (end - start < 2 && !hasInlineArticleBody(captured[start]!)) return null;
-  const text = normalize(captured.slice(start, end).map(block => block.text).join(" "));
-  if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return null;
-  if (originalText && (!text.startsWith(normalize(originalText))
-    || text.length <= normalize(originalText).length)) return null;
-  return { heading: captured[start]!.text.slice(0, 240), text };
+  return (article: string) => {
+    const occurrences = ranges.get(article) ?? [];
+    const candidates = occurrences.flatMap(({start, end}) => {
+      if (end - start < 2 && !hasInlineArticleBody(captured[start]!)) return [];
+      const text = normalize(captured.slice(start, end).map(block => block.text).join(" "));
+      if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return [];
+      return [{heading: captured[start]!.text.slice(0, 240), text}];
+    });
+    return {occurrences: occurrences.length, candidates};
   };
 }

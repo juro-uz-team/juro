@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { completeArticleText, completeDocumentText } from "../legal/article-context";
+import { createCompleteArticleIndex, completeDocumentText } from "../legal/article-context";
 import { normalizedLegalSourceSnapshotSchema } from "../legal/source-parser";
 import { legalEnvironmentSchema, legalLanguageSchema, lexDocumentUrlSchema, sha256Schema } from "./target-domain-schemas";
 import { acceptsPrivateServiceRequest, declaredRequestBodyWithinLimit, privateServiceJson } from "./private-service-boundary";
@@ -58,9 +58,13 @@ export async function resolveCitationEvidence(bucket: Pick<LegalEvidenceBucket, 
       if (!document) throw new TypeError("CITATION_DOCUMENT_UNAVAILABLE");
       text = document;
     } else {
-      const article = value.articleNumber && completeArticleText(snapshot.blocks, value.articleNumber);
-      if (!article) throw new TypeError("CITATION_ARTICLE_UNAVAILABLE");
-      text = article.text;
+      const candidates = value.articleNumber ? createCompleteArticleIndex(snapshot.blocks)(value.articleNumber).candidates : [];
+      const matches = [];
+      for (const candidate of candidates) {
+        if (await digest(new TextEncoder().encode(candidate.text)) === value.textSha256) matches.push(candidate);
+      }
+      if (matches.length !== 1) throw new TypeError("CITATION_ARTICLE_UNAVAILABLE");
+      text = matches[0]!.text;
     }
   } else {
     if (decoded.trimStart().startsWith("{")) {

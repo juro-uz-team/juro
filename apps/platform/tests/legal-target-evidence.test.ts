@@ -15,7 +15,7 @@ import {
 import { createNormalizedArticleEvidenceReader } from "../lib/legal-corpus/normalized-article-evidence";
 import {createNormalizedSourceReader} from "../lib/legal-corpus/normalized-source-reader";
 import {createPinnedSourceVerifier} from "../lib/legal-corpus/pinned-source-observation";
-import { completeArticleText, createCompleteArticleReader } from "../lib/legal/article-context";
+import { completeArticleText, createCompleteArticleReader, createCompleteArticleIndex } from "../lib/legal/article-context";
 import { resolveCitationEvidence, handleCitationEvidenceRequest, CITATION_EVIDENCE_PATH } from "../lib/legal-corpus/citation-evidence";
 import { recordProvisionTemporalEvidence } from "../lib/legal-corpus/target-temporal";
 import { sqliteD1FixtureFromDirectory } from "./helpers/sqlite-d1";
@@ -71,6 +71,41 @@ test("article references inside paragraphs do not split an authenticated article
     assert.equal(createCompleteArticleReader(withSpacing)("7")?.text,article!.text);
     assert.ok(createCompleteArticleReader(withSpacing)("8"));
   }
+});
+
+test("annex article numbers require an authenticated distinguishing fragment and reopen by exact text",async()=>{
+  const blocks=["Article 1. Enacting provision","The previous rules are replaced by the attached law. Shared wording.",
+    "Article 2. Commencement","This law takes effect immediately.",
+    "Article 1. Attached law","The application must identify the requested record. Shared wording.",
+    "Article 2. Other provision","The authority responds in writing."]
+    .map((text,index)=>({index,kind:"paragraph" as const,text}));
+  const snapshot={schemaVersion:1,parser:{name:"parse5",version:"8.0.1",profile:"juro-legal-blocks-v2"},
+    source:{sourceKind:"lex",locale:"en",canonicalId:"777",canonicalUrl:"https://lex.uz/en/docs/777",rawContentSha256:"a".repeat(64)},
+    primarySelector:"lex-document",documentTitle:"Attached rules",blocks,plainText:blocks.map(b=>b.text).join(" ")};
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot)),bucket=new MemoryEvidenceBucket();
+  const key="corpus/normalized/revision:annex.json";
+  bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original=parseResolvedOfficialEvidence({legalInstrumentId:"instrument:annex",officialExpressionId:"expression:annex",
+    textRevisionId:"revision:annex",provisionConceptId:"concept:annex",provisionRenditionId:"rendition:annex",
+    languageTag:"en",script:"Latn",textualAuthority:"unknown",provisionText:"The application must identify the requested record.",
+    officialCitation:{url:snapshot.source.canonicalUrl,label:"Attached rules — Article 1"},
+    evidence:{provisionRenditionId:"rendition:annex",r2Key:"fragment",byteCount:100,sha256:"b".repeat(64),sourceNormalizedSha256:sha256(bytes),schemaVersion:1}});
+  assert.equal(completeArticleText(blocks,"1"),null);
+  assert.equal(createCompleteArticleIndex(blocks)("1").occurrences,2);
+  const read=createNormalizedArticleEvidenceReader(bucket);
+  const context=await read(original,"1");
+  assert.ok(context);
+  assert.match(context.provisionText,/Article 1\. Attached law/);
+  assert.doesNotMatch(context.provisionText,/Enacting|Article 2/);
+  assert.equal(await read({...original,provisionText:"Shared wording."},"1"),null);
+  const receipt={version:1 as const,capability:"current" as const,kind:"normalized-article" as const,r2Key:key,
+    byteCount:bytes.length,sha256:sha256(bytes),officialUrl:snapshot.source.canonicalUrl,languageTag:"en" as const,
+    articleNumber:"1",textSha256:sha256(context.provisionText)};
+  assert.deepEqual(await resolveCitationEvidence(bucket,receipt),{text:context.provisionText,fullArticle:true,truncated:false});
+  await assert.rejects(resolveCitationEvidence(bucket,{...receipt,textSha256:sha256("Shared wording.")}));
+  const duplicateBytes=new TextEncoder().encode(JSON.stringify({...snapshot,blocks:[...blocks,...blocks]}));
+  bucket.objects.set(key,{bytes:duplicateBytes,customMetadata:{}});
+  await assert.rejects(resolveCitationEvidence(bucket,{...receipt,byteCount:duplicateBytes.length,sha256:sha256(duplicateBytes)}));
 });
 
 test("accepted parent recovery authenticates full article context without replacing the original rendition", async () => {
