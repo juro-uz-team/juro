@@ -81,6 +81,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     const result=await callOpenAiStructured({instructions:`${instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(schema),
       parse:value=>schema.parse(value),model:schemaName==="legal_research_queries"&&request.question.mode==="fast"
         ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
+      ...(schemaName==="legal_research_queries"&&request.question.mode==="fast"?{reasoningEffort:"none" as const}:{}),
       ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
       timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,deadlineAt:options.deadlineAt,requestId:options.requestId,
       safetyIdentifier:options.safetyIdentifier,signal:request.question.signal,

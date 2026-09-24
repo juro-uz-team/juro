@@ -2,6 +2,10 @@
 
 Status: accepted — 2026-09-11
 
+For the self-hosted PostgreSQL membership representation, ADR 0019 extends the
+publication and request-time authentication contract described here. The original
+object-backed reader retains this decision's requirements.
+
 The R2-native search runtime keeps accepted membership inventories immutable. Their coarse partitions contain complete legal identities and evidence locators, making individual candidate validation read much more data than it needs.
 
 A Membership Lookup is an immutable physical projection of an accepted inventory. Its builder verifies every original partition against the accepted hash, preserves every member and ordinal, checks uniqueness and partition ownership, and writes smaller content-addressed leaves beneath hash-verified directory pages. It does not change search ranking, legal identities, eligibility, evidence, embeddings or the active Search Release.

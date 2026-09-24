@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { database } from "../storage/connection";
 import { LocalObjectStore } from "../storage/objects";
 import { PostgresVectorIndex } from "../storage/vectors";
+import {createPreparedMembershipReader} from "../storage/corpus-membership";
 import { PostgresQueue } from "../storage/queue";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
 import LegalCorpusService from "../../worker/legal-corpus-worker";
@@ -65,7 +66,8 @@ export function getSelfHostedRuntime(): Runtime {
       };
   };
   const legal = new LegalCorpusService({
-    ...releases.catalog, LEGAL_DB: catalog,
+    LEGAL_PREPARED_MEMBERSHIP:createPreparedMembershipReader(application.pool),
+    ...releases.catalog, LEGAL_DB: catalog, LEGAL_SOURCE_OBSERVATIONS_ENABLED:"true",
     LEGAL_EVIDENCE_BUCKET: bucket(releases.evidenceNamespace),
     LEGAL_HISTORY_EVIDENCE_BUCKET: bucket(releases.historyEvidenceNamespace),
     LEGAL_CUSTOM_ARTIFACT_BUCKET: bucket(releases.current.artifactNamespace),

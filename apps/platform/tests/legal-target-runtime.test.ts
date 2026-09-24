@@ -363,7 +363,7 @@ test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, 
     return { bind(...values: string[]) {
       if (sql.includes("mapping_inventory_sha256")) {
         assert.deepEqual(values, [release.id, release.id, release.id]);
-        return { async first() { return { mappingInventorySha256,
+        return { async first() { return { mappingInventorySha256,memberCount:1,
           ...(lookup ? {lookupKey: lookup.reference.key, lookupSha256: lookup.reference.sha256,
             lookupSizeBytes: lookup.reference.sizeBytes} : {}),
           descriptorKey: `search-releases/${physicalReleaseId}/runtime/descriptor-${"c".repeat(64)}.json` }; } };
@@ -393,6 +393,15 @@ test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, 
   const firstReads = reads.length;
   await catalog.revalidate(packet, packet.endpoint, release, "2026-09-06T00:00:00.000Z");
   assert.equal(reads.length, firstReads, "repair reuses authenticated membership within this request");
+  const beforePrepared=reads.length;
+  const prepared=createRuntimeCandidateCatalog(db,bucket as never,undefined,{preparedMembership:async input=>{
+    assert.deepEqual(input,{releaseId:release.id,sourceInventorySha256:mappingInventorySha256,memberCount:1,itemKeys:[canonicalChunkId]});
+    return new Map([[canonicalChunkId,{ordinal:0,legalIdentitySha256:identity}]]);
+  }});
+  assert.deepEqual(await prepared.revalidate(packet,packet.endpoint,release,"2026-09-06T00:00:00.000Z"),result);
+  assert.equal(reads.length,beforePrepared,"Verified prepared membership avoids object-directory traversal");
+  await assert.rejects(createRuntimeCandidateCatalog(db,bucket as never,undefined,{preparedMembership:async()=>new Map()})
+    .revalidate(packet,packet.endpoint,release,"2026-09-06T00:00:00.000Z"),/NOT_IN_PINNED_RELEASE/);
   const corruptKey = useLookup ? [...objects.keys()].find(key => key.includes("/leaf-"))! : pageKey;
   objects.set(corruptKey, {bytes: new TextEncoder().encode("corrupt"), customMetadata: {}});
   await assert.rejects(createRuntimeCandidateCatalog(db, bucket as never, undefined,

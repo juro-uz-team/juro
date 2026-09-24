@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type {PreparedMembershipReader} from "./prepared-membership";
 import {readLexPublisherObservation} from "../legal/lex-document-status";
 import {createSourceObservationReader} from "../legal/source-observation";
 import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
@@ -53,6 +54,7 @@ function physicalRuntimeReleaseId(artifactKey: string, logicalReleaseId: string)
 }
 
 export type TargetRetrievalRuntimeEnv = {
+  LEGAL_PREPARED_MEMBERSHIP?:PreparedMembershipReader;
   APP_ENV: string;
   WORKER_VERSION?: WorkerVersionMetadata;
   LEGAL_RUNTIME_BUILD_ID?: string;
@@ -71,6 +73,7 @@ export type TargetRetrievalRuntimeEnv = {
 };
 
 type RuntimeDependencies = {
+  preparedMembership?:PreparedMembershipReader;
   onReleaseResolved?: (releaseId: string) => void;
   environment: z.infer<typeof environmentSchema>;
   membershipProofsEnabled?: boolean;
@@ -187,7 +190,7 @@ export function createRuntimeCandidateCatalog(
   db: D1Database,
   bucket?: Pick<LegalEvidenceBucket, "get">,
   r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>(),
-  options: {membershipProofsEnabled?: boolean} = {},
+  options: {membershipProofsEnabled?: boolean;preparedMembership?:PreparedMembershipReader} = {},
 ) {
   // Current and historical releases have independent publication histories.
   // This rollout flag activates current proofs only; history retains its
@@ -275,7 +278,7 @@ export function createRuntimeCandidateCatalog(
         }
       } else if (custom && bucket) {
         const component = await db.prepare(`SELECT root.mapping_inventory_sha256 AS mappingInventorySha256,
-            root.runtime_descriptor_r2_key AS descriptorKey, lookup.lookup_r2_key AS lookupKey,
+            root.runtime_descriptor_r2_key AS descriptorKey, root.mapping_count AS memberCount, lookup.lookup_r2_key AS lookupKey,
             lookup.lookup_sha256 AS lookupSha256, lookup.lookup_size_bytes AS lookupSizeBytes
           FROM legal_custom_search_r2_runtime_roots root
           LEFT JOIN legal_custom_search_membership_lookups lookup
@@ -283,12 +286,12 @@ export function createRuntimeCandidateCatalog(
             AND lookup.source_inventory_sha256=root.mapping_inventory_sha256
             AND lookup.member_count=root.mapping_count
           WHERE root.search_release_id=?
-          UNION ALL SELECT mapping_inventory_sha256,runtime_descriptor_r2_key,NULL,NULL,NULL
+          UNION ALL SELECT mapping_inventory_sha256,runtime_descriptor_r2_key,mapping_count,NULL,NULL,NULL
           FROM legal_custom_search_runtime_components
           WHERE search_release_id=? AND NOT EXISTS (
             SELECT 1 FROM legal_custom_search_r2_runtime_roots WHERE search_release_id=?)
           LIMIT 1`).bind(release.id, release.id, release.id)
-          .first<{ mappingInventorySha256: string; descriptorKey: string;
+          .first<{ mappingInventorySha256: string; descriptorKey: string; memberCount:number;
             lookupKey?: string | null; lookupSha256?: string | null; lookupSizeBytes?: number | null }>();
         if (!component) throw new TypeError("TARGET_CUSTOM_RUNTIME_COMPONENT_MISSING");
         const prefix = `search-releases/${release.id}/`;
@@ -297,7 +300,10 @@ export function createRuntimeCandidateCatalog(
         const canonicalKeys = uniqueKeys.map(key => key.slice(prefix.length));
         const missingKeys = canonicalKeys.filter(key => !known.has(key));
         const physicalReleaseId = physicalRuntimeReleaseId(component.descriptorKey, release.id);
-        compactMembership = missingKeys.length === 0 ? new Map()
+        compactMembership=missingKeys.length&&options.preparedMembership
+          ?await options.preparedMembership({releaseId:release.id,sourceInventorySha256:component.mappingInventorySha256,
+            memberCount:component.memberCount,itemKeys:missingKeys}):null;
+        compactMembership ??= missingKeys.length === 0 ? new Map()
           : component.lookupKey && component.lookupSha256 && component.lookupSizeBytes
             ? await readMembershipLookup!({releaseId: physicalRuntimeReleaseId(component.lookupKey, release.id),
               sourceInventorySha256: component.mappingInventorySha256,
@@ -607,7 +613,7 @@ function createRuntimeEvidenceServices(
   const historicalArticleContext = historyEvidenceBucket
     ? createNormalizedArticleEvidenceReader(historyEvidenceBucket) : currentArticleContext;
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
-    {membershipProofsEnabled: dependencies.membershipProofsEnabled});
+    {membershipProofsEnabled: dependencies.membershipProofsEnabled,preparedMembership:dependencies.preparedMembership});
   return {
 onReleaseResolved: dependencies.onReleaseResolved,
 verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,
@@ -668,6 +674,7 @@ export function createRuntimeLegalEvidenceServices(
   const db = env.LEGAL_DB;
   const evidenceBucket = env.LEGAL_EVIDENCE_BUCKET;
   const dependencies = { environment, db, evidenceBucket, onReleaseResolved: observation.onReleaseResolved,
+    preparedMembership:env.LEGAL_PREPARED_MEMBERSHIP,
     membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
     sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
     historyEvidenceBucket: env.LEGAL_HISTORY_EVIDENCE_BUCKET,

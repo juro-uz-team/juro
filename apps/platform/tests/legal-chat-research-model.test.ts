@@ -104,6 +104,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));payloads.push(body);
     const assessment=JSON.parse(body.input).evidence.length>0;
+    assert.deepEqual(body.reasoning,!assessment&&body.model==="gpt-6-luna"?{effort:"none"}:undefined);
     const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
       queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
