@@ -65,7 +65,7 @@ test("existing three-nibble membership roots remain readable", async () => {
   const releaseId = "release:legacy";
   const sourceInventorySha256 = "a".repeat(64);
   const itemKey = `retrieval-chunk-v1:001${"a".repeat(61)}`;
-  const leaf = store("legacy-leaf", {schemaVersion: 2, releaseId, partition: "001",
+  const leaf = store("legacy-leaf-\ud800", {schemaVersion: 2, releaseId, partition: "001",
     items: [{itemKey, ordinal: 7, legalIdentitySha256: "b".repeat(64)}]});
   const directory = store("legacy-directory", {schemaVersion: 2, releaseId, partition: "00",
     pages: [{...leaf, partition: "001", count: 1}]});
@@ -77,6 +77,7 @@ test("existing three-nibble membership roots remain readable", async () => {
   }} as unknown as R2Bucket;
   const result = await resolveCustomMembershipLookup({bucket, releaseId, sourceInventorySha256, reference, itemKeys: [itemKey]});
   assert.deepEqual([...result], [[itemKey, {ordinal: 7, legalIdentitySha256: "b".repeat(64)}]]);
+  assert.deepEqual(await createCustomMembershipLookupReader(bucket)({releaseId, sourceInventorySha256, reference, itemKeys: [itemKey]}), result);
 });
 
 test("fine membership layout preserves every accepted identity and reads only requested leaves", async () => {
@@ -128,6 +129,25 @@ test("fine membership layout preserves every accepted identity and reads only re
   await requestReader({releaseId, sourceInventorySha256, reference: layout.reference, itemKeys: [members[18]!.itemKey]});
   assert.equal(reads.length, 1, "repair authenticates its new leaf while reusing verified directory metadata");
   assert.ok(reads[0]!.includes("/leaf-"));
+  const freshReader = () => createCustomMembershipLookupReader(bucket)({releaseId, sourceInventorySha256,
+    reference: layout.reference, itemKeys: [members[17]!.itemKey]});
+  for (const key of [layout.reference.key, ...[...objects.keys()].filter(key => key.includes("/directory-"))]) {
+    const original = objects.get(key)!;
+    const changed = original.slice();
+    changed[0] ^= 1;
+    objects.set(key, changed);
+    await assert.rejects(freshReader(), /CORRUPT/u, "a warm projection cannot hide changed physical root/directory bytes");
+    objects.set(key, original);
+  }
+  assert.equal((await freshReader()).get(members[17]!.itemKey)?.ordinal, 17);
+  const wrongCount = JSON.parse(new TextDecoder().decode(objects.get(layout.reference.key)!));
+  wrongCount.partitions[0].count++;
+  wrongCount.memberCount++;
+  const wrongBytes = bytes(wrongCount);
+  objects.set("different-root", wrongBytes);
+  await assert.rejects(createCustomMembershipLookupReader(bucket)({releaseId, sourceInventorySha256,
+    reference: {key: "different-root", sha256: hash(wrongBytes), sizeBytes: wrongBytes.length},
+    itemKeys: [members[17]!.itemKey]}), /COUNT_INVALID/u, "a cached directory must retain its parent count binding");
   await assert.rejects(resolveCustomMembershipLookup({bucket, releaseId, reference: layout.reference,
     sourceInventorySha256: "f".repeat(64), itemKeys: [members[17]!.itemKey]}));
   const corrupt = objects.get(leafKey)!.slice();

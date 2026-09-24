@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { customCurrentSha256, serializeCustomCurrentArtifact } from "./custom-current-build";
 import { customRuntimeLegalIdentitySchema } from "./custom-bm25-runtime";
+import { CustomRuntimeCache } from "./custom-runtime-cache";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/u);
 const referenceSchema = z.object({key: z.string().min(1).max(1_024),
@@ -17,6 +18,7 @@ const DIRECTORY_LIMIT = 512 * 1_024;
 const SOURCE_PAGE_LIMIT = 64 * 1_024 * 1_024;
 const LEAF_LIMIT = 512 * 1_024;
 const LOOKUP_READERS = 16;
+const directoryProjections = new WeakMap<Bucket, CustomRuntimeCache>();
 
 async function forEachLookupPage<T>(items: readonly T[], visit: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
@@ -34,7 +36,7 @@ async function forEachLookupPage<T>(items: readonly T[], visit: (item: T) => Pro
   if (failure) throw failure.reason;
 }
 
-async function readVerified(bucket: Bucket, reference: Reference, limit: number): Promise<unknown> {
+async function readVerifiedBytes(bucket: Bucket, reference: Reference, limit: number): Promise<Uint8Array> {
   if (reference.sizeBytes > limit) throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_SIZE_INVALID");
   const object = await bucket.get(reference.key);
   if (!object || object.size !== reference.sizeBytes) throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_MISSING");
@@ -42,7 +44,41 @@ async function readVerified(bucket: Bucket, reference: Reference, limit: number)
   if (bytes.byteLength !== reference.sizeBytes || await customCurrentSha256(bytes) !== reference.sha256) {
     throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_CORRUPT");
   }
-  return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)) as unknown;
+  return bytes;
+}
+
+const parseBytes = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+async function readVerified(bucket: Bucket, reference: Reference, limit: number): Promise<unknown> {
+  return parseBytes(await readVerifiedBytes(bucket, reference, limit));
+}
+
+function packDirectory(pages: readonly PartitionReference[], slots: number): Uint8Array {
+  // JSON escaping preserves every accepted JS string, including isolated
+  // surrogate code units that a direct UTF-8 encoding would replace.
+  const keys = pages.map(page => new TextEncoder().encode(JSON.stringify(page.key)));
+  const bytes = new Uint8Array(slots * 4 + keys.reduce((sum, key) => sum + 50 + key.length, 0));
+  const view = new DataView(bytes.buffer);
+  let offset = slots * 4;
+  pages.forEach((page, index) => {
+    const key = keys[index]!;
+    view.setUint32((Number.parseInt(page.partition, 16) % slots) * 4, offset, true);
+    view.setUint16(offset, key.length, true);
+    for (let index = 0; index < 32; index++) bytes[offset + 2 + index] = Number.parseInt(page.sha256.slice(index * 2, index * 2 + 2), 16);
+    view.setFloat64(offset + 34, page.sizeBytes, true);
+    view.setFloat64(offset + 42, page.count, true);
+    bytes.set(key, offset + 50);
+    offset += 50 + key.length;
+  });
+  return bytes;
+}
+
+function directoryPage(bytes: Uint8Array, slots: number, partition: string): PartitionReference | undefined {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const offset = view.getUint32((Number.parseInt(partition, 16) % slots) * 4, true);
+  if (!offset) return;
+  return {partition, key: JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes.subarray(offset + 50, offset + 50 + view.getUint16(offset, true)))) as string,
+    sha256: Array.from(bytes.subarray(offset + 2, offset + 34), byte => byte.toString(16).padStart(2, "0")).join(""),
+    sizeBytes: view.getFloat64(offset + 34, true), count: view.getFloat64(offset + 42, true)};
 }
 
 async function memberPrefix(itemKey: string, length: number): Promise<string> {
@@ -137,12 +173,12 @@ type LookupInput = {
 };
 
 export function createCustomMembershipLookupReader(bucket: Bucket) {
-  const directoryCache = new Map<string, unknown>();
+  const directoryCache = new Map<string, Uint8Array>();
   let cachedBytes = 0;
-  const readDirectory: typeof readVerified = async (binding, reference, limit) => {
+  const readDirectory: typeof readVerifiedBytes = async (binding, reference, limit) => {
     const identity = `${reference.key}:${reference.sha256}:${reference.sizeBytes}`;
-    if (directoryCache.has(identity)) return directoryCache.get(identity);
-    const value = await readVerified(binding, reference, limit);
+    if (directoryCache.has(identity)) return directoryCache.get(identity)!;
+    const value = await readVerifiedBytes(binding, reference, limit);
     if (cachedBytes + reference.sizeBytes <= 2 * 1_024 * 1_024) {
       directoryCache.set(identity, value);
       cachedBytes += reference.sizeBytes;
@@ -153,15 +189,15 @@ export function createCustomMembershipLookupReader(bucket: Bucket) {
 }
 
 export function resolveCustomMembershipLookup(input: LookupInput) {
-  return resolveMembershipLookup(input, readVerified);
+  return resolveMembershipLookup(input, readVerifiedBytes);
 }
 
-async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof readVerified): Promise<Map<string, {ordinal: number; legalIdentitySha256: string | null;
+async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof readVerifiedBytes): Promise<Map<string, {ordinal: number; legalIdentitySha256: string | null;
   legalIdentity?: z.infer<typeof customRuntimeLegalIdentitySchema>}>> {
   const root = z.object({schemaVersion: z.union([z.literal(2), z.literal(3)]), releaseId: z.literal(input.releaseId),
     sourceInventorySha256: z.literal(input.sourceInventorySha256), memberCount: z.number().int().positive(),
     partitions: z.array(partitionReferenceSchema).max(64)}).strict()
-    .parse(await readDirectory(input.bucket, input.reference, ROOT_LIMIT));
+    .parse(parseBytes(await readDirectory(input.bucket, input.reference, ROOT_LIMIT)));
   const roots = references(root.partitions, /^[0-3][a-f0-9]$/u);
   if (root.partitions.reduce((sum, page) => sum + page.count, 0) !== root.memberCount) {
     throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_COUNT_INVALID");
@@ -175,18 +211,37 @@ async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof
   }
   const parentIds = [...new Set([...requested.keys()].map(parentPartition))];
   const leaves = new Map<string, PartitionReference>();
+  let projections = directoryProjections.get(input.bucket);
+  if (!projections) {
+    projections = new CustomRuntimeCache(32 * 1024 * 1024);
+    directoryProjections.set(input.bucket, projections);
+  }
   await forEachLookupPage(parentIds, async partition => {
       const reference = roots.get(partition);
       if (!reference) return;
+      // A new request must authenticate the physical bytes even on a projection
+      // hit. The shared cache avoids parsing only; it cannot hide corruption.
+      const bytes = await readDirectory(input.bucket, reference, root.schemaVersion === 2 ? ROOT_LIMIT : DIRECTORY_LIMIT);
+      const cacheKey = JSON.stringify([reference.key, reference.sha256, reference.sizeBytes,
+        input.releaseId, root.schemaVersion, partition, reference.count]);
+      const slots = root.schemaVersion === 2 ? 64 : 1024;
+      let projection = projections!.get(cacheKey);
+      if (!projection) {
       const directory = z.object({schemaVersion: z.literal(root.schemaVersion), releaseId: z.literal(input.releaseId),
         partition: z.literal(partition), pages: z.array(partitionReferenceSchema).max(root.schemaVersion === 2 ? 64 : 1024)}).strict()
-        .parse(await readDirectory(input.bucket, reference, root.schemaVersion === 2 ? ROOT_LIMIT : DIRECTORY_LIMIT));
-      const pages = references(directory.pages, root.schemaVersion === 2 ? /^[a-f0-9]{3}$/u : /^[a-f0-9]{4}$/u);
+        .parse(parseBytes(bytes));
+      references(directory.pages, root.schemaVersion === 2 ? /^[a-f0-9]{3}$/u : /^[a-f0-9]{4}$/u);
       if (directory.pages.some(page => parentPartition(page.partition) !== partition)
         || directory.pages.reduce((sum, page) => sum + page.count, 0) !== reference.count) {
         throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_COUNT_INVALID");
       }
-      for (const [prefix, page] of pages) if (requested.has(prefix)) leaves.set(prefix, page);
+      projection = packDirectory(directory.pages, slots);
+      projections!.put(cacheKey, projection);
+      }
+      for (const prefix of requested.keys()) if (parentPartition(prefix) === partition) {
+        const page = directoryPage(projection, slots, prefix);
+        if (page) leaves.set(prefix, page);
+      }
   });
   const result = new Map<string, {ordinal: number; legalIdentitySha256: string | null;
     legalIdentity?: z.infer<typeof customRuntimeLegalIdentitySchema>}>();
