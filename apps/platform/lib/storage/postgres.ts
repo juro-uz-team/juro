@@ -1,5 +1,6 @@
 import { Pool, types, type PoolClient, type QueryResultRow } from "pg";
 import { postgresSql } from "./sql";
+import {retrievalQuery} from "./retrieval-connection";
 
 /** Preserve retry identities without exposing PostgreSQL's bound-row error detail. */
 function databaseError(error: unknown): Error {
@@ -93,7 +94,8 @@ export class PostgresDatabase {
   async execute<T>(statement: PostgresStatement, client?: PoolClient): Promise<SqlResult<T>> {
     if (statement.database !== this) throw new Error("Statement belongs to another database");
     const started = performance.now();
-    const result = await (client ?? this.pool).query<QueryResultRow>(bindParameters(statement.sql), statement.parameters).catch(error => { throw databaseError(error); });
+    const result = await (client ? client.query<QueryResultRow>(bindParameters(statement.sql), statement.parameters)
+      : retrievalQuery(this.pool,bindParameters(statement.sql),[...statement.parameters])).catch(error => { throw databaseError(error); });
     const changes = /^(INSERT|UPDATE|DELETE)$/.test(result.command) ? result.rowCount ?? 0 : 0;
     // The compatibility query API exposes SQL JSON expressions as serialized text,
     // matching the persisted text columns. Direct pgvector queries retain native JSON.

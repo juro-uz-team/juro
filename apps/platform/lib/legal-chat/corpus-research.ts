@@ -8,6 +8,7 @@ import {timeIdentity} from "./evidence-boundary";
 import type {ResearchRequest, ResearchPacket, ResearchNeed, ResearchObservation} from "./research";
 import type {LegalReferenceQuery} from "../legal-corpus/custom-reference-lookup";
 import {sameInstrumentArticleReferences} from "../legal/referenced-article-context";
+import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RuntimeServices = ReturnType<typeof createRuntimeLegalEvidenceServices>;
 type CorpusServices = Pick<RuntimeServices,
@@ -33,7 +34,7 @@ export function createCorpusResearch(input: {
   const articles=new Map<string,LegalEvidence>();
   const pendingReads=new Map<string,ResearchNeed[]>();
   const pendingReferences=new Map<string,{query:LegalReferenceQuery;endpoint:LegalTime;need:ResearchNeed}>();
-  return async request=>{
+  const research=async(request:ResearchRequest):Promise<ResearchPacket>=>{
     const signal=request.question.signal;
     const check=()=>signal?.throwIfAborted();
     check();
@@ -132,7 +133,7 @@ export function createCorpusResearch(input: {
           pending=(async()=>{
             const resolution=await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt});
             check();
-            const currentSourceStatus=endpoint.kind==="current"
+            const currentSourceStatus=endpoint.kind==="current"&&resolution.controlling.textualAuthority==="controlling"
               ?await input.services.verifyCurrentSource(resolution.controlling):undefined;
             check();
             const item=await corpusAnswerEvidence({resolution,endpoint,currentAt:new Date(now()).toISOString(),currentSourceStatus});
@@ -242,4 +243,6 @@ export function createCorpusResearch(input: {
       resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>admitted.some(item=>item.source.id===id)))
         .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()]};
   };
+  return request=>runIndexedRetrieval(request.question.signal,signal=>
+    research({...request,question:{...request.question,signal}}));
 }

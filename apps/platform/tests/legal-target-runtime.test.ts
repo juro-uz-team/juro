@@ -318,7 +318,8 @@ test("custom catalog rejects future and expired records even when candidate lane
 });
 
 for (const useLookup of [false, true]) for (const currentProofsEnabled of [false, true])
-test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, current proofs: ${currentProofsEnabled})`, async () => {
+for (const logicalMembership of [false, true])
+test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, current proofs: ${currentProofsEnabled}, logical inventory: ${logicalMembership})`, async () => {
   const release = parsePinnedCandidateRelease({ id: "release-custom-history-r2", environment: "staging",
     capability: "history", instances: [{ id: "custom-history-staging-v1", shardId: "history-base-v1" }],
     configuration: { identity: "custom-v1", embeddingModel: "openai/text-embedding-3-large",
@@ -328,19 +329,20 @@ test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, 
   const canonicalChunkId = `retrieval-chunk-v1:${"b".repeat(64)}`;
   const itemKey = `search-releases/${release.id}/${canonicalChunkId}`;
   const physicalReleaseId = "release:staging:history:custom-v1:2026-09-06";
+  const membershipReleaseId = logicalMembership ? release.id : physicalReleaseId;
   const identity = "a".repeat(64);
   const pageBytes = new TextEncoder().encode(`${JSON.stringify({ schemaVersion: 1,
-    releaseId: physicalReleaseId, partition: "2e",
+    releaseId: membershipReleaseId, partition: "2e",
     items: [{ itemKey: canonicalChunkId, ordinal: 0, legalIdentitySha256: identity }] })}\n`);
   const pageSha256 = createHash("sha256").update(pageBytes).digest("hex");
   const pageKey = `search-releases/${physicalReleaseId}/runtime/membership/2e-${pageSha256}.json`;
   const membershipBytes = new TextEncoder().encode(`${JSON.stringify({ schemaVersion: 1,
-    releaseId: physicalReleaseId, partitions: [{ key: pageKey, sizeBytes: pageBytes.byteLength,
+    releaseId: membershipReleaseId, partitions: [{ key: pageKey, sizeBytes: pageBytes.byteLength,
       sha256: pageSha256, partition: "2e", count: 1 }] })}\n`);
   const mappingInventorySha256 = createHash("sha256").update(membershipBytes).digest("hex");
   const objects = new Map([
     [pageKey, { bytes: pageBytes, customMetadata: {} }],
-    [`search-releases/${physicalReleaseId}/runtime/mappings-${mappingInventorySha256}.json`,
+    [`search-releases/${membershipReleaseId}/runtime/mappings-${mappingInventorySha256}.json`,
       { bytes: membershipBytes, customMetadata: {} }],
   ]);
   const reads: string[] = [];
@@ -355,7 +357,7 @@ test(`custom catalog revalidates history membership (fine lookup: ${useLookup}, 
       async arrayBuffer() { return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength); } };
   } };
   const lookup = useLookup ? await buildCustomMembershipLookup({bucket: bucket as unknown as R2Bucket,
-    releaseId: physicalReleaseId, sourceInventorySha256: mappingInventorySha256,
+    releaseId: membershipReleaseId, sourceInventorySha256: mappingInventorySha256,
     write: async (reference, bytes) => { objects.set(reference.key, {bytes: new Uint8Array(bytes), customMetadata: {}}); }}) : null;
   const db = { prepare(sql: string) {
     return { bind(...values: string[]) {

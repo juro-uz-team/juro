@@ -13,6 +13,8 @@ type Reference = z.infer<typeof referenceSchema>;
 type PartitionReference = z.infer<typeof partitionReferenceSchema>;
 type Bucket = Pick<R2Bucket, "get">;
 const ROOT_LIMIT = 256 * 1_024;
+const DIRECTORY_LIMIT = 512 * 1_024;
+const SOURCE_PAGE_LIMIT = 64 * 1_024 * 1_024;
 const LEAF_LIMIT = 512 * 1_024;
 const LOOKUP_READERS = 16;
 
@@ -43,9 +45,9 @@ async function readVerified(bucket: Bucket, reference: Reference, limit: number)
   return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)) as unknown;
 }
 
-async function memberPrefix(itemKey: string): Promise<string> {
+async function memberPrefix(itemKey: string, length: number): Promise<string> {
   return (/^retrieval-chunk-v1:([a-f0-9]{64})$/u.exec(itemKey)?.[1]
-    ?? await customCurrentSha256(itemKey)).slice(0, 3);
+    ?? await customCurrentSha256(itemKey)).slice(0, length);
 }
 
 function parentPartition(prefix: string): string {
@@ -71,6 +73,7 @@ export async function buildCustomMembershipLookup(input: {
   const sourceSha = digest.parse(input.sourceInventorySha256);
   const sourceKey = `search-releases/${input.releaseId}/runtime/mappings-${sourceSha}.json`;
   const rootObject = await input.bucket.get(sourceKey);
+  await rootObject?.body?.cancel();
   if (!rootObject || rootObject.size > ROOT_LIMIT) throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_SOURCE_MISSING");
   const root = z.object({schemaVersion: z.literal(1), releaseId: z.literal(input.releaseId),
     partitions: z.array(partitionReferenceSchema).max(64)}).strict().parse(await readVerified(input.bucket,
@@ -84,7 +87,8 @@ export async function buildCustomMembershipLookup(input: {
     const sha256 = await customCurrentSha256(bytes);
     const reference = {key: `search-releases/${input.releaseId}/runtime/membership-lookup/${kind}-${sha256}.json`,
       sha256, sizeBytes: bytes.byteLength};
-    if (bytes.byteLength > (kind.startsWith("leaf-") ? LEAF_LIMIT : ROOT_LIMIT)) {
+    const limit = kind.startsWith("leaf-") ? LEAF_LIMIT : kind.startsWith("directory-") ? DIRECTORY_LIMIT : ROOT_LIMIT;
+    if (bytes.byteLength > limit) {
       throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_SIZE_INVALID");
     }
     await input.write(reference, bytes);
@@ -93,11 +97,11 @@ export async function buildCustomMembershipLookup(input: {
   for (const [partition, reference] of sourcePages) {
     const page = z.object({schemaVersion: z.literal(1), releaseId: z.literal(input.releaseId),
       partition: z.literal(partition), items: z.array(memberSchema).length(reference.count)}).strict()
-      .parse(await readVerified(input.bucket, reference, 16 * 1_024 * 1_024));
+      .parse(await readVerified(input.bucket, reference, SOURCE_PAGE_LIMIT));
     const groups = new Map<string, Member[]>();
     const keys = new Set<string>();
     for (const member of page.items) {
-      const prefix = await memberPrefix(member.itemKey);
+      const prefix = await memberPrefix(member.itemKey, 4);
       if (parentPartition(prefix) !== partition || keys.has(member.itemKey) || ordinals.has(member.ordinal)) {
         throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_SOURCE_IDENTITY_INVALID");
       }
@@ -111,21 +115,21 @@ export async function buildCustomMembershipLookup(input: {
     const groupsList = [...groups].sort(([left], [right]) => left.localeCompare(right));
     for (let offset = 0; offset < groupsList.length; offset += 8) {
       leaves.push(...await Promise.all(groupsList.slice(offset, offset + 8).map(async ([prefix, items]) => ({
-        ...await write(`leaf-${prefix}`, {schemaVersion: 2, releaseId: input.releaseId, partition: prefix, items}),
+        ...await write(`leaf-${prefix}`, {schemaVersion: 3, releaseId: input.releaseId, partition: prefix, items}),
         partition: prefix, count: items.length,
       }))));
     }
-    directories.push({...await write(`directory-${partition}`, {schemaVersion: 2, releaseId: input.releaseId,
+    directories.push({...await write(`directory-${partition}`, {schemaVersion: 3, releaseId: input.releaseId,
       partition, pages: leaves}), partition, count: page.items.length});
     memberCount += page.items.length;
     input.onProgress?.({partitions: directories.length, members: memberCount});
   }
-  const reference = await write("manifest", {schemaVersion: 2, releaseId: input.releaseId,
+  const reference = await write("manifest", {schemaVersion: 3, releaseId: input.releaseId,
     sourceInventorySha256: sourceSha, memberCount, partitions: directories});
   return {reference, memberCount, sourceInventorySha256: sourceSha};
 }
 
-/** The accepted D1 lookup root binds this layout to the original inventory.
+/** The accepted catalog lookup root binds this layout to the original inventory.
  * All directory and leaf bytes still require their parent's exact hash. */
 type LookupInput = {
   bucket: Bucket; releaseId: string; sourceInventorySha256: string; reference: Reference;
@@ -154,7 +158,7 @@ export function resolveCustomMembershipLookup(input: LookupInput) {
 
 async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof readVerified): Promise<Map<string, {ordinal: number; legalIdentitySha256: string | null;
   legalIdentity?: z.infer<typeof customRuntimeLegalIdentitySchema>}>> {
-  const root = z.object({schemaVersion: z.literal(2), releaseId: z.literal(input.releaseId),
+  const root = z.object({schemaVersion: z.union([z.literal(2), z.literal(3)]), releaseId: z.literal(input.releaseId),
     sourceInventorySha256: z.literal(input.sourceInventorySha256), memberCount: z.number().int().positive(),
     partitions: z.array(partitionReferenceSchema).max(64)}).strict()
     .parse(await readDirectory(input.bucket, input.reference, ROOT_LIMIT));
@@ -164,7 +168,7 @@ async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof
   }
   const requested = new Map<string, string[]>();
   for (const key of new Set(input.itemKeys)) {
-    const prefix = await memberPrefix(key);
+    const prefix = await memberPrefix(key, root.schemaVersion === 2 ? 3 : 4);
     const group = requested.get(prefix) ?? [];
     group.push(key);
     requested.set(prefix, group);
@@ -174,10 +178,10 @@ async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof
   await forEachLookupPage(parentIds, async partition => {
       const reference = roots.get(partition);
       if (!reference) return;
-      const directory = z.object({schemaVersion: z.literal(2), releaseId: z.literal(input.releaseId),
-        partition: z.literal(partition), pages: z.array(partitionReferenceSchema).max(64)}).strict()
-        .parse(await readDirectory(input.bucket, reference, ROOT_LIMIT));
-      const pages = references(directory.pages, /^[a-f0-9]{3}$/u);
+      const directory = z.object({schemaVersion: z.literal(root.schemaVersion), releaseId: z.literal(input.releaseId),
+        partition: z.literal(partition), pages: z.array(partitionReferenceSchema).max(root.schemaVersion === 2 ? 64 : 1024)}).strict()
+        .parse(await readDirectory(input.bucket, reference, root.schemaVersion === 2 ? ROOT_LIMIT : DIRECTORY_LIMIT));
+      const pages = references(directory.pages, root.schemaVersion === 2 ? /^[a-f0-9]{3}$/u : /^[a-f0-9]{4}$/u);
       if (directory.pages.some(page => parentPartition(page.partition) !== partition)
         || directory.pages.reduce((sum, page) => sum + page.count, 0) !== reference.count) {
         throw new TypeError("CUSTOM_MEMBERSHIP_LOOKUP_COUNT_INVALID");
@@ -190,7 +194,7 @@ async function resolveMembershipLookup(input: LookupInput, readDirectory: typeof
   await forEachLookupPage(groups, async ([partition, keys]) => {
       const reference = leaves.get(partition);
       if (!reference) return;
-      const page = z.object({schemaVersion: z.literal(2), releaseId: z.literal(input.releaseId),
+      const page = z.object({schemaVersion: z.literal(root.schemaVersion), releaseId: z.literal(input.releaseId),
         partition: z.literal(partition), items: z.array(memberSchema).length(reference.count)}).strict()
         .parse(await readVerified(input.bucket, reference, LEAF_LIMIT));
       const members = new Map(page.items.map(member => [member.itemKey, member]));

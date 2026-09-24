@@ -191,6 +191,11 @@ test("R2-native runtime identity hydrates accepted immutable legal evidence form
     }, { kind: "current" });
 
     const acceptedMetadata: Record<string, string>[] = [{
+      schemaversion: "1", objectkind: "provision_rendition", sha256: imported.provisionLocator.sha256,
+    }, {
+      schemaversion: "complete-corpus-evidence-v1", kind: "provision_rendition",
+      sha256: imported.provisionLocator.sha256, bytecount: String(imported.provisionLocator.byteCount),
+    }, {
       schemaVersion: "complete-corpus-evidence-v1",
       kind: "provision_rendition",
       sha256: imported.provisionLocator.sha256,
@@ -206,6 +211,16 @@ test("R2-native runtime identity hydrates accepted immutable legal evidence form
       const result = await resolve();
       assert.equal(result.controlling.provisionText, controllingProvision.provisionText);
       assert.equal(result.controlling.evidence.sha256, imported.provisionLocator.sha256);
+    }
+    const rejectedMetadata: Record<string, string>[] = [
+      {schemaVersion: "1", schemaversion: "unsupported", sha256: imported.provisionLocator.sha256},
+      {schemaversion: "1", sha256: "f".repeat(64)},
+      {schemaversion: "complete-corpus-evidence-v1", kind: "provision_rendition",
+        sha256: imported.provisionLocator.sha256, bytecount: "1"},
+    ];
+    for (const customMetadata of rejectedMetadata) {
+      bucket.objects.get(imported.provisionLocator.r2Key)!.customMetadata = customMetadata;
+      await assert.rejects(resolve(), /SOURCE_UNAVAILABILITY/u);
     }
   } finally { sqlite.close(); }
 });

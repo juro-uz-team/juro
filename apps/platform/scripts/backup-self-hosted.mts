@@ -5,9 +5,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { createInterface } from "node:readline";
 import { objectStorageLock } from "../lib/storage/object-reclamation";
+import { LocalObjectStore } from "../lib/storage/objects";
+import { PostgresVectorIndex } from "../lib/storage/vectors";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const databaseUrl = new URL(process.env.DATABASE_URL ?? "");
@@ -67,6 +69,60 @@ async function capturePublicAssets() {
   return entries;
 }
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
+
+/** Compare complete persisted values, including original float32 vector bytes.
+ * Keyset pages bound memory independently of the size of the legal corpus. */
+async function storageIntegrity(connection: Pool | PoolClient) {
+  const vectors = createHash("sha256"), objects = createHash("sha256");
+  let collection = "", id = "", vectorCount = 0;
+  while (true) {
+    const rows = (await connection.query(`SELECT collection,id,namespace,metadata,vector_send(embedding) AS bytes
+      FROM storage.embeddings WHERE (collection,id)>($1,$2) ORDER BY collection,id LIMIT 1000`, [collection,id])).rows;
+    if (!rows.length) break;
+    for (const row of rows) {
+      vectors.update(JSON.stringify([row.collection,row.id,row.namespace,row.metadata]));
+      vectors.update("\0"); vectors.update(row.bytes); vectors.update("\0");
+      vectorCount++;
+    }
+    ({collection,id} = rows.at(-1));
+  }
+  let bucket = "", key = "", objectCount = 0;
+  while (true) {
+    const rows = (await connection.query(`SELECT * FROM storage.objects
+      WHERE (bucket,key)>($1,$2) ORDER BY bucket,key LIMIT 1000`, [bucket,key])).rows;
+    if (!rows.length) break;
+    for (const row of rows) { objects.update(JSON.stringify(row)); objects.update("\n"); objectCount++; }
+    ({bucket,key} = rows.at(-1));
+  }
+  const collections = (await connection.query("SELECT * FROM storage.vector_collections ORDER BY name")).rows;
+  return { vectorCount, vectorSha256: vectors.digest("hex"), objectCount,
+    objectMappingsSha256: objects.digest("hex"), collectionsSha256: createHash("sha256").update(JSON.stringify(collections)).digest("hex") };
+}
+
+async function restoredRuntimeChecks(restored: Pool) {
+  let vectorCollections = 0, objectNamespaces = 0;
+  const collections = (await restored.query("SELECT name,metric FROM storage.vector_collections WHERE ready ORDER BY name")).rows;
+  for (const collection of collections) {
+    const sample = (await restored.query("SELECT embedding::text AS values,namespace FROM storage.embeddings WHERE collection=$1 ORDER BY id LIMIT 1", [collection.name])).rows[0];
+    if (!sample) continue;
+    const result = await new PostgresVectorIndex(restored, collection.name).query(JSON.parse(sample.values), {namespace:sample.namespace,topK:1});
+    if (result.count !== 1 || !Number.isFinite(result.matches[0].score)
+      || (collection.metric === "cosine" && result.matches[0].score < 0.99999)) {
+      throw new Error("Restored vector retrieval failed");
+    }
+    vectorCollections++;
+  }
+  // Large artifacts were already streamed through the complete hash check.
+  const samples = (await restored.query("SELECT DISTINCT ON (bucket) bucket,key,sha256 FROM storage.objects WHERE size<=1048576 ORDER BY bucket,key")).rows;
+  for (const sample of samples) {
+    const object = await new LocalObjectStore(restored, join(destination, "objects"), sample.bucket).get(sample.key);
+    if (!object || createHash("sha256").update(await object.bytes()).digest("hex") !== sample.sha256) {
+      throw new Error("Restored runtime object read failed");
+    }
+    objectNamespaces++;
+  }
+  return {vectorCollections,objectNamespaces};
+}
 try {
   const databaseBytes = Number((await client.query("SELECT pg_database_size(current_database()) AS bytes")).rows[0].bytes);
   const objectBytes = Number((await client.query("SELECT coalesce(sum(size),0) AS bytes FROM (SELECT DISTINCT sha256,size FROM storage.objects) objects")).rows[0].bytes);
@@ -85,6 +141,7 @@ try {
     const result = await client.query(`SELECT count(*)::text n FROM ${identifier(table.schemaname)}.${identifier(table.tablename)}`);
     counts.push({ schema: table.schemaname, table: table.tablename, rows: result.rows[0].n });
   }
+  const integrity = await storageIntegrity(client);
   const dump = join(destination, "database.dump");
   await command(["pg_dump", "-U", databaseUrl.username, "-d", databaseUrl.pathname.slice(1), "--format=custom", `--snapshot=${snapshot}`, "--no-owner", "--no-privileges"], undefined, dump);
   const manifest = await open(join(destination, "objects.jsonl"), "wx", 0o600);
@@ -112,18 +169,27 @@ try {
   await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(objects)]);
   await writeFile(join(destination, "private.env"), await readFile(join(root, ".env.self-hosted")), { flag: "wx", mode: 0o600 });
   const publicAssets = await capturePublicAssets();
-  const report = { publicAssetCount: publicAssets.length, completedAt: new Date().toISOString(), databaseSha256: await sha256(dump), objectCount, tables: counts, restoreVerified: false };
+  const privateConfigurationSha256 = await sha256(join(destination, "private.env"));
+  const report = { publicAssetCount: publicAssets.length, completedAt: new Date().toISOString(), databaseSha256: await sha256(dump),
+    objectCount, tables: counts, integrity, privateConfigurationSha256,
+    runtimeChecks: null as Awaited<ReturnType<typeof restoredRuntimeChecks>> | null, restoreVerified: false };
   if (process.argv.includes("--verify-restore")) {
     const name = `juro_restore_${randomBytes(8).toString("hex")}`;
     await pool.query(`CREATE DATABASE ${identifier(name)}`);
     try {
-      await command(["pg_restore", "-U", databaseUrl.username, "-d", name, "--no-owner", "--no-privileges", "--exit-on-error"], dump);
+      // Dumped index definitions do not retain migration-local build settings.
+      // Keep HNSW rebuilds bounded without exhausting Docker's shared memory.
+      await command(["env", "PGOPTIONS=-c maintenance_work_mem=2GB -c max_parallel_maintenance_workers=0",
+        "pg_restore", "-U", databaseUrl.username, "-d", name, "--no-owner", "--no-privileges", "--exit-on-error"], dump);
       const restoreUrl = new URL(databaseUrl); restoreUrl.pathname = "/" + name;
       const restored = new Pool({ connectionString: restoreUrl.toString() });
       try {
         for (const table of counts) {
           const result = await restored.query(`SELECT count(*)::text n FROM ${identifier(table.schema)}.${identifier(table.table)}`);
           if (result.rows[0].n !== table.rows) throw new Error(`Restored count mismatch: ${table.schema}.${table.table}`);
+        }
+        if (JSON.stringify(await storageIntegrity(restored)) !== JSON.stringify(integrity)) {
+          throw new Error("Restored vector values, collection configuration or object mappings differ");
         }
         const lines = createInterface({ input: createReadStream(join(destination, "objects.jsonl")), crlfDelay: Infinity });
         for await (const line of lines) {
@@ -134,6 +200,8 @@ try {
         for (const asset of publicAssets) {
           if (await sha256(join(destination, "public-assets", asset.path)) !== asset.sha256) throw new Error("Restored public asset hash mismatch");
         }
+        if (await sha256(join(destination, "private.env")) !== privateConfigurationSha256) throw new Error("Private configuration hash mismatch");
+        report.runtimeChecks = await restoredRuntimeChecks(restored);
       } finally { await restored.end(); }
       report.restoreVerified = true;
     } finally { await pool.query(`DROP DATABASE ${identifier(name)}`); }

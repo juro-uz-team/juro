@@ -6,6 +6,8 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Pool } from "pg";
 import { objectStorageLock, reclaimObjects } from "./object-reclamation";
+import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
+import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 
 type HttpMetadata = { contentType?: string; contentLanguage?: string; contentDisposition?: string;
   contentEncoding?: string; cacheControl?: string; cacheExpiry?: Date };
@@ -51,12 +53,13 @@ export class LocalObjectStore {
   }
 
   async head(key: string) {
-    const { rows } = await this.pool.query<ObjectRow>("SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
+    const { rows } = await retrievalQuery<ObjectRow>(this.pool,"SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
     return rows[0] ? this.describe(rows[0]) : null;
   }
 
   async get(key: string, options?: { range?: Range; onlyIf?: Headers | Conditions }) {
-    const client = await this.pool.connect();
+    const lease = await acquireRetrievalClient(this.pool);
+    const client = lease.client;
     try {
       await client.query("SELECT pg_advisory_lock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]);
       const { rows } = await client.query<ObjectRow>("SELECT * FROM storage.objects WHERE bucket=$1 AND key=$2", [this.bucket, key]);
@@ -72,7 +75,18 @@ export class LocalObjectStore {
       if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) {
         throw new RangeError("Invalid object byte range");
       }
+      const signal = indexedRetrievalSignal();
       const stream = length === 0 ? Readable.from([]) : (await open(this.path(row.sha256), "r")).createReadStream({ start: offset, end: offset + length - 1 });
+      // Cancellation can precede consumption of the returned Web stream. Its
+      // reader still receives the error; an abandoned Node stream must not crash
+      // the process while a failed request unwinds.
+      stream.on("error", () => undefined);
+      if (signal) {
+        const abort = () => stream.destroy(signal.reason);
+        signal.addEventListener("abort", abort, {once:true});
+        stream.once("close", () => signal.removeEventListener("abort", abort));
+        if (signal.aborted) abort();
+      }
       const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
       const response = new Response(body);
       return { ...this.describe(row), body,
@@ -84,7 +98,7 @@ export class LocalObjectStore {
       };
     } finally {
       try { await client.query("SELECT pg_advisory_unlock_shared(hashtextextended($1,0))", [objectStorageLock(this.root)]); }
-      finally { client.release(); }
+      finally { lease.release(); }
     }
   }
 

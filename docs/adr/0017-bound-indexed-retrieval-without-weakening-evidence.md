@@ -1,0 +1,9 @@
+# Bound Indexed Retrieval without weakening evidence
+
+Status: accepted — 2026-09-24
+
+On the existing self-hosted server, Indexed Retrieval targets p95 at most five seconds with five concurrent legal questions and has a total ten-second deadline, including session setup, query formulation, queueing, query embedding, both candidate lanes, candidate validation and evidence reads. Legal Answer generation is outside this deadline. A timed-out indexed attempt follows the existing Source Unavailability and official-source fallback behavior; it cannot publish a partial Candidate Packet as a successful search. Downstream readers inherit the remaining budget rather than starting another ten seconds.
+
+Dense retrieval must achieve at least95% recall@50 on every query in a fixed representative qualification set against exact search over the same eligible original vectors. Boundary ties may substitute for one another but cannot compensate for missing strictly closer neighbors. This nearest-neighbor criterion is separate from labeled legal relevance, Official Coverage, citation integrity and Legal Answer correctness; those existing requirements remain in force. First-touch behavior and steady-state concurrent performance are reported separately, and timeouts cannot be excluded to manufacture a passing latency result.
+
+Preserve original embeddings, metadata, release identities and evidence. Prefer measured query and scheduling changes before building additional indexes from the retained vectors. Reversible index settings are operational choices, not reasons to regenerate embeddings or rewrite applied migrations. Select the simplest measured configuration meeting both quality and latency requirements; if none qualifies on the existing hardware, report that constraint rather than silently relaxing either requirement.

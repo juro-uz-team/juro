@@ -1,5 +1,7 @@
 import { z } from "zod";
-import {observeCurrentLexDocument} from "../legal/lex-document-status";
+import {readLexPublisherObservation} from "../legal/lex-document-status";
+import {createSourceObservationReader} from "../legal/source-observation";
+import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
 import {createPinnedSourceVerifier} from "./pinned-source-observation";
 
@@ -43,9 +45,9 @@ import {
 
 const environmentSchema = z.enum(["development", "staging", "production"]);
 
-function physicalRuntimeReleaseId(descriptorKey: string, logicalReleaseId: string): string {
-  const match = /^search-releases\/([^/]+)\/runtime\/descriptor-[a-f0-9]{64}\.json$/u
-    .exec(descriptorKey);
+function physicalRuntimeReleaseId(artifactKey: string, logicalReleaseId: string): string {
+  const match = /^search-releases\/([^/]+)\/runtime\/(?:descriptor-|membership-lookup\/manifest-)[a-f0-9]{64}\.json$/u
+    .exec(artifactKey);
   return match?.[1] ?? logicalReleaseId;
 }
 
@@ -296,7 +298,7 @@ export function createRuntimeCandidateCatalog(
         const physicalReleaseId = physicalRuntimeReleaseId(component.descriptorKey, release.id);
         compactMembership = missingKeys.length === 0 ? new Map()
           : component.lookupKey && component.lookupSha256 && component.lookupSizeBytes
-            ? await readMembershipLookup!({releaseId: physicalReleaseId,
+            ? await readMembershipLookup!({releaseId: physicalRuntimeReleaseId(component.lookupKey, release.id),
               sourceInventorySha256: component.mappingInventorySha256,
               reference: {key: component.lookupKey, sha256: component.lookupSha256, sizeBytes: component.lookupSizeBytes},
               itemKeys: missingKeys})
@@ -608,7 +610,8 @@ function createRuntimeEvidenceServices(
 onReleaseResolved: dependencies.onReleaseResolved,
 verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket,
       observe: dependencies.sharedSourceObservationsEnabled
-        ? createSharedLexDocumentObservationReader(db) : observeCurrentLexDocument}),
+        ? createSharedLexDocumentObservationReader(db,url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal()}))
+        : createSourceObservationReader({readPublisher:url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal()})})}),
 environment,
 releaseResolver,
 candidateIndex,

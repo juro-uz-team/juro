@@ -1,4 +1,6 @@
 import { z } from "zod";
+import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
+import type {CustomRuntimeCache} from "./custom-runtime-cache";
 import {candidateMembershipProofSchema} from "./candidate-membership-proof";
 import {loadCandidateMembershipProjection, readCandidateMembershipProofs} from "./candidate-membership-projection";
 
@@ -34,7 +36,7 @@ let customSparseTail: Promise<void> = Promise.resolve();
 // Bound the memory-intensive artifact traversal, not the entire request. A
 // slow embedding or dense query must not hold unrelated searches behind it.
 function serializeCustomSparseSearch<T>(operation: () => Promise<T>): Promise<T> {
-  const result = customSparseTail.then(operation);
+  const result = customSparseTail.then(()=>{indexedRetrievalSignal();return operation();});
   customSparseTail = result.then(() => undefined, () => undefined);
   return result;
 }
@@ -92,6 +94,7 @@ export type CustomSearchEnv = {
   EMBEDDING_FETCH?: typeof fetch;
   DENSE: CustomVectorSearchIndex;
   ARTIFACTS: R2Bucket;
+  RUNTIME_CACHE?: CustomRuntimeCache;
   CATALOG_DB: D1Database;
   CUSTOM_SEARCH_CAPABILITY: "current" | "history";
   CUSTOM_SEARCH_RELEASE_ID: string;
@@ -146,7 +149,7 @@ async function queryEmbeddings(env: CustomSearchEnv, queries: string[]): Promise
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
     body: JSON.stringify({ model: CUSTOM_EMBEDDING_MODEL, dimensions: CUSTOM_EMBEDDING_DIMENSIONS,
       encoding_format: "float", input: queries }),
-    signal: AbortSignal.timeout(60_000),
+    signal: indexedRetrievalSignal() ?? AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new TypeError("CUSTOM_QUERY_EMBEDDING_UNAVAILABLE");
   const contentLength = Number(response.headers.get("content-length") ?? 0);
@@ -238,7 +241,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
     ? input.endpoint.instant : input.currentAt).getTime() / 1_000);
   const lanes = await Promise.allSettled([
     timed("sparseMs", () => serializeCustomSparseSearch(() => queryCustomBm25RuntimeBatch(env.ARTIFACTS, descriptor,
-      queries.map(text => ({ text, atEpoch, topK: input.maxResults }))))),
+      queries.map(text => ({ text, atEpoch, topK: input.maxResults })),env.RUNTIME_CACHE))),
     timed("embeddingMs", () => queryEmbeddings(env, queries)).then(async embedding => ({
       tokenUsage: embedding.tokenUsage,
       results: await timed("denseMs", () => Promise.all(embedding.vectors.map(vector => queryCustomDenseLane(env.DENSE, {
@@ -256,7 +259,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
   if (sparseLane.status === "rejected") throw sparseLane.reason;
   if (denseLane.status === "rejected") throw denseLane.reason;
   const ordinals = [...new Set(sparseLane.value.flatMap(hits => hits.map(hit => hit.ordinal)))];
-  const runtimeKeys = await resolveCustomBm25RuntimeItemKeys(env.ARTIFACTS, descriptor, ordinals);
+  const runtimeKeys = await resolveCustomBm25RuntimeItemKeys(env.ARTIFACTS, descriptor, ordinals,env.RUNTIME_CACHE);
   const keys = runtimeKeys
     ? runtimeKeys.map(key => `search-releases/${input.releaseId}/${key}`)
     : await itemKeysForOrdinals(env, input.releaseId, ordinals);

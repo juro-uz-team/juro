@@ -4,6 +4,7 @@ import {createRemoteCorpusResearch,type CorpusResearchService} from "../lib/lega
 import type {ResearchRequest} from "../lib/legal-chat/research";
 import type {CorpusSearchInput,CorpusSessionInput} from "../lib/legal-chat/corpus-session";
 import {createCorpusSession} from "../lib/legal-chat/corpus-session";
+import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
 const request:ResearchRequest={round:0,needs:[],question:{question:"Private case narrative",topics:["procedure"],
   caseFacts:["Private facts"],priorTurns:[{question:"Private history",answer:"Old answer"}],
@@ -59,7 +60,8 @@ test("cancellation while opening disposes a late capability without issuing sear
   const pending=remote.indexed({...request,question:{...request.question,signal:controller.signal}});
   controller.abort();
   opened.resolve({async search(){searches++;return {evidence:[],needs:[]};},async cancel(){},[Symbol.dispose](){disposed++;}});
-  await assert.rejects(pending,/CLOSED/);
+  await assert.rejects(pending,{name:"AbortError"});
+  await new Promise<void>(resolve=>setImmediate(resolve));
   assert.equal(searches,0);
   assert.equal(disposed,1);
 });
@@ -94,4 +96,42 @@ test("late search results after cancellation cannot enter research",async()=>{
   controller.abort();finish.resolve();
   await assert.rejects(pending,{name:"AbortError"});
   assert.equal(disposed,1);
+});
+
+test("the indexed deadline includes opening a session and disposes a late capability",async context=>{
+  context.mock.timers.enable({apis:["setTimeout"]});
+  const opened=Promise.withResolvers<Awaited<ReturnType<CorpusResearchService["openLegalResearch"]>>>();
+  let searches=0,disposed=0,failure:unknown;
+  const remote=createRemoteCorpusResearch({requestId:"deadline-opening",environment:"staging",formulate:async()=>plan,
+    service:{openLegalResearch:()=>opened.promise}});
+  const pending=remote.indexed(request).catch(error=>{failure=error;});
+  try {
+    context.mock.timers.tick(10_000);
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    assert.ok(failure instanceof DOMException&&failure.name==="TimeoutError");
+  }finally{
+    opened.resolve({async search(){searches++;return {evidence:[],needs:[]};},async cancel(){},[Symbol.dispose](){disposed++;}});
+    await pending;await new Promise<void>(resolve=>setImmediate(resolve));await remote.close();
+  }
+  assert.equal(searches,0);assert.equal(disposed,1);
+});
+
+test("formulation and native search share one deadline without resetting the budget",async context=>{
+  context.mock.timers.enable({apis:["setTimeout"]});
+  const formulated=Promise.withResolvers<void>(),searching=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
+  let failure:unknown,attempt:AbortSignal|undefined,nested:AbortSignal|undefined;
+  const remote=createRemoteCorpusResearch({requestId:"deadline-formulation",environment:"staging",
+    formulate:async input=>{attempt=input.question.signal;await formulated.promise;return plan;},
+    service:{async openLegalResearch(){return {async search(){return runIndexedRetrieval(undefined,async signal=>{
+      nested=signal;searching.resolve();await finish.promise;return {evidence:[],needs:[]};
+    });},async cancel(){},[Symbol.dispose](){}};}}});
+  const pending=remote.indexed(request).catch(error=>{failure=error;});
+  try{
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    context.mock.timers.tick(6000);formulated.resolve();await searching.promise;
+    context.mock.timers.tick(4000);await new Promise<void>(resolve=>setImmediate(resolve));
+    assert.ok(failure instanceof DOMException&&failure.name==="TimeoutError");
+    assert.equal(attempt?.aborted,true);
+    assert.equal(nested?.aborted,true);
+  }finally{formulated.resolve();finish.resolve();await pending;await remote.close();}
 });

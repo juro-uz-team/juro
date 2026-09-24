@@ -18,7 +18,7 @@ export async function reserveSourceObservationCrawlWindow(db: D1Database, delayM
  * private questions. Missing or stale observations still need on-demand recovery. */
 export async function refreshPublicSourceObservations(input: {
   db: D1Database; now?: () => number; observe?: (url: string) => Promise<SourceObservation>;
-  readPublisher?: typeof readLexPublisherObservation;
+  readPublisher?: (url:string,options:{wait:(delayMs:number)=>Promise<void>})=>Promise<SourceObservation>;
 }) {
   const now = input.now ?? Date.now;
   const started = performance.now();

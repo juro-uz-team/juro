@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
+import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
 
 type Metric = "cosine" | "euclidean" | "dot-product";
 type Vector = { id: string; values: number[] | Float32Array; namespace?: string; metadata?: Record<string, unknown> };
@@ -45,7 +46,7 @@ export class PostgresVectorIndex {
   constructor(readonly pool: Pool, readonly name: string) {}
 
   async isReady(): Promise<boolean> {
-    const result = await this.pool.query("SELECT ready FROM storage.vector_collections WHERE name=$1", [this.name]);
+    const result = await retrievalQuery(this.pool,"SELECT ready FROM storage.vector_collections WHERE name=$1", [this.name]);
     return result.rows[0]?.ready === true;
   }
 
@@ -58,7 +59,7 @@ export class PostgresVectorIndex {
   }
 
   private async configuration(): Promise<Configuration> {
-    const { rows } = await this.pool.query<Configuration>("SELECT dimensions,metric,model,ready FROM storage.vector_collections WHERE name=$1", [this.name]);
+    const { rows } = await retrievalQuery<Configuration>(this.pool,"SELECT dimensions,metric,model,ready FROM storage.vector_collections WHERE name=$1", [this.name]);
     if (!rows[0]) throw new Error(`Vector collection is unavailable: ${this.name}`);
     return rows[0];
   }
@@ -98,13 +99,14 @@ export class PostgresVectorIndex {
     const score = configuration.metric === "cosine" ? `1 - (${distance})`
       : configuration.metric === "dot-product" ? `-(${distance})` : `(${distance})`;
     parameters.push(topK);
-    const client = await this.pool.connect();
+    const lease = await acquireRetrievalClient(this.pool);
+    const client = lease.client;
     let rows: Array<{ id: string; namespace: string; score: number; metadata?: Record<string, unknown>; values?: string }>;
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout = '15s'");
-      await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
-      await client.query("SET LOCAL hnsw.ef_search = 200");
+      await client.query("SET LOCAL hnsw.iterative_scan = relaxed_order");
+      await client.query("SET LOCAL hnsw.ef_search = 1000");
       await client.query("SET LOCAL hnsw.max_scan_tuples = 100000");
       const select = `SELECT id,namespace,${score} AS score${options.returnMetadata && options.returnMetadata !== "none" ? ",metadata" : ""}
         ${options.returnValues ? ",embedding::text AS values" : ""} FROM storage.embeddings
@@ -121,7 +123,10 @@ export class PostgresVectorIndex {
         // JSON metadata selectivity estimates can otherwise prefer an expensive
         // exact sort even when most of the collection is eligible.
         await client.query("SET LOCAL enable_sort = off");
-        rows = (await client.query(`${select} ORDER BY ${distance} LIMIT $${parameters.length}`, parameters)).rows;
+        // Relaxed iterative scans improve filtered recall. Fetch a bounded
+        // candidate pool, then rank by the original vector distances below.
+        const candidateParameters=[...parameters.slice(0,-1),Math.min(1000,topK*10)];
+        rows = (await client.query(`${select} ORDER BY ${distance} LIMIT $${parameters.length}`, candidateParameters)).rows;
         await client.query("SET LOCAL enable_sort = on");
       }
       // Selective filters can exhaust an ANN scan's budget. An exact fallback
@@ -129,9 +134,10 @@ export class PostgresVectorIndex {
       if ((!eligible || eligible.length > 10000) && rows.length < topK) rows = (await client.query(
         `${select} ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, parameters)).rows;
       await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    } catch (error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
+    finally { lease.release(); }
     rows.sort((left,right) => (configuration.metric === "euclidean" ? left.score-right.score : right.score-left.score) || left.id.localeCompare(right.id));
+    rows=rows.slice(0,topK);
     return { count: rows.length, matches: rows.map(row => ({ ...row, ...(row.values ? { values: JSON.parse(row.values) as number[] } : {}) })) };
   }
 

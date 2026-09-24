@@ -96,6 +96,10 @@ _Avoid_: blended evidence, model reranking, coverage decision
 The request-scoped output of every candidate lane declared by one pinned Search Release for one Temporal Scope, containing stable locators, channel ranks and availability state but no legal conclusion or evidence. A partial packet is unavailable rather than a degraded search result.
 _Avoid_: search results, evidence packet, partial answer
 
+**Indexed Retrieval**:
+The research step that searches the Indexed Official Corpus through every required candidate lane, validates candidate identities and eligibility, and reads verified source evidence for the interpreted question. It ends before Legal Answer generation and may yield Source Unavailability rather than usable evidence.
+_Avoid_: vector query, complete Legal Answer, answer accuracy
+
 **Retrieval Eligibility**:
 The deterministic, capability-specific state derived from verified official-source provenance, exact catalog and evidence-object integrity, supported extraction and stable identities, a verified current pointer when required, supported temporal state, public privacy classification, quarantine clearance, and conflict-free canonicalization. Textual authority and translation relationships are not inputs.
 _Avoid_: human approval, model confidence, indexed status

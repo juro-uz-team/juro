@@ -9,6 +9,20 @@ import {setTimeout as pause} from "node:timers/promises";
 import {objectStorageLock,reclaimObjects} from "../lib/storage/object-reclamation";
 import { PostgresDatabase } from "../lib/storage/postgres";
 import { LocalObjectStore } from "../lib/storage/objects";
+import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
+
+test("finishing retrieval cancels an unconsumed object stream without crashing the process",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const root=await mkdtemp(join(tmpdir(),"juro-cancelled-object-"));
+  const store=new LocalObjectStore(db.pool,root,`test-${crypto.randomUUID()}`);
+  try {
+    await store.put("evidence",new Uint8Array(1024*1024));
+    const object=await runIndexedRetrieval(undefined,()=>store.get("evidence"));
+    assert.ok(object);
+    await assert.rejects(object.bytes(),{name:"AbortError"});
+    await pause(10);
+  }finally{await store.delete("evidence");await db.close();await rm(root,{recursive:true,force:true});}
+});
 
 test("concurrent immutable evidence writes create one object and retain exact ranged bytes", async () => {
   const db = new PostgresDatabase(process.env.DATABASE_URL!);

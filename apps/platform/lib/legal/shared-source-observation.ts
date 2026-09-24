@@ -1,4 +1,5 @@
 import {classifyLegalSourceUrl} from "./source-fetch";
+import {finishIndexedRetrievalCleanup} from "../runtime/indexed-retrieval";
 import {readLexPublisherObservation} from "./lex-document-status";
 import {createD1SourceObservationStore} from "./source-observation-store";
 import {createSourceObservationReader, isFreshSourceObservation, sourceObservationSchema, type SourceObservation} from "./source-observation";
@@ -64,13 +65,13 @@ export function createSharedSourceObservationRefresh(input: {
     } finally {
       clearInterval(timer);
       await renewal;
-      await input.db.prepare("DELETE FROM legal_source_observation_refresh_leases WHERE official_url=? AND lease_token=?")
-        .bind(url, token).run();
+      await finishIndexedRetrievalCleanup(()=>input.db.prepare("DELETE FROM legal_source_observation_refresh_leases WHERE official_url=? AND lease_token=?")
+        .bind(url, token).run());
     }
   };
 }
 
-export function createSharedLexDocumentObservationReader(db: D1Database) {
+export function createSharedLexDocumentObservationReader(db: D1Database,readPublisher?: (url:string)=>Promise<SourceObservation>) {
   return createSourceObservationReader({store: createD1SourceObservationStore(db),
-    readPublisher: createSharedSourceObservationRefresh({db})});
+    readPublisher: createSharedSourceObservationRefresh({db,readPublisher})});
 }

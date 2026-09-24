@@ -14,9 +14,15 @@ export async function publisherTextFingerprint(snapshot: NormalizedLegalSourceSn
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function readLexPublisherObservation(url: string, options?: {wait: (delayMs: number) => Promise<void>}): Promise<SourceObservation> {
-  const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options ? "wait" : "proceed",
-    ...(options ? {wait: options.wait} : {}),
+export async function readLexPublisherObservation(url: string, options?: {wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal}): Promise<SourceObservation> {
+  options?.signal?.throwIfAborted();
+  const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",
+    ...(options?.wait ? {wait: options.wait} : {}),
+    ...(options?.signal ? {fetchImpl:(input:RequestInfo|URL,init?:RequestInit)=>{
+      options.signal!.throwIfAborted();
+      return fetch(input,{...init,signal:init?.signal
+        ?AbortSignal.any([options.signal!,init.signal]):options.signal});
+    }} : {}),
     timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024});
   const html = new TextDecoder("utf-8", {fatal: true}).decode(fetched.bytes);
   if (!/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html)) throw new Error("LEX_DOCUMENT_STATUS_UNAVAILABLE");

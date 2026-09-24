@@ -349,16 +349,26 @@ async function readAndVerifyObject(
   }
   const bytes = await object.bytes();
   const actual = await sha256(bytes);
-  const metadataAccepted = object.customMetadata?.schemaVersion === "1"
+  // S3 captures lowercase metadata header names. Accept their spelling without
+  // altering persisted metadata or accepting ambiguous declarations.
+  const metadata = new Map<string, string>();
+  for (const [key, value] of Object.entries(object.customMetadata ?? {})) {
+    const canonical = key.toLowerCase();
+    if (metadata.has(canonical) && metadata.get(canonical) !== value) {
+      throw new LegalEvidenceError("SOURCE_UNAVAILABILITY");
+    }
+    metadata.set(canonical, value);
+  }
+  const metadataAccepted = metadata.get("schemaversion") === "1"
     || (metadataPolicy === "sealed-production-evidence"
-      && object.customMetadata?.kind === "provision_rendition"
-      && (object.customMetadata?.source === "evidence"
-        || (object.customMetadata?.schemaVersion === "complete-corpus-evidence-v1"
-          && object.customMetadata?.byteCount === String(locator.byteCount))));
+      && metadata.get("kind") === "provision_rendition"
+      && (metadata.get("source") === "evidence"
+        || (metadata.get("schemaversion") === "complete-corpus-evidence-v1"
+          && metadata.get("bytecount") === String(locator.byteCount))));
   if (
     bytes.byteLength !== locator.byteCount
     || actual.hex !== locator.sha256
-    || object.customMetadata?.sha256 !== locator.sha256
+    || metadata.get("sha256") !== locator.sha256
     || !metadataAccepted
   ) {
     throw new LegalEvidenceError("SOURCE_UNAVAILABILITY");

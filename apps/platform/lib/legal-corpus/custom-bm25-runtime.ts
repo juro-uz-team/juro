@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
+import type {CustomRuntimeCache} from "./custom-runtime-cache";
 import { z } from "zod";
 import { detectArticleNumbers } from "../legal/legal-language";
 
@@ -393,6 +395,7 @@ export async function resolveCustomBm25RuntimeItemKeys(
   bucket: R2Bucket,
   rawDescriptor: CustomBm25RuntimeDescriptor,
   ordinals: readonly number[],
+  cache?:CustomRuntimeCache,
 ): Promise<string[] | null> {
   const descriptor = descriptorSchema.parse(rawDescriptor);
   if (!descriptor.ordinalMappings) return null;
@@ -410,11 +413,33 @@ export async function resolveCustomBm25RuntimeItemKeys(
   }
   const pages = [...neededPages.values()];
   for (let offset = 0; offset < pages.length; offset += 6) {
-    const values = await Promise.all(pages.slice(offset, offset + 6).map(async (page) =>
-      z.object({ schemaVersion: z.literal(1), releaseId: z.literal(descriptor.releaseId),
+    const values = await Promise.all(pages.slice(offset, offset + 6).map(async (page) => {
+      indexedRetrievalSignal();
+      const identity=`ordinals:${descriptor.releaseId}:${page.key}:${page.sha256}:${page.sizeBytes}`;
+      const cached=cache?.get(identity);
+      const keys=requested.filter(ordinal=>page.firstOrdinal<=ordinal&&ordinal<=page.lastOrdinal);
+      if(cached)return {items:keys.map(ordinal=>{
+        const offset=findBinaryOrdinal(cached,ordinal,0,36);
+        const hash=Buffer.from(cached.buffer,cached.byteOffset+offset+4,32).toString("hex");
+        return {ordinal,itemKey:`retrieval-chunk-v1:${hash}`};
+      })};
+      const value=z.object({ schemaVersion: z.literal(1), releaseId: z.literal(descriptor.releaseId),
         items: z.array(z.object({ ordinal: z.number().int().nonnegative(),
           itemKey: z.string().min(1).max(700) }).strict()).length(page.count) }).strict()
-        .parse(await readJson<unknown>(bucket, page))));
+        .parse(await readJson<unknown>(bucket, page));
+      if(cache&&value.items.every((item,index)=>item.ordinal<=0xffffffff
+        &&item.ordinal>=page.firstOrdinal&&item.ordinal<=page.lastOrdinal
+        &&(index===0||item.ordinal>value.items[index-1]!.ordinal)
+        &&/^retrieval-chunk-v1:[a-f0-9]{64}$/u.test(item.itemKey))) {
+        const packed=new Uint8Array(value.items.length*36),view=new DataView(packed.buffer);
+        value.items.forEach((item,index)=>{
+          view.setUint32(index*36,item.ordinal,true);
+          packed.set(Buffer.from(item.itemKey.slice("retrieval-chunk-v1:".length),"hex"),index*36+4);
+        });
+        cache.put(identity,packed);
+      }
+      return value;
+    }));
     for (const value of values) for (const item of value.items) {
         if (selected.has(item.ordinal)) throw new TypeError("CUSTOM_BM25_RUNTIME_ORDINAL_DUPLICATE");
         selected.set(item.ordinal, item.itemKey);
@@ -432,8 +457,34 @@ type RuntimeDocument = {
   fieldLengths: { title: number; hierarchy: number; article: number; text: number };
 };
 
+function decodeRuntimeDocument(view:DataView):RuntimeDocument {
+  const validTo=view.getFloat64(12,true);
+  return {validFromEpoch:view.getFloat64(4,true),validToEpoch:validTo===-1?null:validTo,
+    fieldLengths:{title:view.getUint16(20,true),hierarchy:view.getUint16(22,true),
+      article:view.getUint16(24,true),text:view.getUint16(26,true)}};
+}
+
+function findBinaryOrdinal(bytes:Uint8Array,ordinal:number,header:number,stride:number):number {
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  let left=0,right=(bytes.byteLength-header)/stride-1;
+  while(left<=right) {
+    const middle=Math.floor((left+right)/2),offset=header+middle*stride,value=view.getUint32(offset,true);
+    if(value===ordinal)return offset;
+    if(value<ordinal)left=middle+1;else right=middle-1;
+  }
+  throw new TypeError("CUSTOM_BM25_RUNTIME_ORDINAL_MISSING");
+}
+
 async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocumentReference,
-  requested: ReadonlySet<number>): Promise<Map<number, RuntimeDocument>> {
+  requested: ReadonlySet<number>,cache?:CustomRuntimeCache): Promise<Map<number, RuntimeDocument>> {
+  const identity=`documents:${reference.key}:${reference.sha256}:${reference.sizeBytes}`;
+  const cached=cache?.get(identity);
+  if(cached)return new Map([...requested].map(ordinal=>{
+    indexedRetrievalSignal();
+    const offset=findBinaryOrdinal(cached,ordinal,HEADER_SIZE,RECORD_SIZE);
+    return [ordinal,decodeRuntimeDocument(new DataView(cached.buffer,cached.byteOffset+offset,RECORD_SIZE))];
+  }));
+  const retained=cache&&reference.sizeBytes<=64*1024*1024?new Uint8Array(reference.sizeBytes):undefined;
   const object = await bucket.get(reference.key);
   if (!object || object.size !== reference.sizeBytes || !object.body) {
     throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
@@ -447,10 +498,15 @@ async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocument
   let records = 0;
   let previousOrdinal = -1;
   while (true) {
+    indexedRetrievalSignal();
     const { done, value } = await reader.read();
     if (done) break;
     if (!value) continue;
     hash.update(value);
+    if(retained) {
+      if(totalBytes+value.byteLength>retained.byteLength)throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
+      retained.set(value,totalBytes);
+    }
     totalBytes += value.byteLength;
     const bytes = pending.byteLength === 0 ? value : (() => {
       const joined = new Uint8Array(pending.byteLength + value.byteLength);
@@ -476,13 +532,7 @@ async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocument
       if (ordinal <= previousOrdinal) throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
       previousOrdinal = ordinal;
       if (requested.has(ordinal)) {
-        const validTo = view.getFloat64(12, true);
-        selected.set(ordinal, {
-          validFromEpoch: view.getFloat64(4, true),
-          validToEpoch: validTo === -1 ? null : validTo,
-          fieldLengths: { title: view.getUint16(20, true), hierarchy: view.getUint16(22, true),
-            article: view.getUint16(24, true), text: view.getUint16(26, true) },
-        });
+        selected.set(ordinal,decodeRuntimeDocument(view));
       }
       records++;
       offset += RECORD_SIZE;
@@ -494,6 +544,7 @@ async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocument
     || selected.size !== requested.size) {
     throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
   }
+  if(retained)cache!.put(identity,retained);
   return selected;
 }
 
@@ -521,16 +572,14 @@ async function readJson<T>(bucket: R2Bucket, reference: {
 }
 
 function bytesIndexOf(haystack: Uint8Array, needle: Uint8Array, start = 0): number {
-  for (let offset = haystack.indexOf(needle[0]!, start); offset >= 0;
-    offset = haystack.indexOf(needle[0]!, offset + 1)) {
-    if (needle.every((byte, index) => haystack[offset + index] === byte)) return offset;
-  }
-  return -1;
+  return Buffer.from(haystack.buffer,haystack.byteOffset,haystack.byteLength).indexOf(needle,start);
 }
 
 async function resolvePostingLocators(bucket: R2Bucket, reference: RuntimeDocumentReference,
-  termHashes: readonly string[]) {
-  const bytes = await readVerifiedCustomArtifactRange(bucket, {
+  termHashes: readonly string[],cache?:CustomRuntimeCache) {
+  const identity=`lexicon:${reference.key}:${reference.sha256}:${reference.sizeBytes}`;
+  const cached=cache?.get(identity);
+  const bytes = cached??await readVerifiedCustomArtifactRange(bucket, {
     key: reference.key, offset: 0, length: reference.sizeBytes, sha256: reference.sha256,
   });
   let final = bytes.length - 1;
@@ -555,6 +604,7 @@ async function resolvePostingLocators(bucket: R2Bucket, reference: RuntimeDocume
       new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(valueOffset, valueEnd + 1)),
     ) as unknown));
   }
+  if(!cached)cache?.put(identity,bytes);
   return result;
 }
 
@@ -562,7 +612,9 @@ export async function queryCustomBm25RuntimeBatch(
   bucket: R2Bucket,
   rawDescriptor: CustomBm25RuntimeDescriptor,
   inputs: Array<{ text: string; atEpoch: number; topK: number }>,
+  cache?:CustomRuntimeCache,
 ): Promise<Array<Array<{ ordinal: number; score: number; explicitArticleMatch?: true }>>> {
+  const started=performance.now();
   const descriptor = descriptorSchema.parse(rawDescriptor);
   if (inputs.length < 1 || inputs.length > 6 || inputs.some(input =>
     !Number.isSafeInteger(input.atEpoch) || !Number.isSafeInteger(input.topK)
@@ -589,7 +641,7 @@ export async function queryCustomBm25RuntimeBatch(
   const located: Array<{ termHash: string; locator: z.infer<typeof postingLocatorSchema> }> = [];
   const locatedGroups = await mapArtifactReads([...groups.values()], async group => {
     const entries: typeof located = [];
-    const locators = await resolvePostingLocators(bucket, group.reference, group.termHashes);
+    const locators = await resolvePostingLocators(bucket, group.reference, group.termHashes,cache);
     for (const termHash of group.termHashes) {
       const locator = locators.get(termHash);
       if (!locator) continue;
@@ -603,6 +655,7 @@ export async function queryCustomBm25RuntimeBatch(
     return entries;
   });
   located.push(...locatedGroups.flat());
+  const lexiconsRead=performance.now();
   if (located.length === 0) return inputs.map(() => []);
   // Posting ranges are independently hash-verified and capped at one MiB.
   // Allow six to overlap without increasing the two-reader limit for the
@@ -618,18 +671,21 @@ export async function queryCustomBm25RuntimeBatch(
     }
     return block;
   }, 6);
+  const postingsRead=performance.now();
   // Verify the immutable table as a stream and retain only records referenced by
   // bounded posting blocks; the full historical table is larger than the Worker heap budget.
   const requestedOrdinals = new Set(blocks.flatMap((block) =>
     block.postings.map((posting) => posting.ordinal)));
-  const documents = await readRuntimeDocuments(bucket, descriptor.documents, requestedOrdinals);
-  return formulations.map(input => {
+  const documents = await readRuntimeDocuments(bucket, descriptor.documents, requestedOrdinals,cache);
+  const documentsRead=performance.now();
+  const results=formulations.map(input => {
     const scores = new Map<number, number>();
     const explicitArticles = new Set<number>();
     // A formulation's reduction order must not depend on other batch members.
     for (const block of blocks.filter(block => input.termHashes.has(block.termHash))
       .sort((left, right) => left.termHash.localeCompare(right.termHash))) {
       for (const posting of block.postings) {
+          indexedRetrievalSignal();
           const document = documents.get(posting.ordinal);
           if (!document) throw new TypeError("CUSTOM_BM25_RUNTIME_ORDINAL_MISSING");
           if (document.validFromEpoch > input.atEpoch
@@ -655,6 +711,10 @@ export async function queryCustomBm25RuntimeBatch(
         || Number(!!right.explicitArticleMatch) - Number(!!left.explicitArticleMatch) || left.ordinal - right.ordinal)
       .slice(0, input.topK);
   });
+  console.info(JSON.stringify({event:"legal.sparse_runtime",lexiconsMs:lexiconsRead-started,
+    postingsMs:postingsRead-lexiconsRead,documentsMs:documentsRead-postingsRead,
+    scoringMs:performance.now()-documentsRead}));
+  return results;
 }
 
 // Bound simultaneous artifact buffers independently of formulation count. Wait

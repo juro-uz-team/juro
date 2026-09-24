@@ -8,6 +8,7 @@ import { buildCustomBm25RuntimeArtifacts, queryCustomBm25Runtime, queryCustomBm2
   resolveCustomBm25RuntimeMembershipEntries }
   from "../lib/legal-corpus/custom-bm25-runtime";
 import { stableSourceSnapshotJson } from "../lib/legal-corpus/source-snapshot";
+import {CustomRuntimeCache} from "../lib/legal-corpus/custom-runtime-cache";
 
 class MemoryR2 {
   readonly objects = new Map<string, Uint8Array>();
@@ -25,6 +26,28 @@ class MemoryR2 {
       bytes.byteOffset, bytes.byteOffset + bytes.byteLength); } };
   }
 }
+
+test("native ordinal lookup caches compact identities only after authenticating the pinned page",async()=>{
+  const keys=[`retrieval-chunk-v1:${"a".repeat(64)}`,`retrieval-chunk-v1:${"b".repeat(64)}`];
+  const built=await buildCustomBm25Artifacts(keys.map((itemKey,index)=>({segmentId:"base",itemKey,
+    language:"en",documentType:"law",validFromEpoch:1,validToEpoch:null,
+    fields:{title:"Rule",hierarchy:"",article:String(index+1),text:"work contract"}})),{analyzer:"word-v1"});
+  built.manifest.documents[0]!.ordinal=1000;
+  built.manifest.documents[1]!.ordinal=8000002;
+  const runtime=await buildCustomBm25RuntimeArtifacts({releaseId:"release:test:ordinal-cache",
+    sparseManifestSha256:"a".repeat(64),manifest:built.manifest});
+  const bucket=new MemoryR2(),cache=new CustomRuntimeCache();
+  for(const page of runtime.ordinalMappingPages)bucket.objects.set(page.reference.key,page.bytes);
+  for(let attempt=0;attempt<2;attempt++)assert.deepEqual(await resolveCustomBm25RuntimeItemKeys(
+    bucket as unknown as R2Bucket,runtime.descriptor,[8000002,1000,8000002],cache),[keys[1],keys[0],keys[1]]);
+  assert.ok([...bucket.reads.values()].every(count=>count===1));
+  await assert.rejects(resolveCustomBm25RuntimeItemKeys(bucket as unknown as R2Bucket,
+    {...runtime.descriptor,releaseId:"release:test:different"},[1000],cache));
+  const page=runtime.ordinalMappingPages[0]!;
+  bucket.objects.set(page.reference.key,new Uint8Array(page.bytes.length));
+  await assert.rejects(resolveCustomBm25RuntimeItemKeys(bucket as unknown as R2Bucket,
+    runtime.descriptor,[1000],new CustomRuntimeCache()));
+});
 
 test("article matches remain identifiable without overriding lexical relevance", async () => {
   const built = await buildCustomBm25Artifacts([
@@ -61,11 +84,21 @@ test("article matches remain identifiable without overriding lexical relevance",
   for (const segment of runtime.descriptor.segments) for (const reference of Object.values(segment.lexicons)) {
     assert.ok((bucket.reads.get(reference.key) ?? 0) <= 1, "shared lexicons are read once");
   }
+  const cache=new CustomRuntimeCache();
+  bucket.reads.clear();
+  for(let attempt=0;attempt<2;attempt++)assert.deepEqual(await queryCustomBm25RuntimeBatch(
+    bucket as unknown as R2Bucket,runtime.descriptor,queries,cache),expected);
+  assert.equal(bucket.reads.get(runtime.documentsReference.key),1,
+    "native warm searches reuse authenticated document bytes across different formulations");
+  for(const segment of runtime.descriptor.segments)for(const reference of Object.values(segment.lexicons))
+    assert.ok((bucket.reads.get(reference.key)??0)<=1,"immutable lexicons are authenticated once per native cache");
   const corrupt = runtime.documentsBytes.slice();
   corrupt[corrupt.length - 1] ^= 1;
   bucket.objects.set(runtime.documentsReference.key, corrupt);
   await assert.rejects(queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
     runtime.descriptor, queries), /DOCUMENTS_CORRUPT/u);
+  await assert.rejects(queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
+    runtime.descriptor, queries,new CustomRuntimeCache()), /DOCUMENTS_CORRUPT/u);
 });
 
 test("runtime BM25 projection preserves durable ordinals without loading the JSON document manifest", async () => {

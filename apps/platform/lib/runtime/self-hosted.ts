@@ -11,6 +11,7 @@ import { PostgresQueue } from "../storage/queue";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
 import LegalCorpusService from "../../worker/legal-corpus-worker";
 import { handleCustomSearchRequest, type CustomSearchEnv } from "../legal-corpus/custom-search-service";
+import {CustomRuntimeCache} from "../legal-corpus/custom-runtime-cache";
 import { handleTargetReasoningServiceRequest } from "../legal-corpus/target-reasoning-service";
 import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
@@ -48,17 +49,21 @@ export function getSelfHostedRuntime(): Runtime {
     ADMIN_CONSOLE_ORIGIN: process.env.ADMIN_CONSOLE_ORIGIN ?? "http://localhost:3002",
     LEGAL_RETRIEVAL_ENVIRONMENT: "production",
   };
-  const search = (configuration: typeof releases.current) => ({
-    async fetch(input: RequestInfo | URL, init?: RequestInit) {
-      const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection);
-      if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
-      return handleCustomSearchRequest(new Request(input, init), {
-      ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,
-      ARTIFACTS: bucket(configuration.artifactNamespace),
-      DENSE: index,
-    } as unknown as CustomSearchEnv);
-    },
-  });
+  const search = (configuration: typeof releases.current) => {
+      const cache = new CustomRuntimeCache();
+      return {
+        async fetch(input: RequestInfo | URL, init?: RequestInit) {
+          const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection);
+          if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
+          return handleCustomSearchRequest(new Request(input, init), {
+            ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,
+            ARTIFACTS: bucket(configuration.artifactNamespace),
+            RUNTIME_CACHE: cache,
+            DENSE: index,
+          } as unknown as CustomSearchEnv);
+        },
+      };
+  };
   const legal = new LegalCorpusService({
     ...releases.catalog, LEGAL_DB: catalog,
     LEGAL_EVIDENCE_BUCKET: bucket(releases.evidenceNamespace),

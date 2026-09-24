@@ -20,6 +20,10 @@ test("dense retrieval applies namespace and evidence filters before selecting ne
     assert.deepEqual(result.matches.map(row => row.id), ["eligible"]);
     assert.ok(Math.abs(result.matches[0].score - Math.SQRT1_2) < 0.000001);
     assert.deepEqual(result.matches[0].metadata, { eligible: true });
+    const broad=await index.query([1,0,0],{topK:1});
+    assert.equal(broad.count,1,"oversampling must preserve the requested result limit");
+    assert.equal(broad.matches.length,1);
+    assert.equal(broad.matches[0]!.score,1);
     const fewer = await index.query([1, 0, 0], { namespace: "workspace", topK: 50, filter: { eligible: true } });
     assert.deepEqual(fewer.matches.map(row => row.id), ["eligible"]);
     const empty = await index.query([1, 0, 0], { namespace: "missing", topK: 50 });

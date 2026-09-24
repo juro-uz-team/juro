@@ -35,6 +35,23 @@ test("missing or unclosed publisher headers cannot create current observations",
   }
 });
 
+test("cancelled publisher observation aborts its pending request",async context=>{
+  const controller=new AbortController();
+  let started!:()=>void;
+  const entered=new Promise<void>(resolve=>{started=resolve;});
+  let aborted=false;
+  context.mock.method(globalThis,"fetch",async(_input:RequestInfo|URL,init?:RequestInit)=>{
+    started();
+    return new Promise<Response>((_resolve,reject)=>{
+      init!.signal!.addEventListener("abort",()=>{aborted=true;reject(init!.signal!.reason);},{once:true});
+    });
+  });
+  const pending=readLexPublisherObservation("https://lex.uz/ru/docs/777",{signal:controller.signal});
+  const rejected=assert.rejects(pending);
+  await entered;controller.abort();await rejected;
+  assert.equal(aborted,true);
+});
+
 test("layered public observation caches never extend publisher observation age", async () => {
   let time = Date.parse("2026-09-11T00:00:00.000Z");
   const url = "https://lex.uz/ru/docs/777";

@@ -6,6 +6,9 @@ import {parseRevalidatedCandidates} from "../lib/legal-corpus/target-retrieval";
 import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
 import type {ResearchRequest} from "../lib/legal-chat/research";
 import {researchLegalQuestion} from "../lib/legal-chat/research";
+import {PostgresDatabase} from "../lib/storage/postgres";
+import {createSharedSourceObservationRefresh} from "../lib/legal/shared-source-observation";
+import {indexedRetrievalSignal} from "../lib/runtime/indexed-retrieval";
 
 const instant="2026-09-20T10:00:00.000Z";
 const release=(capability:"current"|"history")=>parsePinnedCandidateRelease({id:`release:${capability}`,
@@ -116,6 +119,121 @@ test("cancellation after retrieval prevents authentication, source reads and pub
   services.candidateIndex.retrieve=async(...args)=>{const packet=await retrieve(...args);controller.abort();return packet;};
   await assert.rejects(search({...request,question:{...request.question,signal:controller.signal}}),{name:"AbortError"});
   assert.equal(calls.reads,0);
+});
+
+test("unknown source authority remains unavailable without an unnecessary live observation",async()=>{
+  const {services,search}=fixture();
+  let observations=0;
+  services.evidenceResolver.resolveControlling=async()=>({controlling:{...controlling,textualAuthority:"unknown"},
+    materialCitation:controlling.officialCitation});
+  services.verifyCurrentSource=async()=>{observations++;throw new Error("unnecessary publisher read");};
+  const result=await search(request);
+  assert.equal(result.evidence.length,0);
+  assert.ok(result.needs.some(need=>need.reason==="source_unavailable"));
+  assert.equal(observations,0);
+});
+
+test("indexed retrieval expires after one total deadline and cannot publish late results",async context=>{
+  context.mock.timers.enable({apis:["setTimeout"]});
+  const {services,calls}=fixture();
+  let started!:()=>void, finish!:()=>void;
+  const entered=new Promise<void>(resolve=>{started=resolve;});
+  const blocked=new Promise<void>(resolve=>{finish=resolve;});
+  let signal:AbortSignal|undefined;
+  const search=createCorpusResearch({services,formulate:async input=>{
+    signal=input.question.signal;started();await blocked;return interpretation;
+  }});
+  const pending=search(request);
+  const rejected=assert.rejects(pending,{name:"TimeoutError"});
+  await entered;
+  context.mock.timers.tick(10_000);
+  await rejected;
+  assert.equal(signal?.aborted,true);
+  finish();
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.deepEqual(calls.searches,[]);
+  assert.equal(calls.reads,0);
+});
+
+test("cancelling indexed retrieval stops its active database read",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const {services}=fixture();
+  const controller=new AbortController();
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{
+    await db.prepare("SELECT pg_sleep(30)").first();
+    return retrieve(...args);
+  };
+  const search=createCorpusResearch({services,formulate:async()=>interpretation});
+  const pending=search({...request,question:{...request.question,signal:controller.signal}});
+  const rejected=assert.rejects(pending,{name:"AbortError"});
+  const active=async()=>Number((await db.pool.query(
+    "SELECT count(*) n FROM pg_stat_activity WHERE query=$1 AND state='active'",["SELECT pg_sleep(30)"])).rows[0].n);
+  try {
+    const waitUntil=Date.now()+3000;
+    while(!await active()&&Date.now()<waitUntil)await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(await active(),1);
+    controller.abort();
+    await rejected;
+    const cancelledBy=Date.now()+1000;
+    while(await active()&&Date.now()<cancelledBy)await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(await active(),0,"fallback must not leave the database executing abandoned retrieval");
+  }finally{controller.abort();await db.close();}
+});
+
+test("cancelled retrieval waiting for a database connection never starts its read",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const held=await Promise.all(Array.from({length:8},()=>db.pool.connect()));
+  const {services}=fixture();
+  const controller=new AbortController();
+  let entered!:()=>void,completed=false;
+  const queued=new Promise<void>(resolve=>{entered=resolve;});
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{
+    entered();await db.prepare("SELECT pg_sleep(30)").first();completed=true;
+    return retrieve(...args);
+  };
+  const search=createCorpusResearch({services,formulate:async()=>interpretation});
+  const rejected=assert.rejects(search({...request,question:{...request.question,signal:controller.signal}}),{name:"AbortError"});
+  try {
+    await queued;
+    assert.equal(db.pool.waitingCount,1);
+    controller.abort();await rejected;
+    held.splice(0).forEach(client=>client.release());
+    const waitUntil=Date.now()+1000;
+    while(db.pool.idleCount!==db.pool.totalCount&&Date.now()<waitUntil)await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(db.pool.waitingCount,0);
+    assert.equal(db.pool.idleCount,db.pool.totalCount);
+    assert.equal(completed,false);
+  }finally{controller.abort();held.forEach(client=>client.release());await db.close();}
+});
+
+test("cancelled publisher verification releases its owned refresh lease",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!,"legal");
+  const url=`https://lex.uz/ru/docs/${Date.now()}`;
+  const {services}=fixture();
+  const controller=new AbortController();
+  let started!:()=>void;
+  const entered=new Promise<void>(resolve=>{started=resolve;});
+  const refresh=createSharedSourceObservationRefresh({db:db as unknown as D1Database,readPublisher:async()=>{
+    const signal=indexedRetrievalSignal()!;
+    started();
+    return new Promise((_resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));
+  }});
+  let refreshing:Promise<unknown>|undefined;
+  services.verifyCurrentSource=async()=>{
+    refreshing=refresh(url);await refreshing;throw new Error("cancelled observation cannot complete");
+  };
+  const search=createCorpusResearch({services,formulate:async()=>interpretation});
+  const rejected=assert.rejects(search({...request,question:{...request.question,signal:controller.signal}}),{name:"AbortError"});
+  try {
+    await entered;
+    controller.abort();await rejected;
+    await assert.rejects(refreshing!);
+    assert.equal((await db.prepare("SELECT count(*) AS count FROM legal_source_observation_refresh_leases WHERE official_url=?").bind(url).first<{count:number}>())!.count,0);
+  }finally{
+    controller.abort();await db.prepare("DELETE FROM legal_source_observation_refresh_leases WHERE official_url=?").bind(url).run();await db.close();
+  }
 });
 
 const anotherCandidate=(id:string)=>parseRevalidatedCandidates([{...candidate,
