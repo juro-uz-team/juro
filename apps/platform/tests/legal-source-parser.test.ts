@@ -14,6 +14,18 @@ const reference = {
 };
 const rawContentSha256 = "a".repeat(64);
 
+test("publisher paragraphs mentioning another article remain prose",()=>{
+  const prose="Статья 784 Гражданского кодекса предусматривает очередность списания денежных средств со счета клиента.";
+  const snapshot=normalizeLegalSourceHtml({reference,rawContentSha256,html:
+    `<main><div class="lx_elem ACT_TITLE">Официальное решение</div><div class="lx_elem">${prose}</div>
+    <div class="lx_elem">Обстоятельства рассматриваются судом с учетом доказательств, представленных участниками дела, и применимых положений законодательства.</div>
+    <div class="lx_elem ARTICLE">Статья 7 Без пунктуации</div><div class="lx_elem">Применяется установленное правило.</div></main>`});
+  const paragraph=snapshot.blocks.find(block=>block.text===prose)!;
+  assert.equal(paragraph.kind,"paragraph");
+  assert.equal(paragraph.semanticRole,undefined);
+  assert.equal(snapshot.blocks.find(block=>block.text==="Статья 7 Без пунктуации")?.semanticRole,"article");
+});
+
 function legalHtml(): string {
   return `<!doctype html>
     <html lang="ru">

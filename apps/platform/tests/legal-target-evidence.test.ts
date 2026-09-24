@@ -39,6 +39,22 @@ test("a parent article reader preserves unique headings, section boundaries and 
   assert.equal(read("1")?.text,"Article 1. First First rule.");
 });
 
+test("article references inside paragraphs do not split an authenticated article",()=>{
+  const blocks=["Статья 7. Правило", "Общее правило действует при следующих обстоятельствах.",
+    "Статья 784 Гражданского кодекса предусматривает очередность списания денежных средств.",
+    "Исключение применяется при наличии специального основания.","Статья 8. Другое правило","Другой текст."]
+    .map((text,index)=>({index,kind:"paragraph" as const,text}));
+  const article=createCompleteArticleReader(blocks)("7");
+  assert.ok(article?.text.includes("Исключение применяется"));
+  assert.equal(createCompleteArticleReader(blocks)("784"),null);
+  for(const heading of ["Статья 8 — Другое правило","Article 8 : Other rule","8-modda. Boshqa qoida",
+    "Статья 8 Фирменное наименование общества","8-modda.Boshqa qoida","8-modda\nBoshqa qoida"]) {
+    const withSpacing=blocks.map((block,index)=>index===4?{...block,text:heading}:block);
+    assert.equal(createCompleteArticleReader(withSpacing)("7")?.text,article!.text);
+    assert.ok(createCompleteArticleReader(withSpacing)("8"));
+  }
+});
+
 test("accepted parent recovery authenticates full article context without replacing the original rendition", async () => {
   const blocks = [
     "Article 7. Filing requirements", "An application must contain the following information:",

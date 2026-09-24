@@ -7,6 +7,7 @@ import { parse, type DefaultTreeAdapterTypes } from "parse5";
  * only in request memory and never writes HTML, Markdown or article chunks.
  */
 import { z } from "zod";
+import {isLegalArticleHeading} from "./article-heading";
 import type {
   LegalSourceKind,
   LegalSourceLocale,
@@ -361,7 +362,7 @@ function pushBlock(
 
 function lexSemanticRole(classes: ReadonlySet<string>, text: string): MutableBlock["semanticRole"] | undefined {
   const names = [...classes].join(" ");
-  if (/(?:ARTICLE|MODDA)/iu.test(names) || /^(?:(?:статья|модда|modda|article)\s+\d+|\d+\s*(?:-\s*)?modda\b)/iu.test(text)) return "article";
+  if (/(?:ARTICLE|MODDA)/iu.test(names) || isLegalArticleHeading({text})) return "article";
   if (/(?:CHAPTER|BOB)/iu.test(names) || /^(?:глава|боб|chapter)\s+[\dIVXLCDM]+/iu.test(text)) return "chapter";
   if (/(?:SECTION|BO.LIM)/iu.test(names) || /^(?:раздел|бўлим|bo.lim|section)\s+[\dIVXLCDM]+/iu.test(text)) return "section";
   if (/(?:REVISION|EDITION|TAHRIR|DATE)/iu.test(names) || /^(?:редакция|tahrir|sana)\b/iu.test(text)) return "revision";
