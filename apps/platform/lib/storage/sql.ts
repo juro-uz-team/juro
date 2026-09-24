@@ -16,6 +16,12 @@ export function postgresSql(source: string): string {
   sql = sql.replace(/\?(?=\s+IS\s+(?:NOT\s+)?NULL\b)/gi, "?::text");
   sql = sql.replace(/\b(json_valid\([^()]*\))\s*(=|<>|!=)\s*([01])\b/gi,
     (_, expression, operator, value) => `${expression} ${operator} ${value === "1" ? "TRUE" : "FALSE"}`);
+  // SQLite guards intentionally evaluate invalid JSON only in a rejected CASE
+  // branch. PostgreSQL needs an integer result type and a volatile failure
+  // function so planning cannot evaluate the failure for an accepted branch.
+  sql = sql.replace(/\bjson_extract\s*\(\s*\u0001(\d+)\u0002\s*,\s*\u0001(\d+)\u0002\s*\)/gi,
+    (expression, code, path) => literals[Number(path)] === "'$'" && /^'[A-Z][A-Z0-9_]*'$/.test(literals[Number(code)])
+      ? `transaction_guard_failure(\u0001${code}\u0002)` : expression);
   if (ignoreConflict) {
     const returning = sql.search(/\bRETURNING\b/i);
     sql = returning < 0 ? sql.trim().replace(/;$/, "") + " ON CONFLICT DO NOTHING"
