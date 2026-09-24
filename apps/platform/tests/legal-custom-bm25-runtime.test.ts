@@ -86,12 +86,33 @@ test("article matches remain identifiable without overriding lexical relevance",
   }
   const cache=new CustomRuntimeCache();
   bucket.reads.clear();
-  for(let attempt=0;attempt<2;attempt++)assert.deepEqual(await queryCustomBm25RuntimeBatch(
-    bucket as unknown as R2Bucket,runtime.descriptor,queries,cache),expected);
+  let firstReads: Map<string, number> | undefined;
+  for(let attempt=0;attempt<2;attempt++) {
+    assert.deepEqual(await queryCustomBm25RuntimeBatch(
+      bucket as unknown as R2Bucket,runtime.descriptor,queries,cache),expected);
+    if(attempt===0)firstReads=new Map(bucket.reads);
+  }
+  assert.deepEqual(bucket.reads,firstReads,"warm searches reuse authenticated posting ranges as well as tables");
   assert.equal(bucket.reads.get(runtime.documentsReference.key),1,
     "native warm searches reuse authenticated document bytes across different formulations");
   for(const segment of runtime.descriptor.segments)for(const reference of Object.values(segment.lexicons))
     assert.ok((bucket.reads.get(reference.key)??0)<=1,"immutable lexicons are authenticated once per native cache");
+  const termHash=await customBm25TermHash("employment");
+  const reference=runtime.descriptor.segments[0]!.lexicons[termHash[0]!]!;
+  const originalLexicon=bucket.objects.get(reference.key)!;
+  for(const fault of ["hash","frequency"] as const) {
+    const lexicon=JSON.parse(new TextDecoder().decode(originalLexicon));
+    if(fault==="hash")lexicon[termHash].sha256="0".repeat(64);
+    else lexicon[termHash].documentFrequency++;
+    const bytes=new TextEncoder().encode(JSON.stringify(lexicon));
+    const changed=structuredClone(runtime.descriptor);
+    changed.segments[0]!.lexicons[termHash[0]!] = {...reference,sizeBytes:bytes.byteLength,
+      sha256:createHash("sha256").update(bytes).digest("hex")};
+    bucket.objects.set(reference.key,bytes);
+    await assert.rejects(queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
+      changed,[{text:"employment",atEpoch:2,topK:3}],cache));
+  }
+  bucket.objects.set(reference.key,originalLexicon);
   const corrupt = runtime.documentsBytes.slice();
   corrupt[corrupt.length - 1] ^= 1;
   bucket.objects.set(runtime.documentsReference.key, corrupt);

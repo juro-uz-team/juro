@@ -32,12 +32,17 @@ export function fuseCustomProvisionMatches(sparseKeys: string[], denseKeys: stri
 }
 const QUERY_RESERVATION_USD_MICROS = 1_065;
 let customSparseTail: Promise<void> = Promise.resolve();
+const corpusSparseTails = new WeakMap<CustomRuntimeCache, Promise<void>>();
 
-// Bound the memory-intensive artifact traversal, not the entire request. A
-// slow embedding or dense query must not hold unrelated searches behind it.
-function serializeCustomSparseSearch<T>(operation: () => Promise<T>): Promise<T> {
-  const result = customSparseTail.then(()=>{indexedRetrievalSignal();return operation();});
-  customSparseTail = result.then(() => undefined, () => undefined);
+// Each persistent corpus cache owns one traversal queue. Independent corpora
+// can overlap I/O while each keeps its memory-intensive traversal serialized.
+// Runtimes without a corpus cache retain the shared traversal bound.
+function serializeCustomSparseSearch<T>(operation: () => Promise<T>, cache?: CustomRuntimeCache): Promise<T> {
+  const tail = cache ? corpusSparseTails.get(cache) ?? Promise.resolve() : customSparseTail;
+  const result = tail.then(()=>{indexedRetrievalSignal();return operation();});
+  const settled = result.then(() => undefined, () => undefined);
+  if (cache) corpusSparseTails.set(cache, settled);
+  else customSparseTail = settled;
   return result;
 }
 
@@ -241,7 +246,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
     ? input.endpoint.instant : input.currentAt).getTime() / 1_000);
   const lanes = await Promise.allSettled([
     timed("sparseMs", () => serializeCustomSparseSearch(() => queryCustomBm25RuntimeBatch(env.ARTIFACTS, descriptor,
-      queries.map(text => ({ text, atEpoch, topK: input.maxResults })),env.RUNTIME_CACHE))),
+      queries.map(text => ({ text, atEpoch, topK: input.maxResults })),env.RUNTIME_CACHE),env.RUNTIME_CACHE)),
     timed("embeddingMs", () => queryEmbeddings(env, queries)).then(async embedding => ({
       tokenUsage: embedding.tokenUsage,
       results: await timed("denseMs", () => Promise.all(embedding.vectors.map(vector => queryCustomDenseLane(env.DENSE, {

@@ -7,6 +7,7 @@ import { buildCustomBm25Artifacts, customBm25TermHash } from "../lib/legal-corpu
 import { buildCustomBm25RuntimeArtifacts } from "../lib/legal-corpus/custom-bm25-runtime";
 import { handleCustomSearchRequest, fuseCustomProvisionMatches, type CustomSearchEnv }
   from "../lib/legal-corpus/custom-search-service";
+import {CustomRuntimeCache} from "../lib/legal-corpus/custom-runtime-cache";
 import {buildCandidateMembershipTree} from "../lib/legal-corpus/candidate-membership-proof";
 import {customRuntimeLegalIdentitySchema} from "../lib/legal-corpus/custom-bm25-runtime";
 
@@ -224,13 +225,13 @@ test(physicalAlias
       "the service must share sparse evidence-table reads across formulations");
     activeEmbeddingRequests = 0;
     maximumEmbeddingConcurrency = 0;
-    const send = () => handleCustomSearchRequest(new Request(
+    const send = (searchEnv: CustomSearchEnv = env) => handleCustomSearchRequest(new Request(
       "http://legal-corpus.internal/internal/legal-corpus/custom-search", {
         method: "POST", headers: { "content-type": "application/json",
           "content-length": String(new TextEncoder().encode(body).byteLength),
           "x-juro-service-binding": "custom-search-runtime-v1",
           "x-juro-legal-environment": "staging" }, body,
-      }), env);
+      }), searchEnv);
     delayNextEmbedding = true;
     measureSparseReads = true;
     const delayed = send();
@@ -252,6 +253,38 @@ test(physicalAlias
     assert.equal(maximumEmbeddingConcurrency, 2);
     assert.equal(maximumSparseConcurrency, 1, "memory-intensive artifact traversal remains serialized");
     measureSparseReads = false;
+    // Independent corpus caches must not queue behind a stalled traversal,
+    // while searches within one corpus retain their memory bound.
+    const firstCache = new CustomRuntimeCache(0);
+    const otherCache = new CustomRuntimeCache(0);
+    const previousRead = bucket.onRead;
+    let entered = 0;
+    let releaseFirst!: () => void;
+    let notifyFirst!: () => void;
+    const firstStarted = new Promise<void>(resolve => { notifyFirst = resolve; });
+    const firstRelease = new Promise<void>(resolve => { releaseFirst = resolve; });
+    bucket.onRead = async key => {
+      if (key !== runtime.documentsReference.key) return;
+      entered++;
+      if (entered === 1) { notifyFirst(); await firstRelease; }
+    };
+    const blockedCorpus = send({ ...env, RUNTIME_CACHE: firstCache });
+    await firstStarted;
+    const sameCorpus = send({ ...env, RUNTIME_CACHE: firstCache });
+    const otherCorpus = send({ ...env, RUNTIME_CACHE: otherCache });
+    let independentCorpusFinished = false;
+    let enteredBeforeRelease = 0;
+    try {
+      independentCorpusFinished = await Promise.race([otherCorpus.then(() => true), new Promise<false>(resolve => {
+        timer = setTimeout(() => resolve(false), 1_000);
+      })]);
+      enteredBeforeRelease = entered;
+    } finally { clearTimeout(timer); releaseFirst(); }
+    const corpusResponses = await Promise.all([blockedCorpus, sameCorpus, otherCorpus]);
+    bucket.onRead = previousRead;
+    assert.deepEqual(corpusResponses.map(response => response.status), [200, 200, 200]);
+    assert.equal(independentCorpusFinished, true, "an independent corpus must finish while another corpus is stalled");
+    assert.equal(enteredBeforeRelease, 2, "the second traversal in the stalled corpus must remain queued");
   }
   const driftedCapabilityResponse = await handleCustomSearchRequest(new Request(
     "http://legal-corpus.internal/internal/legal-corpus/custom-search", {

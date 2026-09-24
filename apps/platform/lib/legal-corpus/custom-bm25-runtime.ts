@@ -562,6 +562,47 @@ const postingBlockSchema = z.object({
   }).strict()),
 }).strict();
 
+type ScoringPostingBlock = Pick<z.infer<typeof postingBlockSchema>,
+  "termHash" | "documentFrequency" | "blockMaximum" | "postings">;
+
+async function readPostingBlock(bucket: R2Bucket, termHash: string,
+  locator: z.infer<typeof postingLocatorSchema>, cache?: CustomRuntimeCache): Promise<ScoringPostingBlock> {
+  indexedRetrievalSignal();
+  const identity=`postings-v1:${locator.key}:${locator.offset}:${locator.length}:${locator.sha256}:${termHash}`;
+  const cached=cache?.get(identity);
+  let block: ScoringPostingBlock;
+  if(cached) {
+    const view=new DataView(cached.buffer,cached.byteOffset,cached.byteLength);
+    block={termHash,documentFrequency:view.getFloat64(0,true),blockMaximum:view.getFloat64(8,true),
+      postings:Array.from({length:(cached.byteLength-16)/40},(_,index)=>{
+        const offset=16+index*40;
+        return {ordinal:view.getFloat64(offset,true),termFrequencies:{
+          title:view.getFloat64(offset+8,true),hierarchy:view.getFloat64(offset+16,true),
+          article:view.getFloat64(offset+24,true),text:view.getFloat64(offset+32,true)}};
+      })};
+  } else {
+    const bytes=await readVerifiedCustomArtifactRange(bucket,locator);
+    block=postingBlockSchema.parse(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes)));
+  }
+  if(block.termHash!==termHash || block.documentFrequency!==locator.documentFrequency
+    || block.blockMaximum!==locator.blockMaximum) {
+    throw new TypeError("CUSTOM_BM25_RUNTIME_POSTING_LOCATOR_MISMATCH");
+  }
+  if(!cached&&cache) {
+    // Retain only authenticated scoring data. Float64 preserves the validated
+    // integer range without narrowing ordinals or term frequencies.
+    const packed=new Uint8Array(16+block.postings.length*40),view=new DataView(packed.buffer);
+    view.setFloat64(0,block.documentFrequency,true);view.setFloat64(8,block.blockMaximum,true);
+    block.postings.forEach((posting,index)=>{
+      const values=[posting.ordinal,posting.termFrequencies.title,posting.termFrequencies.hierarchy,
+        posting.termFrequencies.article,posting.termFrequencies.text];
+      values.forEach((value,field)=>view.setFloat64(16+index*40+field*8,value,true));
+    });
+    cache.put(identity,packed);
+  }
+  return block;
+}
+
 async function readJson<T>(bucket: R2Bucket, reference: {
   key: string; sizeBytes: number; sha256: string;
 }): Promise<T> {
@@ -660,17 +701,8 @@ export async function queryCustomBm25RuntimeBatch(
   // Posting ranges are independently hash-verified and capped at one MiB.
   // Allow six to overlap without increasing the two-reader limit for the
   // much larger lexicons or overlapping sparse traversals across requests.
-  const blocks = await mapArtifactReads(located, async ({ termHash, locator }) => {
-    const blockBytes = await readVerifiedCustomArtifactRange(bucket, locator);
-    const block = postingBlockSchema.parse(JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(blockBytes),
-    ) as unknown);
-    if (block.termHash !== termHash || block.documentFrequency !== locator.documentFrequency
-      || block.blockMaximum !== locator.blockMaximum) {
-      throw new TypeError("CUSTOM_BM25_RUNTIME_POSTING_LOCATOR_MISMATCH");
-    }
-    return block;
-  }, 6);
+  const blocks = await mapArtifactReads(located, ({ termHash, locator }) =>
+    readPostingBlock(bucket,termHash,locator,cache), 6);
   const postingsRead=performance.now();
   // Verify the immutable table as a stream and retain only records referenced by
   // bounded posting blocks; the full historical table is larger than the Worker heap budget.

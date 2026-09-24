@@ -105,6 +105,9 @@ export class PostgresVectorIndex {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout = '15s'");
+      // Short retrieval queries spend more time compiling JIT expressions than
+      // executing them, especially when several formulations run together.
+      await client.query("SET LOCAL jit = off");
       await client.query("SET LOCAL hnsw.iterative_scan = relaxed_order");
       await client.query("SET LOCAL hnsw.ef_search = 1000");
       await client.query("SET LOCAL hnsw.max_scan_tuples = 100000");
