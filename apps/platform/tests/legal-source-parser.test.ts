@@ -4,6 +4,7 @@ import {completeArticleText} from "../lib/legal/article-context";
 import {
   LegalSourceParserError,
   normalizeLegalSourceHtml,
+  normalizeLegalSourceHtmlProfiles,
   normalizedLegalSourceSnapshotSchema,
 } from "../lib/legal/source-parser";
 
@@ -344,6 +345,8 @@ test("refreshed HTML preserves superscript identities without rewriting retained
   assert.equal(legacy.parser.profile, "juro-legal-blocks-v1");
   assert.ok(legacy.plainText.includes("Статья 181. Специальное"));
   const refreshed = normalizeLegalSourceHtml({html, reference, rawContentSha256, profile:"juro-legal-blocks-v2"});
+  assert.deepEqual(normalizeLegalSourceHtmlProfiles({html,reference,rawContentSha256}),
+    {snapshot:legacy,structuredSnapshot:refreshed});
   assert.equal(refreshed.parser.profile,"juro-legal-blocks-v2");
   assert.ok(refreshed.plainText.includes("Статья 18¹. Специальное"));
   assert.ok(refreshed.plainText.includes("Статья 181. Другое"));

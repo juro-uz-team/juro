@@ -496,7 +496,7 @@ function documentTitle(
   return removeLegalSourceUiNoise(title).slice(0, 2_000);
 }
 
-export function normalizeLegalSourceHtml(input: {
+type LegalSourceHtmlInput = {
   html: string;
   reference: Pick<
     LegalSourceReference,
@@ -505,8 +505,22 @@ export function normalizeLegalSourceHtml(input: {
   rawContentSha256: string;
   /** Opt in only for newly captured snapshots; retained profiles stay stable. */
   profile?: "juro-legal-blocks-v1" | "juro-legal-blocks-v2";
-}): NormalizedLegalSourceSnapshot {
+};
+
+export function normalizeLegalSourceHtml(input: LegalSourceHtmlInput): NormalizedLegalSourceSnapshot {
+  return normalizeParsedLegalSource(input, parse(input.html));
+}
+
+/** Two fingerprints share one parsed publisher document, never two fetches. */
+export function normalizeLegalSourceHtmlProfiles(input: Omit<LegalSourceHtmlInput, "profile">) {
   const document = parse(input.html);
+  return {
+    snapshot: normalizeParsedLegalSource({...input, profile:"juro-legal-blocks-v1"}, document),
+    structuredSnapshot: normalizeParsedLegalSource({...input, profile:"juro-legal-blocks-v2"}, document),
+  };
+}
+
+function normalizeParsedLegalSource(input: LegalSourceHtmlInput, document: DefaultTreeAdapterTypes.Document): NormalizedLegalSourceSnapshot {
   const primaryCandidates = candidates(
     document,
     input.reference.sourceKind,

@@ -1,6 +1,6 @@
 import {parse, type DefaultTreeAdapterTypes} from "parse5";
 import { classifyLegalSourceUrl, fetchLegalSource, fetchLexPdfRepresentation, type FetchedLegalSource } from "./source-fetch";
-import {normalizeLegalSourceHtml, type NormalizedLegalSourceSnapshot} from "./source-parser";
+import {normalizeLegalSourceHtml, normalizeLegalSourceHtmlProfiles, type NormalizedLegalSourceSnapshot} from "./source-parser";
 import {createSourceObservationReader, type SourceObservation, type SourceObservationStore} from "./source-observation";
 
 /** Compare normalized official text and identity, excluding volatile raw HTML. */
@@ -15,7 +15,16 @@ export async function publisherTextFingerprint(snapshot: NormalizedLegalSourceSn
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function readLexPublisherObservation(url: string, options?: {wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal}): Promise<SourceObservation> {
+export async function publisherHtmlFingerprints(input: Parameters<typeof normalizeLegalSourceHtmlProfiles>[0]) {
+  const {snapshot,structuredSnapshot}=normalizeLegalSourceHtmlProfiles(input);
+  const [normalizedTextSha256,normalizedTextSha256V2]=await Promise.all([
+    publisherTextFingerprint(snapshot),publisherTextFingerprint(structuredSnapshot),
+  ]);
+  return {normalizedTextSha256,normalizedTextSha256V2};
+}
+
+export async function readLexPublisherObservation(url: string, options?: {wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal;
+  fingerprintHtml?:(input:Parameters<typeof publisherHtmlFingerprints>[0],signal?:AbortSignal)=>ReturnType<typeof publisherHtmlFingerprints>}): Promise<SourceObservation> {
   options?.signal?.throwIfAborted();
   const fetchOptions={
     ...(options?.wait ? {wait: options.wait} : {}),
@@ -26,12 +35,17 @@ export async function readLexPublisherObservation(url: string, options?: {wait?:
     }} : {}),
     timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024};
   const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",...fetchOptions});
-  const {snapshot,current}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal});
-  const refreshedSnapshot = snapshot.parser.name === "parse5" ? normalizeLegalSourceHtml({
-    html:new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes), reference:fetched,
-    rawContentSha256:fetched.contentSha256,profile:"juro-legal-blocks-v2",
-  }) : undefined;
-  const normalizedTextSha256V2 = refreshedSnapshot ? await publisherTextFingerprint(refreshedSnapshot) : undefined;
+  if (options?.fingerprintHtml) {
+    const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
+    if (/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html)) {
+      const fingerprints=await options.fingerprintHtml({html,reference:fetched,rawContentSha256:fetched.contentSha256},options.signal);
+      options.signal?.throwIfAborted();
+      return {version:2,officialUrl:fetched.canonicalUrl,observedAt:fetched.fetchedAt,
+        current:!lexDocumentIsRepealed(html),rawContentSha256:fetched.contentSha256,...fingerprints};
+    }
+  }
+  const {snapshot,current,structuredSnapshot}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal,includeStructured:true});
+  const normalizedTextSha256V2 = structuredSnapshot ? await publisherTextFingerprint(structuredSnapshot) : undefined;
   options?.signal?.throwIfAborted();
   return {version: 2, officialUrl: fetched.canonicalUrl, observedAt: fetched.fetchedAt,
     current, rawContentSha256: fetched.contentSha256,
@@ -42,12 +56,16 @@ export async function readLexPublisherObservation(url: string, options?: {wait?:
 /** Normalize the actual publisher representation while retaining the canonical
  * HTML identity and returning PDF provenance for durable capture callers. */
 export async function normalizeLexPublisherDocument(fetched:FetchedLegalSource,
-  options:Parameters<typeof fetchLexPdfRepresentation>[1]&{signal?:AbortSignal}) {
+  options:Parameters<typeof fetchLexPdfRepresentation>[1]&{signal?:AbortSignal;includeStructured?:boolean}) {
   options.signal?.throwIfAborted();
   const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
   const standard=/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html);
-  if(standard)return {snapshot:normalizeLegalSourceHtml({html,reference:fetched,rawContentSha256:fetched.contentSha256}),
-    current:!lexDocumentIsRepealed(html),representation:undefined};
+  if(standard){
+    const input={html,reference:fetched,rawContentSha256:fetched.contentSha256};
+    const normalized=options.includeStructured ? normalizeLegalSourceHtmlProfiles(input)
+      : {snapshot:normalizeLegalSourceHtml(input),structuredSnapshot:undefined};
+    return {...normalized,current:!lexDocumentIsRepealed(html),representation:undefined};
+  }
   const header=pdfHeaderText(html);
   const reference=classifyLegalSourceUrl(fetched.canonicalUrl);
   const representationIds=[...html.matchAll(/PDFObject\.embed\(\s*["']\/pdffile\/(\d+)["']\s*,\s*["']#pdfBody["']/gu)].map(match=>match[1]);
@@ -57,7 +75,7 @@ export async function normalizeLexPublisherDocument(fetched:FetchedLegalSource,
   const representation=await fetchLexPdfRepresentation(fetched.canonicalUrl,options);
   const {normalizeLexPdfRepresentation}=await import("./source-normalization");
   const snapshot=await normalizeLexPdfRepresentation({bytes:representation.bytes,reference,rawContentSha256:fetched.contentSha256,signal:options.signal});
-  return {snapshot,current:!isRepealedText(header),representation};
+  return {snapshot,structuredSnapshot:undefined,current:!isRepealedText(header),representation};
 }
 
 function pdfHeaderText(html:string):string|undefined {
