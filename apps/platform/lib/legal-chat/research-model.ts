@@ -6,6 +6,8 @@ import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index
 import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS} from "./execution-limits";
 import type {LegalEvidence} from "./answer-engine";
 import {researchNeedSchema, type ResearchAssessment, type ResearchRequest, type ResearchObservation} from "./research";
+import type {ResearchFormulator} from "./research-formulation";
+import {completedResearchQueries} from "./streamed-research-queries";
 
 const querySchema=z.object({text:z.string().trim().min(1).max(900),
   topicIndices:z.array(z.number().int().min(0).max(23)).min(1).max(24),
@@ -13,6 +15,26 @@ const querySchema=z.object({text:z.string().trim().min(1).max(900),
   legalTitleSpans:z.array(z.string().trim().min(3).max(300)).max(12),
 }).strict();
 const planSchema=z.object({queries:z.array(querySchema).min(1).max(20)}).strict();
+
+/** Initial standalone research already has interpreted topics. Keep the whole
+ * question as well: topic labels alone do not preserve its qualifications.
+ * Contextual interpretation and substantive repair still require the model. */
+function standaloneQueries(request:ResearchRequest):z.infer<typeof querySchema>[]|null {
+  const question=request.question;
+  if(request.round!==0||request.needs.length||question.priorTurns?.length
+    ||question.userContext||question.documents?.length
+    ||question.caseFacts?.some(fact=>!question.question.includes(fact))
+    ||!question.topics.length||question.topics.length>19) return null;
+  const text=question.question.trim();
+  if(!text||text.length>900||question.topics.some(topic=>!topic.trim()||topic.trim().length>900)) return null;
+  const queries:z.infer<typeof querySchema>[]=[{text,topicIndices:question.topics.map((_,index)=>index),privateNameSpans:[],legalTitleSpans:[]}];
+  question.topics.forEach((topic,index)=>{
+    const same=queries.find(query=>query.text===topic.trim());
+    if(same){if(!same.topicIndices.includes(index))same.topicIndices.push(index);}
+    else queries.push({text:topic.trim(),topicIndices:[index],privateNameSpans:[],legalTitleSpans:[]});
+  });
+  return queries;
+}
 const assessmentSchema=z.object({
   needs:z.array(researchNeedSchema.extend({reason:z.enum(["missing_rule","unresolved_reference"])})).max(40),
   resolved:z.array(z.object({needIndex:z.number().int().nonnegative(),
@@ -31,7 +53,8 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
   onAttempt?:(input:{model:string})=>void|Promise<void>;
   onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
 }):{
-  formulate(request:ResearchRequest):Promise<QuestionInterpretation>;
+  formulate:ResearchFormulator;
+  formulateIndexed:ResearchFormulator;
   assess(request:ResearchRequest&{evidence:readonly LegalEvidence[];observations?:readonly ResearchObservation[]}):Promise<ResearchAssessment>;
 } {
   let owner:string|undefined;
@@ -52,10 +75,13 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     evidence:evidence.map(item=>({id:item.source.id,title:item.source.actTitle,language:item.source.locale,
       endpoint:item.endpoint,text:item.text})),
   });
-  const call=async<T>(request:ResearchRequest,schema:z.ZodType<T>,payload:unknown,schemaName:string)=>{
+  const call=async<T>(request:ResearchRequest,schema:z.ZodType<T>,payload:unknown,schemaName:string,
+    onOutputTextBuffer?:(input:{text:string})=>Promise<void>)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
     const result=await callOpenAiStructured({instructions:`${instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(schema),
-      parse:value=>schema.parse(value),model:openAiChatModel(request.question.mode),maxAttempts:1,
+      parse:value=>schema.parse(value),model:schemaName==="legal_research_queries"&&request.question.mode==="fast"
+        ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
+      ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
       timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,deadlineAt:options.deadlineAt,requestId:options.requestId,
       safetyIdentifier:options.safetyIdentifier,signal:request.question.signal,
       onAttempt:options.onAttempt,onAttemptFinished:options.onAttemptFinished});
@@ -71,17 +97,45 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
       requirementIds:[...new Set(query.topicIndices)].map(index=>`topic:${index}`),
     }))};
   };
-  return {
-    async formulate(request) {
+  const formulate:ResearchFormulator=async(request,onFormulation)=>{
       bind(request);
       if(!nextQueries) {
-        const result=await call(request,planSchema,context(request),"legal_research_queries");
+        const emitted:z.infer<typeof querySchema>[]=[];
+        let streamFailure:{error:unknown}|undefined;
+        const result=await call(request,planSchema,context(request),"legal_research_queries",onFormulation?async({text})=>{
+          if(streamFailure)return;
+          try {
+          const queries=completedResearchQueries(text).map(value=>querySchema.parse(value));
+          if(emitted.some((query,index)=>JSON.stringify(query)!==JSON.stringify(queries[index])))throw new Error("RESEARCH_PLAN_STREAM_INVALID");
+          const partial=interpretation(request,queries);
+          for(let index=emitted.length;index<queries.length;index++){
+            request.question.signal?.throwIfAborted();
+            await onFormulation({interpretationId:partial.id,formulation:partial.formulations[index]!});
+            emitted.push(queries[index]!);
+          }
+          } catch(error) {
+            // The provider's early-output observer is diagnostic-only and
+            // swallows errors. Required staging failures must fail this plan.
+            streamFailure={error};
+          }
+        }:undefined);
+        if(streamFailure)throw streamFailure.error;
+        if(emitted.some((query,index)=>JSON.stringify(query)!==JSON.stringify(result.queries[index])))throw new Error("RESEARCH_PLAN_STREAM_INVALID");
         if(request.question.topics.some((_,index)=>!result.queries.some(query=>query.topicIndices.includes(index)))) {
           throw new Error("RESEARCH_QUERY_TOPIC_MISSING");
         }
         nextQueries=result.queries;
       }
       return interpretation(request,nextQueries);
+  };
+  return {
+    formulate,
+    async formulateIndexed(request,onFormulation) {
+      bind(request);
+      // Seed annotations have not classified private names. Keep these
+      // formulations inside indexed retrieval; public discovery uses formulate.
+      const seed=!nextQueries?standaloneQueries(request):null;
+      return seed?interpretation(request,seed):formulate(request,onFormulation);
     },
     async assess(request) {
       bind(request);

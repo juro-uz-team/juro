@@ -6,6 +6,40 @@ import type {ResearchRequest} from "../lib/legal-chat/research";
 const input:CorpusSessionInput={requestId:"request-one",environment:"staging",temporalScope:{kind:"current"}};
 const plan={id:"plan",formulations:[{id:"query",text:"statutory procedure",readingIds:["topic"],requirementIds:["topic"],privateNameSpans:[]}]};
 
+test("incremental work belongs to one round and waits for the complete plan",async()=>{
+  const received=Promise.withResolvers<void>();
+  let completed=false,rounds=0;
+  const session=createCorpusSession(input,formulate=>async request=>{
+    rounds++;
+    const final=await formulate(request,async fragment=>{
+      assert.deepEqual(fragment,{interpretationId:plan.id,formulation:plan.formulations[0]});received.resolve();
+    });
+    assert.deepEqual(final,plan);completed=true;return {evidence:[],needs:[]};
+  });
+  await session.stage({round:0,interpretationId:plan.id,formulation:plan.formulations[0]!});
+  await received.promise;
+  assert.equal(completed,false);
+  await session.search({round:0,plan});
+  assert.equal(rounds,1);
+  await assert.rejects(session.stage({round:0,interpretationId:plan.id,formulation:plan.formulations[0]!}),/ROUND_MISMATCH/);
+});
+
+test("streamed rounds reject duplicate fragments, changed final text and late work after close",async()=>{
+  let admitted=0;
+  const session=createCorpusSession(input,formulate=>async request=>{
+    await formulate(request,async()=>undefined);admitted++;return {evidence:[],needs:[]};
+  });
+  const fragment={round:0,interpretationId:plan.id,formulation:plan.formulations[0]!};
+  await session.stage(fragment);
+  await assert.rejects(session.stage(fragment),/FRAGMENT_INVALID/);
+  await assert.rejects(session.search({round:0,plan:{...plan,formulations:[{...plan.formulations[0]!,text:"Changed query"}]}}),/FRAGMENT_INVALID/);
+  assert.equal(admitted,0);
+  await session.stage({...fragment,round:1});
+  session.close();
+  await assert.rejects(session.search({round:1,plan}),{name:"AbortError"});
+  await assert.rejects(session.stage({...fragment,round:1}),{name:"AbortError"});
+});
+
 test("one reader owns all bounded rounds and receives no conversation payload",async()=>{
   let instances=0;
   const requests:ResearchRequest[]=[];

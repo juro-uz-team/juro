@@ -1,4 +1,4 @@
-import {createCorpusSession, type CorpusSearchInput, type CorpusSessionInput} from "../lib/legal-chat/corpus-session";
+import {createCorpusSession, type CorpusSearchInput, type CorpusSessionInput,type CorpusStageInput} from "../lib/legal-chat/corpus-session";
 
 /** The returned RPC capability retains one turn's release pins and read cache.
  * Disposal also prevents subsequent reads after the caller disconnects. */
@@ -10,6 +10,8 @@ export class LegalResearchSession {
   }
 
   search(input:CorpusSearchInput){return this.#session.search(input);}
+  stage(input:CorpusStageInput){return this.#session.stage(input);}
+  async discard(round:number){this.#session.discard(round);}
   async cancel(){this.#session.close();}
   [Symbol.dispose](){this.#session.close();}
 }

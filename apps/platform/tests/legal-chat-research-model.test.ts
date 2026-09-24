@@ -15,6 +15,88 @@ const evidence:LegalEvidence={source:{id:"source:one",actTitle:"Synthetic rules"
   sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"private-parent-hash"},
   text:"A qualifying applicant may request the record.",textSha256:"private-text-hash",endpoint:{kind:"current"},origin:"indexed"};
 
+test("standalone initial research preserves the complete question and every interpreted topic without another model call",async context=>{
+  context.mock.method(globalThis,"fetch",async()=>{throw new Error("Standalone formulation must not call a provider");});
+  const question="Can an applicant inspect a record and challenge a refusal as of 2020-01-01?";
+  const input:ResearchRequest={round:0,needs:[],question:{...request.question,question,
+    topics:["Inspection of a record","Challenging a refusal"],caseFacts:[],priorTurns:[],
+    temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}};
+  const plan=await createLegalResearchModel({requestId:"standalone"}).formulateIndexed(input);
+  assert.deepEqual(plan.formulations.map(item=>item.text),[question,...input.question.topics]);
+  assert.deepEqual(plan.formulations[0]!.requirementIds,["topic:0","topic:1"]);
+  assert.deepEqual(plan.formulations.slice(1).map(item=>item.requirementIds),[["topic:0"],["topic:1"]]);
+});
+
+test("contextual and oversized initial questions retain generative decomposition without truncation",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const inputs:Array<Record<string,unknown>>=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),payload=JSON.parse(body.input);inputs.push(payload);
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({queries:[{
+      ...query,topicIndices:payload.topics.map((_:string,index:number)=>index)}]})}]}]});
+  });
+  const variants:ResearchRequest["question"][]=[
+    {...request.question,priorTurns:[{question:"My earlier issue",answer:"Unverified prior answer"}]},
+    {...request.question,documents:[privateDocumentContext()]},
+    {...request.question,caseFacts:["A fact absent from the current question"]},
+    {...request.question,question:"A".repeat(901)},
+    {...request.question,topics:Array.from({length:20},(_,index)=>`Topic ${index}`)},
+  ];
+  for(const question of variants) await createLegalResearchModel({requestId:"contextual"}).formulateIndexed({round:0,needs:[],question});
+  assert.equal(inputs.length,variants.length);
+  assert.equal(inputs[3]!.question,"A".repeat(901));
+  assert.deepEqual(inputs[4]!.topics,variants[4]!.topics);
+  assert.deepEqual(inputs[0]!.priorTurns,variants[0]!.priorTurns);
+});
+
+test("streamed planning emits a closed formulation before completion and preserves escaped query text",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const firstEmitted=Promise.withResolvers<void>();
+  const first={...query,text:'procedure for a "record [request]" and \\ reference'};
+  const second={...query,text:"record refusal qualification"};
+  const prefix='{"queries":['+JSON.stringify(first),tail=','+JSON.stringify(second)+']}';
+  const encoder=new TextEncoder();let completed=false;
+  const event=(type:string,value:Record<string,unknown>)=>encoder.encode(`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`);
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    assert.equal(JSON.parse(String(init?.body)).stream,true);
+    return new Response(new ReadableStream({start(controller){
+      controller.enqueue(event("response.output_text.delta",{delta:prefix.slice(0,25)}));
+      controller.enqueue(event("response.output_text.delta",{delta:prefix.slice(25)}));
+      void firstEmitted.promise.then(()=>{
+        controller.enqueue(event("response.output_text.delta",{delta:tail}));
+        completed=true;
+        controller.enqueue(event("response.completed",{response:{id:"response",status:"completed",
+          output:[{content:[{type:"output_text",text:prefix+tail}]}]}}));controller.close();
+      });
+    }}),{headers:{"content-type":"text/event-stream"}});
+  });
+  const fragments:string[]=[];
+  const pending=createLegalResearchModel({requestId:"stream"}).formulateIndexed(request,async fragment=>{
+    fragments.push(fragment.formulation.text);
+    if(fragments.length===1){assert.equal(completed,false);firstEmitted.resolve();}
+  });
+  const result=await pending;
+  assert.deepEqual(fragments,[first.text,second.text]);
+  assert.deepEqual(result.formulations.map(item=>item.text),fragments);
+});
+
+test("streamed planning rejects staging and partial validation failures despite a valid final response",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let invalidPartial=false;
+  context.mock.method(globalThis,"fetch",async()=>{
+    const event=(type:string,value:Record<string,unknown>)=>`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`;
+    const text=JSON.stringify({queries:[query]});
+    return new Response(event("response.output_text.delta",{delta:JSON.stringify({queries:[invalidPartial?{...query,topicIndices:[23]}:query]})})+
+      event("response.completed",{response:{id:"response",status:"completed",output:[{content:[{type:"output_text",text}]}]}}),
+      {headers:{"content-type":"text/event-stream"}});
+  });
+  await assert.rejects(createLegalResearchModel({requestId:"stage-failure"}).formulateIndexed(request,async()=>{
+    throw new Error("stage unavailable");
+  }),/stage unavailable/);
+  invalidPartial=true;
+  await assert.rejects(createLegalResearchModel({requestId:"partial-failure"}).formulateIndexed(request,async()=>{}),/RESEARCH_QUERY_TOPIC_INVALID/);
+});
+
 test("research pins Luna/Terra, reuses assessment queries and excludes source locators from model context",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
@@ -36,7 +118,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const next=await model.formulate({...input,round:1});
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-5.6-luna","gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
   for(const payload of payloads) {
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));

@@ -1,11 +1,13 @@
-import type {CorpusSessionInput, CorpusSearchInput} from "./corpus-session";
+import type {CorpusSessionInput, CorpusSearchInput,CorpusStageInput} from "./corpus-session";
+import type {ResearchFormulator} from "./research-formulation";
 import {documentModelContext} from "./document-context";
-import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
 import type {ResearchPacket,ResearchRequest} from "./research";
 import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RemoteSession={
   search(input:CorpusSearchInput):PromiseLike<ResearchPacket>;
+  stage?(input:CorpusStageInput):PromiseLike<void>;
+  discard?(round:number):PromiseLike<void>;
   cancel():PromiseLike<void>;
   [Symbol.dispose]():void;
 };
@@ -20,7 +22,7 @@ export function createRemoteCorpusResearch(input:{
   service:CorpusResearchService;
   requestId:string;
   environment:CorpusSessionInput["environment"];
-  formulate:(request:ResearchRequest)=>Promise<QuestionInterpretation>;
+  formulate:ResearchFormulator;
 }) {
   let opening:Promise<RemoteSession>|undefined;
   let session:RemoteSession|undefined;
@@ -46,6 +48,7 @@ export function createRemoteCorpusResearch(input:{
   return {
     async indexed(request:ResearchRequest):Promise<ResearchPacket> {
       return runIndexedRetrieval(request.question.signal,async attemptSignal=>{
+        let staged=false;
         const cancelAttempt=()=>{void close();};
         attemptSignal.addEventListener("abort",cancelAttempt,{once:true});
         try {
@@ -70,9 +73,13 @@ export function createRemoteCorpusResearch(input:{
             const pending=opening;
             void pending.catch(()=>{if(opening===pending&&!session)opening=undefined;});
           }
-          const active=await opening;
-          attemptSignal.throwIfAborted();
-          const plan=await input.formulate({...request,question:{...request.question,signal:attemptSignal}});
+          const pendingSession=opening;
+          const [active,plan]=await Promise.all([pendingSession,input.formulate(
+            {...request,question:{...request.question,signal:attemptSignal}},async fragment=>{
+              const capability=await pendingSession;
+              attemptSignal.throwIfAborted();
+              if(capability.stage){staged=true;await capability.stage({round:request.round,...fragment});}
+            })]);
           attemptSignal.throwIfAborted();
           signal?.throwIfAborted();
           if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
@@ -80,6 +87,9 @@ export function createRemoteCorpusResearch(input:{
           signal?.throwIfAborted();
           if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
           return packet;
+        }catch(error){
+          if(staged)await Promise.resolve(session?.discard?.(request.round)).catch(()=>undefined);
+          throw error;
         }finally{attemptSignal.removeEventListener("abort",cancelAttempt);}
       });
     },

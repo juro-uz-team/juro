@@ -12,6 +12,27 @@ const request:ResearchRequest={round:0,needs:[],question:{question:"Private case
 const plan={id:"plan",formulations:[{id:"query",text:"statutory procedure contact private@example.com",
   privateNameSpans:[],readingIds:["topic"],requirementIds:["topic"]}]};
 
+test("a failed streamed plan discards its pending round and permits the next bounded round",async()=>{
+  const rounds:number[]=[];
+  const remote=createRemoteCorpusResearch({requestId:"streamed",environment:"staging",
+    formulate:async(request,emit)=>{
+      await emit?.({interpretationId:plan.id,formulation:plan.formulations[0]!});
+      if(request.round===0)throw new Error("incomplete planning");
+      return plan;
+    },
+    service:{async openLegalResearch(input){
+      const session=createCorpusSession(input,formulate=>async request=>{
+        await formulate(request,async()=>undefined);rounds.push(request.round);return {evidence:[],needs:[]};
+      });
+      return {stage:session.stage,search:session.search,async discard(round){session.discard(round);},
+        async cancel(){session.close();},[Symbol.dispose]:session.close};
+    }}});
+  await assert.rejects(remote.indexed(request),/incomplete planning/);
+  await remote.indexed({...request,round:1});
+  assert.deepEqual(rounds,[1]);
+  await remote.close();
+});
+
 test("a failed local formulation does not strand subsequent bounded research rounds",async()=>{
   const rounds:number[]=[];
   let attempts=0;

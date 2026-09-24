@@ -258,6 +258,34 @@ function normalizeCandidates(input: Array<NormalizedCandidateInput & {
     right.fusionScore - left.fusionScore || left.itemKey.localeCompare(right.itemKey));
 }
 
+/** Fuse completed incremental lists with the same ordering and provenance as
+ * a single complete-plan retrieval. Partial lists never become a full packet. */
+export function combineFormulationPackets(interpretation:QuestionInterpretation,
+  endpoint:TemporalEndpoint,release:PinnedCandidateRelease,packets:readonly CandidatePacket[]):CandidatePacket {
+  if(packets.length!==interpretation.formulations.length
+    ||new Set(interpretation.formulations.map(item=>item.id)).size!==interpretation.formulations.length)throw new TypeError("CANDIDATE_INTERPRETATION_INVALID");
+  const inputs=packets.flatMap((raw,index)=>{
+    const packet=packetSchema.parse(raw),formulation=interpretation.formulations[index]!;
+    if(packet.availability!=="available"||packet.partialErrors.length||packet.releaseId!==release.id
+      ||JSON.stringify(packet.endpoint)!==JSON.stringify(endpoint)
+      ||packet.requiredInstanceIds.length!==release.instances.length
+      ||new Set(packet.requiredInstanceIds).size!==release.instances.length
+      ||release.instances.some(instance=>!packet.requiredInstanceIds.includes(instance.id))) {
+      throw new TypeError("CANDIDATE_PARTIAL_RESPONSE");
+    }
+    return packet.candidates.map((candidate,rank)=>{
+      if(candidate.formulationIds.length!==1||candidate.formulationIds[0]!==formulation.id
+        ||!release.instances.some(instance=>instance.id===candidate.instanceId&&instance.shardId===candidate.shardId)) {
+        throw new TypeError("CANDIDATE_INTERPRETATION_INVALID");
+      }
+      const match=candidate.formulationMatches?.find(item=>item.formulationId===formulation.id);
+      return {...candidate,formulation,formulationRank:match?.rank??rank+1,fusionScore:match?.fusionScore??candidate.fusionScore};
+    });
+  });
+  return packetSchema.parse({availability:"available",releaseId:release.id,endpoint,
+    requiredInstanceIds:release.instances.map(instance=>instance.id),candidates:normalizeCandidates(inputs),partialErrors:[]});
+}
+
 export function createCallbackCandidateIndex(
   retrieve: (
     formulation: QuestionInterpretation["formulations"][number],

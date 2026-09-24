@@ -138,6 +138,19 @@ test("accepted parent recovery authenticates full article context without replac
   await assert.rejects(createPinnedSourceVerifier({bucket, observe: async () => {throw new Error("Unavailable");}})(
     anchored),
   "A new request authenticates physical bytes again, even after a prior request succeeded");
+  const largeBlocks=[...blocks,...Array.from({length:22},(_,index)=>({
+    index:blocks.length+index,kind:"paragraph" as const,text:"Unrelated retained text. ".repeat(4000)}))];
+  const largeBytes=new TextEncoder().encode(JSON.stringify({...snapshot,blocks:largeBlocks,
+    plainText:largeBlocks.map(block=>block.text).join(" ")}));
+  assert.ok(largeBytes.byteLength>4_000_000&&largeBytes.byteLength<8_000_000);
+  bucket.objects.set(key,{bytes:largeBytes,customMetadata:{}});
+  const largeOriginal=parseResolvedOfficialEvidence({...anchored,evidence:{...anchored.evidence,
+    sourceNormalizedSha256:sha256(largeBytes)}});
+  const largeContext=await createNormalizedArticleEvidenceReader(bucket)(largeOriginal,"7",sourceRevisionId);
+  assert.equal(largeContext?.provisionText,context!.provisionText,
+    "A valid parent within the citation envelope must retain complete article access");
+  const largeReceipt={...receipt,byteCount:largeBytes.length,sha256:sha256(largeBytes)};
+  assert.equal((await resolveCitationEvidence(bucket,largeReceipt)).text,context!.provisionText);
 });
 
 function sha256(value: string | Uint8Array): string {

@@ -1,5 +1,7 @@
 import type {createRuntimeLegalEvidenceServices} from "../legal-corpus/target-runtime";
-import type {PinnedCandidateRelease, QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
+import {combineFormulationPackets,interpretationSchema,type CandidatePacket,type PinnedCandidateRelease} from "../legal-corpus/legal-candidate-index";
+import type {ResearchFormulator} from "./research-formulation";
+import {LEGAL_INTERPRETATION_FORMULATION_LIMIT} from "../legal/question-interpretation-limits";
 import type {RevalidatedCandidate, SelectionCandidate} from "../legal-corpus/target-retrieval";
 import {fitsLegalEvidenceBudget} from "../legal/legal-evidence-budget";
 import type {LegalEvidence, LegalTime} from "./answer-engine";
@@ -23,7 +25,7 @@ const RESERVED_REFERENCE_READS = 12;
  * The supplied formulation policy supplies queries, never legal conclusions. */
 export function createCorpusResearch(input: {
   services:CorpusServices;
-  formulate:(request:ResearchRequest)=>Promise<QuestionInterpretation>;
+  formulate:ResearchFormulator;
   now?:()=>number;
 }):(request:ResearchRequest)=>Promise<ResearchPacket> {
   const now=input.now??Date.now;
@@ -58,7 +60,23 @@ export function createCorpusResearch(input: {
     check();
     // ADR 0007: both indexed candidate lanes receive the same unmodified
     // request-local formulation. Public-site discovery has a separate policy.
-    const interpretation=await input.formulate(request);
+    const staged=new Map<string,{fragment:string;packets:Promise<CandidatePacket>[]} >();
+    let interpretationId:string|undefined;
+    const interpretation=interpretationSchema.parse(await input.formulate(request,async fragment=>{
+      check();
+      const partial=interpretationSchema.parse({id:fragment.interpretationId,formulations:[fragment.formulation]});
+      if(staged.size>=LEGAL_INTERPRETATION_FORMULATION_LIMIT||staged.has(fragment.formulation.id)
+        ||(interpretationId!==undefined&&interpretationId!==partial.id))throw new Error("CORPUS_RESEARCH_FRAGMENT_INVALID");
+      interpretationId=partial.id;
+      const packets=releases.map(({endpoint,release})=>input.services.candidateIndex.retrieve(partial,endpoint,release,{currentAt}));
+      for(const packet of packets)void packet.catch(()=>undefined);
+      staged.set(fragment.formulation.id,{fragment:JSON.stringify(partial.formulations[0]),packets});
+    }));
+    if(new Set(interpretation.formulations.map(item=>item.id)).size!==interpretation.formulations.length)throw new Error("CORPUS_RESEARCH_FRAGMENT_INVALID");
+    if(staged.size&&(interpretation.id!==interpretationId
+      ||[...staged].some(([id,item])=>JSON.stringify(interpretation.formulations.find(formulation=>formulation.id===id))!==item.fragment))) {
+      throw new Error("CORPUS_RESEARCH_FRAGMENT_INVALID");
+    }
     check();
     const needs:ResearchNeed[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];
@@ -68,13 +86,16 @@ export function createCorpusResearch(input: {
     const seen=new Set<string>();
     const resolved:SelectionCandidate[][]=releases.map(()=>[]);
     const queues:RevalidatedCandidate[][]=[];
-    for(const {endpoint,release} of releases) {
+    for(const [releaseIndex,{endpoint,release}] of releases.entries()) {
       check();
       if((release.capability==="current")!==(endpoint.kind==="current")) {
         throw new Error("CORPUS_RELEASE_TEMPORAL_MISMATCH");
       }
       try {
-        const packet=await input.services.candidateIndex.retrieve(interpretation,endpoint,release,{currentAt});
+        const packet=staged.size?combineFormulationPackets(interpretation,endpoint,release,
+          await Promise.all(interpretation.formulations.map(formulation=>staged.get(formulation.id)?.packets[releaseIndex]
+            ??input.services.candidateIndex.retrieve({id:interpretation.id,formulations:[formulation]},endpoint,release,{currentAt}))))
+          :await input.services.candidateIndex.retrieve(interpretation,endpoint,release,{currentAt});
         check();
         if(packet.availability!=="available"||packet.partialErrors.length
           || packet.releaseId!==release.id || timeIdentity(packet.endpoint)!==timeIdentity(endpoint)) {

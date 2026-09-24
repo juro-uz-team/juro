@@ -52,6 +52,36 @@ function fixture() {
   return {services,calls,search:createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant)})};
 }
 
+test("incremental formulations start candidate retrieval before the final plan but release no early evidence",async()=>{
+  const {services,calls}=fixture();
+  const searching=Promise.withResolvers<void>(),finish=Promise.withResolvers<QuestionInterpretation>();
+  const original=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{searching.resolve();return original(...args);};
+  const search=createCorpusResearch({services,now:()=>Date.parse(instant),formulate:async(_request,emit)=>{
+    assert.ok(emit,"The reader must accept incremental formulations");
+    await emit({interpretationId:interpretation.id,formulation:interpretation.formulations[0]!});
+    return finish.promise;
+  }});
+  const result=search(request);
+  await Promise.race([searching.promise,result]);
+  assert.equal(calls.reads,0,"No evidence is admitted before the full plan validates");
+  finish.resolve(interpretation);
+  const packet=await result;
+  assert.equal(packet.evidence.length,1);
+  assert.equal(calls.searches.length,1,"Finalization reuses the in-flight candidate search");
+});
+
+test("an invalid final plan cannot admit evidence from an earlier streamed formulation",async()=>{
+  const {services,calls}=fixture();
+  const search=createCorpusResearch({services,now:()=>Date.parse(instant),formulate:async(_request,emit)=>{
+    await emit?.({interpretationId:interpretation.id,formulation:interpretation.formulations[0]!});
+    return {...interpretation,formulations:[{...interpretation.formulations[0]!,text:"A silently replaced qualification"}]};
+  }});
+  await assert.rejects(search(request),/FRAGMENT_INVALID/);
+  assert.equal(calls.searches.length,1);
+  assert.equal(calls.reads,0);
+});
+
 test("bounded repair searches reuse the pinned release, time filter and authenticated evidence",async()=>{
   const {search,calls}=fixture();
   const first=await search(request);

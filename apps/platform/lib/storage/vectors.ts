@@ -145,6 +145,9 @@ export class PostgresVectorIndex {
           rows = (await client.query(`${select} ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, parameters)).rows;
         } else if (generation && scope) {
           await client.query("SET LOCAL hnsw.ef_search = 200");
+          // PostgreSQL can underestimate selective temporal sorting and scan
+          // every toasted vector instead of using the compact graph.
+          await client.query("SET LOCAL enable_sort = off");
           const groupParameters = [...parameters, generation.id];
           const generationParameter = `$${groupParameters.length}::uuid`;
           let temporalPredicate = "";
@@ -157,16 +160,28 @@ export class PostgresVectorIndex {
           // Materialize identity sets before reading originals. Freshly built
           // generations may be absent from statistics; a join can otherwise
           // scan the entire collection once for each duplicate member.
+          // Publication proves bit-identical full-precision group vectors.
+          // Score each group once, avoiding repeated original-vector TOAST
+          // reads; identities, filters, metadata and returned vectors are original.
           rows = (await client.query(`WITH nearest AS MATERIALIZED (
-            SELECT g.digest FROM storage.vector_search_groups g
+            SELECT g.digest,g.embedding FROM storage.vector_search_groups g
             WHERE g.generation_id=${generationParameter} ${temporalPredicate}
             ORDER BY g.embedding::halfvec(1536) <=> $2::text::halfvec(1536) LIMIT 250
-          ) ${select} AND id=ANY(ARRAY(
-            SELECT id FROM storage.vector_search_members
+          ), scores AS MATERIALIZED (
+            SELECT digest,1-(embedding::vector(1536) <=> $2::text::vector(1536)) AS score FROM nearest
+          ), members AS MATERIALIZED (
+            SELECT id,(SELECT score FROM scores WHERE scores.digest=storage.vector_search_members.digest) AS score
+            FROM storage.vector_search_members
             WHERE generation_id=${generationParameter}
               AND digest=ANY(ARRAY(SELECT digest FROM nearest))
-          ))
-            ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, groupParameters)).rows;
+          ), score_map AS MATERIALIZED (
+            SELECT jsonb_object_agg(id,score) AS values FROM members
+          ) SELECT id,namespace,((SELECT values FROM score_map)->>id)::double precision AS score
+          ${options.returnMetadata && options.returnMetadata !== "none" ? ",metadata" : ""}
+          ${options.returnValues ? ",embedding::text AS values" : ""} FROM storage.embeddings
+          WHERE ${where.join(" AND ")} AND id=ANY(ARRAY(SELECT id FROM members))
+            ORDER BY score DESC,id LIMIT $${parameters.length}`, groupParameters)).rows;
+          await client.query("SET LOCAL enable_sort = on");
         } else {
         // JSON metadata selectivity estimates can otherwise prefer an expensive
         // exact sort even when most of the collection is eligible.

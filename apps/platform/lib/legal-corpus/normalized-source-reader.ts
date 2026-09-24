@@ -21,7 +21,9 @@ export function createNormalizedSourceReader(bucket: Pick<LegalEvidenceBucket, "
     const lane = nextLane++ % lanes.length;
     const read = lanes[lane]!.then(async () => {
       const object = await bucket.get(r2Key);
-      if (!object || object.size > 4_000_000) throw new TypeError("PINNED_SOURCE_REVISION_UNAVAILABLE");
+      // Match the existing citation envelope: authenticated retained parents
+      // can exceed four MB even when each individual article is small.
+      if (!object || object.size > 8_000_000) throw new TypeError("PINNED_SOURCE_REVISION_UNAVAILABLE");
       const bytes = await object.bytes();
       const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
       const actual = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
