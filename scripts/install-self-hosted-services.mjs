@@ -18,6 +18,7 @@ const production = process.argv.includes("--production");
 const services = [
   ["platform", "apps/platform", "server/index.ts"],
   ["jobs", "apps/platform", "server/jobs.ts"],
+  ["source-observer", "apps/platform", "server/source-observer.ts"],
   ["website", "apps/website", "server/index.ts"],
   ["admin", "apps/admin", "src/server.ts"],
 ];
