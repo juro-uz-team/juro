@@ -358,4 +358,8 @@ test("refreshed HTML preserves superscript identities without rewriting retained
     <p>${"Taraflarning huquqlari va majburiyatlari qonun bilan belgilanadi. ".repeat(5)}</p></main>`,
     reference:{...reference,locale:"uz"},rawContentSha256,profile:"juro-legal-blocks-v2"});
   assert.ok(completeArticleText(uzbek.blocks,"18-1")?.text.includes("Maxsus qoida"));
+  const punctuationInside = html.replace('<sup>1</sup>.','<sup>1.</sup>');
+  const punctuated=normalizeLegalSourceHtml({html:punctuationInside,reference,rawContentSha256,profile:"juro-legal-blocks-v2"});
+  assert.deepEqual(punctuated.blocks,refreshed.blocks,"Publisher punctuation inside a superscript must not collapse article 18¹ into 181");
+  assert.deepEqual(normalizeLegalSourceHtml({html:punctuationInside,reference,rawContentSha256}).blocks,legacy.blocks);
 });

@@ -234,7 +234,7 @@ function collectText(
   const text = node.childNodes.map((child) => collectText(child, options)).join("");
   // Preserve typography, without guessing which numeric superscripts are
   // article suffixes versus units or other official notation.
-  return options.preserveSuperscripts && isElement(node) && node.tagName === "sup" && /^[0-9]+$/u.test(text.trim())
+  return options.preserveSuperscripts && isElement(node) && node.tagName === "sup" && /^[0-9]+\.?$/u.test(text.trim())
     ? text.replace(/[0-9]/gu, digit => "⁰¹²³⁴⁵⁶⁷⁸⁹"[Number(digit)]!) : text;
 }
 
