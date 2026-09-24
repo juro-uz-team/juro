@@ -1,4 +1,4 @@
-import { completeArticleText } from "../legal/article-context";
+import { createCompleteArticleReader } from "../legal/article-context";
 import { normalizedLegalSourceSnapshotSchema } from "../legal/source-parser";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
 
@@ -8,6 +8,7 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
   type Parent = {
     snapshot: ReturnType<typeof normalizedLegalSourceSnapshotSchema.parse>;
     r2Key: string; byteCount: number; sha256: string;
+    readArticle: ReturnType<typeof createCompleteArticleReader>;
   };
   const snapshots = new Map<string, Parent>();
   const pendingSnapshots = new Map<string, Promise<Parent | null>>();
@@ -37,7 +38,8 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
             new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
           console.info(JSON.stringify({event: "legal.normalized_article_snapshot_verified",
             byteCount: bytes.byteLength, elapsedMs: Date.now() - startedAt}));
-          return {snapshot, r2Key, byteCount: bytes.byteLength, sha256};
+          return {snapshot, r2Key, byteCount: bytes.byteLength, sha256,
+            readArticle: createCompleteArticleReader(snapshot.blocks)};
         } catch { return null; }
       }).then(parent => {
         if (parent) {
@@ -59,7 +61,7 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
     if (!parent || parent.snapshot.source.sourceKind !== "lex"
       || parent.snapshot.source.canonicalUrl !== original.officialCitation.url
       || ({ru: "ru", uz: "uz-Latn", uzc: "uz-Cyrl", en: "en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
-    const context = completeArticleText(parent.snapshot.blocks, article);
+    const context = parent.readArticle(article);
     const originalText = original.provisionText.replace(/\s+/gu, " ").trim();
     // A discovered provision can be a middle fragment. Its exact content must
     // occur in this uniquely identified article of the authenticated parent;

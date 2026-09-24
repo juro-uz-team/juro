@@ -13,13 +13,29 @@ import {
   parseResolvedOfficialEvidence,
 } from "../lib/legal-corpus/target-evidence";
 import { createNormalizedArticleEvidenceReader } from "../lib/legal-corpus/normalized-article-evidence";
-import { completeArticleText } from "../lib/legal/article-context";
+import { completeArticleText, createCompleteArticleReader } from "../lib/legal/article-context";
 import { resolveCitationEvidence, handleCitationEvidenceRequest, CITATION_EVIDENCE_PATH } from "../lib/legal-corpus/citation-evidence";
 import { recordProvisionTemporalEvidence } from "../lib/legal-corpus/target-temporal";
 import { sqliteD1FixtureFromDirectory } from "./helpers/sqlite-d1";
 import { MemoryEvidenceBucket, representativeProvision } from "./helpers/legal-target";
 
 const migrationCutoff = "2026-08-31T06:26:27.225Z";
+
+test("a parent article reader preserves unique headings, section boundaries and its captured text",()=>{
+  const blocks = ["Article 1. First", "First rule.", "Chapter boundary", "Unrelated text.",
+    "Article 2. Duplicate", "Second rule.", "Article 2. Duplicate", "Other rule.",
+    "Article 3. Incomplete", "Conditions:", "Article 4. Heading only"]
+    .map((text,index)=>({index,kind:"paragraph" as const,text,...(index===2?{semanticRole:"chapter" as const}:{})}));
+  const read=createCompleteArticleReader(blocks);
+  assert.deepEqual(read("1"),{heading:"Article 1. First",text:"Article 1. First First rule."});
+  assert.equal(read("2"),null);
+  assert.equal(read("3"),null);
+  assert.equal(read("4"),null);
+  assert.equal(read("missing"),null);
+  assert.equal(read("1","Unrelated text"),null);
+  blocks[1]!.text="Changed after reader creation.";
+  assert.equal(read("1")?.text,"Article 1. First First rule.");
+});
 
 test("accepted parent recovery authenticates full article context without replacing the original rendition", async () => {
   const blocks = [

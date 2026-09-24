@@ -12,17 +12,32 @@ export function completeArticleText(
   article: string,
   originalText?: string,
 ): { heading: string; text: string } | null {
-  const starts = blocks.flatMap((block, index) => ARTICLE_HEADING.test(block.text.trim())
-    && detectArticleNumbers(block.text)[0] === article ? [index] : []);
-  if (starts.length !== 1) return null;
-  const start = starts[0]!;
-  let end = start + 1;
-  while (end < blocks.length && !ARTICLE_HEADING.test(blocks[end]!.text.trim())
-    && blocks[end]!.semanticRole !== "chapter" && blocks[end]!.semanticRole !== "section") end++;
+  return createCompleteArticleReader(blocks)(article, originalText);
+}
+
+/** Capture one authenticated parent's article boundaries once. The returned
+ * reader owns its text references; later caller mutation cannot stale the index. */
+export function createCompleteArticleReader(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
+  const captured = blocks.map(block => ({text: block.text, semanticRole: block.semanticRole}));
+  const ranges = new Map<string, {start: number; end: number} | null>();
+  let nextBoundary = captured.length;
+  for (let index = captured.length - 1; index >= 0; index--) {
+    const block = captured[index]!;
+    if (ARTICLE_HEADING.test(block.text.trim())) {
+      const article = detectArticleNumbers(block.text)[0];
+      if (article !== undefined) ranges.set(article, ranges.has(article) ? null : {start: index, end: nextBoundary});
+      nextBoundary = index;
+    } else if (block.semanticRole === "chapter" || block.semanticRole === "section") nextBoundary = index;
+  }
+  return (article: string, originalText?: string): {heading: string; text: string} | null => {
+  const range = ranges.get(article);
+  if (!range) return null;
+  const {start, end} = range;
   if (end - start < 2) return null;
-  const text = normalize(blocks.slice(start, end).map(block => block.text).join(" "));
+  const text = normalize(captured.slice(start, end).map(block => block.text).join(" "));
   if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return null;
   if (originalText && (!text.startsWith(normalize(originalText))
     || text.length <= normalize(originalText).length)) return null;
-  return { heading: blocks[start]!.text.slice(0, 240), text };
+  return { heading: captured[start]!.text.slice(0, 240), text };
+  };
 }
