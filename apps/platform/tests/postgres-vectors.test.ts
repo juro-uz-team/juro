@@ -48,6 +48,19 @@ test("compact generations expand original identities and become unusable after s
     assert.equal(result.matches[0]!.score, exactScore, "query coordinates must not be rounded through halfvec before full-precision scoring");
     assert.equal(result.matches[0]!.metadata!.originalId, 1);
     assert.deepEqual(result.matches[0]!.values, original);
+    const digest=(await db.pool.query("SELECT encode(digest,'hex') AS digest FROM storage.vector_search_groups WHERE generation_id=$1",[generation])).rows[0].digest;
+    let candidateCalls=0;
+    const accelerated=new PostgresVectorIndex(db.pool,name,async request=>{
+      candidateCalls++;
+      assert.equal(request.collection,name);assert.equal(request.generation,generation);
+      assert.equal(request.instant,10);assert.equal(request.values[1],question[1]);
+      assert.match(request.sourceRevision,/^\d+$/u);
+      return [digest];
+    });
+    assert.deepEqual((await accelerated.query(question,{topK:50,filter,returnMetadata:"all",returnValues:true})).matches,result.matches);
+    await accelerated.query(question,{topK:1,namespace:"",filter});
+    assert.equal(candidateCalls,1,"unsupported scopes cannot use prepared candidates");
+    await assert.rejects(new PostgresVectorIndex(db.pool,name,async()=>{throw Error("Candidate offline");}).query(question,{topK:50,filter}),/Candidate offline/);
     await index.query(question, {topK: 1, namespace: "", filter});
     await index.query(question, {topK: 1, filter: {$and: [filter]}});
     assert.equal(groupReads, 1, "unqualified namespace/nested scopes must retain the generic path");
@@ -62,6 +75,8 @@ test("compact generations expand original identities and become unusable after s
     assert.equal(groupReads, 1, "a changed source cannot use the old generation");
     assert.equal(refreshed.matches[0]!.id, "10002");
     assert.equal(refreshed.matches[0]!.score, 1);
+    assert.equal((await accelerated.query(question,{topK:1,filter})).matches[0]!.id,"10002");
+    assert.equal(candidateCalls,1,"a stale generation cannot be sent to the candidate service");
   } finally {
     await db.pool.query("UPDATE storage.vector_search_generations SET state='retired' WHERE id=$1", [generation]);
     await db.pool.query("DELETE FROM storage.vector_search_generations WHERE id=$1", [generation]);

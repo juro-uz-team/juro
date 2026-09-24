@@ -3,6 +3,7 @@ import {beginVectorRead} from "./vector-read-snapshot";
 import {compactVectorScope, supportsCompactVector} from "./vector-search-generation";
 import type { Pool } from "pg";
 import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
+import type {VectorCandidateReader} from "./vector-candidates";
 
 type Metric = "cosine" | "euclidean" | "dot-product";
 type Vector = { id: string; values: number[] | Float32Array; namespace?: string; metadata?: Record<string, unknown> };
@@ -45,7 +46,7 @@ function filterSql(filter: Record<string, unknown>, parameters: unknown[], depth
 }
 
 export class PostgresVectorIndex {
-  constructor(readonly pool: Pool, readonly name: string) {}
+  constructor(readonly pool: Pool, readonly name: string, private readonly readCandidates?:VectorCandidateReader) {}
 
   async isReady(): Promise<boolean> {
     const result = await retrievalQuery(this.pool,"SELECT ready FROM storage.vector_collections WHERE name=$1", [this.name]);
@@ -134,7 +135,7 @@ export class PostgresVectorIndex {
       } else {
         const scope = configuration.metric === "cosine" && configuration.dimensions === 1536 && topK <= 50 && supportsCompactVector(values)
           ? compactVectorScope(options.filter, options.namespace) : null;
-        const generation = scope ? (await client.query<{id: string; current: boolean}>(`SELECT g.id,c.source_revision=g.source_revision AS current
+        const generation = scope ? (await client.query<{id: string; current: boolean; source_revision:string}>(`SELECT g.id,g.source_revision,c.source_revision=g.source_revision AS current
           FROM storage.vector_search_generations g JOIN storage.vector_collections c
           ON c.name=g.collection
           WHERE g.collection=$1 AND g.state='verified'
@@ -155,6 +156,13 @@ export class PostgresVectorIndex {
             groupParameters.push(scope.instant);
             temporalPredicate = `AND (g.coverage IS NULL OR g.coverage @> $${groupParameters.length}::numeric)`;
           }
+          let candidateSelection="ORDER BY g.embedding::halfvec(1536) <=> $2::text::halfvec(1536) LIMIT 250";
+          if(this.readCandidates){
+            const digests=await this.readCandidates({collection:this.name,generation:generation.id,
+              sourceRevision:String(generation.source_revision),values:Array.from(values),instant:scope.instant});
+            groupParameters.push(digests.map(digest=>Buffer.from(digest,"hex")));
+            candidateSelection=`AND g.digest=ANY($${groupParameters.length}::bytea[])`;
+          }
           // Group selection is approximate; original identities, filters,
           // full-precision scores and returned values remain authoritative.
           // Materialize identity sets before reading originals. Freshly built
@@ -166,7 +174,7 @@ export class PostgresVectorIndex {
           rows = (await client.query(`WITH nearest AS MATERIALIZED (
             SELECT g.digest,g.embedding FROM storage.vector_search_groups g
             WHERE g.generation_id=${generationParameter} ${temporalPredicate}
-            ORDER BY g.embedding::halfvec(1536) <=> $2::text::halfvec(1536) LIMIT 250
+            ${candidateSelection}
           ), scores AS MATERIALIZED (
             SELECT digest,1-(embedding::vector(1536) <=> $2::text::vector(1536)) AS score FROM nearest
           ), members AS MATERIALIZED (

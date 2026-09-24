@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { database } from "../storage/connection";
 import { LocalObjectStore } from "../storage/objects";
 import { PostgresVectorIndex } from "../storage/vectors";
+import {createVectorCandidateReader} from "../storage/vector-candidates";
 import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
 import { PostgresQueue } from "../storage/queue";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
@@ -56,7 +57,8 @@ export function getSelfHostedRuntime(): Runtime {
       const cache = new CustomRuntimeCache(512*1024*1024);
       return {
         async fetch(input: RequestInfo | URL, init?: RequestInit) {
-          const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection);
+          const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection,
+            process.env.VECTOR_CANDIDATE_URL ? createVectorCandidateReader(process.env.VECTOR_CANDIDATE_URL) : undefined);
           if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
           return handleCustomSearchRequest(new Request(input, init), {
             ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,

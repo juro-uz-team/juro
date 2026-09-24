@@ -176,6 +176,16 @@ test("historical evidence preserves endpoint identity and does not require curre
   assert.equal(first.source.currentSourceStatus,undefined);
 });
 
+test("a numbered paragraph inside an authenticated article retains the parent article identity",async()=>{
+  const {resolution,currentSourceStatus}=await fixture();
+  const fragment="7. The application must identify the requested record.";
+  const controlling={...resolution.controlling,provisionText:fragment};
+  const articleContext={...resolution.articleContext,provisionText:`Article 7. Filing requirements ${fragment} The authority must respond.`};
+  const evidence=await corpusAnswerEvidence({resolution:{...resolution,controlling,articleContext},currentSourceStatus,currentAt,endpoint:{kind:"current"}});
+  assert.equal(evidence.source.article,"7");
+  assert.equal(evidence.source.citationEvidenceReceipt?.kind,"normalized-article");
+});
+
 test("historical source evidence does not require a textual authority classification",async()=>{
   const {resolution,bucket}=await fixture();
   const original={...resolution.controlling,textualAuthority:"unknown" as const};

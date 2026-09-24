@@ -12,6 +12,13 @@ export function indexedRetrievalSignal():AbortSignal|undefined {
   return scope?.controller.signal;
 }
 
+/** Remaining request budget for a native child service, including its queue. */
+export function indexedRetrievalRemainingMs():number {
+  indexedRetrievalSignal();
+  const scope=scopes.getStore();
+  return scope?Math.max(0,Math.min(10_000,scope.expiresAt-performance.now())):10_000;
+}
+
 export function awaitIndexedRetrieval<T>(operation:Promise<T>,signal=indexedRetrievalSignal()):Promise<T> {
   if(!signal)return operation;
   return new Promise<T>((resolve,reject)=>{
