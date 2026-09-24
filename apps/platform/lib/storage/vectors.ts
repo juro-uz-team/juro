@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {beginVectorRead} from "./vector-read-snapshot";
 import type { Pool } from "pg";
 import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
 
@@ -83,7 +84,12 @@ export class PostgresVectorIndex {
   }
 
   async query(values: number[] | Float32Array, options: QueryOptions = {}) {
-    const configuration = await this.configuration();
+    const lease = await acquireRetrievalClient(this.pool);
+    const client = lease.client;
+    try {
+    await beginVectorRead(client);
+    const configuration = (await client.query<Configuration>("SELECT dimensions,metric,model,ready FROM storage.vector_collections WHERE name=$1", [this.name])).rows[0];
+    if (!configuration) throw new Error(`Vector collection is unavailable: ${this.name}`);
     if (!configuration.ready) throw new Error("Vector collection import has not been verified");
     const literal = vectorLiteral(values, configuration.dimensions);
     if (configuration.metric === "cosine" && Array.from(values).every(value => value === 0)) throw new Error("Cosine query requires a nonzero vector");
@@ -99,11 +105,7 @@ export class PostgresVectorIndex {
     const score = configuration.metric === "cosine" ? `1 - (${distance})`
       : configuration.metric === "dot-product" ? `-(${distance})` : `(${distance})`;
     parameters.push(topK);
-    const lease = await acquireRetrievalClient(this.pool);
-    const client = lease.client;
     let rows: Array<{ id: string; namespace: string; score: number; metadata?: Record<string, unknown>; values?: string }>;
-    try {
-      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout = '15s'");
       // Short retrieval queries spend more time compiling JIT expressions than
       // executing them, especially when several formulations run together.
@@ -143,11 +145,11 @@ export class PostgresVectorIndex {
       if ((!eligible || eligible.length > 10000) && rows.length < topK) rows = (await client.query(
         `${select} ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, parameters)).rows;
       await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
-    finally { lease.release(); }
     rows.sort((left,right) => (configuration.metric === "euclidean" ? left.score-right.score : right.score-left.score) || left.id.localeCompare(right.id));
     rows=rows.slice(0,topK);
     return { count: rows.length, matches: rows.map(row => ({ ...row, ...(row.values ? { values: JSON.parse(row.values) as number[] } : {}) })) };
+    } catch (error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; }
+    finally { lease.release(); }
   }
 
   async getByIds(ids: string[]) {
