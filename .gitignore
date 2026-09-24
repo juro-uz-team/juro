@@ -48,5 +48,7 @@ docs/codemie/
 /apps/website/public/investor/
 .env.self-hosted
 .data/
+__pycache__/
+.venv/
 
 !.env.self-hosted.example
