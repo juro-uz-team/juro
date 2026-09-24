@@ -138,3 +138,21 @@ test("publisher text fingerprints detect changed operative text independently of
   assert.notEqual(await publisherTextFingerprint(first), await publisherTextFingerprint({...first,
     source: {...first.source, locale: "en", canonicalUrl: "https://lex.uz/en/docs/777"}}));
 });
+
+test("one publisher observation verifies both retained and superscript-preserving snapshots", async context => {
+  const url="https://lex.uz/ru/docs/777";
+  const html=`<html><header id="doc_header">Действующий акт</header><main><h1>Кодекс</h1><p>Статья 18<sup>1</sup>. Специальное правило</p><p>${"Обязательства сторон определяются законом. ".repeat(8)}</p></main></html>`;
+  context.mock.method(globalThis,"fetch",async (input:RequestInfo|URL)=>String(input).endsWith('/robots.txt')
+    ?new Response('User-agent: *\nAllow: /',{headers:{'content-type':'text/plain'}})
+    :new Response(html,{headers:{'content-type':'text/html; charset=utf-8'}}));
+  const observation=await readLexPublisherObservation(url);
+  const reference={sourceKind:"lex" as const,locale:"ru" as const,canonicalId:"777",canonicalUrl:url};
+  for(const profile of ["juro-legal-blocks-v1","juro-legal-blocks-v2"] as const){
+    const snapshot=normalizeLegalSourceHtml({html,reference,rawContentSha256:observation.rawContentSha256,profile});
+    const expected={officialUrl:url,normalizedTextSha256:await publisherTextFingerprint(snapshot),now:Date.parse(observation.observedAt)};
+    assert.equal(isCurrentSourceObservation(observation,expected),true,profile);
+    assert.equal(isCurrentSourceObservation({...observation,current:false},expected),false);
+    assert.equal(isCurrentSourceObservation(observation,{...expected,normalizedTextSha256:"0".repeat(64)}),false);
+    assert.equal(isCurrentSourceObservation(observation,{...expected,now:expected.now+300000}),false);
+  }
+});

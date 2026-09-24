@@ -4,6 +4,8 @@ export const SOURCE_OBSERVATION_MAX_AGE_MS = 5 * 60_000;
 export const sourceObservationSchema = z.object({
   version: z.literal(2), officialUrl: z.url(), observedAt: z.iso.datetime().transform(value => new Date(value).toISOString()), current: z.boolean(),
   normalizedTextSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  /** Independently normalized from the same fetched HTML with the v2 profile. */
+  normalizedTextSha256V2: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   rawContentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
 }).strict();
 export type SourceObservation = z.infer<typeof sourceObservationSchema>;
@@ -31,7 +33,8 @@ export function isCurrentSourceObservation(value: unknown, expected: {
 }): boolean {
   const parsed = sourceObservationSchema.safeParse(value);
   return parsed.success && fresh(parsed.data, expected.officialUrl, expected.now)
-    && parsed.data.current && parsed.data.normalizedTextSha256 === expected.normalizedTextSha256;
+    && parsed.data.current && (parsed.data.normalizedTextSha256 === expected.normalizedTextSha256
+      || parsed.data.normalizedTextSha256V2 === expected.normalizedTextSha256);
 }
 
 /** Cache only public publisher observations. Neither a cache hit nor a failed

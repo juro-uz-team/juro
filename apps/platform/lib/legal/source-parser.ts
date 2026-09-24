@@ -58,7 +58,7 @@ export const normalizedLegalSourceSnapshotSchema = z.object({
   parser: z.object({
     name: z.enum(["parse5", "unpdf"]),
     version: z.enum(["8.0.1", "1.8.0"]),
-    profile: z.enum(["juro-legal-blocks-v1", "juro-legal-pdf-v1"]),
+    profile: z.enum(["juro-legal-blocks-v1", "juro-legal-blocks-v2", "juro-legal-pdf-v1"]),
   }).strict(),
   source: z.object({
     sourceKind: z.enum(["lex", "advice"]),
@@ -220,7 +220,7 @@ export function containsLegalSourceUiNoise(value: string): boolean {
 
 function collectText(
   node: Node,
-  options: { excludeNestedLists?: boolean } = {},
+  options: { excludeNestedLists?: boolean; preserveSuperscripts?: boolean } = {},
 ): string {
   if (isTextNode(node)) return node.value;
   if (!isElement(node) && !("childNodes" in node)) return "";
@@ -231,7 +231,11 @@ function collectText(
     }
     if (node.tagName === "br") return "\n";
   }
-  return node.childNodes.map((child) => collectText(child, options)).join("");
+  const text = node.childNodes.map((child) => collectText(child, options)).join("");
+  // Preserve typography, without guessing which numeric superscripts are
+  // article suffixes versus units or other official notation.
+  return options.preserveSuperscripts && isElement(node) && node.tagName === "sup" && /^[0-9]+$/u.test(text.trim())
+    ? text.replace(/[0-9]/gu, digit => "⁰¹²³⁴⁵⁶⁷⁸⁹"[Number(digit)]!) : text;
 }
 
 function collectVisiblePageText(node: Node): string {
@@ -373,6 +377,7 @@ function lexSemanticRole(classes: ReadonlySet<string>, text: string): MutableBlo
 function collectBlocks(
   root: Element,
   sourceKind: LegalSourceKind,
+  preserveSuperscripts = false,
 ): MutableBlock[] {
   const blocks: MutableBlock[] = [];
   let usesLexBlockAdapter = false;
@@ -392,7 +397,7 @@ function collectBlocks(
       return;
     }
     if (sourceKind === "lex" && classes.has("lx_elem")) {
-      const text = collectText(element);
+      const text = collectText(element, {preserveSuperscripts});
       const semanticRole = lexSemanticRole(classes, text);
       const isHeading = classes.has("ACT_TITLE") || semanticRole === "section"
         || semanticRole === "chapter" || semanticRole === "article";
@@ -407,7 +412,7 @@ function collectBlocks(
     }
     const heading = /^h([1-6])$/.exec(element.tagName);
     if (heading) {
-      const text = collectText(element);
+      const text = collectText(element, {preserveSuperscripts});
       pushBlock(
         blocks,
         "heading",
@@ -418,14 +423,14 @@ function collectBlocks(
       return;
     }
     if (element.tagName === "p") {
-      pushBlock(blocks, "paragraph", collectText(element));
+      pushBlock(blocks, "paragraph", collectText(element, {preserveSuperscripts}));
       return;
     }
     if (element.tagName === "li") {
       pushBlock(
         blocks,
         "list_item",
-        collectText(element, { excludeNestedLists: true }),
+        collectText(element, { excludeNestedLists: true, preserveSuperscripts }),
       );
       for (const child of element.childNodes) {
         if (isElement(child) && NESTED_LIST_TAGS.has(child.tagName)) {
@@ -437,19 +442,19 @@ function collectBlocks(
       return;
     }
     if (element.tagName === "blockquote") {
-      pushBlock(blocks, "quote", collectText(element));
+      pushBlock(blocks, "quote", collectText(element, {preserveSuperscripts}));
       return;
     }
     if (element.tagName === "dt" || element.tagName === "dd") {
-      pushBlock(blocks, "definition", collectText(element));
+      pushBlock(blocks, "definition", collectText(element, {preserveSuperscripts}));
       return;
     }
     if (element.tagName === "th" || element.tagName === "td") {
-      pushBlock(blocks, "table_cell", collectText(element));
+      pushBlock(blocks, "table_cell", collectText(element, {preserveSuperscripts}));
       return;
     }
     if (element.tagName === "pre") {
-      pushBlock(blocks, "preformatted", collectText(element));
+      pushBlock(blocks, "preformatted", collectText(element, {preserveSuperscripts}));
       return;
     }
     for (const child of element.childNodes) {
@@ -465,6 +470,7 @@ function documentTitle(
   primary: Element,
   blocks: MutableBlock[],
   sourceKind: LegalSourceKind,
+  preserveSuperscripts = false,
 ): string {
   if (sourceKind === "lex") {
     const titleElement = findFirstElement(primary, (element) => {
@@ -472,7 +478,7 @@ function documentTitle(
       return classes.has("lx_elem") && classes.has("ACT_TITLE");
     });
     const officialTitle = titleElement
-      ? removeLegalSourceUiNoise(collectText(titleElement))
+      ? removeLegalSourceUiNoise(collectText(titleElement, {preserveSuperscripts}))
       : "";
     if (officialTitle) return officialTitle.slice(0, 2_000);
   }
@@ -481,7 +487,7 @@ function documentTitle(
   let title = "";
   walkElements(document, (element) => {
     if (!title && element.tagName === "title") {
-      title = normalizeText(collectText(element));
+      title = normalizeText(collectText(element, {preserveSuperscripts}));
     }
   }, { value: 0 });
   if (!title) {
@@ -497,6 +503,8 @@ export function normalizeLegalSourceHtml(input: {
     "sourceKind" | "locale" | "canonicalId" | "canonicalUrl"
   >;
   rawContentSha256: string;
+  /** Opt in only for newly captured snapshots; retained profiles stay stable. */
+  profile?: "juro-legal-blocks-v1" | "juro-legal-blocks-v2";
 }): NormalizedLegalSourceSnapshot {
   const document = parse(input.html);
   const primaryCandidates = candidates(
@@ -509,7 +517,7 @@ export function normalizeLegalSourceHtml(input: {
       "LEGAL_SOURCE_PRIMARY_CONTENT_MISSING",
     );
   }
-  const blocks = collectBlocks(primary, input.reference.sourceKind);
+  const blocks = collectBlocks(primary, input.reference.sourceKind, input.profile === "juro-legal-blocks-v2");
   const plainText = blocks.map((block) => block.text).join("\n\n");
   if (blocks.length === 0 || plainText.length < 200) {
     // Lex places the authoritative "text is in another language" warning in
@@ -531,7 +539,7 @@ export function normalizeLegalSourceHtml(input: {
     parser: {
       name: "parse5",
       version: "8.0.1",
-      profile: "juro-legal-blocks-v1",
+      profile: input.profile ?? "juro-legal-blocks-v1",
     },
     source: {
       sourceKind: input.reference.sourceKind as LegalSourceKind,
@@ -541,7 +549,7 @@ export function normalizeLegalSourceHtml(input: {
       rawContentSha256: input.rawContentSha256,
     },
     primarySelector: primaryCandidates.selector,
-    documentTitle: documentTitle(document, primary, blocks, input.reference.sourceKind),
+    documentTitle: documentTitle(document, primary, blocks, input.reference.sourceKind, input.profile === "juro-legal-blocks-v2"),
     blocks,
     plainText,
   });

@@ -3,7 +3,7 @@ import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
 import {readFileSync} from "node:fs";
 import {createD1SourceObservationStore} from "../lib/legal/source-observation-store";
-import {createSourceObservationReader, sourceObservationSchema, type SourceObservation} from "../lib/legal/source-observation";
+import {createSourceObservationReader, isCurrentSourceObservation, sourceObservationSchema, type SourceObservation} from "../lib/legal/source-observation";
 import {refreshPublicSourceObservations, reserveSourceObservationCrawlWindow} from "../lib/legal/source-observation-refresh";
 import {createSharedSourceObservationRefresh} from "../lib/legal/shared-source-observation";
 
@@ -13,7 +13,7 @@ test("a slow publisher owner renews its lease and acquisition rechecks completed
   let time = Date.parse("2026-09-11T00:00:00.000Z");
   const url = "https://lex.uz/ru/docs/777";
   const observation = (): SourceObservation => ({version: 2, officialUrl: url, observedAt: new Date(time).toISOString(),
-    current: true, normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64)});
+    current: true, normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64), normalizedTextSha256V2: "d".repeat(64)});
   let beforeAcquire: (() => Promise<void>) | undefined;
   const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
     async first() {return sqlite.prepare(sql).get(...values) ?? null;},
@@ -27,6 +27,8 @@ test("a slow publisher owner renews its lease and acquisition rechecks completed
   try {
     sqlite.exec(readFileSync("legal-drizzle/0032_public_source_observations.sql", "utf8"));
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     let release!: () => void;
     let entered!: () => void;
     const started = new Promise<void>(resolve => {entered = resolve;});
@@ -58,6 +60,8 @@ test("independent runtimes reuse the original observation and late writes cannot
   try {
     sqlite.exec(readFileSync("legal-drizzle/0032_public_source_observations.sql", "utf8"));
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async run() {return {meta: {changes: sqlite.prepare(sql).run(...values).changes}};},
@@ -65,13 +69,19 @@ test("independent runtimes reuse the original observation and late writes cannot
     const url = "https://lex.uz/ru/docs/777";
     const old: SourceObservation = {version: 2, officialUrl: url, observedAt: "2026-09-11T00:00:00.000Z", current: true,
       normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64)};
-    const current = {...old, observedAt: "2026-09-11T00:01:00.000Z", normalizedTextSha256: "c".repeat(64)};
+    const current = {...old, normalizedTextSha256V2: "d".repeat(64), observedAt: "2026-09-11T00:01:00.000Z", normalizedTextSha256: "c".repeat(64)};
     const writer = createD1SourceObservationStore(db);
     // An old producer can still write its own table during a rolling update.
     // Its decision must never be promoted into corrected publisher status.
     sqlite.prepare('INSERT INTO legal_source_observations VALUES (?,?,?,?,?,?)')
       .run(url, 1, current.observedAt, 1, current.normalizedTextSha256, current.rawContentSha256);
     assert.equal(await writer.get(url), null);
+    await writer.put(old);
+    const retained = await writer.get(url);
+    assert.equal(isCurrentSourceObservation(retained, {officialUrl:url, normalizedTextSha256:old.normalizedTextSha256,
+      now:Date.parse(old.observedAt)}), true);
+    assert.equal(isCurrentSourceObservation(retained, {officialUrl:url, normalizedTextSha256:current.normalizedTextSha256V2,
+      now:Date.parse(old.observedAt)}), false, "A fresh older observation must not invent the new profile fingerprint");
     await writer.put(current);
     await writer.put(old);
     sqlite.prepare('UPDATE legal_source_observations SET observed_at=?,is_current=0 WHERE official_url=?')
@@ -90,6 +100,13 @@ test("independent runtimes reuse the original observation and late writes cannot
     const parallel = await Promise.all([createOwner()(url), createOwner()(url)]);
     assert.equal(publisherCalls, 1, "Only one independent runtime refreshes the public document");
     assert.deepEqual(parallel[0], parallel[1]);
+    // A pre-upgrade writer updates only the original columns.
+    sqlite.prepare("UPDATE legal_publisher_status_observations SET observed_at=?,normalized_text_sha256=? WHERE official_url=?")
+      .run("2026-09-11T00:05:00.000Z", "e".repeat(64), url);
+    const mixed = sourceObservationSchema.parse(await writer.get(url));
+    assert.equal(mixed.normalizedTextSha256V2, undefined);
+    assert.equal(isCurrentSourceObservation(mixed, {officialUrl:url,normalizedTextSha256:current.normalizedTextSha256V2,
+      now:Date.parse(mixed.observedAt)}), false, "An old writer cannot renew the structured fingerprint");
     await assert.rejects(writer.put({...current, officialUrl: "https://example.com/private"}));
     await assert.rejects(writer.put({...current, officialUrl: `${url}?ONDATE=01.01.2018`}));
   } finally {sqlite.close();}
@@ -100,6 +117,8 @@ test("scheduled refresh leases public targets, preserves failed observation age 
   try {
     sqlite.exec(readFileSync("legal-drizzle/0032_public_source_observations.sql", "utf8"));
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async all() {return {results: sqlite.prepare(sql).all(...values)};},
@@ -138,6 +157,8 @@ test("the scheduled publisher path reserves real crawl windows and retries at th
   try {
     sqlite.exec(readFileSync("legal-drizzle/0032_public_source_observations.sql", "utf8"));
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async all() {return {results: sqlite.prepare(sql).all(...values)};},

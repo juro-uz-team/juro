@@ -27,10 +27,16 @@ export async function readLexPublisherObservation(url: string, options?: {wait?:
     timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024};
   const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",...fetchOptions});
   const {snapshot,current}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal});
+  const refreshedSnapshot = snapshot.parser.name === "parse5" ? normalizeLegalSourceHtml({
+    html:new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes), reference:fetched,
+    rawContentSha256:fetched.contentSha256,profile:"juro-legal-blocks-v2",
+  }) : undefined;
+  const normalizedTextSha256V2 = refreshedSnapshot ? await publisherTextFingerprint(refreshedSnapshot) : undefined;
   options?.signal?.throwIfAborted();
   return {version: 2, officialUrl: fetched.canonicalUrl, observedAt: fetched.fetchedAt,
     current, rawContentSha256: fetched.contentSha256,
-    normalizedTextSha256: await publisherTextFingerprint(snapshot)};
+    normalizedTextSha256: await publisherTextFingerprint(snapshot),
+    ...(normalizedTextSha256V2 ? {normalizedTextSha256V2} : {})};
 }
 
 /** Normalize the actual publisher representation while retaining the canonical

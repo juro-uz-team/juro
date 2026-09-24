@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {completeArticleText} from "../lib/legal/article-context";
 import {
   LegalSourceParserError,
   normalizeLegalSourceHtml,
@@ -332,4 +333,26 @@ test("parser distinguishes an explicit Lex alternate-language notice from a brok
     (error: unknown) => error instanceof LegalSourceParserError
       && error.code === "LEGAL_SOURCE_LANGUAGE_TEXT_UNAVAILABLE",
   );
+});
+
+test("refreshed HTML preserves superscript identities without rewriting retained profiles", () => {
+  const html = `<main><h1>Уголовный кодекс</h1><p>Статья 18<sup>1</sup>. Специальное правило</p>
+    <p>Лицо несет ответственность в соответствии с настоящей статьей и установленными законом правилами применения наказания.</p>
+    <p>Статья 181. Другое правило</p><p>Установленные требования применяются независимо от специального правила предыдущей статьи.</p>
+    <p>Ссылка на статью 18<sup><b>1</b></sup> сохраняет ее номер. Площадь составляет 20 м<sup>2</sup>.</p></main>`;
+  const legacy = normalizeLegalSourceHtml({html, reference, rawContentSha256});
+  assert.equal(legacy.parser.profile, "juro-legal-blocks-v1");
+  assert.ok(legacy.plainText.includes("Статья 181. Специальное"));
+  const refreshed = normalizeLegalSourceHtml({html, reference, rawContentSha256, profile:"juro-legal-blocks-v2"});
+  assert.equal(refreshed.parser.profile,"juro-legal-blocks-v2");
+  assert.ok(refreshed.plainText.includes("Статья 18¹. Специальное"));
+  assert.ok(refreshed.plainText.includes("Статья 181. Другое"));
+  assert.ok(refreshed.plainText.includes("статью 18¹"));
+  assert.ok(refreshed.plainText.includes("20 м²"));
+  assert.ok(completeArticleText(refreshed.blocks,"18-1")?.text.includes("Специальное правило"));
+  assert.ok(completeArticleText(refreshed.blocks,"181")?.text.includes("Другое правило"));
+  const uzbek=normalizeLegalSourceHtml({html:`<main><h1>Qonun</h1><p>18<sup>1</sup>-modda. Maxsus qoida</p>
+    <p>${"Taraflarning huquqlari va majburiyatlari qonun bilan belgilanadi. ".repeat(5)}</p></main>`,
+    reference:{...reference,locale:"uz"},rawContentSha256,profile:"juro-legal-blocks-v2"});
+  assert.ok(completeArticleText(uzbek.blocks,"18-1")?.text.includes("Maxsus qoida"));
 });
