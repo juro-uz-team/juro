@@ -3,6 +3,7 @@ import {readLexPublisherObservation} from "../legal/lex-document-status";
 import {createSourceObservationReader} from "../legal/source-observation";
 import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
+import {createNormalizedSourceReader} from "./normalized-source-reader";
 import {createPinnedSourceVerifier} from "./pinned-source-observation";
 
 import {
@@ -601,14 +602,15 @@ function createRuntimeEvidenceServices(
   const { environment, db, evidenceBucket, historyEvidenceBucket,
     customArtifactBucket } = dependencies;
   const r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>();
-  const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket);
+  const readCurrentParent = createNormalizedSourceReader(evidenceBucket);
+  const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket, readCurrentParent);
   const historicalArticleContext = historyEvidenceBucket
     ? createNormalizedArticleEvidenceReader(historyEvidenceBucket) : currentArticleContext;
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
     {membershipProofsEnabled: dependencies.membershipProofsEnabled});
   return {
 onReleaseResolved: dependencies.onReleaseResolved,
-verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket,
+verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,
       observe: dependencies.sharedSourceObservationsEnabled
         ? createSharedLexDocumentObservationReader(db,url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal()}))
         : createSourceObservationReader({readPublisher:url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal()})})}),

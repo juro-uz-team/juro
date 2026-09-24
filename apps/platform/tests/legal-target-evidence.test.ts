@@ -13,6 +13,8 @@ import {
   parseResolvedOfficialEvidence,
 } from "../lib/legal-corpus/target-evidence";
 import { createNormalizedArticleEvidenceReader } from "../lib/legal-corpus/normalized-article-evidence";
+import {createNormalizedSourceReader} from "../lib/legal-corpus/normalized-source-reader";
+import {createPinnedSourceVerifier} from "../lib/legal-corpus/pinned-source-observation";
 import { completeArticleText, createCompleteArticleReader } from "../lib/legal/article-context";
 import { resolveCitationEvidence, handleCitationEvidenceRequest, CITATION_EVIDENCE_PATH } from "../lib/legal-corpus/citation-evidence";
 import { recordProvisionTemporalEvidence } from "../lib/legal-corpus/target-temporal";
@@ -64,14 +66,23 @@ test("accepted parent recovery authenticates full article context without replac
   });
   const bucket = new MemoryEvidenceBucket();
   const sourceRevisionId = "revision:original-parent";
+  const anchored = parseResolvedOfficialEvidence({...original, evidence: {...original.evidence, sourceRevisionId}});
   const key = `corpus/normalized/${sourceRevisionId}.json`;
   bucket.objects.set(key, {bytes, customMetadata: {}});
   let reads = 0;
-  const reader = createNormalizedArticleEvidenceReader({get: async key => {reads++; return bucket.get(key);}});
+  const countedBucket = {get: async (key: string) => {reads++; return bucket.get(key);}};
+  const readParent = createNormalizedSourceReader(countedBucket);
+  const reader = createNormalizedArticleEvidenceReader(countedBucket, readParent);
   const read = (evidence: typeof original, article: string) => reader(evidence, article, sourceRevisionId);
   const [context, second] = await Promise.all([read(original, "7"), read(original, "7")]);
   assert.equal(reads, 1);
   assert.deepEqual(context, second);
+  const verify = createPinnedSourceVerifier({bucket: countedBucket, readParent,
+    observe: async () => {throw new Error("Publisher unavailable");}});
+  const sourceStatus = await verify(anchored);
+  assert.equal(sourceStatus.observation, null);
+  assert.equal(reads, 1, "Article expansion and publisher comparison share one freshly authenticated parent");
+  await assert.rejects(verify({...anchored, languageTag: "en"}));
   assert.match(context!.provisionText, /2\) the requested action/u);
   assert.doesNotMatch(context!.provisionText, /Article 8/u);
   assert.equal(context!.evidence.sha256, sha256(bytes));
@@ -124,6 +135,9 @@ test("accepted parent recovery authenticates full article context without replac
   bucket.objects.set(key, {bytes: corrupt, customMetadata: {}});
   await assert.rejects(resolveCitationEvidence(bucket, receipt));
   assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original, "7", sourceRevisionId), null);
+  await assert.rejects(createPinnedSourceVerifier({bucket, observe: async () => {throw new Error("Unavailable");}})(
+    anchored),
+  "A new request authenticates physical bytes again, even after a prior request succeeded");
 });
 
 function sha256(value: string | Uint8Array): string {
