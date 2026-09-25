@@ -323,7 +323,7 @@ test("quoted replacement articles retain their enclosing amendment clause rather
 });
 
 
-test("an unterminated quote cannot merge later articles into certified evidence",async()=>{
+test("an inline unmatched quote does not suppress subsequent independent article headings",async()=>{
   const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
   const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
   snapshot.blocks=["Article 1. First rule","The first rule includes an unmatched “quotation.",
@@ -331,7 +331,8 @@ test("an unterminated quote cannot merge later articles into certified evidence"
     .map((text,index)=>({index,kind:"paragraph",text}));
   const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
   const original={...resolution.controlling,provisionText:snapshot.blocks[0].text,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
-  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"1"),null);
+  const article=await createNormalizedArticleEvidenceReader(bucket)(original,"1");assert.ok(article);
+  assert.equal(article.provisionText,snapshot.blocks.slice(0,2).map((block:{text:string})=>block.text).join(" "));
   assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
 });
 
@@ -346,4 +347,51 @@ test("an unterminated quote cannot disguise article-bearing annexes as complete 
   const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
   const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
   assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
+});
+
+
+test("an unterminated replacement-article quotation remains unavailable",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="The replacement rule applies.";
+  snapshot.blocks=["Article 1. Amendments","The following articles replace the former provisions:",
+    "“Article 2. Replacement",fragment,"Article 3. Another rule","Its body cannot establish where the quotation ends."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"1"),null);
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"2"),null);
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
+});
+
+
+test("replacement-article quotations may begin after their amendment instruction in the same block",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="Article 3. Second replacement";
+  snapshot.blocks=["Article 1. Amendments","Replace the following articles: “Article 2. First replacement",
+    "The first replacement body applies.",fragment,"The second replacement body applies”.","Article 4. Commencement","The act takes effect on publication."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  const context=await createNormalizedArticleEvidenceReader(bucket)(original,"3");assert.ok(context);
+  assert.match(context.officialCitation.label,/Article 1$/u);
+  assert.equal(context.provisionText,snapshot.blocks.slice(0,5).map((block:{text:string})=>block.text).join(" "));
+});
+
+
+test("successive replacement quotations in one block retain their enclosing article",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="Article 4. Second continued replacement";
+  snapshot.blocks=["Article 1. Amendments",
+    "Replace Article 2 with “Article 2. Complete replacement.”; replace Articles 3–4 with “Article 3. Continued replacement",
+    "The first continued replacement applies.",fragment,"The second continued replacement applies”.",
+    "Article 5. Commencement","The act takes effect on publication."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  const context=await createNormalizedArticleEvidenceReader(bucket)(original,"4");assert.ok(context);
+  assert.match(context.officialCitation.label,/Article 1$/u);
+  assert.equal(context.provisionText,snapshot.blocks.slice(0,5).map((block:{text:string})=>block.text).join(" "));
 });

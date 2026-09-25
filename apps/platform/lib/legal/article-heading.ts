@@ -37,16 +37,28 @@ export function isLegalAnnexHeading(block: {text:string}): boolean {
     || /^Ўзбекистон Республикаси (?:Президентининг|Вазирлар Маҳкамасининг)\s+\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\p{L}\d-]+-сон\s+(?:Фармонига|қарорига)$/iu.test(lines[0]!);
 }
 
-/** Quoted replacement articles belong to the enclosing amendment clause.
- * Their headings cannot establish independent boundaries in the amending act. */
+/** A quotation beginning with an article heading introduces replacement
+ * articles, rather than independent articles of the amending instrument.
+ * Inline quoted titles and ordinary prose do not establish that scope. */
 export function unquotedArticleHeadings<T extends {text:string;kind?:string;semanticRole?:string}>(blocks:readonly T[]):ReadonlySet<T> & {ambiguousFrom:number|null} {
   const headings=new Set<T>();
   let depth=0,opening:number|null=null;
   for(const [index,block] of blocks.entries()) {
-    if(depth===0&&!/^[«“]/u.test(block.text.trim())&&isLegalArticleHeading(block))headings.add(block);
-    for(const character of block.text) {
-      if(character==="«"||character==="“"){if(depth===0)opening=index;depth++;}
-      else if(character==="»"||character==="”")depth=Math.max(0,depth-1);
+    const text=block.text.trim();
+    const replacements=[...text.matchAll(/[«“]/gu)].filter(match=>
+      isLegalArticleHeading({...block,text:text.slice(match.index+1)})).map(match=>match.index);
+    if(depth===0&&replacements[0]!==0&&isLegalArticleHeading(block))headings.add(block);
+    let cursor=0;
+    while(cursor<text.length) {
+      if(depth===0) {
+        const start=replacements.find(position=>position>=cursor);
+        if(start===undefined)break;
+        opening=index;depth=1;cursor=start+1;
+      } else {
+        const character=text[cursor++];
+        if(character==="«"||character==="“")depth++;
+        else if(character==="»"||character==="”")depth--;
+      }
     }
   }
   return Object.assign(headings,{ambiguousFrom:depth?opening:null});
