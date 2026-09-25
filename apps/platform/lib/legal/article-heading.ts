@@ -32,5 +32,7 @@ export function isLegalAnnexHeading(block: {text:string}): boolean {
   if (lines.length === 1) return marker.test(lines[0]!);
   if (lines.length !== 2 || !marker.test(lines[1]!)) return false;
   return /^(?:[“«].+[”»]gi\s+)?(?:O[ʻʼ‘’']zbekiston Respublikasi\s+)?Qonuniga$/iu.test(lines[0]!)
-    || /^(?:[“«].+[”»]ги\s+)?(?:Ўзбекистон Республикаси\s+)?Қонунга$/iu.test(lines[0]!);
+    || /^(?:[“«].+[”»]ги\s+)?(?:Ўзбекистон Республикаси\s+)?Қонунга$/iu.test(lines[0]!)
+    || /^O[ʻʼ‘’']zbekiston Respublikasi (?:Prezidentining|Vazirlar Mahkamasining)\s+\d{4}-yil\s+\d{1,2}-\p{L}+dagi\s+[\p{L}\d-]+-son\s+(?:Farmoniga|qaroriga)$/iu.test(lines[0]!)
+    || /^Ўзбекистон Республикаси (?:Президентининг|Вазирлар Маҳкамасининг)\s+\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\p{L}\d-]+-сон\s+(?:Фармонига|қарорига)$/iu.test(lines[0]!);
 }

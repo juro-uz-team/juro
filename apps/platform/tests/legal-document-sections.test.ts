@@ -88,3 +88,26 @@ test("oversized unnumbered sources reopen a complete clause without claiming art
   assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,provisionText:"This resolution changes",
     evidence:{...original.evidence,sourceNormalizedSha256:hash(oversizedBytes)}}),null,"an oversized competing scope still makes a shared fragment ambiguous");
 });
+
+test("complete annex scopes preserve adoption and ignore annexes of quoted older instruments",()=>{
+  const adoption="Oʻzbekiston Respublikasi Prezidentining 2025-yil 25-martdagi PF-57-son Farmoniga";
+  const source=snapshot(["This instrument sets the following complete conditions for the public bodies in its official schedules:",
+    "1. Adopt both schedules under the applicable conditions.",adoption+"\n1-ILOVA","The first schedule applies.",
+    "Oʻzbekiston Respublikasi Prezidentining 2020-yil 25-martdagi PF-57-son Farmoniga\n2-ILOVA","The older schedule is amended as stated here.",
+    adoption+"\n2-ILOVA","The second schedule applies."]);
+  const sections=completeDocumentSections(source);assert.equal(sections.length,3);
+  assert.match(sections[1]!.text,/older schedule/);assert.doesNotMatch(sections[2]!.text,/older schedule/);
+  source.blocks.at(-1)!.text="The following exceptions apply:";
+  assert.equal(completeDocumentSections(source).length,2);
+});
+
+test("annex chapter extraction retains complete chapters and rejects ambiguous section ancestry",()=>{
+  const source=snapshot(["This instrument establishes the applicable procedural requirements and adopts the following official schedule:",
+    "1. The schedule is adopted.","Oʻzbekiston Respublikasi Prezidentining 2025-yil 25-martdagi PF-57-son Farmoniga\n1-ILOVA",
+    "The schedule applies only to pending cases.","1-боб. First chapter","First complete rule. ".repeat(1900),
+    "2-боб. Second chapter","Second complete rule. ".repeat(1900)]);
+  const sections=completeDocumentSections(source);assert.equal(sections.length,3);
+  assert.match(sections[2]!.text,/only to pending cases/);assert.doesNotMatch(sections[2]!.text,/First complete rule/);
+  source.blocks[6]={...source.blocks[6]!,semanticRole:"section",headingLevel:2};
+  assert.equal(completeDocumentSections(source).length,1);
+});

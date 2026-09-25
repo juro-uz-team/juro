@@ -51,6 +51,11 @@ const normalizedBlockSchema = z.object({
     "paragraph",
   ]).optional(),
   text: z.string().min(1).max(100_000),
+  tableRows: z.array(z.array(z.object({
+    text:z.string().max(100_000),
+    colSpan:z.number().int().min(1).max(64),
+    rowSpan:z.number().int().min(1).max(4_000),
+  }).strict()).min(1).max(64)).min(1).max(4_000).optional(),
 }).strict();
 
 export const normalizedLegalSourceSnapshotSchema = z.object({
@@ -408,6 +413,25 @@ function collectBlocks(
         classes.has("ACT_TITLE") ? 1 : semanticRole === "section" ? 2 : semanticRole === "chapter" ? 3 : semanticRole === "article" ? 4 : undefined,
         semanticRole,
       );
+      if(preserveSuperscripts&&blocks.at(-1)?.text===normalizeText(removeLegalSourceUiNoise(text))){
+        const table=element.tagName==="table"?element:findFirstElement(element,node=>node.tagName==="table");
+        if(table&&removeLegalSourceUiNoise(collectText(table,{preserveSuperscripts}))===removeLegalSourceUiNoise(text)
+          &&!findFirstElement(table,node=>node.tagName==="table")){
+          const rows:NonNullable<MutableBlock["tableRows"]>=[];
+          let supported=true;
+          walkElements(table,row=>{
+            if(row.tagName!=="tr"||isUiElement(row))return;
+            const cells=row.childNodes.filter(isElement).filter(cell=>cell.tagName==="td"||cell.tagName==="th");
+            const parsed=cells.map(cell=>({text:normalizeText(removeLegalSourceUiNoise(collectText(cell,{preserveSuperscripts}))),
+              colSpan:Number(attribute(cell,"colspan")??1),rowSpan:Number(attribute(cell,"rowspan")??1)}));
+            if(!parsed.length||parsed.length>64||parsed.some(cell=>!Number.isInteger(cell.colSpan)||cell.colSpan<1||cell.colSpan>64
+              ||!Number.isInteger(cell.rowSpan)||cell.rowSpan<1||cell.rowSpan>4_000))supported=false;
+            rows.push(parsed);
+          },{value:0});
+          const represented=rows.flat().map(cell=>cell.text).join("").replace(/\s/gu,"");
+          if(supported&&rows.length&&rows.length<=4_000&&represented===removeLegalSourceUiNoise(text).replace(/\s/gu,""))blocks.at(-1)!.tableRows=rows;
+        }
+      }
       return;
     }
     const heading = /^h([1-6])$/.exec(element.tagName);

@@ -363,3 +363,18 @@ test("refreshed HTML preserves superscript identities without rewriting retained
   assert.deepEqual(punctuated.blocks,refreshed.blocks,"Publisher punctuation inside a superscript must not collapse article 18¹ into 181");
   assert.deepEqual(normalizeLegalSourceHtml({html:punctuationInside,reference,rawContentSha256}).blocks,legacy.blocks);
 });
+
+test("refreshed tables preserve cells without changing retained source text",()=>{
+  const html=`<main><div class="lx_elem ACT_TITLE">Official schedule</div><div class="lx_elem">${"Scope of the official schedule. ".repeat(8)}</div>
+    <div class="lx_elem"><table><tr><td>T/r</td><td>Name</td><td>Office</td></tr>
+    <tr><td colspan="3">I. First section</td></tr><tr><td>1.</td><td>First body</td><td>First office</td></tr>
+    <tr><td colspan="3">II. Second section</td></tr><tr><td>2.</td><td>Second body</td><td>Second office</td></tr></table></div></main>`;
+  const retained=normalizeLegalSourceHtml({html,reference,rawContentSha256});
+  const fresh=normalizeLegalSourceHtml({html,reference,rawContentSha256,profile:"juro-legal-blocks-v2"});
+  assert.equal(fresh.plainText,retained.plainText);
+  assert.ok(retained.blocks.every(block=>block.tableRows===undefined));
+  assert.equal(fresh.blocks.at(-1)!.tableRows?.length,5);
+  assert.equal(fresh.blocks.at(-1)!.tableRows?.[1]?.[0]?.colSpan,3);
+  const caption=normalizeLegalSourceHtml({html:html.replace('<table>','<table><caption>Only pending cases</caption>'),reference,rawContentSha256,profile:"juro-legal-blocks-v2"});
+  assert.equal(caption.blocks.at(-1)!.tableRows,undefined,"unrepresented table context cannot be discarded");
+});
