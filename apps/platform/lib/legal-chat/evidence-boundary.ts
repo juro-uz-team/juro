@@ -24,7 +24,7 @@ export async function assertAnswerEvidence(input: AnswerQuestion): Promise<void>
       || !["verified", "direct_validated"].includes(source.verificationState)
       || !["current", "historical"].includes(source.status)
       || url.protocol !== "https:" || !["lex.uz", "www.lex.uz"].includes(url.hostname)
-      || url.username || url.password || url.port || !/^\/(?:ru\/|uz\/|uzc\/|en\/)?docs\/\d+\/?$/u.test(url.pathname)
+      || url.username || url.password || url.port || !/^\/(?:ru\/|uz\/|uzc\/|en\/)?docs\/-?\d+\/?$/u.test(url.pathname)
       || !/^[a-f0-9]{64}$/.test(source.contentSha256) || !evidence.text.trim()
       || !allowedTimes.has(timeIdentity(evidence.endpoint))
       || (evidence.endpoint.kind === "current") !== (source.status === "current")) {

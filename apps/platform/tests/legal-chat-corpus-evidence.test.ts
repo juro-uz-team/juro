@@ -111,7 +111,22 @@ test("an unnumbered instrument is reopened as a whole document without inventing
     byteCount:numberedBytes.length,sha256:hash(numberedBytes)}),/CITATION_EVIDENCE_TEXT_MISMATCH/);
   await assert.rejects(resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!));
 });
-async function fixture() {
+test("signed publisher document IDs preserve authenticated citations and evidence validation",async()=>{
+  for(const url of ["https://lex.uz/docs/-777","https://lex.uz/uz/docs/-777"]) {
+    const {bucket,resolution}=await fixture(url);
+    const evidence=await corpusAnswerEvidence({resolution,currentAt,
+      endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}});
+    const input={question:"Filing requirements?",locale:"en" as const,mode:"fast" as const,answerMode:"short" as const,
+      temporalScope:evidence.endpoint,evidence:[evidence],unresolved:[]};
+    await assertAnswerEvidence(input);
+    assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+    await assert.rejects(assertAnswerEvidence({...input,evidence:[{...evidence,text:evidence.text+" altered"}]}),/EVIDENCE_TEXT_HASH_MISMATCH/);
+    for(const officialUrl of ["https://lex.uz/docs/--777","https://example.com/docs/-777","https://lex.uz/docs/-778"]) {
+      await assert.rejects(assertAnswerEvidence({...input,evidence:[{...evidence,source:{...evidence.source,officialUrl}}]}));
+    }
+  }
+});
+async function fixture(url="https://lex.uz/docs/777") {
   const blocks = ["Article 7. Synthetic filing rule", "An applicant may request a record.",
     "The application must identify the requested record.", "Article 8. Other rule",
     "This unrelated provision concerns records retained by a different authority and is not part of the requested article."]
