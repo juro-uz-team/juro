@@ -115,6 +115,21 @@ test("comparison resolves its release pair atomically and retains evidence at bo
   assert.deepEqual(calls.searches,["release:history","release:current"]);
 });
 
+test("comparison starts both candidate endpoints before either must finish",async()=>{
+  const {services,calls}=fixture(),currentStarted=Promise.withResolvers<void>();
+  const retrieve=services.candidateIndex.retrieve;
+  services.candidateIndex.retrieve=async(...args)=>{
+    if(args[1].kind==="current")currentStarted.resolve();
+    else await currentStarted.promise;
+    return retrieve(...args);
+  };
+  const search=createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant)});
+  const result=await search({...request,question:{...request.question,temporalScope:{kind:"comparison",
+    left:{kind:"timestamp",instant:"2025-01-01T00:00:00.000Z"},right:{kind:"current"}}}});
+  assert.equal(calls.comparisons,1);assert.equal(calls.reads,2);
+  assert.equal(result.evidence.length,2);assert.deepEqual(result.needs,[]);
+});
+
 test("partial retrieval cannot reach the source reader or masquerade as evidence",async()=>{
   const {services,search,calls}=fixture();
   const retrieve=services.candidateIndex.retrieve;
@@ -316,6 +331,33 @@ test("independent evidence reads overlap while ranked admission waits for the ea
   const result=await pending;
   assert.deepEqual(result.evidence.map(item=>item.source.article),["0","1","2","3","4","5"]);
   assert.deepEqual(result.needs,[]);
+});
+
+test("publisher verification overlaps distinct documents and preserves admission order",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:6},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>{
+    const index=Number(id.split(":")[1]),resolution=articleResolution(id,String(index));
+    const citation={...resolution.controlling.officialCitation,url:`https://lex.uz/docs/${index<4?777:774+index}`};
+    return {...resolution,controlling:{...resolution.controlling,officialCitation:citation},
+      articleContext:{...resolution.articleContext,officialCitation:citation},materialCitation:citation};
+  };
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),seen:string[]=[];
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async source=>{
+    seen.push(source.officialCitation.url);entered.resolve();await release.promise;
+    const result=await verify(source);
+    assert.ok(result.observation);
+    return {...result,observation:{...result.observation,officialUrl:source.officialCitation.url}};
+  };
+  const pending=search(request);
+  try{await entered.promise;await new Promise(resolve=>setImmediate(resolve));
+    assert.ok(seen.includes("https://lex.uz/docs/778"));
+    assert.ok(seen.includes("https://lex.uz/docs/779"));assert.equal(seen.length,4);
+  }finally{release.resolve();}
+  const result=await pending;
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["0","1","2","3","4","5"]);
+  assert.deepEqual(result.needs,[]);assert.equal(seen.length,6);
 });
 
 test("overlapping article fragments retain the first ranked canonical source despite reverse completion",async()=>{

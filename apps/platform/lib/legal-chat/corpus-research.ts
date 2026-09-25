@@ -90,16 +90,24 @@ export function createCorpusResearch(input: {
     const seen=new Set<string>();
     const resolved:SelectionCandidate[][]=releases.map(()=>[]);
     const queues:RevalidatedCandidate[][]=[];
+    // Both comparison endpoints share the deadline. Start their independent
+    // candidate searches together, then preserve endpoint order for admission.
+    for(const {endpoint,release} of releases) {
+      if((release.capability==="current")!==(endpoint.kind==="current"))throw new Error("CORPUS_RELEASE_TEMPORAL_MISMATCH");
+    }
+    const candidatePackets=releases.map(async({endpoint,release},releaseIndex)=>staged.size
+      ?combineFormulationPackets(interpretation,endpoint,release,
+        await Promise.all(interpretation.formulations.map(formulation=>staged.get(formulation.id)?.packets[releaseIndex]
+          ??input.services.candidateIndex.retrieve({id:interpretation.id,formulations:[formulation]},endpoint,release,{currentAt}))))
+      :input.services.candidateIndex.retrieve(interpretation,endpoint,release,{currentAt}));
+    for(const packet of candidatePackets)void packet.catch(()=>undefined);
     for(const [releaseIndex,{endpoint,release}] of releases.entries()) {
       check();
       if((release.capability==="current")!==(endpoint.kind==="current")) {
         throw new Error("CORPUS_RELEASE_TEMPORAL_MISMATCH");
       }
       try {
-        const packet=staged.size?combineFormulationPackets(interpretation,endpoint,release,
-          await Promise.all(interpretation.formulations.map(formulation=>staged.get(formulation.id)?.packets[releaseIndex]
-            ??input.services.candidateIndex.retrieve({id:interpretation.id,formulations:[formulation]},endpoint,release,{currentAt}))))
-          :await input.services.candidateIndex.retrieve(interpretation,endpoint,release,{currentAt});
+        const packet=await candidatePackets[releaseIndex]!;
         check();
         if(packet.availability!=="available"||packet.partialErrors.length
           || packet.releaseId!==release.id || timeIdentity(packet.endpoint)!==timeIdentity(endpoint)) {
@@ -311,8 +319,19 @@ export function createCorpusResearch(input: {
     // Selection is independent of publisher results. Every selected source must
     // pass; a failed current observation cannot be replaced by a lower-ranked hit.
     const answerEvidence:LegalEvidence[]=[];
-    for(let offset=0;offset<admitted.length;offset+=4) {
-      const batch=await Promise.all(admitted.slice(offset,offset+4).map(async item=>{
+    // Several articles can share one publication refresh. Interleave documents
+    // so four pending copies of that refresh cannot delay independent sources.
+    const byPublication=new Map<string,PreparedCorpusEvidence[]>();
+    for(const item of admitted){
+      const publication=byPublication.get(item.source.officialUrl)??[];
+      publication.push(item);byPublication.set(item.source.officialUrl,publication);
+    }
+    const verificationOrder:PreparedCorpusEvidence[]=[];
+    for(let index=0;verificationOrder.length<admitted.length;index++){
+      for(const publication of byPublication.values())if(publication[index])verificationOrder.push(publication[index]!);
+    }
+    for(let offset=0;offset<verificationOrder.length;offset+=4) {
+      const batch=await Promise.all(verificationOrder.slice(offset,offset+4).map(async item=>{
         const verifier=currentVerifiers.get(item.source.id);
         try {
           const currentSourceStatus=await verifier?.verify();
@@ -341,6 +360,8 @@ export function createCorpusResearch(input: {
       }
     }
     check();
+    const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
+    answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
     return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],
       observations,
       resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))

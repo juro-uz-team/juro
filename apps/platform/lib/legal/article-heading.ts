@@ -45,8 +45,12 @@ export function unquotedArticleHeadings<T extends {text:string;kind?:string;sema
   let depth=0,opening:number|null=null;
   for(const [index,block] of blocks.entries()) {
     const text=block.text.trim();
+    // A replacement can begin with an entire chapter, rather than an article.
+    // The preceding operative instruction establishes the quotation's scope.
+    const replacementInstruction=index>0&&/(?:quyidagi tahrirda bayon etilsin|қуйидаги таҳрирда баён этилсин|изложить в следующей редакции|shall read)\s*:\s*$/iu.test(blocks[index-1]!.text);
     const replacements=[...text.matchAll(/[«“]/gu)].filter(match=>
-      isLegalArticleHeading({...block,text:text.slice(match.index+1)})).map(match=>match.index);
+      (match.index===0&&replacementInstruction)
+      ||isLegalArticleHeading({...block,text:text.slice(match.index+1)})).map(match=>match.index);
     if(depth===0&&replacements[0]!==0){unquotedBlocks.add(block);if(isLegalArticleHeading(block))headings.add(block); }
     let cursor=0;
     while(cursor<text.length) {

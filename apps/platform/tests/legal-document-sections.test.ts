@@ -15,6 +15,24 @@ const snapshot=(texts:string[])=>normalizedLegalSourceSnapshotSchema.parse({sche
   source:{sourceKind:"lex",locale:"en",canonicalId:"777",canonicalUrl:"https://lex.uz/en/docs/777",rawContentSha256:"a".repeat(64)},
   primarySelector:"lex-document",documentTitle:"Amending resolution",blocks:texts.map((text,index)=>({index,kind:"paragraph",text})),plainText:texts.join(" ")});
 
+test("quoted replacement chapters preserve earlier complete amendment clauses",()=>{
+  const source=snapshot(["The legislature amends the labor code as follows:",
+    "1. 179 va 180-moddalar quyidagi tahrirda bayon etilsin:",
+    "“179-modda. Medical examinations", "The employer must arrange examinations.",
+    "180-modda. Additional examinations", "The employee may request an examination.”",
+    "2. The following chapter shall read:", "“CHAPTER FOURTEEN. LABOR DISPUTES",
+    "229-modda. Dispute bodies", "The authorized bodies hear disputes.",
+    "230-modda. Procedure", "The procedural guarantees remain applicable.”",
+    "3. A later replacement follows:", "“284-modda. Unclosed replacement", "Its boundary is uncertain."]);
+  const sections=completeDocumentSections(source);
+  assert.equal(sections.length,2);
+  assert.match(sections[0]!.text,/179-modda/);assert.match(sections[0]!.text,/180-modda/);
+  assert.doesNotMatch(sections[0]!.text,/229-modda/);
+  assert.match(sections[1]!.text,/CHAPTER FOURTEEN/);assert.match(sections[1]!.text,/procedural guarantees/);
+  const independent=snapshot(["A governing code follows:","Article 1. Governing rule","The complete governing rule applies to every covered party. ".repeat(4)]);
+  assert.deepEqual(completeDocumentSections(independent),[]);
+});
+
 test("named amendment decisions retain inserted provision numbers inside the affected decision",()=>{
   const source=snapshot(["Ўзбекистон Республикаси Олий суди Пленуми қуйидаги қарорларга ўзгартиришлар киритади:",
     "I. Фуқаролик ишлари бўйича қарорлар:",
