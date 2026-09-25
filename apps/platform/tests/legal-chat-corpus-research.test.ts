@@ -150,6 +150,38 @@ test("unresolved explicit references survive even when the referring rule was re
   assert.equal(result.needs[0]!.reason,"unresolved_reference");
 });
 
+test("reference scope records authenticated referrers but never labels lookup outages irrelevant",async()=>{
+  for(const reason of ["reference_not_found","lookup_unavailable"] as const) {
+    const {services,search}=fixture();
+    services.evidenceResolver.resolveControlling=async id=>{
+      const resolution=articleResolution(id,"7");
+      resolution.articleContext.provisionText+=" Eligibility is governed by article 12 of this Act.";
+      return resolution;
+    };
+    services.referenceDiscovery=async()=>({candidates:[],unresolved:[{reason,
+      query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
+    const result=await search(request);
+    assert.equal(result.needs.length,1);
+    assert.deepEqual(result.referenceNeeds,reason==="lookup_unavailable"?[]:[{need:result.needs[0],article:"12",
+      sourceIds:[result.evidence[0]!.source.id],discoveryReason:reason}]);
+  }
+});
+
+test("reference scope includes referrers discovered during dependency expansion",async()=>{
+  const {services,search}=fixture();
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id==="rendition:reference"?"99":"7");
+    resolution.articleContext.provisionText+=" Eligibility is governed by article 12 of this Act.";
+    if(id!=="rendition:reference")resolution.articleContext.provisionText+=" See article 99 of this Act.";
+    return resolution;
+  };
+  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:reference")],unresolved:[{reason:"reference_not_found",
+    query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
+  const result=await search(request);
+  assert.equal(result.evidence.length,2);
+  assert.deepEqual(new Set(result.referenceNeeds![0]!.sourceIds),new Set(result.evidence.map(item=>item.source.id)));
+});
+
 test("request-local caches cannot be reused by a different question",async()=>{
   const {search,calls}=fixture();
   await search(request);

@@ -3,7 +3,7 @@ import test from "node:test";
 import {createHash} from "node:crypto";
 import {env} from "./helpers/runtime-env";
 import {selectResearchEvidence} from "../lib/legal-chat/research-selection";
-import type {ResearchRequest,ResearchPacket} from "../lib/legal-chat/research";
+import type {ResearchRequest,ResearchPacket,ResearchNeed,ResearchReferenceNeed} from "../lib/legal-chat/research";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
@@ -55,6 +55,20 @@ test("missing, invented and invalid selection decisions fail rather than choosin
     decisions=invalid;
     await assert.rejects(selectResearchEvidence(request,{evidence:[source(0),source(1)],needs:[]},{requestId:"invalid"}));
   }
+});
+
+test("only references with every authenticated referrer explicitly irrelevant leave the packet needs",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const evidence=[source(0),source(1,"Other procedure follows Article 9 of this Code."),source(2,"Potential qualification refers to Article 9 of this Code.")];
+  const needs:ResearchNeed[]=Array.from({length:5},(_,i)=>({reason:i===4?"source_unavailable":"unresolved_reference",detail:`Discovery ${i}`}));
+  const referenceNeeds:ResearchReferenceNeed[]=[["source:1"],["source:1","source:2"],["source:missing"],[],["source:1"]]
+    .map((sourceIds,i)=>({need:needs[i]!,article:"9",sourceIds,discoveryReason:"reference_not_found"}));
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({
+    decisions:{"0":"rule","1":"unrelated","2":"conflict"}})}]}]}));
+  const result=await selectResearchEvidence(request,{evidence,needs,referenceNeeds},{requestId:"reference-scope"});
+  assert.deepEqual(result.needs,needs.slice(1));
+  assert.deepEqual(result.excludedReferences,[referenceNeeds[0]]);
+  assert.deepEqual(result.evidence,[evidence[0],evidence[2]]);
 });
 
 test("relevance never conceals forged or oversized evidence and cancellation prevents provider work",async context=>{

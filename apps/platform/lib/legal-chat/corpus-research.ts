@@ -82,6 +82,9 @@ export function createCorpusResearch(input: {
     }
     check();
     const needs:ResearchNeed[]=[];
+    const referenceNeeds:NonNullable<ResearchPacket["referenceNeeds"]>[number][]=[];
+    const referenceQueries:{need:ResearchNeed;query:LegalReferenceQuery;index:number;
+      discoveryReason:NonNullable<ResearchPacket["referenceNeeds"]>[number]["discoveryReason"]}[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];
     const evidence=new Map<string,PreparedCorpusEvidence>();
     const primaryEvidence=new Set<string>();
@@ -256,6 +259,11 @@ export function createCorpusResearch(input: {
             detail:`Article ${gap.query.article} in revision ${gap.query.textRevisionId} (${gap.query.languageTag}) at ${timeIdentity(endpoint)} remains unresolved: ${gap.reason}.`};
           needs.push(need);
           pendingReferences.set(JSON.stringify(need),{need,query:gap.query,endpoint});
+          // Only substantive discovery gaps may become irrelevant when every
+          // referring source is explicitly excluded. Unavailability never can.
+          if(gap.reason!=="lookup_unavailable") {
+            referenceQueries.push({need,query:gap.query,index,discoveryReason:gap.reason});
+          }
         }
         await readOrdered(references.candidates.map(candidate=>({candidate,index})),true);
       } catch {
@@ -264,6 +272,19 @@ export function createCorpusResearch(input: {
       }
     }
     check();
+    // Expanded dependencies can also refer to a missing article. Finalize
+    // provenance only after every reference candidate has been authenticated.
+    for(const {need,query,index,discoveryReason} of referenceQueries) {
+      const {release,endpoint}=releases[index]!,sourceIds=new Set<string>();
+      for(const referring of resolved[index]!) {
+        if(referring.candidate.textRevisionId!==query.textRevisionId
+          ||!sameInstrumentArticleReferences(referring.provisionText).includes(query.article))continue;
+        const source=readEvidence.get(JSON.stringify([release.id,timeIdentity(endpoint),referring.candidate.provisionRenditionId]));
+        if(source&&({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"}[source.source.locale])===query.languageTag)
+          sourceIds.add(source.source.id);
+      }
+      referenceNeeds.push({need,article:query.article,sourceIds:[...sourceIds],discoveryReason});
+    }
     // Reference discovery does not return targets it already saw in the
     // candidate pool. Preserve those dependencies before deduplication/context
     // selection too, using the same instrument, revision, language and endpoint.
@@ -365,7 +386,7 @@ export function createCorpusResearch(input: {
     check();
     const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
     answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
-    return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],
+    return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
       observations,
       resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
         .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()]};

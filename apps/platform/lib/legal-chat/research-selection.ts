@@ -6,6 +6,7 @@ import {indexedRetrievalRemainingMs} from "../runtime/indexed-retrieval";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {assertAnswerEvidence,timeIdentity} from "./evidence-boundary";
 import type {ResearchPacket,ResearchRequest} from "./research";
+import {sameInstrumentArticleReferences} from "../legal/referenced-article-context";
 
 const relevanceDisposition=z.enum(["rule","qualification","dependency","conflict","unrelated","background"]);
 
@@ -58,7 +59,16 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
   const retained=new Set(connectedContext(decisions.filter(decision=>decision.relevant).map(decision=>decision.sourceIndex),dependencies));
   const evidence=sources.filter((_,index)=>retained.has(index));
   const sourceIds=new Set(evidence.map(item=>item.source.id));
-  return {...packet,evidence,
+  const excludedReferences=(packet.referenceNeeds??[]).filter(reference=>reference.need.reason==="unresolved_reference"
+    &&["reference_not_found","lookup_budget","member_budget"].includes(reference.discoveryReason)
+    &&reference.sourceIds.length>0&&reference.sourceIds.every(id=>{
+      const index=sources.findIndex(source=>source.source.id===id);
+      return index>=0&&!retained.has(index)&&!decisions[index]!.relevant
+        &&sameInstrumentArticleReferences(sources[index]!.text).includes(reference.article);
+    }));
+  const excludedNeedKeys=new Set(excludedReferences.map(reference=>JSON.stringify(reference.need)));
+  return {...packet,evidence,excludedReferences,
+    needs:packet.needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))),
     selection:decisions.map(decision=>({sourceId:sources[decision.sourceIndex]!.source.id,
       relevant:decision.relevant,retained:retained.has(decision.sourceIndex),reason:decision.reason})),
     resolved:packet.resolved?.filter(resolution=>resolution.sourceIds.every(id=>sourceIds.has(id))),
