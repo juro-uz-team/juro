@@ -2,15 +2,13 @@ import { z } from "zod";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {containsExactQuotation} from "./quoted-text";
 import { callOpenAiStructured, type AiProviderAttemptObservation, type AiStructuredProgress } from "../document-builder/ai/openai";
-import { openAiChatModel } from "../ai/provider-models";
-import { legalChatProviderTimeoutMs } from "../ai/legal-chat-timeout";
-import { LEGAL_CHAT_PROVIDER_TIMEOUT_MS } from "./execution-limits";
+import { legalChatModelProfile } from "./model-profile";
 import { legalClaimId, legalDraftClaims, legalDraftSchema, legalVerificationSchema, MAX_LEGAL_SOURCE_PASSAGES, type LegalVerification } from "./answer-contract";
 import type { AnswerModel, AnswerQuestion } from "./answer-engine";
 import {aiResponseToneInstruction,type AiResponseTone} from "../ai/runtime-settings";
 
-// Whole-answer writing and independent verification share a bounded quality
-// window in both modes. Mode selects the model, not a reduced correctness budget.
+// Both modes retain whole-answer writing and independent verification. Their
+// provider execution profiles differ; evidence and publication checks do not.
 
 const reviewedDraftSchema = z.object({
   sourceReview: z.array(z.object({
@@ -211,11 +209,8 @@ export function createLegalAnswerModel(options: {
       instructions:options.responseTone&&stage!=="verifying"
         ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`,
       input, schemaName, schema: z.toJSONSchema(schema, {reused:"ref"}), parse: value => schema.parse(value),
-      requestId: options.requestId, model: openAiChatModel(question.mode), maxAttempts: 1,
+      requestId: options.requestId, ...legalChatModelProfile(question.mode,stage==="verifying"?"verifying":"writing"), maxAttempts: 1,
       textVerbosity: question.answerMode === "detailed" ? "high" : "medium",
-      reasoningEffort: "max",
-      reasoningMode: "pro",
-      timeoutMs: legalChatProviderTimeoutMs({ reasoningMode: question.mode, providerTimeoutMs: LEGAL_CHAT_PROVIDER_TIMEOUT_MS })!,
       deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       onProgress: options.onProgress,
       onAttempt: ({ model }) => options.onAttempt?.({ stage, model }),

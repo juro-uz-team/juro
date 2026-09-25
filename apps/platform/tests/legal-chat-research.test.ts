@@ -15,6 +15,31 @@ const question:ResearchQuestion={question:"How can I request a record?",topics:[
   locale:"en",mode:"fast",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
 
+test("fruitless repair preserves gaps without repeatedly assessing the same evidence",async()=>{
+  let assessments=0;
+  const result=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence:[evidence("general")],needs:[missing]}),
+    official:async()=>({evidence:[],needs:[]}),
+    assess:async()=>{assessments++;return [];},
+  });
+  assert.equal(assessments,1);
+  assert.equal(result.rounds,2);
+  assert.deepEqual(result.evidence,[evidence("general")]);
+  assert.ok(result.needs.some(need=>need.detail===missing.detail));
+  assert.ok(result.needs.some(need=>need.reason==="search_budget"));
+});
+
+test("productive repair can use the final round to resolve a material gap",async()=>{
+  const result=await researchLegalQuestion(question,{
+    indexed:async({round})=>({evidence:[evidence(`rule-${round}`)],needs:[missing]}),
+    official:async()=>({evidence:[],needs:[]}),
+    assess:async({round})=>round===2?{needs:[],resolved:[{need:missing,sourceIds:["rule-2"]}]}:[],
+  });
+  assert.equal(result.rounds,3);
+  assert.equal(result.evidence.length,3);
+  assert.deepEqual(result.needs,[]);
+});
+
 test("assessment can explicitly close a known substantive gap using admitted evidence",async()=>{
   const result=await researchLegalQuestion(question,{
     indexed:async()=>({evidence:[evidence("eligibility")],needs:[missing]}),
@@ -51,11 +76,11 @@ test("many distinct bounded source failures preserve every gap and the useful ad
 test("repeated needs have a unique assessment inventory and duplicate valid resolutions apply atomically",async()=>{
   let assessment=0;
   const result=await researchLegalQuestion(question,{
-    indexed:async()=>({evidence:[evidence("rule")],needs:[missing,missing]}),
+    indexed:async({round})=>({evidence:[evidence(round?"eligibility":"rule")],needs:[missing,missing]}),
     official:async()=>({evidence:[],needs:[missing]}),
     assess:async input=>{
       assert.deepEqual(input.needs,[missing]);
-      return ++assessment<3?[]:{needs:[],resolved:[
+      return ++assessment<2?[]:{needs:[],resolved:[
         {need:missing,sourceIds:["rule"]},{need:missing,sourceIds:["rule"]}]};
     },
   });
@@ -83,8 +108,8 @@ test("search exhaustion and empty results cannot masquerade as complete evidence
     indexed:async()=>{searches++;return {evidence:[],needs:[missing]};},
     official:async()=>{searches++;return {evidence:[],needs:[]};},assess:async()=>[],
   });
-  assert.equal(searches,6);
-  assert.equal(result.rounds,3);
+  assert.equal(searches,4);
+  assert.equal(result.rounds,2);
   assert.ok(result.needs.some(need=>need.reason==="unresolved_reference"));
   assert.ok(result.needs.some(need=>need.reason==="search_budget"));
 });

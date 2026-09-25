@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { callOpenAiStructured, type AiProviderAttemptObservation } from "../document-builder/ai/openai";
-import { openAiChatModel } from "../ai/provider-models";
-import { LEGAL_CHAT_PROVIDER_TIMEOUT_MS } from "./execution-limits";
+import { legalChatModelProfile } from "./model-profile";
 import { questionContextSchema, type QuestionContextInput } from "./question-context";
 import {documentModelContext} from "./document-context";
 
@@ -22,8 +21,8 @@ export function createQuestionInterpreter(options:{
     const result=await callOpenAiStructured({instructions,input:{question:input.question,locale:input.locale,
       priorTurns:input.priorTurns,userContext:input.userContext??null,privateDocuments:documentModelContext(input.documents),legalContextDate:input.legalContextDate??null,
       now:(input.now??new Date()).toISOString()},schemaName:"legal_question_context",schema:z.toJSONSchema(questionContextSchema),
-      parse:value=>questionContextSchema.parse(value),model:openAiChatModel(options.mode),maxAttempts:1,
-      timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,requestId:options.requestId,
+      parse:value=>questionContextSchema.parse(value),...legalChatModelProfile(options.mode,"interpreting"),maxAttempts:1,
+      requestId:options.requestId,
       deadlineAt:options.deadlineAt,safetyIdentifier:options.safetyIdentifier,signal:input.signal,
       onAttempt:options.onAttempt,onAttemptFinished:options.onAttemptFinished});
     return result.data;

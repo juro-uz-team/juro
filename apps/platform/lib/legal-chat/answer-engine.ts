@@ -167,11 +167,12 @@ function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutc
 }
 
 export async function answerFromEvidence(input: AnswerQuestion, model: AnswerModel, options?:{
-  validateSources:(evidence:readonly LegalEvidence[])=>Promise<ReadonlyMap<string,LegalSourceContext>>;
+  validateSources?:(evidence:readonly LegalEvidence[])=>Promise<ReadonlyMap<string,LegalSourceContext>>;
+  correction?:"once"|"never";
 }): Promise<AnswerOutcome> {
   const finalize=async(draft:LegalDraft,verification:LegalVerification):Promise<AnswerOutcome>=>{
     const projected=projectVerifiedAnswer(input,draft,verification);
-    if(!options||!projected.result.sources.length)return projected;
+    if(!options?.validateSources||!projected.result.sources.length)return projected;
     const published=new Set(projected.result.sources.map(source=>source.sourceId));
     const selected=input.evidence.filter(item=>published.has(item.source.id));
     let valid:ReadonlyMap<string,LegalSourceContext>;
@@ -201,7 +202,7 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
   } catch { return unavailableAnswer(input, input.signal?.aborted ? "AI_CANCELLED" : "ANSWER_PROVIDER_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   const first = projectVerifiedAnswer(input, draft, verification);
-  if (first.kind === "complete") return finalize(draft,verification);
+  if (first.kind === "complete" || options?.correction === "never") return finalize(draft,verification);
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   try {
     input.onStage?.("correcting");

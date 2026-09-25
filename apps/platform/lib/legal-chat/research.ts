@@ -42,6 +42,8 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   let needs:ResearchNeed[]=[];
   let sourceUnavailable=false;
   let rounds=0;
+  let assessedEvidenceCount=-1;
+  let stalled=false;
   const observations:ResearchObservation[]=[];
   // Structural readers may report one failure per bounded source read. Their
   // inventory is not the model's 40-item response schema; preserve these gaps
@@ -96,13 +98,19 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   for(let round=0;round<LEGAL_CHAT_MAX_RESEARCH_ROUNDS;round++) {
     checkCancellation();
     rounds=round+1;
+    const initialEvidenceCount=evidence.length;
     const request={question,needs:[...needs],round};
     await search("indexed",request);
     const assess=async()=>{
       checkCancellation();
+      // Evidence is append-only and identities are immutable within a request.
+      // A search with no newly admitted evidence cannot improve an assessment.
+      // Keep new structural needs; never infer their resolution from this skip.
+      if(assessedEvidenceCount===evidence.length)return [];
       needs=[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()];
       const result=await services.assess({...request,needs:[...needs],evidence,observations:[...observations]});
       checkCancellation();
+      assessedEvidenceCount=evidence.length;
       if(Array.isArray(result)) return parseNeeds(result);
       const assessment=result as ResearchAssessment;
       const next=parseNeeds(assessment.needs);
@@ -131,10 +139,14 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
     needs=[...needs,...assessed];
     needs=[...new Map(needs.map(need=>[`${need.reason}:${need.detail}`,need])).values()];
     if(!needs.length && evidence.length) break;
+    // Keep one recovery round for transient article or publisher read failures,
+    // including when the initial attempt admitted no evidence at all.
+    if(round>0 && evidence.length===initialEvidenceCount) {stalled=true;break;}
   }
   checkCancellation();
   if(!evidence.length && !needs.length) needs.push({reason:"missing_rule",detail:"No authenticated official evidence was found for the question."});
   if(rounds===LEGAL_CHAT_MAX_RESEARCH_ROUNDS && needs.length) needs.push({reason:"search_budget",detail:"The bounded official research rounds are exhausted; unresolved coverage remains."});
+  else if(stalled && needs.length) needs.push({reason:"search_budget",detail:"Research stopped after both search lanes added no authenticated evidence; unresolved coverage remains."});
   sourceUnavailable ||= needs.some(need=>need.reason==="source_unavailable");
   return {evidence,needs,sourceUnavailable,rounds,observations};
 }

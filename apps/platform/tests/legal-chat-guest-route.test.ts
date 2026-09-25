@@ -28,7 +28,7 @@ test("guest HTTP submission requires a verified challenge, saves encrypted clari
   context.mock.method(globalThis,"fetch",async(url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     assert.doesNotMatch(String(url),/cloudflare|turnstile/);
-    modelCalls++;assert.equal(body.model,"gpt-5.6-luna");
+    modelCalls++;assert.equal(body.model,"gpt-6-luna");
     return Response.json({id:"offline-response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify({topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]})}]}]});
   });
   const request=(token:string,cookie?:string)=>new Request("http://localhost:3000/api/guest/ai",{method:"POST",

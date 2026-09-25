@@ -19,6 +19,30 @@ function assertStrictProviderObjects(value: unknown): void {
   Object.values(node).forEach(assertStrictProviderObjects);
 }
 
+test("a stalled answer provider is cancelled by the selected chat mode watchdog",async context=>{
+  const previousKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=previousKey;});
+  context.mock.timers.enable({apis:["setTimeout"]});
+  for(const [mode,limit] of [["fast",60_000],["deep",120_000]] as const) {
+    const started=Promise.withResolvers<void>();
+    let providerSignal:AbortSignal|undefined;
+    context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
+      providerSignal=init!.signal!;
+      init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});
+      started.resolve();
+    }));
+    const question:AnswerQuestion={question:"What applies?",locale:"en",mode,answerMode:"short",
+      temporalScope:{kind:"current"},unresolved:[],evidence:[]};
+    const pending=createLegalAnswerModel({requestId:"stalled-answer"}).write({question,correction:null});
+    const rejected=assert.rejects(pending,(error:unknown)=>error instanceof Error&&"code" in error&&error.code==="PROVIDER_TIMEOUT");
+    await started.promise;
+    context.mock.timers.tick(limit-1);
+    assert.equal(providerSignal?.aborted,false);
+    context.mock.timers.tick(1);
+    await rejected;
+  }
+});
+
 test("legal model transport pins each mode and keeps source locators out of provider context", async context => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
@@ -57,12 +81,13 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.equal(draft.actions[0]?.description,"Submit the application and keep a copy.");
     assert.ok(!("sourceReview" in draft));
   }
-  assert.deepEqual(payloads.map(body => body.model), ["gpt-5.6-luna", "gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(body=>body.reasoning),[
+    {effort:"none",mode:"standard"},{effort:"max",mode:"pro"},
+  ]);
   assert.equal(observations.length, 2);
   for (const body of payloads) {
     assert.equal(body.text.format.strict, true);
-    assert.equal(body.reasoning.effort,"max");
-    assert.equal(body.reasoning.mode,"pro");
     assert.ok(!body.input.includes("fingerprint"));
     assert.ok(!body.input.includes("https://lex.uz"));
     assert.ok(body.input.includes("Official provision"));
@@ -92,6 +117,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
   let propertyCount=0; let schemaStrings=0; let nesting=0; let explicitPracticalRelevance=false;
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
+    assert.deepEqual(body.reasoning,{effort:"medium",mode:"standard"},"The fast draft still receives a separate deliberative verification");
     const schema=body.text.format.schema;
     assertStrictProviderObjects(schema);
     function inspect(value:unknown) {

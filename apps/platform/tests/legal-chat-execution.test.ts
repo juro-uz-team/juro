@@ -6,6 +6,8 @@ import {executeLegalChat,type LegalChatTerminal} from "../lib/legal-chat/executi
 import {legalDraftClaims,legalDraftSchema} from "../lib/legal-chat/answer-contract";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 import type {SourceObservation} from "../lib/legal/source-observation";
+import {executeRuntimeLegalChat} from "../lib/legal-chat/runtime-execution";
+import {env} from "./helpers/runtime-env";
 
 const text="Synthetic rule: applicants may request a copy of their record.";
 const evidence:LegalEvidence={source:{id:"source",actTitle:"Synthetic source",actIdentifier:null,
@@ -20,6 +22,48 @@ const draft=legalDraftSchema.parse({mainPoint:{text:"You may request a copy of y
 const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported by synthetic evidence."})),
   retention:[],coverage:[{issue:"Record access",findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
   complete:true,gaps:[],questions:[]};
+
+for(const stage of ["interpreting","researching"] as const) {
+  test(`runtime ${stage} timeout cannot publish a supported answer`,async context=>{
+    const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+    context.mock.timers.enable({apis:["setTimeout","setInterval"]});
+    let calls=0,saved=false,released:string|undefined;
+    const stalled=Promise.withResolvers<void>();
+    context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+      calls++;
+      if(stage==="researching"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
+        text:JSON.stringify({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]})}]}]});
+      return new Promise<Response>((_resolve,reject)=>{
+        init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});stalled.resolve();
+      });
+    });
+    const pending=executeRuntimeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
+      service:{openLegalResearch:async()=>({search:async()=>({evidence:[evidence],needs:[]}),cancel:async()=>{},[Symbol.dispose]:()=>{}})},
+      environment:"production",requestId:"runtime-timeout",renew:async()=>true,
+      commit:async terminal=>{saved=true;return terminal;},release:async reason=>{released=reason;}});
+    const outcome=stage==="interpreting"?pending.then(terminal=>{
+      assert.deepEqual(terminal,{kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"});
+    }):assert.rejects(pending,(error:unknown)=>error instanceof Error&&"code" in error&&error.code==="PROVIDER_TIMEOUT");
+    await stalled.promise;context.mock.timers.tick(stage==="interpreting"?15_000:45_000);await outcome;
+    assert.equal(saved,stage==="interpreting");assert.equal(released,stage==="interpreting"?undefined:"failed");
+    assert.equal(calls,stage==="interpreting"?1:2);
+  });
+}
+
+test("fast chat publishes independently verified partial findings without another rewrite",async()=>{
+  let writes=0,verifications=0;
+  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
+    interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
+    research:{indexed:async()=>({evidence:[evidence],needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
+    model:{write:async()=>{writes++;return draft;},verify:async()=>{verifications++;return {...review,complete:false,gaps:["Eligibility remains unresolved."]};}},
+    renew:async()=>true,commit:async terminal=>terminal,release:async()=>{},
+  });
+  assert.equal(writes,1);assert.equal(verifications,1);
+  assert.equal(result.kind,"partial");assert.ok("result" in result);
+  assert.deepEqual(result.result.confirmedFindings,draft.findings);
+  assert.equal(result.result.coverageStatus,"partial_coverage");
+  assert.ok(result.result.coverageGaps?.length);
+});
 
 for(const scenario of ["unchanged","changed","unavailable","historical","cancelled"] as const) {
   test(`final source validation before saving: ${scenario}`,async()=>{

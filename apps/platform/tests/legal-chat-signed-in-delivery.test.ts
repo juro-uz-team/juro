@@ -45,14 +45,14 @@ test("signed-in clarification persists, accounts once, and replays without anoth
   assert.deepEqual(stages,["interpreting","saving"]);
   const replay=await deliverSignedInLegalChat({...input,configured:false,service:undefined});
   assert.deepEqual(replay,saved);
-  assert.deepEqual(models,["gpt-5.6-luna"]);
+  assert.deepEqual(models,["gpt-6-luna"]);
   assert.equal(documentReads,1,"Completed replay does not retrieve private documents again");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM conversation_messages").get()?.n,2);
   assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
   const run=sqlite.prepare("SELECT status,input_tokens,output_tokens,attempt_count FROM ai_runs").get();
   assert.equal(run?.status,"completed");assert.equal(run?.input_tokens,20);assert.equal(run?.output_tokens,10);assert.equal(run?.attempt_count,1);
   assert.deepEqual({...sqlite.prepare("SELECT feature,model,input_tokens,output_tokens,usage_observed FROM ai_provider_usage_events").get()},
-    {feature:"legal_chat",model:"gpt-5.6-luna",input_tokens:20,output_tokens:10,usage_observed:1});
+    {feature:"legal_chat",model:"gpt-6-luna",input_tokens:20,output_tokens:10,usage_observed:1});
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_provider_usage_events").get()?.n,1);
   await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,question:"Changed request"}}),{code:"IDEMPOTENCY_CONFLICT"});
   assert.equal(models.length,1);

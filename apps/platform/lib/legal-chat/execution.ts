@@ -52,11 +52,11 @@ export function executeLegalChat<Saved>(input:{
       const observe=input.observeSource;
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model,
-        observe?{validateSources:async evidence=>{
+        {correction:input.mode==="fast"?"never":"once",...(observe?{validateSources:async evidence=>{
           validated=await validateAnswerSources({evidence,observe,signal});
           sourceUnavailable ||= validated.size!==evidence.length;
           return validated;
-        }}:undefined);
+        }}:{})});
       signal.throwIfAborted();
       const result=appendPrivateDocumentExcerpts(answer.result,context.documents);
       const published=new Set(answer.result.sources.map(source=>source.sourceId));

@@ -459,21 +459,20 @@ test("cancellation stops all overlapping evidence reads before starting more or 
   assert.equal(verified,0);
 });
 
-test("rediscovering an article in a later round preserves canonical metadata despite a later clock",async()=>{
+test("rediscovering the same article preserves canonical metadata and unresolved coverage",async()=>{
   const {services}=fixture();
   let time=Date.parse(instant),round=0;
   services.candidateCatalog.revalidate=async()=>[anotherCandidate(`rendition:${round++}`)];
   services.evidenceResolver.resolveControlling=async id=>articleResolution(id);
   const search=createCorpusResearch({services,formulate:async()=>interpretation,now:()=>time});
   const gap={reason:"missing_rule" as const,detail:"A different issue still needs a source."};
-  let assessment=0;
   const result=await researchLegalQuestion(request.question,{indexed:async input=>{
     time+=1000;return search(input);
-  },official:async()=>({evidence:[],needs:[]}),assess:async()=>++assessment<3?[gap]:
-    {needs:[],resolved:assessment===3?[{need:gap,sourceIds:[(await search({...request,round:1})).evidence[0]!.source.id]}]:[]}});
+  },official:async()=>({evidence:[],needs:[]}),assess:async()=>[gap]});
   assert.equal(result.evidence.length,1);
   assert.equal(result.rounds,2);
-  assert.deepEqual(result.needs,[]);
+  assert.equal(result.evidence[0]!.source.verifiedAt,new Date(Date.parse(instant)+1000).toISOString());
+  assert.ok(result.needs.some(need=>need.detail===gap.detail));
 });
 
 test("a retried authenticated article read closes its original gap through the research coordinator",async()=>{

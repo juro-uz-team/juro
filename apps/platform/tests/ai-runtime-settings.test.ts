@@ -68,7 +68,7 @@ function staff(role: PlatformStaffRole = "administrator"): PlatformStaffAccess {
 
 const settings = {
   expectedVersion: 0,
-  openaiChatModel: "gpt-5.6-luna",
+  openaiChatModel: "gpt-6-luna",
   openaiDeepModel: "gpt-5.6-terra",
   anthropicChatFallbackModel: "claude-fallback",
   anthropicDocumentModel: "claude-document",
@@ -80,7 +80,7 @@ const settings = {
 test("chat mode policy overrides stale environment models and rejects Sol activation", async () => {
   const staleEnv = {...env, OPENAI_CHAT_MODEL: "gpt-5.6-sol", OPENAI_DEEP_MODEL: "gpt-5.6-sol"};
   const resolved = await resolveAiRuntimeSettings({env: staleEnv});
-  assert.equal(resolved.openaiChatModel, "gpt-5.6-luna");
+  assert.equal(resolved.openaiChatModel, "gpt-6-luna");
   assert.equal(resolved.openaiDeepModel, "gpt-5.6-terra");
   const {sqlite, d1} = seed();
   try {
@@ -112,7 +112,7 @@ test("authenticated legacy Sol settings retain their history while effective cha
     sqlite.prepare("UPDATE ai_runtime_config_versions SET openai_chat_model=?,openai_deep_model=?,config_hash=?,event_hash=?")
       .run("gpt-5.6-sol", "gpt-5.6-sol", configHash, eventHash);
     const dashboard = await listAiRuntimeSettingsHistory({db: d1, env});
-    assert.equal(dashboard.current.openaiChatModel, "gpt-5.6-luna");
+    assert.equal(dashboard.current.openaiChatModel, "gpt-6-luna");
     assert.equal(dashboard.current.openaiDeepModel, "gpt-5.6-terra");
     assert.notEqual(dashboard.current.configHash, configHash);
     assert.equal(dashboard.history[0]?.openaiChatModel, "gpt-5.6-sol");
@@ -128,7 +128,7 @@ test("0088 resolves server defaults then activates an immutable allowlisted vers
     const defaults = await resolveAiRuntimeSettings({ db: d1, env });
     assert.equal(defaults.version, 0);
     assert.equal(defaults.source, "environment");
-    assert.equal(defaults.openaiChatModel, "gpt-5.6-luna");
+    assert.equal(defaults.openaiChatModel, "gpt-6-luna");
 
     const created = await createAiRuntimeSettingsVersion({ db: d1, env, staff: staff(), settings, now: new Date(NOW) });
     assert.equal(created.version, 1);
@@ -136,7 +136,7 @@ test("0088 resolves server defaults then activates an immutable allowlisted vers
     assert.match(created.configHash, /^[a-f0-9]{64}$/);
     const dashboard = await listAiRuntimeSettingsHistory({ db: d1, env });
     assert.equal(dashboard.current.configHash, created.configHash);
-    assert.deepEqual(dashboard.allowlist.openai, ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-fast", "gpt-deep", "gpt-fallback"]);
+    assert.deepEqual(dashboard.allowlist.openai, ["gpt-6-luna", "gpt-5.6-terra", "gpt-fast", "gpt-deep", "gpt-fallback"]);
     assert.equal(dashboard.history.length, 1);
     assert.throws(
       () => sqlite.prepare("UPDATE ai_runtime_config_versions SET response_tone='clear'").run(),
