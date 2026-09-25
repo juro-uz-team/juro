@@ -544,7 +544,10 @@ export function createRuntimeCustomSearchProvider(input: {
   };
 }
 
-function createRuntimeEvaluationCustomSearchProvider(input: {
+/** Trusted composition for an explicitly selected release. Callers validate
+ * publication or off-side evaluation eligibility before constructing it. */
+export function createRuntimePinnedCustomSearchProvider(input: {
+  environment: "development" | "staging" | "production";
   releaseId: string;
   configurationIdentity: string;
   service: Fetcher;
@@ -561,21 +564,21 @@ function createRuntimeEvaluationCustomSearchProvider(input: {
   };
   return {
     async attest(instanceId, releaseId) {
-      if (instanceId !== customInstanceId(input.capability, "staging")) {
+      if (instanceId !== customInstanceId(input.capability, input.environment)) {
         throw new TypeError("CUSTOM_SEARCH_INSTANCE_REJECTED");
       }
       assertEvaluationRelease(releaseId);
       return configuration;
     },
     async search(searchInput) {
-      assertCustomSearchRequest(input.capability, "staging", searchInput);
+      assertCustomSearchRequest(input.capability, input.environment, searchInput);
       assertEvaluationRelease(searchInput.releaseId);
-      return requestCustomSearch(input.service, "staging", searchInput);
+      return requestCustomSearch(input.service, input.environment, searchInput);
     },
     async searchMany(searchInput) {
-      assertCustomSearchRequest(input.capability, "staging", searchInput);
+      assertCustomSearchRequest(input.capability, input.environment, searchInput);
       assertEvaluationRelease(searchInput.releaseId);
-      return requestCustomSearchBatch(input.service, "staging", searchInput);
+      return requestCustomSearchBatch(input.service, input.environment, searchInput);
     },
   };
 }
@@ -601,7 +604,8 @@ function createRuntimeCandidateIndex(provider: LegalCandidateProvider) {
   });
 }
 
-function createRuntimeEvidenceServices(
+/** Shared evidence pipeline; routing policy belongs to the trusted resolver. */
+export function createRuntimeEvidenceServices(
   dependencies: RuntimeDependencies,
   candidateIndex: ReturnType<typeof createRuntimeCandidateIndex>,
   releaseResolver: RuntimeReleaseResolver,
@@ -839,7 +843,7 @@ export async function createRuntimeEvaluationEvidenceServices(input: {
   const releases=new Map<CustomSearchCapability,PinnedCandidateRelease>();
   for(const capability of ["current","history"] as const) {
     const release=selected[capability],instanceId=customInstanceId(capability,"staging");
-    providers.set(instanceId,createRuntimeEvaluationCustomSearchProvider({releaseId:release.id,
+    providers.set(instanceId,createRuntimePinnedCustomSearchProvider({environment:"staging",releaseId:release.id,
       configurationIdentity:release.configurationIdentity,capability,
       service:capability==="current"?env.LEGAL_CUSTOM_SEARCH_SERVICE:env.LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE,
       gatewayIdentity:env.LEGAL_AI_GATEWAY_ID,projectIdentity:env.LEGAL_AI_PROVIDER_PROJECT_ID}));

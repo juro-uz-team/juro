@@ -6,11 +6,22 @@ import { DatabaseSync } from "node:sqlite";
 import { createProviderCandidateIndex, parseCandidatePacket, parsePinnedCandidateRelease }
   from "../lib/legal-corpus/legal-candidate-index";
 
-import { createRuntimeCustomSearchProvider, createRuntimeCandidateCatalog,
+import { createRuntimeCustomSearchProvider, createRuntimeCandidateCatalog, createRuntimePinnedCustomSearchProvider,
   resolveRuntimeTrustedLegalTitles }
   from "../lib/legal-corpus/target-runtime";
 import { buildCustomTrustedTitleInventory } from "../lib/legal-corpus/custom-search-trusted-titles";
 import { buildCustomMembershipLookup } from "../lib/legal-corpus/custom-membership-lookup";
+
+test("explicitly pinned providers reject another release or environment before transport", async () => {
+  let requests=0;
+  const provider=createRuntimePinnedCustomSearchProvider({environment:"production",releaseId:"candidate-release",
+    configurationIdentity:"candidate-config",capability:"current",gatewayIdentity:"gateway",projectIdentity:"project",
+    service:{async fetch(){requests++;throw Error("Unexpected transport");}}});
+  await provider.attest("custom-current-production-v1","candidate-release");
+  await assert.rejects(provider.attest("custom-current-staging-v1","candidate-release"),/INSTANCE_REJECTED/);
+  await assert.rejects(provider.attest("custom-current-production-v1","other-release"),/RELEASE_REJECTED/);
+  assert.equal(requests,0);
+});
 
 test("independent scopes cross bounded search batches without losing packet provenance", async () => {
   const release = parsePinnedCandidateRelease({id: "scope-release", environment: "development", capability: "current",
