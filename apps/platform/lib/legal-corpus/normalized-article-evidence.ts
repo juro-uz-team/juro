@@ -21,9 +21,11 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
     let section=false;
     if(!text && fragment){
       const source=parent.snapshot.blocks.map(block=>block.text).join(" ").replace(/\s+/gu," ").trim();
+      const sections=documentSections(parent.snapshot);
+      const matches=sections.filter(context=>context.text.includes(fragment));
+      const reconstructed=matches.length===1&&matches[0]!.complete&&matches[0]!.text===fragment;
       const first=source.indexOf(fragment);
-      if(first<0||source.indexOf(fragment,first+1)>=0)return null;
-      const matches=documentSections(parent.snapshot).filter(context=>context.text.includes(fragment));
+      if(first<0?!reconstructed:source.indexOf(fragment,first+1)>=0)return null;
       if(matches.length){
         if(matches.length!==1||!matches[0]!.complete)return null;
         text=matches[0]!.text;section=true;

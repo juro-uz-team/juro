@@ -412,7 +412,22 @@ test("ambiguous replacement quotes retain the entire final chapter as document e
   const context=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(context);
   const expected=[snapshot.blocks[0],...snapshot.blocks.slice(4)].map((block:{text:string})=>block.text).join(" ");
   assert.equal(context.provisionText,expected);
+  assert.equal((await createNormalizedDocumentEvidenceReader(bucket)({...original,provisionText:expected}))?.provisionText,expected);
   const result=await corpusAnswerEvidence({resolution:{controlling:original,documentContext:context,materialCitation:context.officialCitation},currentAt:new Date().toISOString(),endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}});
   const reopened=await resolveCitationEvidence(bucket,result.source.citationEvidenceReceipt!);
   assert.equal(reopened.text,expected);assert.equal(reopened.fullArticle,false);
+});
+
+
+test("an exact complete section cannot hide a competing incomplete section",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const adoption="Oʻzbekiston Respublikasi Prezidentining 2025-yil 21-fevraldagi PF-26-son Farmoniga";
+  const fragment="Instrument introduction. "+adoption+" 1-ILOVA The complete schedule applies.";
+  snapshot.blocks=["Instrument introduction.","Article 1. Adoption","The attached schedules are adopted.",
+    adoption+"\n1-ILOVA","The complete schedule applies.",adoption+"\n2-ILOVA",fragment,"Further conditions. ".repeat(4000)]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
 });
