@@ -15,16 +15,24 @@ export class SelectionEvidenceContextError extends Error {
 }
 
 function referenceGraph(candidates: readonly ReferenceCandidate[]): number[][] {
-  const articles = candidates.map(candidate => detectArticleNumbers(candidate.citationLabel)[0]);
-  const references = candidates.map(candidate => new Set(sameInstrumentArticleReferences(candidate.provisionText)));
-  return candidates.map((source, index) => candidates.flatMap((target, targetIndex) =>
-    index !== targetIndex && source.candidate.textRevisionId === target.candidate.textRevisionId
-      && source.candidate.languageFamily === target.candidate.languageFamily
-      && ((articles[targetIndex] && references[index]!.has(articles[targetIndex]!))
-        || (articles[index] && references[targetIndex]!.has(articles[index]!))) ? [targetIndex] : []));
+  return articleReferenceGraph(candidates.map(candidate=>({
+    revisionIdentity:candidate.candidate.textRevisionId,language:candidate.candidate.languageFamily,
+    article:detectArticleNumbers(candidate.citationLabel)[0],text:candidate.provisionText,
+  })));
 }
 
-function connectedContext(seeds: readonly number[], graph: readonly number[][]): number[] {
+/** Assessment includes referrers as context; retention can follow dependencies
+ * only. The caller supplies an authenticated revision identity, never a title. */
+export function articleReferenceGraph(sources:readonly {revisionIdentity:string;language:string;article?:string|null;text:string}[],
+  includeReferrers=true):number[][] {
+  const references=sources.map(source=>new Set(sameInstrumentArticleReferences(source.text)));
+  return sources.map((source,index)=>sources.flatMap((target,targetIndex)=>index!==targetIndex
+    &&source.revisionIdentity===target.revisionIdentity&&source.language===target.language
+    &&((target.article&&references[index]!.has(target.article))
+      ||(includeReferrers&&source.article&&references[targetIndex]!.has(source.article)))?[targetIndex]:[]));
+}
+
+export function connectedContext(seeds: readonly number[], graph: readonly number[][]): number[] {
   const visited = new Set(seeds);
   const pending = [...seeds];
   for (let index = 0; index < pending.length; index++) {

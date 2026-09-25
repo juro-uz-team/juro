@@ -16,6 +16,7 @@ export const researchObservationSchema=z.object({
 export type ResearchObservation=z.infer<typeof researchObservationSchema>;
 export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sourceUnavailable"|"onStage"> & {topics:readonly string[]};
 export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly ResearchNeed[];
+  selection?:readonly {sourceId:string;relevant:boolean;retained:boolean;reason:string}[];
   observations?:readonly ResearchObservation[];
   resolved?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[]};
 export type ResearchRequest = {question:ResearchQuestion; needs:readonly ResearchNeed[]; round:number};

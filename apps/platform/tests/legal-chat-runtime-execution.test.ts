@@ -13,6 +13,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
     const body=JSON.parse(String(init?.body));calls++;const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     const output=schema==="legal_question_context"?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
+      :schema==="legal_provision_relevance"?{decisions:[{sourceIndex:0,relevant:true,reason:"Establishes record access."}]}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :schema==="legal_answer"?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
@@ -30,7 +31,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
     service:{async openLegalResearch(){return {async search(){return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
-  assert.equal(calls,4,"The normal writer and verifier both completed before final source validation");
+  assert.equal(calls,5,"Selection, the normal writer and verifier completed before final source validation");
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
   assert.equal(result.result.failureReason,"official_research_unavailable");
   assert.deepEqual(result.result.confirmedFindings,[]);
@@ -52,6 +53,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     const output=schema==="legal_question_context"
       ?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
+      :schema==="legal_provision_relevance"?{decisions:[{sourceIndex:0,relevant:true,reason:"Establishes record access."}]}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :null;
     if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
@@ -70,7 +72,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     commit:async terminal=>{assert.equal(terminal.kind,"unavailable");throw new Error("synthetic save failure");},
     release:async reason=>{assert.equal(reason,"failed");released++;},
   }),/synthetic save failure/);
-  assert.deepEqual(models,["gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(models,["gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
   assert.equal(opened,1);assert.equal(reads,1);assert.equal(disposed,1);
   assert.equal(renewed,2);assert.equal(released,1);
 });

@@ -26,7 +26,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
     safetyIdentifier:input.safetyIdentifier,onAttempt:input.onAttempt,onAttemptFinished:input.onAttemptFinished};
   const model=createLegalResearchModel(options);
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
-    requestId:input.requestId,formulate:model.formulateIndexed});
+    ...options,formulate:model.formulateIndexed});
   try {
     return await executeLegalChat({...input,
       interpret:createQuestionInterpreter({...options,mode:input.mode}),
