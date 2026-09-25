@@ -106,3 +106,14 @@ export function completeResolutionIntroductionContext(snapshot:NormalizedLegalSo
   if(introductions.length!==1||fragment!==undefined&&normalize(introductions[0]!.text)!==fragment)return null;
   return completeDocumentText(snapshot,200_000);
 }
+
+
+/** A draft's articles must retain the publisher's draft label and the enclosing
+ * decision. A standalone article would lose its material applicability scope. */
+export function isDraftContextFragment(snapshot:NormalizedLegalSourceSnapshot,fragment:string):boolean {
+  const blocks=snapshot.blocks;
+  const markers=blocks.flatMap((block,index)=>/^(?:Проект|Loyiha|Лойиҳа|Draft)$/iu.test(block.text.trim())?[index]:[]);
+  return !!fragment&&markers.some(start=>
+    normalize(blocks.slice(start).map(block=>block.text).join(" ")).includes(fragment)
+      &&blocks.slice(start+1).some(isLegalArticleHeading));
+}

@@ -266,3 +266,35 @@ test("an imported resolution introduction authenticates its entire bounded instr
  const changed=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes:changed,customMetadata:{}});
  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(changed)}}),null);
 });
+
+
+test("an attached draft article retains its draft label and complete enclosing decision",async()=>{
+  const {bucket,resolution}=await fixture();
+  const key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="Article 7. The proposed filing rule applies to written requests.";
+  snapshot.documentTitle="Decision to submit a proposed law";
+  snapshot.blocks=["The authority decides to submit the attached proposal.","Draft",fragment,
+    "The proposal requires legislative adoption.","Article 8. Proposed commencement",
+    "This proposed law would commence on publication."].map((text,index)=>({index,kind:"paragraph",text}));
+  snapshot.plainText=snapshot.blocks.map((block:{text:string})=>block.text).join(" ");
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,
+    evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"7"),null);
+  const documentContext=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(documentContext);
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,
+    materialCitation:original.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00Z"}});
+  assert.equal(evidence.text,snapshot.plainText);
+  assert.equal(evidence.source.article,null);
+  assert.equal(evidence.source.actTitle,snapshot.documentTitle);
+  const reopened=await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!);
+  assert.equal(reopened.text,evidence.text);assert.equal(reopened.fullArticle,false);
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,provisionText:"Absent fragment"}),null);
+  snapshot.blocks.push({index:snapshot.blocks.length,kind:"paragraph",text:"Additional context. ".repeat(4000)});
+  const oversizedBytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes:oversizedBytes,customMetadata:{}});
+  const oversized={...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(oversizedBytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(oversized,"7"),null);
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(oversized),null);
+
+});

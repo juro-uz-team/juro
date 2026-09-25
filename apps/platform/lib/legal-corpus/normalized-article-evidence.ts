@@ -1,4 +1,4 @@
-import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, completeResolutionIntroductionContext, isPublicationMetadataText } from "../legal/article-context";
+import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, completeResolutionIntroductionContext, isPublicationMetadataText, isDraftContextFragment } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
 import {importedSourceContexts} from "../legal/imported-source-context";
@@ -13,8 +13,10 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
       || parent.snapshot.source.canonicalUrl !== original.officialCitation.url
       || ({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
     const fragment = original.provisionText.replace(/\s+/gu," ").trim();
-    let text = isPublicationMetadataText(fragment)
+    const draft=isDraftContextFragment(parent.snapshot,fragment);
+    let text = (isPublicationMetadataText(fragment)||draft)
       ? completeDocumentText(parent.snapshot) : completeUnnumberedDocumentText(parent.snapshot);
+    if(draft&&!text)return null;
     if(!text)text=completeResolutionIntroductionContext(parent.snapshot,fragment);
     let section=false;
     if(!text && fragment){
@@ -58,7 +60,7 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
     // A discovered provision can be a middle fragment. Its exact content must
     // occur in this uniquely identified article of the authenticated parent;
     // requiring a prefix loses earlier scope and later exceptions.
-    if (!originalText) return null;
+    if (!originalText||isDraftContextFragment(parent.snapshot,originalText)) return null;
     const {candidates, occurrences} = readArticle(article);
     // Imported headings sometimes used a year as an article number. Resolve
     // only a unique complete article from the same authenticated parent when
