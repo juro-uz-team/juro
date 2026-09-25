@@ -1,7 +1,6 @@
 import {z} from "zod";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {callOpenAiStructured, type AiProviderAttemptObservation} from "../document-builder/ai/openai";
-import {openAiChatModel} from "../ai/provider-models";
 import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index";
 import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS} from "./execution-limits";
 import type {LegalEvidence} from "./answer-engine";
@@ -83,8 +82,8 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     onOutputTextBuffer?:(input:{text:string})=>Promise<void>,providerSchema?:z.ZodType)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
     const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(providerSchema??schema),
-      parse:value=>schema.parse(value),model:schemaName.endsWith("_queries")&&request.question.mode==="fast"
-        ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
+      parse:value=>schema.parse(value),model:request.question.mode==="fast"
+        ?"gpt-6-luna":"gpt-5.6-terra",maxAttempts:1,
       ...(schemaName.endsWith("_queries")&&request.question.mode==="fast"?{reasoningEffort:"none" as const}:{}),
       ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
       timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,deadlineAt:options.deadlineAt,requestId:options.requestId,
