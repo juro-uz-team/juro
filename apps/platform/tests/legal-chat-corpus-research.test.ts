@@ -571,6 +571,19 @@ test("ordinary candidate saturation is visible to assessment without manufacturi
   assert.equal(result.evidence.length,24);
 });
 
+test("repair discovery bounds cached and new sources together while preserving reference capacity",async()=>{
+  const {services,search}=fixture();let round=0,reads=0;
+  services.candidateCatalog.revalidate=async()=>Array.from({length:round?48:12},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>{reads++;return articleResolution(id,id.split(":")[1]!);};
+  services.referenceDiscovery=async()=>({candidates:round?Array.from({length:12},(_,index)=>anotherCandidate(`rendition:${index+100}`)):[],unresolved:[]});
+  await search(request);round++;
+  const result=await search({...request,round:1});
+  assert.equal(result.selectionCandidates?.length,48);
+  assert.equal(reads,48);
+  assert.equal(result.selectionCandidates?.filter(item=>Number(item.source.article)>=100).length,12);
+  assert.ok(result.observations?.some(item=>item.kind==="candidate_read_limit"&&item.omitted===12));
+});
+
 test("a required reference denied the bounded read allowance remains an explicit unresolved need",async()=>{
   const {services,search}=fixture();
   services.candidateCatalog.revalidate=async()=>Array.from({length:36},(_,index)=>anotherCandidate(`rendition:${index}`));

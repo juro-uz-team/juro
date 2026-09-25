@@ -20,6 +20,53 @@ function source(index:number,text=`Article ${index+1}. Complete unrelated rule.`
     textSha256,endpoint:{kind:"current"},origin:"indexed"};
 }
 
+test("selection assesses beyond the rank budget and excludes only authenticated irrelevant reference origins",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const candidates=Array.from({length:30},(_,index)=>source(index));
+  candidates[25]=source(25,"An unrelated procedure follows Article 99 of this Code.");
+  const need:ResearchNeed={reason:"unresolved_reference",detail:"Article 99 is missing."};
+  const seen:number[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const input=JSON.parse(JSON.parse(String(init?.body)).input);seen.push(...input.primarySourceIndices);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({decisions:
+      Object.fromEntries(input.primarySourceIndices.map((index:number)=>[index,index===29?"rule":"unrelated"]))})}]}]});
+  });
+  const result=await selectResearchEvidence(request,{evidence:candidates.slice(0,24),selectionCandidates:candidates,
+    selectionResolutions:[{need:{reason:"source_unavailable",detail:"Recovered reader"},sourceIds:["source:29"]}],
+    needs:[need],referenceNeeds:[{need,article:"99",sourceIds:["source:25"],discoveryReason:"reference_not_found"}]},{requestId:"pool"});
+  assert.deepEqual(seen.sort((a,b)=>a-b),candidates.map((_,index)=>index));
+  assert.deepEqual(result.evidence,[candidates[29]]);assert.deepEqual(result.needs,[]);
+  assert.equal(result.selectionCandidates,undefined);
+  assert.deepEqual(result.resolved,[{need:{reason:"source_unavailable",detail:"Recovered reader"},sourceIds:["source:29"]}]);
+});
+
+test("selected pools over the answer ceiling fail closed and never keep a ranked prefix",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const candidates=Array.from({length:25},(_,index)=>source(index));
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const input=JSON.parse(JSON.parse(String(init?.body)).input);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({decisions:
+      Object.fromEntries(input.primarySourceIndices.map((index:number)=>[index,"rule"]))})}]}]});
+  });
+  const result=await selectResearchEvidence(request,{evidence:candidates.slice(0,24),selectionCandidates:candidates,needs:[]},{requestId:"overflow"});
+  assert.deepEqual(result.evidence,[]);assert.equal(result.needs[0]?.reason,"context_budget");
+  assert.equal(result.selection?.filter(item=>item.retained).length,25);
+});
+
+test("independent complete contexts split assessment batches by characters",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const candidates=Array.from({length:8},(_,index)=>source(index,"Independent complete provision. "+"x".repeat(10000)));
+  let calls=0;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const input=JSON.parse(JSON.parse(String(init?.body)).input);calls++;
+    assert.ok(input.evidence.reduce((n:number,item:{text:string})=>n+item.text.length,0)<=64000);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({decisions:
+      Object.fromEntries(input.primarySourceIndices.map((index:number)=>[index,index===7?"rule":"unrelated"]))})}]}]});
+  });
+  const result=await selectResearchEvidence(request,{evidence:[],selectionCandidates:candidates,needs:[]},{requestId:"split"});
+  assert.equal(calls,2);assert.deepEqual(result.evidence,[candidates[7]]);
+});
+
 test("selection preserves complete connected context, all topics and operational gaps",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const evidence=Array.from({length:10},(_,index)=>source(index));
@@ -75,7 +122,9 @@ test("relevance never conceals forged or oversized evidence and cancellation pre
   context.mock.method(globalThis,"fetch",async()=>assert.fail("Invalid evidence cannot reach selection"));
   const original=source(0);
   await assert.rejects(selectResearchEvidence(request,{evidence:[{...original,text:"Tampered"}],needs:[]},{requestId:"forged"}),/TEXT_HASH/);
-  await assert.rejects(selectResearchEvidence(request,{evidence:[source(0,"x".repeat(64001))],needs:[]},{requestId:"oversized"}),/CONTEXT_EXCEEDED/);
+  await assert.rejects(selectResearchEvidence(request,{evidence:[],selectionCandidates:[{...original,text:"Tampered"}],needs:[]},{requestId:"forged-pool"}),/TEXT_HASH/);
+  const oversized=await selectResearchEvidence(request,{evidence:[],selectionCandidates:[source(0,"x".repeat(64001))],needs:[]},{requestId:"oversized"});
+  assert.deepEqual(oversized.evidence,[]);assert.equal(oversized.needs[0]?.reason,"context_budget");
   await assert.rejects(selectResearchEvidence({...request,question:{...request.question,signal:AbortSignal.abort()}},
     {evidence:[original],needs:[]},{requestId:"cancelled"}));
 });

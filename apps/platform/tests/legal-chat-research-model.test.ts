@@ -149,7 +149,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const body=JSON.parse(String(init?.body));payloads.push(body);
     const assessment=JSON.parse(body.input).evidence.length>0;
     assert.deepEqual(body.reasoning,body.model==="gpt-6-luna"?{effort:"none"}:undefined);
-    const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
+    const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIndices:[0]}],
       queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
@@ -177,11 +177,11 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
 test("research rejects fabricated resolution source IDs and operational-gap approvals",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  let sourceId="invented";
+  let sourceIndex=99;
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{
-    type:"output_text",text:JSON.stringify({needs:[],resolved:[{needIndex:0,sourceIds:[sourceId]}],queries:[query]})}]}]}));
+    type:"output_text",text:JSON.stringify({needs:[],resolved:[{needIndex:0,sourceIndices:[sourceIndex]}],queries:[query]})}]}]}));
   await assert.rejects(createLegalResearchModel({requestId:"request"}).assess({...request,evidence:[evidence]}),/RESOLUTION_INVALID/);
-  sourceId="source:one";
+  sourceIndex=0;
   await assert.rejects(createLegalResearchModel({requestId:"request"}).assess({...request,
     needs:[{reason:"source_unavailable",detail:"The source reader failed."}],evidence:[evidence]}),/RESOLUTION_INVALID/);
 });
@@ -199,7 +199,7 @@ test("coverage generation offers only substantive needs and admitted source IDs 
   await createLegalResearchModel({requestId:"mixed"}).assess({...request,
     needs:[outage,request.needs[0]!,{reason:"unresolved_reference",detail:"The exception is missing."}],evidence:[evidence]});
   assert.deepEqual(schemas[0]!.items.properties.needIndex.enum,[1,2]);
-  assert.equal(schemas[0]!.items.properties.sourceIds.items.const,"source:one");
+  assert.equal(schemas[0]!.items.properties.sourceIndices.items.const,0);
   await createLegalResearchModel({requestId:"outage"}).assess({...request,needs:[outage],evidence:[evidence]});
   await createLegalResearchModel({requestId:"empty"}).assess({...request,evidence:[]});
   assert.equal(schemas[1]!.type,"null");assert.equal(schemas[2]!.type,"null");

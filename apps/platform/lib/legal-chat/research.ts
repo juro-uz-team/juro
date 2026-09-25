@@ -18,6 +18,9 @@ export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sour
 export type ResearchReferenceNeed={need:ResearchNeed;article:string;sourceIds:readonly string[];
   discoveryReason:"reference_not_found"|"lookup_budget"|"member_budget"};
 export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly ResearchNeed[];
+  /** Authenticated discovery pool, never answer context until selection. */
+  selectionCandidates?:readonly LegalEvidence[];
+  selectionResolutions?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[];
   selection?:readonly {sourceId:string;relevant:boolean;retained:boolean;reason:string}[];
   referenceNeeds?:readonly ResearchReferenceNeed[];
   excludedReferences?:readonly ResearchReferenceNeed[];

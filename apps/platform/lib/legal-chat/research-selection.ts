@@ -4,7 +4,7 @@ import {articleReferenceGraph,connectedContext,SELECTION_ASSESSMENT_BATCH_SIZE} 
 import {fitsLegalEvidenceBudget} from "../legal/legal-evidence-budget";
 import {indexedRetrievalRemainingMs} from "../runtime/indexed-retrieval";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
-import {assertAnswerEvidence,timeIdentity} from "./evidence-boundary";
+import {assertAnswerEvidence,assertLegalEvidenceIdentity,timeIdentity} from "./evidence-boundary";
 import type {ResearchPacket,ResearchRequest} from "./research";
 import {sameInstrumentArticleReferences} from "../legal/referenced-article-context";
 
@@ -21,8 +21,19 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
   const signal=request.question.signal;
   signal?.throwIfAborted();
   await assertAnswerEvidence({...request.question,evidence:packet.evidence,unresolved:[]});
-  if(!packet.evidence.length)return packet;
-  const sources=packet.evidence;
+  const sources=packet.selectionCandidates??packet.evidence;
+  if(sources.length>48||new Set(sources.map(source=>source.source.id)).size!==sources.length)
+    throw Error("RESEARCH_SELECTION_POOL_INVALID");
+  // A discovery pool is not answer context. Authenticate every complete item
+  // before relevance, then apply the aggregate ceiling to each assessment and
+  // the final selected set. Never let an invalid low-ranked source disappear.
+  await assertLegalEvidenceIdentity({...request.question,evidence:sources,unresolved:[]});
+  if(packet.evidence.some(source=>!sources.some(candidate=>JSON.stringify(candidate)===JSON.stringify(source))))
+    throw Error("RESEARCH_SELECTION_POOL_INVALID");
+  if(!sources.length)return packet;
+  const {selectionCandidates:_,selectionResolutions,...answerPacket}=packet;
+  const contextExceeded=():ResearchPacket=>({...answerPacket,evidence:[],resolved:[],
+    needs:[...packet.needs,{reason:"context_budget",detail:"A complete connected candidate context exceeds the relevance assessment budget."}]});
   const references=sources.map(source=>{
     const parent=source.source.citationEvidenceReceipt;
     return {revisionIdentity:JSON.stringify(parent&&parent.kind!=="provision"
@@ -31,8 +42,16 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
   });
   const dependencies=articleReferenceGraph(references,false),assessmentContext=articleReferenceGraph(references);
   const batchSize=SELECTION_ASSESSMENT_BATCH_SIZE;
-  const batches=Array.from({length:Math.ceil(sources.length/batchSize)},(_,batch)=>
-    sources.slice(batch*batchSize,batch*batchSize+batchSize).map((_,index)=>batch*batchSize+index));
+  const batches:number[][]=[];
+  for(let index=0;index<sources.length;index++) {
+    const previous=batches.at(-1),combined=[...(previous??[]),index];
+    const fits=(primary:number[])=>fitsLegalEvidenceBudget(connectedContext(primary,assessmentContext).map(i=>sources[i]!.text));
+    if(previous&&combined.length<=batchSize&&fits(combined))previous.push(index);
+    else {
+      if(!fits([index]))return contextExceeded();
+      batches.push([index]);
+    }
+  }
   const decisions=(await Promise.all(batches.map(async primary=>{
     signal?.throwIfAborted();
     const context=connectedContext(primary,assessmentContext).sort((a,b)=>a-b);
@@ -67,10 +86,12 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
         &&sameInstrumentArticleReferences(sources[index]!.text).includes(reference.article);
     }));
   const excludedNeedKeys=new Set(excludedReferences.map(reference=>JSON.stringify(reference.need)));
-  return {...packet,evidence,excludedReferences,
-    needs:packet.needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))),
+  const fitsAnswer=fitsLegalEvidenceBudget(evidence.map(source=>source.text));
+  return {...answerPacket,evidence:fitsAnswer?evidence:[],excludedReferences,
+    needs:[...packet.needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))),
+      ...(!fitsAnswer?[{reason:"context_budget" as const,detail:"The semantically selected complete provisions exceed the answer evidence budget."}]:[])],
     selection:decisions.map(decision=>({sourceId:sources[decision.sourceIndex]!.source.id,
       relevant:decision.relevant,retained:retained.has(decision.sourceIndex),reason:decision.reason})),
-    resolved:packet.resolved?.filter(resolution=>resolution.sourceIds.every(id=>sourceIds.has(id))),
+    resolved:fitsAnswer?(selectionResolutions??packet.resolved)?.filter(resolution=>resolution.sourceIds.every(id=>sourceIds.has(id))):[],
   };
 }

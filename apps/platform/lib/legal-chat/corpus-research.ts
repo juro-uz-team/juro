@@ -141,7 +141,6 @@ export function createCorpusResearch(input: {
         needs.push({reason:"source_unavailable",detail:`Indexed search was incomplete for ${timeIdentity(endpoint)}.`});
       }
     }
-    let reads=0;
     let unreadCandidates=0;
     const prepareRead=(candidate:RevalidatedCandidate,index:number,reference=false):(()=>Promise<void>)=>{
       check();
@@ -153,7 +152,8 @@ export function createCorpusResearch(input: {
           if(!reference&&item)primaryEvidence.add(item.source.id);
         };
       }
-      if(!saved.has(key)&&reads>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
+      // Cached reads still occupy this round's discovery/context pool.
+      if(seen.size>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
         return async()=>{
         if(reference) {
           const need:ResearchNeed={reason:"unresolved_reference",detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}: The source read budget did not cover this explicitly referenced provision.`};
@@ -166,7 +166,6 @@ export function createCorpusResearch(input: {
       seen.add(key);
         let pending=saved.get(key);
         if(!pending) {
-          reads++;
           pending=(async()=>{
             const resolution=await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt});
             check();
@@ -337,14 +336,14 @@ export function createCorpusResearch(input: {
     const observations:ResearchObservation[]=[];
     if(unreadCandidates)observations.push({kind:"candidate_read_limit",lane:"indexed",omitted:unreadCandidates});
     if(excludedCandidates)observations.push({kind:"candidate_context_limit",lane:"indexed",omitted:excludedCandidates});
-    // Selection is independent of publisher results. Every selected source must
-    // pass; a failed current observation cannot be replaced by a lower-ranked hit.
+    // Authenticate the complete bounded pool before semantic selection. The
+    // rank-bounded compatibility packet remains separate from that pool.
     const answerEvidence:LegalEvidence[]=[];
     // A bounded worker follows each publication through all its articles.
     // Finished workers immediately pick another document instead of waiting
     // for the slowest publication in a batch.
     const byPublication=new Map<string,PreparedCorpusEvidence[]>();
-    for(const item of admitted){
+    for(const item of evidence.values()){
       const publication=byPublication.get(item.source.officialUrl)??[];
       publication.push(item);byPublication.set(item.source.officialUrl,publication);
     }
@@ -384,11 +383,14 @@ export function createCorpusResearch(input: {
       }
     }));
     check();
-    const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
-    answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
-    return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
+    const candidatePositions=new Map([...evidence.keys()].map((id,index)=>[id,index]));
+    answerEvidence.sort((left,right)=>candidatePositions.get(left.source.id)!-candidatePositions.get(right.source.id)!);
+    return {evidence:admitted.flatMap(item=>answerEvidence.filter(source=>source.source.id===item.source.id)),
+      selectionCandidates:answerEvidence,
+      selectionResolutions:resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id))),
+      needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
       observations,
-      resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
+      resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>admittedIds.has(id)&&answerEvidence.some(item=>item.source.id===id)))
         .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()]};
   };
   return request=>runIndexedRetrieval(request.question.signal,signal=>
