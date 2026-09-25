@@ -395,3 +395,24 @@ test("successive replacement quotations in one block retain their enclosing arti
   assert.match(context.officialCitation.label,/Article 1$/u);
   assert.equal(context.provisionText,snapshot.blocks.slice(0,5).map((block:{text:string})=>block.text).join(" "));
 });
+
+
+test("ambiguous replacement quotes retain the entire final chapter as document evidence",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="The sanction applies».";
+  snapshot.blocks=["Instrument introduction.","Chapter 1. Earlier rules","Article 1. Earlier rule","The earlier rule applies.",
+    "Chapter 2. Final provisions","Article 46. Amendments","Replace Article 178 as follows:",
+    "«Article 178. Violation","«Failure to provide information —",fragment,
+    "Article 47. Implementation","This act takes effect on publication."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"46"),null);
+  const context=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(context);
+  const expected=[snapshot.blocks[0],...snapshot.blocks.slice(4)].map((block:{text:string})=>block.text).join(" ");
+  assert.equal(context.provisionText,expected);
+  const result=await corpusAnswerEvidence({resolution:{controlling:original,documentContext:context,materialCitation:context.officialCitation},currentAt:new Date().toISOString(),endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}});
+  const reopened=await resolveCitationEvidence(bucket,result.source.citationEvidenceReceipt!);
+  assert.equal(reopened.text,expected);assert.equal(reopened.fullArticle,false);
+});

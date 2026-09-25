@@ -13,6 +13,31 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
   const articleHeadings=unquotedArticleHeadings(blocks);
   const hasArticle=(block:NormalizedLegalSourceSnapshot["blocks"][number])=>articleHeadings.has(block);
   const hasArticles=blocks.some(hasArticle);
+  // An unclosed replacement quotation makes article boundaries uncertain.
+  // Retain the enclosing chapter and all remaining source text through EOF,
+  // without claiming that any nested article is independently complete.
+  // Only flat chapter structures qualify; uncertain ancestry stays unavailable.
+  if(articleHeadings.ambiguousFrom!==null){
+    const chapter=(block:typeof blocks[number])=>articleHeadings.unquotedBlocks.has(block)
+      && /^(?:(?:глава|боб|chapter)\s+(?:\d+|[IVXLCDM]+)\.\s+|\d+\s*[-–]\s*(?:боб|bob)\.\s+)\S/iu.test(block.text);
+    const complex=blocks.some(block=>isLegalAnnexHeading(block)||block.semanticRole==="section"
+      || /^(?:раздел|бўлим|bo.lim|section)\s/iu.test(block.text));
+    let quoteDepth=0,uncertainQuotes=false;
+    const chapters:number[]=[];
+    for(const [index,block] of blocks.entries()){
+      if(!quoteDepth&&!uncertainQuotes&&chapter(block))chapters.push(index);
+      for(const character of block.text){
+        if(character==="«"||character==="“")quoteDepth++;
+        else if(character==="»"||character==="”"){if(!quoteDepth)uncertainQuotes=true;else quoteDepth--;}
+      }
+    }
+    const flat=new Set(chapters.map(index=>blocks[index]!.headingLevel)).size===1;
+    const start=chapters.filter(index=>index<articleHeadings.ambiguousFrom!).at(-1);
+    if(!complex&&flat&&start!==undefined){
+      const text=[...blocks.slice(0,chapters[0]),...blocks.slice(start)].map(block=>block.text).join(" ").replace(/\s+/gu," ").trim();
+      return [{heading:blocks[start]!.text,text,complete:boundedComplete(text)}];
+    }
+  }
   // Whole annexes are stronger boundaries than inferred clause numbering.
   // Match the same adoption reference: quoted annexes of an amended, older
   // decision must remain inside the amending annex, not become sibling scopes.

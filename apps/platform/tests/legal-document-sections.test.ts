@@ -152,3 +152,16 @@ test("amending schedules preserve slash identifiers and optional grammatical suf
  assert.match(sections[0]!.text,/27.1/);assert.doesNotMatch(sections[0]!.text,/second complete/);
  assert.match(sections[2]!.text,/Second section/);
 });
+
+
+test("source tails retain enclosing context and reject nested chapter ancestry",()=>{
+  const source=snapshot(["Introduction.","Chapter 1. Original chapter","Article 1. Amendment",
+    "Replace the chapter with «Chapter 1. Quoted chapter", "Chapter 2. Quoted continuation", "Quoted chapter closes».",
+    "Chapter 2 of the previous law is replaced as follows:","«Article 178. Unclosed replacement","The last rule applies."]);
+  const sections=completeDocumentSections(source);assert.equal(sections.length,1);
+  assert.equal(sections[0]!.text,source.blocks.map(block=>block.text).join(" "));
+  const nested=snapshot(["Introduction.","Chapter 1. Parent", "The parent chapter conditions apply to every subordinate provision and must remain in the evidence context.","Chapter 2. Nested",
+    "Article 46. Amendment","«Article 178. Unclosed replacement","The rule applies."]);
+  nested.blocks[1]!.headingLevel=1;nested.blocks[3]!.headingLevel=2;
+  assert.deepEqual(completeDocumentSections(nested),[]);
+});

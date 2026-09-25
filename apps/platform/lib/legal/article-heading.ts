@@ -40,14 +40,14 @@ export function isLegalAnnexHeading(block: {text:string}): boolean {
 /** A quotation beginning with an article heading introduces replacement
  * articles, rather than independent articles of the amending instrument.
  * Inline quoted titles and ordinary prose do not establish that scope. */
-export function unquotedArticleHeadings<T extends {text:string;kind?:string;semanticRole?:string}>(blocks:readonly T[]):ReadonlySet<T> & {ambiguousFrom:number|null} {
-  const headings=new Set<T>();
+export function unquotedArticleHeadings<T extends {text:string;kind?:string;semanticRole?:string}>(blocks:readonly T[]):ReadonlySet<T> & {ambiguousFrom:number|null;unquotedBlocks:ReadonlySet<T>} {
+  const headings=new Set<T>(),unquotedBlocks=new Set<T>();
   let depth=0,opening:number|null=null;
   for(const [index,block] of blocks.entries()) {
     const text=block.text.trim();
     const replacements=[...text.matchAll(/[«“]/gu)].filter(match=>
       isLegalArticleHeading({...block,text:text.slice(match.index+1)})).map(match=>match.index);
-    if(depth===0&&replacements[0]!==0&&isLegalArticleHeading(block))headings.add(block);
+    if(depth===0&&replacements[0]!==0){unquotedBlocks.add(block);if(isLegalArticleHeading(block))headings.add(block); }
     let cursor=0;
     while(cursor<text.length) {
       if(depth===0) {
@@ -61,5 +61,5 @@ export function unquotedArticleHeadings<T extends {text:string;kind?:string;sema
       }
     }
   }
-  return Object.assign(headings,{ambiguousFrom:depth?opening:null});
+  return Object.assign(headings,{ambiguousFrom:depth?opening:null,unquotedBlocks});
 }
