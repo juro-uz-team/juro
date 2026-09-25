@@ -80,9 +80,9 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
       endpoint:item.endpoint,text:item.text})),
   });
   const call=async<T>(request:ResearchRequest,schema:z.ZodType<T>,payload:unknown,schemaName:string,
-    onOutputTextBuffer?:(input:{text:string})=>Promise<void>)=>{
+    onOutputTextBuffer?:(input:{text:string})=>Promise<void>,providerSchema?:z.ZodType)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
-    const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(schema),
+    const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(providerSchema??schema),
       parse:value=>schema.parse(value),model:schemaName.endsWith("_queries")&&request.question.mode==="fast"
         ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
       ...(schemaName.endsWith("_queries")&&request.question.mode==="fast"?{reasoningEffort:"none" as const}:{}),
@@ -149,8 +149,23 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     },
     async assess(request) {
       bind(request);
-      const result=await call(request,assessmentSchema,{...context(request,request.evidence),
-        observations:request.observations??[]},"legal_research_coverage");
+      // Constrain generation to resolutions the server can accept. Operational
+      // failures remain visible in context but are never offered as resolvable.
+      // The independent validation below still rejects a nonconforming provider.
+      const resolvable=request.needs.flatMap((need,index)=>
+        ["missing_rule","unresolved_reference"].includes(need.reason)?[index]:[]);
+      const sourceIds=[...new Set(request.evidence.map(item=>item.source.id))];
+      const canResolve=resolvable.length>0&&sourceIds.length>0;
+      const providerSchema=assessmentSchema.extend({resolved:canResolve
+        ?z.array(z.object({needIndex:z.literal(resolvable),sourceIds:z.array(z.literal(sourceIds)).min(1).max(24)}).strict()).max(40)
+        :z.null()});
+      // The provider compatibility layer removes array length constraints.
+      // A null-only field expresses that no resolution can be generated.
+      const outputSchema=canResolve?assessmentSchema:z.preprocess(value=>
+        value&&typeof value==="object"&&"resolved" in value&&value.resolved===null
+          ?{...value,resolved:[]}:value,assessmentSchema);
+      const result=await call(request,outputSchema,{...context(request,request.evidence),
+        observations:request.observations??[]},"legal_research_coverage",undefined,providerSchema);
       // Validate before updating request-local search state. Locators, source
       // URLs and source hashes never enter this model's context or output.
       interpretation(request,result.queries);

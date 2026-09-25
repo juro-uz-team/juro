@@ -143,6 +143,25 @@ test("research rejects fabricated resolution source IDs and operational-gap appr
     needs:[{reason:"source_unavailable",detail:"The source reader failed."}],evidence:[evidence]}),/RESOLUTION_INVALID/);
 });
 
+test("coverage generation offers only substantive needs and admitted source IDs as resolutions",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const schemas:Array<Record<string,any>>=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));schemas.push(body.text.format.schema.properties.resolved);
+    return Response.json({id:"response",output:[{content:[{type:"output_text",
+      text:JSON.stringify({needs:[],resolved:schemas.at(-1)!.type==="null"?null:[],queries:[query]})}]}]});
+  });
+  const outage={reason:"source_unavailable" as const,detail:"The source reader failed."};
+  await createLegalResearchModel({requestId:"mixed"}).assess({...request,
+    needs:[outage,request.needs[0]!,{reason:"unresolved_reference",detail:"The exception is missing."}],evidence:[evidence]});
+  assert.deepEqual(schemas[0]!.items.properties.needIndex.enum,[1,2]);
+  assert.equal(schemas[0]!.items.properties.sourceIds.items.const,"source:one");
+  await createLegalResearchModel({requestId:"outage"}).assess({...request,needs:[outage],evidence:[evidence]});
+  await createLegalResearchModel({requestId:"empty"}).assess({...request,evidence:[]});
+  assert.equal(schemas[1]!.type,"null");assert.equal(schemas[2]!.type,"null");
+});
+
 test("initial formulations must account for every independent topic",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
