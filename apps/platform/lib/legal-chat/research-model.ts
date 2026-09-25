@@ -15,12 +15,14 @@ const querySchema=z.object({text:z.string().trim().min(1).max(900),
   legalTitleSpans:z.array(z.string().trim().min(3).max(300)).max(12),
 }).strict();
 const planSchema=z.object({queries:z.array(querySchema).min(1).max(20)}).strict();
+const publicQuerySchema=querySchema.extend({text:z.string().trim().min(1).max(100)});
+const publicPlanSchema=planSchema.extend({queries:z.array(publicQuerySchema).min(1).max(20)});
 const indexedQuerySchema=querySchema.pick({text:true,topicIndices:true});
 const indexedPlanSchema=z.object({queries:z.array(indexedQuerySchema).min(1).max(20)}).strict();
-function requestQueries(request:ResearchRequest,indexed=false) {
+function requestQueries(request:ResearchRequest,indexed=false,publicSearch=false) {
   const indices=request.question.topics.map((_,index)=>index);
   if(!indices.length||indices.length>24)throw new Error("RESEARCH_QUERY_TOPIC_INVALID");
-  return z.array((indexed?indexedQuerySchema:querySchema).extend({
+  return z.array((indexed?indexedQuerySchema:publicSearch?publicQuerySchema:querySchema).extend({
     topicIndices:z.array(z.literal(indices)).min(1).max(24),
   })).min(1).max(20);
 }
@@ -89,7 +91,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
   const call=async<T>(request:ResearchRequest,schema:z.ZodType<T>,payload:unknown,schemaName:string,
     onOutputTextBuffer?:(input:{text:string})=>Promise<void>,providerSchema?:z.ZodType)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
-    const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(providerSchema??schema),
+    const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${schemaName==="legal_research_queries"?"Public search accepts at most 100 characters per query. Decompose into focused queries covering every topic and material qualification; never truncate a query or omit a topic to fit.":""}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(providerSchema??schema),
       parse:value=>schema.parse(value),model:schemaName.endsWith("_queries")&&request.question.mode==="fast"
         ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
       ...(schemaName.endsWith("_queries")&&request.question.mode==="fast"?{reasoningEffort:"none" as const}:{}),
@@ -112,11 +114,16 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
   const formulateQueries=async(request:ResearchRequest,onFormulation?:Parameters<ResearchFormulator>[1],indexed=false):Promise<QuestionInterpretation>=>{
       bind(request);
       let queries=nextQueries;
+      // Assessment formulations serve indexed retrieval unchanged. Public
+      // search needs a separate complete plan when its transport cannot accept
+      // them; neither truncate them nor replace the indexed repair state.
+      if(!indexed&&queries?.some(query=>query.text.length>100))queries=undefined;
       if(!queries) {
-        const normalize=(value:unknown)=>indexed?{...indexedQuerySchema.parse(value),privateNameSpans:[],legalTitleSpans:[]}:querySchema.parse(value);
+        const normalize=(value:unknown)=>indexed?{...indexedQuerySchema.parse(value),privateNameSpans:[],legalTitleSpans:[]}:publicQuerySchema.parse(value);
         const emitted:z.infer<typeof querySchema>[]=[];
         let streamFailure:{error:unknown}|undefined;
-        const result=await call(request,indexed?indexedPlanSchema:planSchema,context(request),indexed?"legal_indexed_queries":"legal_research_queries",onFormulation?async({text})=>{
+        const payload={...context(request),...(!indexed&&nextQueries?{indexedFormulations:nextQueries}: {})};
+        const result=await call(request,indexed?indexedPlanSchema:publicPlanSchema,payload,indexed?"legal_indexed_queries":"legal_research_queries",onFormulation?async({text})=>{
           if(streamFailure)return;
           try {
           const queries=completedResearchQueries(text).map(normalize);
@@ -132,7 +139,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
             // swallows errors. Required staging failures must fail this plan.
             streamFailure={error};
           }
-        }:undefined,z.object({queries:requestQueries(request,indexed)}).strict());
+        }:undefined,z.object({queries:requestQueries(request,indexed,!indexed)}).strict());
         if(streamFailure)throw streamFailure.error;
         if(emitted.some((query,index)=>JSON.stringify(query)!==JSON.stringify(normalize(result.queries[index]))))throw new Error("RESEARCH_PLAN_STREAM_INVALID");
         if(request.question.topics.some((_,index)=>!result.queries.some(query=>query.topicIndices.includes(index)))) {
@@ -141,7 +148,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
         queries=result.queries.map(normalize);
         // Indexed plans carry no public-name annotations and must never seed
         // public discovery. Assessment queries retain their separate policy.
-        if(!indexed)nextQueries=queries;
+        if(!indexed&&!nextQueries)nextQueries=queries;
       }
       return interpretation(request,queries);
   };

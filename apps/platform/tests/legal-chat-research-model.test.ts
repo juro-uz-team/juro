@@ -34,6 +34,30 @@ test("planner and assessment generation admit only actual topic indices",async c
   }
 });
 
+test("public repair replans oversized queries while indexed repair preserves their complete text",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const longQuery={...query,text:"record access conditions and qualifications ".repeat(4).trim()};
+  const calls:string[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));calls.push(body.text.format.name);
+    if(body.text.format.name==="legal_research_queries")assert.deepEqual(JSON.parse(body.input).indexedFormulations,[longQuery]);
+    const output=body.text.format.name==="legal_research_coverage"?{needs:[],resolved:null,queries:[longQuery]}:{queries:[query]};
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const model=createLegalResearchModel({requestId:"public-repair"});
+  await model.assess({...request,evidence:[]});
+  assert.equal((await model.formulate(request)).formulations[0]!.text,query.text);
+  assert.equal((await model.formulateIndexed(request)).formulations[0]!.text,longQuery.text);
+  assert.deepEqual(calls,["legal_research_coverage","legal_research_queries"]);
+});
+
+test("public formulations reject overlong provider output without truncating it",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{
+    type:"output_text",text:JSON.stringify({queries:[{...query,text:"x".repeat(101)}]})}]}]}));
+  await assert.rejects(createLegalResearchModel({requestId:"public-limit"}).formulate(request));
+});
+
 test("standalone initial research preserves the complete question and every interpreted topic without another model call",async context=>{
   context.mock.method(globalThis,"fetch",async()=>{throw new Error("Standalone formulation must not call a provider");});
   const question="Can an applicant inspect a record and challenge a refusal as of 2020-01-01?";
