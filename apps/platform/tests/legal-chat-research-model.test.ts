@@ -148,7 +148,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));payloads.push(body);
     const assessment=JSON.parse(body.input).evidence.length>0;
-    assert.deepEqual(body.reasoning,!assessment&&body.model==="gpt-6-luna"?{effort:"none"}:undefined);
+    assert.deepEqual(body.reasoning,body.model==="gpt-6-luna"?{effort:"none"}:undefined);
     const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
       queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
@@ -163,7 +163,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const next=await model.formulate({...input,round:1});
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
   for(const payload of payloads) {
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));
