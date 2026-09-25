@@ -8,9 +8,10 @@ const boundedComplete=(text:string)=>text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS&
 /** Numbered clauses in unnumbered resolutions are not statutory articles.
  * Retain the instrument introduction and current section introduction with
  * every complete clause, including all its subordinate paragraphs. */
-export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean}[] {
+export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean;containsArticles?:true}[] {
   const blocks=snapshot.blocks;
-  if(blocks.some(block=>isLegalArticleHeading(block)||block.semanticRole==="article"))return [];
+  const hasArticle=(block:NormalizedLegalSourceSnapshot["blocks"][number])=>isLegalArticleHeading(block)||block.semanticRole==="article";
+  const hasArticles=blocks.some(hasArticle);
   // Whole annexes are stronger boundaries than inferred clause numbering.
   // Match the same adoption reference: quoted annexes of an amended, older
   // decision must remain inside the amending annex, not become sibling scopes.
@@ -19,11 +20,15 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
     const adoption=blocks[firstAnnex]!.text.split("\n")[0];
     const starts=[0,...blocks.flatMap((block,index)=>isLegalAnnexHeading(block)
       &&block.text.split("\n")[0]===adoption?[index]:[])];
-    const firstRule=blocks.findIndex(block=>/^(?:\d+|[IVXLCDM]+)\.\s/u.test(block.text));
-    const introduction=blocks.slice(0,firstRule>0?firstRule:firstAnnex).map(block=>block.text);
+    const firstRule=blocks.findIndex(block=>hasArticle(block)||block.semanticRole==="chapter"
+      ||/^\d+\s*[-–]\s*(?:боб|bob)\.\s+\S/iu.test(block.text)||/^(?:\d+|[IVXLCDM]+)\.\s/u.test(block.text));
+    const introduction=blocks.slice(0,firstRule>=0?firstRule:firstAnnex).map(block=>block.text);
     return starts.flatMap((start,index)=>{
       const part=blocks.slice(start,starts[index+1]),prefix=start?introduction:[];
+      // An article must still pass the complete-article reader. Only annexes
+      // without statutory articles may use document-scope evidence.
       const text=[...prefix,...part.map(block=>block.text)].join(" ").replace(/\s+/gu," ").trim();
+      if(hasArticles&&(start===0||part.some(hasArticle)))return [{heading:part[0]!.text.slice(0,240),text,complete:false,containsArticles:true as const}];
       if(text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS)return [{heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}];
       const tableSections=completeTableSectionTexts(part,prefix);
       if(tableSections)return tableSections.map(text=>({heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}));
@@ -39,6 +44,7 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
       return [{heading:part[0]!.text.slice(0,240),text,complete:false}];
     });
   }
+  if(hasArticles)return [];
   // An amendment schedule names the affected decision at each top-level
   // clause. Its quoted replacement provisions can have arbitrary numbering.
   const decisionClause=/^\d+\.\s*«?.+»ги\s+(?:қарори\s+)?\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+\d+\p{L}*-сонли\s+қарори?:$/u;

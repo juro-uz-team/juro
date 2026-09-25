@@ -111,3 +111,30 @@ test("annex chapter extraction retains complete chapters and rejects ambiguous s
   source.blocks[6]={...source.blocks[6]!,semanticRole:"section",headingLevel:2};
   assert.equal(completeDocumentSections(source).length,1);
 });
+
+test("article parents expose complete non-article annexes without bypassing article completeness",()=>{
+  const source=snapshot(["The legislature adopts this law and its official annexes with the following stated conditions:",
+    "Article 1. Incomplete article heading", "Oʻzbekiston Respublikasi Prezidentining 2025-yil 25-martdagi PF-57-son Farmoniga\n1-ILOVA",
+    "The full schedule lists the applicable exemptions and all required supporting conditions."]);
+  const sections=completeDocumentSections(source);assert.equal(sections.length,1);
+  assert.match(sections[0]!.text,/full schedule/);assert.doesNotMatch(sections[0]!.text,/Incomplete article heading/);
+  source.blocks.push({index:4,kind:"paragraph",text:"Article 2. Incomplete annex article"});
+  assert.deepEqual(completeDocumentSections(source),[]);
+});
+
+test("an article fragment duplicated in an annex cannot bypass failed article recovery",async()=>{
+  const fragment="An invalid article fragment also appears in an unrelated schedule.";
+  const source=snapshot(["Article 1. "+fragment,
+    "Oʻzbekiston Respublikasi Prezidentining 2025-yil 25-martdagi PF-57-son Farmoniga\n1-ILOVA",
+    fragment+" The schedule contains separate and complete conditions."]);
+  assert.equal(completeDocumentSections(source).length,1);
+  assert.doesNotMatch(completeDocumentSections(source)[0]!.text,/Article 1/);
+  const bytes=new TextEncoder().encode(JSON.stringify(source)),bucket=new MemoryEvidenceBucket();
+  bucket.objects.set("corpus/normalized/revision:annex-ambiguity.json",{bytes,customMetadata:{}});
+  const original=parseResolvedOfficialEvidence({legalInstrumentId:"instrument:annex",officialExpressionId:"expression:annex",
+    textRevisionId:"revision:annex-ambiguity",provisionConceptId:"concept:annex",provisionRenditionId:"rendition:annex",
+    languageTag:"en",script:"Latn",textualAuthority:"unknown",provisionText:fragment,
+    officialCitation:{url:source.source.canonicalUrl,label:"Article 1"},
+    evidence:{provisionRenditionId:"rendition:annex",r2Key:"fragment",byteCount:100,sha256:"b".repeat(64),sourceNormalizedSha256:hash(bytes),schemaVersion:1}});
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
+});
