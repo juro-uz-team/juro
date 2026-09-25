@@ -298,3 +298,52 @@ test("an attached draft article retains its draft label and complete enclosing d
   assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(oversized),null);
 
 });
+
+
+test("quoted replacement articles retain their enclosing amendment clause rather than absorbing later amendments",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="2. Replace the first part of Article 80: “The annual leave minimum is twenty-four working days”.";
+  snapshot.documentTitle="Law amending the employment legislation";
+  snapshot.blocks=["The following amendments are adopted:",
+    "1. Articles 51-1 and 51-3 shall read:","“Article 51-1. Employment guarantees",
+    "The employment guarantees apply.","Article 51-3. Compensation",
+    "The compensation rule applies”.",fragment,"3. Repeal Article 90."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"1992"),null);
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"51-3"),null);
+  const documentContext=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(documentContext);
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,materialCitation:original.officialCitation},
+    currentAt,endpoint:{kind:"timestamp",instant:currentAt}});
+  assert.equal(evidence.source.article,null);
+  assert.equal(evidence.text,"The following amendments are adopted: "+fragment);
+  assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+});
+
+
+test("an unterminated quote cannot merge later articles into certified evidence",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  snapshot.blocks=["Article 1. First rule","The first rule includes an unmatched “quotation.",
+    "Article 2. Second rule","The second independent rule applies."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:snapshot.blocks[0].text,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)(original,"1"),null);
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
+});
+
+
+test("an unterminated quote cannot disguise article-bearing annexes as complete document scopes",async()=>{
+  const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+  const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  const fragment="The annex begins with an unmatched “quotation.";
+  snapshot.blocks=["The law adopts the annex.","Article 1. Adoption","The complete adoption rule applies.",
+    "Oʻzbekiston Respublikasi Qonuniga\n1-ILOVA",fragment,"Article 2. Annex rule","The annex rule applies."]
+    .map((text,index)=>({index,kind:"paragraph",text}));
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
+});

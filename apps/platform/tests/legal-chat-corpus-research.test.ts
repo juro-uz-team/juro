@@ -423,7 +423,11 @@ test("a retried authenticated article read closes its original gap through the r
 test("recovered explicit reference clears only the matching revision, language and endpoint gap",async()=>{
   const {services,search}=fixture();
   let calls=0;
-  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id==="rendition:reference"?"12":"7");
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id==="rendition:reference"?"12":"7");
+    if(id!=="rendition:reference")resolution.articleContext.provisionText+=" Eligibility is governed by article 12 of this Act.";
+    return resolution;
+  };
   services.referenceDiscovery=async()=>++calls===1?{candidates:[],unresolved:[{reason:"reference_not_found",
     query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]}:
     {candidates:[anotherCandidate("rendition:reference")],unresolved:[]};
@@ -438,7 +442,11 @@ test("a large ranked pool cannot consume the read and context capacity reserved 
   const {services,search}=fixture();
   const readIds:string[]=[];
   services.candidateCatalog.revalidate=async()=>Array.from({length:48},(_,index)=>anotherCandidate(`rendition:${index}`));
-  services.evidenceResolver.resolveControlling=async id=>{readIds.push(id);return articleResolution(id,id.split(":")[1]!);};
+  services.evidenceResolver.resolveControlling=async id=>{
+    readIds.push(id);const resolution=articleResolution(id,id.split(":")[1]!);
+    if(id==="rendition:0")resolution.articleContext.provisionText+=" Eligibility is governed by article 99 of this Act.";
+    return resolution;
+  };
   services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
   const result=await search(request);
   assert.equal(readIds.length,37);
@@ -520,4 +528,38 @@ test("admitted current evidence is withheld while its publisher check is pending
   assert.equal(published,false);
   finish.resolve();
   assert.equal((await result).evidence.length,1);
+});
+
+
+test("references of an omitted primary cannot displace an independent formulation",async()=>{
+  const {services}=fixture();
+  const plan={...interpretation,formulations:[interpretation.formulations[0]!,
+    {...interpretation.formulations[0]!,id:"query:two",text:"An independent requirement",requirementIds:["need:two"]}]};
+  const primary=anotherCandidate("rendition:0"),independent=anotherCandidate("rendition:1");
+  independent.candidate.formulationIds=["query:two"];
+  services.candidateCatalog.revalidate=async()=>[primary,independent];
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id.split(":")[1]!);
+    resolution.articleContext.provisionText+=(id==="rendition:0"?" Conditions under article 99 of this Act. "+"x".repeat(40_000):
+      id==="rendition:99"?"x".repeat(30_000):" The independent rule applies.");
+    return resolution;
+  };
+  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
+  const result=await createCorpusResearch({services,formulate:async()=>plan,now:()=>Date.parse(instant)})(request);
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["1"]);
+  assert.ok(result.needs.some(need=>need.reason==="context_budget"));
+});
+
+test("cyclic and shared references enter once with their primary rule",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:0"),anotherCandidate("rendition:1")];
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id.split(":")[1]!);
+    resolution.articleContext.provisionText+=" Conditions under article "+(id==="rendition:99"?"0":"99")+" of this Act.";
+    return resolution;
+  };
+  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
+  const result=await search(request);
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["0","99","1"]);
+  assert.deepEqual(result.needs,[]);
 });

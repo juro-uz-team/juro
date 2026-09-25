@@ -84,7 +84,8 @@ export function createCorpusResearch(input: {
     const needs:ResearchNeed[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];
     const evidence=new Map<string,PreparedCorpusEvidence>();
-    const referenceEvidence=new Set<string>();
+    const primaryEvidence=new Set<string>();
+    const dependencies=new Map<string,Set<string>>();
     const readEvidence=new Map<string,PreparedCorpusEvidence>();
     const seen=new Set<string>();
     const resolved:SelectionCandidate[][]=releases.map(()=>[]);
@@ -138,7 +139,7 @@ export function createCorpusResearch(input: {
       if(seen.has(key)) {
         return async()=>{
           const item=readEvidence.get(key);
-          if(reference&&item)referenceEvidence.add(item.source.id);
+          if(!reference&&item)primaryEvidence.add(item.source.id);
         };
       }
       if(!saved.has(key)&&reads>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
@@ -179,7 +180,7 @@ export function createCorpusResearch(input: {
         readEvidence.set(key,item);
         resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
         evidence.set(item.source.id,item);
-        if(reference) referenceEvidence.add(item.source.id);
+        if(!reference) primaryEvidence.add(item.source.id);
         for(const need of pendingReads.get(key)??[]) resolutions.push({need,sourceIds:[item.source.id]});
         for(const pending of pendingReferences.values()) {
           const language={ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"}[item.source.locale];
@@ -270,21 +271,38 @@ export function createCorpusResearch(input: {
           const item=itemFor(target);
           if(item&&item.source.officialUrl===source.source.officialUrl&&item.source.locale===source.source.locale
             &&target.candidate.textRevisionId===referring.candidate.textRevisionId
-            &&articles.includes(item.source.article??"")) referenceEvidence.add(item.source.id);
+            &&(articles.includes(item.source.article??"")
+              ||target.candidate.candidate.referenceOrigin?.itemKey===referring.candidate.candidate.itemKey)) {
+            const targets=dependencies.get(source.source.id)??new Set<string>();
+            if(item.source.id!==source.source.id)targets.add(item.source.id);
+            dependencies.set(source.source.id,targets);
+          }
         }
       }
     }
     const admitted:PreparedCorpusEvidence[]=[];
     let excludedCandidates=0;
-    // Reserve context for explicit dependencies as well as their source reads.
-    // Ranked discovery hits alone must not crowd all referenced rules out.
-    for(const item of [...evidence.values()].sort((left,right)=>
-      Number(referenceEvidence.has(right.source.id))-Number(referenceEvidence.has(left.source.id)))) {
-      if(fitsLegalEvidenceBudget(admitted.map(value=>value.text).concat(item.text))) admitted.push(item);
-      else if(referenceEvidence.has(item.source.id)) needs.push({reason:"context_budget",detail:"A complete explicitly referenced provision did not fit the answer evidence budget."});
-      else {
+    const admittedIds=new Set<string>();
+    // Preserve the interleaved primary order. A reference has no independent
+    // priority: reserve its complete context together with the referring rule.
+    // Shared dependencies are charged once, including transitive/cyclic links.
+    for(const id of primaryEvidence) {
+      if(admittedIds.has(id))continue;
+      const group=new Map<string,PreparedCorpusEvidence>();
+      const visit=(sourceId:string)=>{
+        if(group.has(sourceId)||admittedIds.has(sourceId))return;
+        const item=evidence.get(sourceId);if(!item)return;
+        group.set(sourceId,item);
+        for(const target of dependencies.get(sourceId)??[])visit(target);
+      };
+      visit(id);
+      if(fitsLegalEvidenceBudget([...admitted,...group.values()].map(item=>item.text))) {
+        for(const item of group.values()){admitted.push(item);admittedIds.add(item.source.id);}
+      } else {
         excludedCandidates++;
-        if(!fitsLegalEvidenceBudget([item.text]))needs.push({reason:"context_budget",detail:"A complete source instrument exceeded the answer evidence budget and was not admitted."});
+        if(group.size>1||!fitsLegalEvidenceBudget([...group.values()].map(item=>item.text))) {
+          needs.push({reason:"context_budget",detail:`Complete connected context for source ${id} did not fit the answer evidence budget.`});
+        }
       }
     }
     const observations:ResearchObservation[]=[];

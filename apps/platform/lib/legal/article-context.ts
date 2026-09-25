@@ -1,7 +1,7 @@
 import { detectArticleNumbers } from "./legal-language";
 import { MAX_LEGAL_EVIDENCE_CHARACTERS } from "./legal-evidence-budget";
 import type { NormalizedLegalSourceSnapshot } from "./source-parser";
-import {isLegalArticleHeading,hasInlineArticleBody,isLegalAnnexHeading} from "./article-heading";
+import {isLegalArticleHeading,hasInlineArticleBody,isLegalAnnexHeading,unquotedArticleHeadings} from "./article-heading";
 
 const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
 
@@ -58,11 +58,12 @@ export function createCompleteArticleReader(blocks: NormalizedLegalSourceSnapsho
  * occurrence; callers must resolve one using authenticated text, never order. */
 export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
   const captured = blocks.map(block => ({text: block.text, kind:block.kind, semanticRole: block.semanticRole}));
+  const headings=unquotedArticleHeadings(captured);
   const ranges = new Map<string, {start: number; end: number}[]>();
   let nextBoundary = captured.length;
   for (let index = captured.length - 1; index >= 0; index--) {
     const block = captured[index]!;
-    if (isLegalArticleHeading(block)) {
+    if (headings.has(block)) {
       const article = detectArticleNumbers(block.text)[0];
       if (article !== undefined) {
         const occurrences = ranges.get(article) ?? [];
@@ -75,6 +76,7 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
   const read = (article: string) => {
     const occurrences = ranges.get(article) ?? [];
     const candidates = occurrences.flatMap(({start, end}) => {
+      if(headings.ambiguousFrom!==null&&end>headings.ambiguousFrom)return [];
       if (end - start < 2 && !hasInlineArticleBody(captured[start]!)) return [];
       const text = normalize(captured.slice(start, end).map(block => block.text).join(" "));
       if (text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text)) return [];

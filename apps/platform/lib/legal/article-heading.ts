@@ -36,3 +36,18 @@ export function isLegalAnnexHeading(block: {text:string}): boolean {
     || /^O[ʻʼ‘’']zbekiston Respublikasi (?:Prezidentining|Vazirlar Mahkamasining)\s+\d{4}-yil\s+\d{1,2}-\p{L}+dagi\s+[\p{L}\d-]+-son\s+(?:Farmoniga|qaroriga)$/iu.test(lines[0]!)
     || /^Ўзбекистон Республикаси (?:Президентининг|Вазирлар Маҳкамасининг)\s+\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\p{L}\d-]+-сон\s+(?:Фармонига|қарорига)$/iu.test(lines[0]!);
 }
+
+/** Quoted replacement articles belong to the enclosing amendment clause.
+ * Their headings cannot establish independent boundaries in the amending act. */
+export function unquotedArticleHeadings<T extends {text:string;kind?:string;semanticRole?:string}>(blocks:readonly T[]):ReadonlySet<T> & {ambiguousFrom:number|null} {
+  const headings=new Set<T>();
+  let depth=0,opening:number|null=null;
+  for(const [index,block] of blocks.entries()) {
+    if(depth===0&&!/^[«“]/u.test(block.text.trim())&&isLegalArticleHeading(block))headings.add(block);
+    for(const character of block.text) {
+      if(character==="«"||character==="“"){if(depth===0)opening=index;depth++;}
+      else if(character==="»"||character==="”")depth=Math.max(0,depth-1);
+    }
+  }
+  return Object.assign(headings,{ambiguousFrom:depth?opening:null});
+}

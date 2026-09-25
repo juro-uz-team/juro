@@ -1,5 +1,5 @@
 import type {NormalizedLegalSourceSnapshot} from "./source-parser";
-import {isLegalArticleHeading,isLegalAnnexHeading} from "./article-heading";
+import {isLegalAnnexHeading,unquotedArticleHeadings} from "./article-heading";
 import {MAX_LEGAL_EVIDENCE_CHARACTERS} from "./legal-evidence-budget";
 import {completeTableSectionTexts} from "./table-sections";
 
@@ -10,7 +10,8 @@ const boundedComplete=(text:string)=>text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS&
  * every complete clause, including all its subordinate paragraphs. */
 export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean;containsArticles?:true}[] {
   const blocks=snapshot.blocks;
-  const hasArticle=(block:NormalizedLegalSourceSnapshot["blocks"][number])=>isLegalArticleHeading(block)||block.semanticRole==="article";
+  const articleHeadings=unquotedArticleHeadings(blocks);
+  const hasArticle=(block:NormalizedLegalSourceSnapshot["blocks"][number])=>articleHeadings.has(block);
   const hasArticles=blocks.some(hasArticle);
   // Whole annexes are stronger boundaries than inferred clause numbering.
   // Match the same adoption reference: quoted annexes of an amended, older
@@ -28,6 +29,8 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
       // An article must still pass the complete-article reader. Only annexes
       // without statutory articles may use document-scope evidence.
       const text=[...prefix,...part.map(block=>block.text)].join(" ").replace(/\s+/gu," ").trim();
+      if(articleHeadings.ambiguousFrom!==null&&(starts[index+1]??blocks.length)>articleHeadings.ambiguousFrom)
+        return [{heading:part[0]!.text.slice(0,240),text,complete:false,containsArticles:true as const}];
       if(hasArticles&&(start===0||part.some(hasArticle)))return [{heading:part[0]!.text.slice(0,240),text,complete:false,containsArticles:true as const}];
       if(text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS)return [{heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}];
       const tableSections=completeTableSectionTexts(part,prefix);
