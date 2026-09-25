@@ -15,6 +15,25 @@ const evidence:LegalEvidence={source:{id:"source:one",actTitle:"Synthetic rules"
   sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"private-parent-hash"},
   text:"A qualifying applicant may request the record.",textSha256:"private-text-hash",endpoint:{kind:"current"},origin:"indexed"};
 
+test("planner and assessment generation admit only actual topic indices",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let invalid=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.deepEqual(body.text.format.schema.properties.queries.items.properties.topicIndices.items.enum,[0,1]);
+    const queries=[{...query,topicIndices:invalid?[0,1,2]:[0,1]}];
+    const output=body.text.format.name==="legal_research_coverage"?{needs:[],resolved:null,queries}
+      :{queries:body.text.format.name==="legal_indexed_queries"?queries.map(({text,topicIndices})=>({text,topicIndices})):queries};
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const input={...request,question:{...request.question,topics:["Access","Remedy"]}};
+  for(const method of ["formulate","formulateIndexed","assess"] as const) {
+    const invoke=()=>createLegalResearchModel({requestId:method})[method]({...input,evidence:[]});
+    invalid=false;await invoke();
+    invalid=true;await assert.rejects(invoke(),/RESEARCH_QUERY_TOPIC_INVALID/);
+  }
+});
+
 test("standalone initial research preserves the complete question and every interpreted topic without another model call",async context=>{
   context.mock.method(globalThis,"fetch",async()=>{throw new Error("Standalone formulation must not call a provider");});
   const question="Can an applicant inspect a record and challenge a refusal as of 2020-01-01?";
