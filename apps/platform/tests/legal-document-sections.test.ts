@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
+import test from "node:test";
+import {completeDocumentSections} from "../lib/legal/document-sections";
+import {normalizedLegalSourceSnapshotSchema} from "../lib/legal/source-parser";
+import {createNormalizedDocumentEvidenceReader} from "../lib/legal-corpus/normalized-article-evidence";
+import {parseResolvedOfficialEvidence} from "../lib/legal-corpus/target-evidence";
+import {corpusAnswerEvidence} from "../lib/legal-chat/corpus-evidence";
+import {resolveCitationEvidence} from "../lib/legal-corpus/citation-evidence";
+import {MemoryEvidenceBucket} from "./helpers/legal-target";
+
+const hash=(value:string|Uint8Array)=>createHash("sha256").update(value).digest("hex");
+const snapshot=(texts:string[])=>normalizedLegalSourceSnapshotSchema.parse({schemaVersion:1,
+  parser:{name:"parse5",version:"8.0.1",profile:"juro-legal-blocks-v1"},
+  source:{sourceKind:"lex",locale:"en",canonicalId:"777",canonicalUrl:"https://lex.uz/en/docs/777",rawContentSha256:"a".repeat(64)},
+  primarySelector:"lex-document",documentTitle:"Amending resolution",blocks:texts.map((text,index)=>({index,kind:"paragraph",text})),plainText:texts.join(" ")});
+
+test("named amendment decisions retain inserted provision numbers inside the affected decision",()=>{
+  const source=snapshot(["Ўзбекистон Республикаси Олий суди Пленуми қуйидаги қарорларга ўзгартиришлар киритади:",
+    "I. Фуқаролик ишлари бўйича қарорлар:",
+    "1. «Юридик фактларни белгилаш ҳақида»ги 1991 йил 20 декабрдаги 5-сонли қарори:",
+    "Қарорнинг рус тили матни қуйидаги мазмундаги 21-банд билан тўлдирилсин:",
+    "21. Обратить внимание судов на порядок исправления актовых записей.",
+    "Отсутствие заключения не препятствует принятию заявления.»",
+    "2. «Суд ишларини кўриш ҳақида»ги 1992 йил 19 июндаги 5-сонли қарори:","Муқаддимага тегишли ўзгартиришлар киритилсин."]);
+  const sections=completeDocumentSections(source);assert.equal(sections.length,2);
+  assert.match(sections[0]!.text,/21\. Обратить внимание/);
+  assert.match(sections[0]!.text,/не препятствует/);
+  assert.doesNotMatch(sections[0]!.text,/1992 йил/);
+});
+
+test("complete resolution clauses retain introductions and subordinate quoted numbering",()=>{
+  const source=snapshot(["The competent authority adopts these amendments under the governing legislation:",
+    "I. Amendments concerning civil procedure:","1. The following decision is amended:",
+    "The first rule shall read: «Required conditions:","1. This is inside a quotation, not another resolution clause.",
+    "2. This is the second quoted condition.»","A final exception remains applicable.",
+    "2. A different decision is amended:","The former rule is repealed."]);
+  const sections=completeDocumentSections(source);
+  assert.equal(sections.length,2);
+  assert.match(sections[0]!.text,/governing legislation/);
+  assert.match(sections[0]!.text,/Amendments concerning civil procedure/);
+  assert.match(sections[0]!.text,/final exception/);
+  assert.doesNotMatch(sections[0]!.text,/different decision/);
+  assert.match(sections[1]!.text,/former rule is repealed/);
+  assert.deepEqual(completeDocumentSections({...source,blocks:[...source.blocks,{index:9,kind:"paragraph",text:"Article 7. A statutory article"}]}),[]);
+  const incomplete=snapshot(["The competent authority adopts these amendments under the governing legislation and its expressly conferred statutory powers:","1. The first decision is amended:","New introductory conditions:","2. The second decision is amended:","A complete rule applies."]);
+  assert.equal(completeDocumentSections(incomplete).length,1);
+  const nested=snapshot(["The competent authority adopts these amendments under the governing legislation:",
+    "1. Amend this decision as follows:","1. First subordinate condition.","2. Second subordinate condition.",
+    "An exception applies to both subordinate conditions.","2. Amend the second decision as follows:","A complete rule applies."]);
+  assert.deepEqual(completeDocumentSections(nested),[],"unquoted numbering resets cannot establish clause depth");
+  const hierarchy=snapshot(["The competent authority adopts these procedural requirements under its statutory powers:",
+    "Chapter: Pending cases only", "These rules apply only to pending cases.", "Section: Filing", "1. The applicant must file the complete request."]);
+  hierarchy.blocks[1]={...hierarchy.blocks[1]!,kind:"heading",headingLevel:2,semanticRole:"chapter"};
+  hierarchy.blocks[3]={...hierarchy.blocks[3]!,kind:"heading",headingLevel:3,semanticRole:"section"};
+  assert.match(completeDocumentSections(hierarchy)[0]!.text,/apply only to pending cases/);
+  delete hierarchy.blocks[3]!.headingLevel;
+  assert.deepEqual(completeDocumentSections(hierarchy),[],"unknown structural ancestry remains unavailable");
+});
+
+test("oversized unnumbered sources reopen a complete clause without claiming article precision",async()=>{
+  const fragment="The inheritance deadline wording is removed;";
+  const source=snapshot(["This resolution changes the following identified decisions, retaining all other provisions:",
+    "I. Civil procedure decisions:","1. Decision dated 20 December 1991 is amended:",
+    "Earlier context remains applicable. ".repeat(700),fragment,"The following exception remains applicable.",
+    "2. Another identified decision is amended:","Other amendments remain applicable. ".repeat(1400)]);
+  assert.ok(source.plainText.length>64_000);
+  const bytes=new TextEncoder().encode(JSON.stringify(source)),bucket=new MemoryEvidenceBucket(),key="corpus/normalized/revision:sections.json";
+  bucket.objects.set(key,{bytes,customMetadata:{}});
+  const original=parseResolvedOfficialEvidence({legalInstrumentId:"instrument:sections",officialExpressionId:"expression:sections",
+    textRevisionId:"revision:sections",provisionConceptId:"concept:sections",provisionRenditionId:"rendition:sections",
+    languageTag:"en",script:"Latn",textualAuthority:"unknown",provisionText:fragment,
+    officialCitation:{url:source.source.canonicalUrl,label:"Amending resolution — Article 4"},
+    evidence:{provisionRenditionId:"rendition:sections",r2Key:"fragment",byteCount:100,sha256:"b".repeat(64),sourceNormalizedSha256:hash(bytes),schemaVersion:1}});
+  const read=createNormalizedDocumentEvidenceReader(bucket),documentContext=await read(original);
+  assert.ok(documentContext);assert.equal(documentContext.evidence.normalizedScope,"section");
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,materialCitation:documentContext.officialCitation},
+    currentAt:"2026-09-25T00:00:00Z",endpoint:{kind:"timestamp",instant:"2017-01-01T00:00:00Z"}});
+  assert.equal(evidence.source.article,null);assert.equal(evidence.source.citationEvidenceReceipt!.kind,"normalized-section");
+  assert.match(evidence.text,/20 December 1991/);assert.match(evidence.text,/following exception/);
+  assert.doesNotMatch(evidence.text,/Another identified/);
+  assert.deepEqual(await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!),{text:evidence.text,fullArticle:false,truncated:false});
+  await assert.rejects(resolveCitationEvidence(bucket,{...evidence.source.citationEvidenceReceipt!,textSha256:hash(fragment)}));
+  assert.equal(await read({...original,provisionText:"This resolution changes"}),null,"shared introductions cannot select a clause");
+  const oversized={...source,blocks:source.blocks.map((block,index)=>index===7?{...block,text:block.text.repeat(2)}:block)};
+  const oversizedBytes=new TextEncoder().encode(JSON.stringify(oversized));
+  bucket.objects.set(key,{bytes:oversizedBytes,customMetadata:{}});
+  assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,provisionText:"This resolution changes",
+    evidence:{...original.evidence,sourceNormalizedSha256:hash(oversizedBytes)}}),null,"an oversized competing scope still makes a shared fragment ambiguous");
+});

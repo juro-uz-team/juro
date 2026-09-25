@@ -1,6 +1,7 @@
 import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, isPublicationMetadataText } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
+import {documentSections} from "../legal/document-sections";
 
 export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenceBucket, "get">,
   readParent: NormalizedSourceReader = createNormalizedSourceReader(bucket)) {
@@ -11,12 +12,18 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
       || parent.snapshot.source.canonicalUrl !== original.officialCitation.url
       || ({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"} as const)[parent.snapshot.source.locale] !== original.languageTag) return null;
     const fragment = original.provisionText.replace(/\s+/gu," ").trim();
-    const text = isPublicationMetadataText(fragment)
+    let text = isPublicationMetadataText(fragment)
       ? completeDocumentText(parent.snapshot) : completeUnnumberedDocumentText(parent.snapshot);
+    let section=false;
+    if(!text && fragment){
+      const matches=documentSections(parent.snapshot).filter(context=>context.text.includes(fragment));
+      if(matches.length===1&&matches[0]!.complete){text=matches[0]!.text;section=true;}
+    }
     if (!text || !fragment || !text.includes(fragment)) return null;
     return {...original, provisionText:text,
       officialCitation:{url:original.officialCitation.url,label:parent.snapshot.documentTitle},
-      evidence:{...original.evidence,r2Key:parent.r2Key,byteCount:parent.byteCount,sha256:parent.sha256}};
+      evidence:{...original.evidence,r2Key:parent.r2Key,byteCount:parent.byteCount,sha256:parent.sha256,
+        ...(section?{normalizedScope:"section" as const}:{})}};
   };
 }
 

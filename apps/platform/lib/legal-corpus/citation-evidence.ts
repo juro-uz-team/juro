@@ -6,12 +6,13 @@ import { acceptsPrivateServiceRequest, declaredRequestBodyWithinLimit, privateSe
 import type { LegalEvidenceBucket } from "./target-evidence";
 import {readBoundedLegalSourceBytes} from "../legal/source-fetch";
 import {normalizeArticleNumber, detectArticleNumbers} from "../legal/legal-language";
+import {completeDocumentSections} from "../legal/document-sections";
 
 export const CITATION_EVIDENCE_PATH = "/internal/legal-corpus/citations/evidence";
 const MARKER = "citation-evidence-v1";
 export const citationEvidenceLocatorSchema = z.object({
   version: z.literal(1), capability: z.enum(["current", "history"]),
-  kind: z.enum(["provision", "normalized-article", "normalized-document"]),
+  kind: z.enum(["provision", "normalized-article", "normalized-document", "normalized-section"]),
   r2Key: z.string().min(1).max(700), byteCount: z.number().int().positive().max(8_000_000),
   sha256: sha256Schema, officialUrl: lexDocumentUrlSchema,
   languageTag: legalLanguageSchema, articleNumber: z.string().min(1).max(160).nullable(),
@@ -47,13 +48,19 @@ export async function resolveCitationEvidence(bucket: Pick<LegalEvidenceBucket, 
   }
   const decoded = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
   let text: string;
-  if (value.kind === "normalized-article" || value.kind === "normalized-document") {
+  if (value.kind === "normalized-article" || value.kind === "normalized-document" || value.kind === "normalized-section") {
     const snapshot = normalizedLegalSourceSnapshotSchema.parse(JSON.parse(decoded));
     if (snapshot.source.sourceKind !== "lex" || snapshot.source.canonicalUrl !== value.officialUrl
       || ({ru: "ru", uz: "uz-Latn", uzc: "uz-Cyrl", en: "en"} as const)[snapshot.source.locale] !== value.languageTag) {
       throw new TypeError("CITATION_EVIDENCE_IDENTITY_MISMATCH");
     }
-    if (value.kind === "normalized-document") {
+    if(value.kind === "normalized-section"){
+      const matches=[];
+      if(value.articleNumber!==null)throw new TypeError("CITATION_SECTION_UNAVAILABLE");
+      for(const section of completeDocumentSections(snapshot))if(await digest(new TextEncoder().encode(section.text))===value.textSha256)matches.push(section);
+      if(matches.length!==1)throw new TypeError("CITATION_SECTION_UNAVAILABLE");
+      text=matches[0]!.text;
+    } else if (value.kind === "normalized-document") {
       const document = value.articleNumber === null && completeDocumentText(snapshot);
       if (!document) throw new TypeError("CITATION_DOCUMENT_UNAVAILABLE");
       text = document;

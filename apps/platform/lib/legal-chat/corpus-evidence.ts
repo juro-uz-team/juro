@@ -53,7 +53,8 @@ export async function corpusAnswerEvidence(input: {
   const textSha256 = await digest(complete.provisionText);
   const receipt = citationEvidenceReceiptSchema.parse({
     version: 1, capability: input.endpoint.kind === "current" ? "current" : "history",
-    kind: resolution.articleContext ? "normalized-article" : resolution.documentContext ? "normalized-document" : "provision",
+    kind: resolution.articleContext ? "normalized-article" : resolution.documentContext
+      ? complete.evidence.normalizedScope==="section"?"normalized-section":"normalized-document" : "provision",
     r2Key: complete.evidence.r2Key, byteCount: complete.evidence.byteCount,
     sha256: complete.evidence.sha256, officialUrl: complete.officialCitation.url,
     languageTag: complete.languageTag, articleNumber: article, textSha256,
