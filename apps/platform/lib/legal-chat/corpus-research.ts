@@ -14,7 +14,7 @@ import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RuntimeServices = ReturnType<typeof createRuntimeLegalEvidenceServices>;
 type CorpusServices = Pick<RuntimeServices,
-  "releaseResolver" | "candidateIndex" | "evidenceResolver" | "referenceDiscovery" | "verifyCurrentSource">
+  "releaseResolver" | "candidateIndex" | "evidenceResolver" | "referenceDiscovery" | "verifyCurrentSource" | "verifyHistoricalSource">
   & {candidateCatalog:Pick<RuntimeServices["candidateCatalog"],"revalidate">};
 type EndpointRelease = {endpoint:LegalTime;release:PinnedCandidateRelease};
 const MAX_CANDIDATE_READS = 48;
@@ -33,8 +33,10 @@ export function createCorpusResearch(input: {
   let owner:string|undefined;
   let pinned:Promise<EndpointRelease[]>|undefined;
   type CurrentVerifier={key:string;detail:string;verify:()=>ReturnType<CorpusServices["verifyCurrentSource"]>};
-  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;verifier?:CurrentVerifier}>>();
+  type HistoricalVerifier={key:string;detail:string;endpoint:LegalTime;verify:()=>ReturnType<CorpusServices["verifyHistoricalSource"]>};
+  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;verifier?:CurrentVerifier;historicalVerifier?:HistoricalVerifier}>>();
   const currentVerifiers=new Map<string,CurrentVerifier>();
+  const historicalVerifiers=new Map<string,HistoricalVerifier>();
   const articles=new Map<string,PreparedCorpusEvidence>();
   const verifiedArticles=new Map<string,LegalEvidence>();
   const pendingReads=new Map<string,ResearchNeed[]>();
@@ -83,6 +85,7 @@ export function createCorpusResearch(input: {
     check();
     const needs:ResearchNeed[]=[];
     const referenceNeeds:NonNullable<ResearchPacket["referenceNeeds"]>[number][]=[];
+    const temporalRejections:NonNullable<ResearchPacket["temporalRejections"]>[number][]=[];
     const referenceQueries:{need:ResearchNeed;query:LegalReferenceQuery;index:number;
       discoveryReason:NonNullable<ResearchPacket["referenceNeeds"]>[number]["discoveryReason"]}[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];
@@ -172,7 +175,9 @@ export function createCorpusResearch(input: {
             const prepared=await prepareCorpusEvidence({resolution,endpoint});
             return {prepared,...(endpoint.kind==="current"?{verifier:{key,
               detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}`,
-              verify:()=>input.services.verifyCurrentSource(resolution.controlling)}}:{})};
+              verify:()=>input.services.verifyCurrentSource(resolution.controlling)}}:{historicalVerifier:{key,
+              detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}`,endpoint,
+              verify:()=>input.services.verifyHistoricalSource(resolution.controlling,endpoint)}})};
           })();
           saved.set(key,pending);
           // A transient reader failure may recover in a later bounded round.
@@ -186,6 +191,7 @@ export function createCorpusResearch(input: {
         check();
         const item=articles.get(result.item.prepared.source.id)??result.item.prepared;
         if(!articles.has(item.source.id)&&result.item.verifier)currentVerifiers.set(item.source.id,result.item.verifier);
+        if(!articles.has(item.source.id)&&result.item.historicalVerifier)historicalVerifiers.set(item.source.id,result.item.historicalVerifier);
         articles.set(item.source.id,item);
         readEvidence.set(key,item);
         resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
@@ -350,21 +356,28 @@ export function createCorpusResearch(input: {
     const verifyItem=async(item:PreparedCorpusEvidence)=>{
         check();
         const verifier=currentVerifiers.get(item.source.id);
+        const historicalVerifier=historicalVerifiers.get(item.source.id);
         try {
+          const historical=await historicalVerifier?.verify();
+          check();
+          if(historical&&!historical.eligible)return {rejection:{sourceId:item.source.id,
+            endpoint:historicalVerifier!.endpoint,observation:historical.observation}};
           const currentSourceStatus=await verifier?.verify();
           check();
           const verified=item.finalize({currentAt:new Date(now()).toISOString(),currentSourceStatus});
           const canonical=verifiedArticles.get(verified.source.id)??verified;
           verifiedArticles.set(canonical.source.id,canonical);
+          const key=verifier?.key??historicalVerifier?.key;
+          if(key)for(const need of pendingReads.get(key)??[])resolutions.push({need,sourceIds:[canonical.source.id]});
           return {item:canonical};
         } catch(error) {
           check();
           const unconfirmed=error instanceof Error&&error.message==="CORPUS_CURRENT_SOURCE_UNCONFIRMED";
           const need:ResearchNeed={reason:unconfirmed?"ambiguous_revision":"source_unavailable",
-            detail:`${verifier?.detail??item.source.id}: `+(unconfirmed
+            detail:`${verifier?.detail??historicalVerifier?.detail??item.source.id}: `+(unconfirmed
               ?"A retrieved revision could not be confirmed against the current official publication."
-              :"The admitted source could not be verified against the current official publication.")};
-          return {need,key:verifier?.key};
+              :"The admitted source could not be verified against the official publisher status.")};
+          return {need,key:verifier?.key??historicalVerifier?.key};
         }
     };
     const publications=[...byPublication.values()];let nextPublication=0;
@@ -374,6 +387,7 @@ export function createCorpusResearch(input: {
         for(const item of publication){
           const result=await verifyItem(item);
           if(result.item)answerEvidence.push(result.item);
+          else if(result.rejection)temporalRejections.push(result.rejection);
           else {
             needs.push(result.need);
             if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
@@ -383,12 +397,18 @@ export function createCorpusResearch(input: {
       }
     }));
     check();
+    const rejectedIds=new Set(temporalRejections.map(rejection=>rejection.sourceId));
+    const excludedReferences=referenceNeeds.filter(reference=>reference.sourceIds.length>0&&reference.sourceIds.every(id=>rejectedIds.has(id)));
+    const excludedNeedKeys=new Set(excludedReferences.map(reference=>JSON.stringify(reference.need)));
+    if(temporalRejections.length)observations.push({kind:"candidate_temporal_ineligible",lane:"indexed",omitted:temporalRejections.length});
     const candidatePositions=new Map([...evidence.keys()].map((id,index)=>[id,index]));
     answerEvidence.sort((left,right)=>candidatePositions.get(left.source.id)!-candidatePositions.get(right.source.id)!);
     return {evidence:admitted.flatMap(item=>answerEvidence.filter(source=>source.source.id===item.source.id)),
       selectionCandidates:answerEvidence,
-      selectionResolutions:resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id))),
-      needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
+      selectionResolutions:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
+        .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()],
+      needs:[...new Map(needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))).map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
+      temporalRejections,excludedReferences,
       observations,
       resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>admittedIds.has(id)&&answerEvidence.some(item=>item.source.id===id)))
         .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()]};

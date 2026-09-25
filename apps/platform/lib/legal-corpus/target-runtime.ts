@@ -6,6 +6,7 @@ import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
 import {createNormalizedSourceReader} from "./normalized-source-reader";
 import {createPinnedSourceVerifier} from "./pinned-source-observation";
+import {createHistoricalSourceVerifier} from "./historical-source-observation";
 
 import {
   createProviderCandidateIndex,
@@ -620,12 +621,14 @@ export function createRuntimeEvidenceServices(
   const historicalDocumentContext = createNormalizedDocumentEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
     {membershipProofsEnabled: dependencies.membershipProofsEnabled,preparedMembership:dependencies.preparedMembership});
+  const observe=dependencies.sharedSourceObservationsEnabled
+    ?createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
+    :createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})});
   return {
 onReleaseResolved: dependencies.onReleaseResolved,
 verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,
-      observe: dependencies.sharedSourceObservationsEnabled
-        ? createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
-        : createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})})}),
+      observe}),
+verifyHistoricalSource:createHistoricalSourceVerifier({observe}),
 environment,
 releaseResolver,
 candidateIndex,

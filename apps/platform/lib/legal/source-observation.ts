@@ -8,6 +8,8 @@ export const sourceObservationSchema = z.object({
   normalizedTextSha256V2: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   rawContentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   normalizationPolicy: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  /** Whole-instrument publisher banner, bound to this exact observation. */
+  lifecycle: z.object({repealedOn:z.iso.date().nullable()}).strict().optional(),
 }).strict();
 export type SourceObservation = z.infer<typeof sourceObservationSchema>;
 export const pinnedSourceStatusSchema = z.object({observation: sourceObservationSchema.nullable(),
@@ -20,7 +22,8 @@ export type SourceObservationStore = {
 
 function fresh(observation: SourceObservation, officialUrl: string, now: number): boolean {
   const age = now - Date.parse(observation.observedAt);
-  return observation.officialUrl === officialUrl && age >= 0 && age < SOURCE_OBSERVATION_MAX_AGE_MS;
+  return observation.officialUrl === officialUrl && age >= 0 && age < SOURCE_OBSERVATION_MAX_AGE_MS
+    && (observation.current || observation.lifecycle!==undefined);
 }
 
 export function isFreshSourceObservation(value: unknown, officialUrl: string, now: number): value is SourceObservation {

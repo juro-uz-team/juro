@@ -46,6 +46,8 @@ function fixture() {
     candidateCatalog:{revalidate:async()=>[candidate]},
     evidenceResolver:{resolveControlling:async()=>{calls.reads++;return {controlling,materialCitation:controlling.officialCitation};}},
     referenceDiscovery:async()=>({candidates:[],unresolved:[]}),
+    verifyHistoricalSource:async()=>({eligible:true,observation:{version:2,observedAt:instant,
+      officialUrl:controlling.officialCitation.url,current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}}),
     verifyCurrentSource:async()=>({pinnedTextSha256:"b".repeat(64),observation:{version:2,observedAt:instant,
       officialUrl:controlling.officialCitation.url,current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}}),
   };
@@ -569,6 +571,57 @@ test("ordinary candidate saturation is visible to assessment without manufacturi
   assert.equal(result.rounds,1);
   assert.deepEqual(result.needs,[]);
   assert.equal(result.evidence.length,24);
+});
+
+test("historical whole-act repeal removes ineligible evidence and its substantive references with provenance",async()=>{
+  const {services,search}=fixture();
+  services.evidenceResolver.resolveControlling=async id=>{
+    const value=articleResolution(id,"7");value.articleContext.provisionText+=" See article 99 of this Act.";return value;
+  };
+  services.referenceDiscovery=async()=>({candidates:[],unresolved:[{reason:"reference_not_found",query:{article:"99",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
+  services.verifyHistoricalSource=async()=>({eligible:false,observation:{version:2,officialUrl:controlling.officialCitation.url,
+    observedAt:instant,current:false,lifecycle:{repealedOn:"1996-12-27"},normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}});
+  const packet=await search({...request,question:{...request.question,temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}});
+  assert.deepEqual(packet.evidence,[]);assert.deepEqual(packet.selectionCandidates,[]);assert.deepEqual(packet.needs,[]);
+  assert.equal(packet.temporalRejections?.length,1);assert.equal(packet.temporalRejections?.[0]?.observation.lifecycle?.repealedOn,"1996-12-27");
+  assert.equal(packet.excludedReferences?.length,1);
+});
+
+test("historical publisher failure remains operational unavailability",async()=>{
+  const {services,search}=fixture();services.verifyHistoricalSource=async()=>{throw Error("Publisher unavailable");};
+  const packet=await search({...request,question:{...request.question,temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}});
+  assert.deepEqual(packet.evidence,[]);assert.equal(packet.needs[0]?.reason,"source_unavailable");
+  assert.deepEqual(packet.temporalRejections,[]);
+});
+
+test("a recovered historical publisher read explicitly resolves its earlier operational failure",async()=>{
+  const {services,search}=fixture();const verify=services.verifyHistoricalSource;let calls=0;
+  services.verifyHistoricalSource=async(...args)=>{if(!calls++)throw Error("Temporary outage");return verify(...args);};
+  const question={...request.question,temporalScope:{kind:"timestamp" as const,instant:"2020-01-01T00:00:00.000Z"}};
+  const first=await search({...request,question});assert.equal(first.needs[0]?.reason,"source_unavailable");
+  const second=await search({...request,question,round:1,needs:first.needs});
+  assert.deepEqual(second.needs,[]);assert.equal(second.evidence.length,1);
+  assert.deepEqual(second.selectionResolutions,[{need:first.needs[0],sourceIds:[second.evidence[0]!.source.id]}]);
+});
+
+test("historical verification pins ranked canonical identity and recovers through another article fragment",async()=>{
+  const {services,search}=fixture();let round=0;
+  services.candidateCatalog.revalidate=async()=>round?[anotherCandidate("rendition:second")]
+    :[anotherCandidate("rendition:first"),anotherCandidate("rendition:second")];
+  const first=Promise.withResolvers<void>();
+  services.evidenceResolver.resolveControlling=async id=>{
+    if(id==="rendition:first")await first.promise;else first.resolve();return articleResolution(id);
+  };
+  const verify=services.verifyHistoricalSource;
+  services.verifyHistoricalSource=async(evidence,endpoint)=>{
+    assert.ok("provisionRenditionId" in evidence);
+    assert.equal(evidence.provisionRenditionId,"rendition:first");
+    if(!round)throw Error("Temporary outage");return verify(evidence,endpoint);
+  };
+  const question={...request.question,temporalScope:{kind:"timestamp" as const,instant:"2020-01-01T00:00:00.000Z"}};
+  const failed=await search({...request,question});round++;
+  const recovered=await search({...request,question,round,needs:failed.needs});
+  assert.equal(recovered.evidence.length,1);assert.deepEqual(recovered.resolved?.map(item=>item.need),failed.needs);
 });
 
 test("repair discovery bounds cached and new sources together while preserving reference capacity",async()=>{

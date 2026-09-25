@@ -29,7 +29,7 @@ test("a slow publisher owner renews its lease and acquisition rechecks completed
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
     sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
-    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text;");
+    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_repealed_on text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_observed_at text;");
     let release!: () => void;
     let entered!: () => void;
     const started = new Promise<void>(resolve => {entered = resolve;});
@@ -63,7 +63,7 @@ test("independent runtimes reuse the original observation and late writes cannot
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
     sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
-    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text;");
+    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_repealed_on text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_observed_at text;");
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async run() {return {meta: {changes: sqlite.prepare(sql).run(...values).changes}};},
@@ -71,7 +71,7 @@ test("independent runtimes reuse the original observation and late writes cannot
     const url = "https://lex.uz/ru/docs/777";
     const old: SourceObservation = {version: 2, officialUrl: url, observedAt: "2026-09-11T00:00:00.000Z", current: true,
       normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64)};
-    const current = {...old, normalizationPolicy:"f".repeat(64), normalizedTextSha256V2: "d".repeat(64), observedAt: "2026-09-11T00:01:00.000Z", normalizedTextSha256: "c".repeat(64)};
+    const current = {...old, lifecycle:{repealedOn:null}, normalizationPolicy:"f".repeat(64), normalizedTextSha256V2: "d".repeat(64), observedAt: "2026-09-11T00:01:00.000Z", normalizedTextSha256: "c".repeat(64)};
     const writer = createD1SourceObservationStore(db);
     // An old producer can still write its own table during a rolling update.
     // Its decision must never be promoted into corrected publisher status.
@@ -107,6 +107,7 @@ test("independent runtimes reuse the original observation and late writes cannot
       .run("2026-09-11T00:05:00.000Z", "e".repeat(64), url);
     const mixed = sourceObservationSchema.parse(await writer.get(url));
     assert.equal(mixed.normalizedTextSha256V2, undefined);
+    assert.equal(mixed.lifecycle,undefined,"An old writer cannot renew lifecycle evidence");
     assert.equal(mixed.normalizationPolicy,undefined,"An old writer cannot renew normalizer provenance");
     assert.equal(isCurrentSourceObservation(mixed, {officialUrl:url,normalizedTextSha256:current.normalizedTextSha256V2,
       now:Date.parse(mixed.observedAt)}), false, "An old writer cannot renew the structured fingerprint");
@@ -122,7 +123,7 @@ test("scheduled refresh leases public targets, preserves failed observation age 
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
     sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
-    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text;");
+    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_repealed_on text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_observed_at text;");
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async all() {return {results: sqlite.prepare(sql).all(...values)};},
@@ -163,7 +164,7 @@ test("the scheduled publisher path reserves real crawl windows and retries at th
     sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
     sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
     sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
-    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text;");
+    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_repealed_on text; ALTER TABLE legal_publisher_status_observations ADD COLUMN lifecycle_observed_at text;");
     const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
       async first() {return sqlite.prepare(sql).get(...values) ?? null;},
       async all() {return {results: sqlite.prepare(sql).all(...values)};},

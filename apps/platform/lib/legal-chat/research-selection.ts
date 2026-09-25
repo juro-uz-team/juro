@@ -32,6 +32,9 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
     throw Error("RESEARCH_SELECTION_POOL_INVALID");
   if(!sources.length)return packet;
   const {selectionCandidates:_,selectionResolutions,...answerPacket}=packet;
+  // Every discovery candidate will be assessed. Rank-only omissions from the
+  // compatibility packet do not describe this final semantic admission.
+  if(packet.selectionCandidates)answerPacket.observations=packet.observations?.filter(item=>item.kind!=="candidate_context_limit");
   const contextExceeded=():ResearchPacket=>({...answerPacket,evidence:[],resolved:[],
     needs:[...packet.needs,{reason:"context_budget",detail:"A complete connected candidate context exceeds the relevance assessment budget."}]});
   const references=sources.map(source=>{
@@ -87,7 +90,7 @@ export async function selectResearchEvidence(request:ResearchRequest,packet:Rese
     }));
   const excludedNeedKeys=new Set(excludedReferences.map(reference=>JSON.stringify(reference.need)));
   const fitsAnswer=fitsLegalEvidenceBudget(evidence.map(source=>source.text));
-  return {...answerPacket,evidence:fitsAnswer?evidence:[],excludedReferences,
+  return {...answerPacket,evidence:fitsAnswer?evidence:[],excludedReferences:[...(packet.excludedReferences??[]),...excludedReferences],
     needs:[...packet.needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))),
       ...(!fitsAnswer?[{reason:"context_budget" as const,detail:"The semantically selected complete provisions exceed the answer evidence budget."}]:[])],
     selection:decisions.map(decision=>({sourceId:sources[decision.sourceIndex]!.source.id,

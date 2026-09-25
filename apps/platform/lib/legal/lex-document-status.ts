@@ -37,6 +37,7 @@ export async function readLexPublisherObservation(url: string, options?: {previo
   const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",...fetchOptions});
   options?.signal?.throwIfAborted();
   const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
+  const lifecycle={repealedOn:lexDocumentRepealedOn(html)};
   const standard=/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html);
   const previous=sourceObservationSchema.safeParse(options?.previous);
   // A fresh full publisher fetch authenticates unchanged bytes. Reuse only
@@ -47,7 +48,7 @@ export async function readLexPublisherObservation(url: string, options?: {previo
     &&previous.data.officialUrl===fetched.canonicalUrl
     &&previous.data.rawContentSha256===fetched.contentSha256
     &&previous.data.normalizedTextSha256V2) {
-    return {...previous.data,observedAt:fetched.fetchedAt};
+    return {...previous.data,lifecycle,observedAt:fetched.fetchedAt};
   }
   const policy=options?.normalizationPolicy?{normalizationPolicy:options.normalizationPolicy}:{};
   if (options?.fingerprintHtml) {
@@ -56,14 +57,14 @@ export async function readLexPublisherObservation(url: string, options?: {previo
       const fingerprints=await options.fingerprintHtml({html,reference:fetched,rawContentSha256:fetched.contentSha256},options.signal);
       options.signal?.throwIfAborted();
       return {version:2,officialUrl:fetched.canonicalUrl,observedAt:fetched.fetchedAt,
-        current:!lexDocumentIsRepealed(html),rawContentSha256:fetched.contentSha256,...fingerprints,...policy};
+        current:!lexDocumentIsRepealed(html),lifecycle,rawContentSha256:fetched.contentSha256,...fingerprints,...policy};
     }
   }
   const {snapshot,current,structuredSnapshot}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal,includeStructured:true});
   const normalizedTextSha256V2 = structuredSnapshot ? await publisherTextFingerprint(structuredSnapshot) : undefined;
   options?.signal?.throwIfAborted();
   return {version: 2, officialUrl: fetched.canonicalUrl, observedAt: fetched.fetchedAt,
-    current, rawContentSha256: fetched.contentSha256,...policy,
+    current,lifecycle, rawContentSha256: fetched.contentSha256,...policy,
     normalizedTextSha256: await publisherTextFingerprint(snapshot),
     ...(normalizedTextSha256V2 ? {normalizedTextSha256V2} : {})};
 }
@@ -119,6 +120,17 @@ export function lexDocumentIsRepealed(html: string): boolean {
   const header = html.match(/<header\b[^>]*\bid=["']doc_header["'][^>]*>([\s\S]*?)<\/header>/iu)?.[1];
   if (!header) return isRepealedText(pdfHeaderText(html)??"");
   return isRepealedText(header.replace(/<[^>]+>/gu, " ").replace(/&nbsp;|&#160;/gu, " "));
+}
+
+/** Only a whole-document status banner supplies the exclusion date. */
+export function lexDocumentRepealedOn(html:string):string|null {
+  const header=html.match(/<header\b[^>]*\bid=["']doc_header["'][^>]*>([\s\S]*?)<\/header>/iu)?.[1];
+  const text=(header?header.replace(/<[^>]+>/gu," ").replace(/&nbsp;|&#160;/gu," "):pdfHeaderText(html)??"").replace(/\s+/gu," ");
+  const dates=[...text.matchAll(/(?:(?:документ|акт)\s+утратил\s+силу|hujjat\s+kuchini\s+yo[‘’ʼʻ']?qotgan|ҳужжат\s+кучини\s+йўқотган|document\s+(?:has\s+)?(?:lost\s+(?:its\s+)?force|ceased\s+to\s+be\s+in\s+force))\s*(\d{2})\.(\d{2})\.(\d{4})(?!\d)/giu)];
+  if(dates.length!==1)return null;
+  const [,day,month,year]=dates[0]!;
+  const iso=`${year}-${month}-${day}`,date=new Date(`${iso}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===iso?iso:null;
 }
 
 function isRepealedText(value:string):boolean {
