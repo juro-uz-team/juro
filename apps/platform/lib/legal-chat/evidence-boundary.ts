@@ -8,19 +8,14 @@ export function timeIdentity(time: LegalTime): string {
 }
 
 export async function assertAnswerEvidence(input: AnswerQuestion): Promise<void> {
-  if (input.evidence.length > MAX_LEGAL_EVIDENCE_SOURCES
-    || input.evidence.reduce((size, evidence) => size + evidence.text.length, 0) > MAX_LEGAL_EVIDENCE_CHARACTERS) {
-    throw new Error("EVIDENCE_CONTEXT_EXCEEDED");
-  }
-  await assertLegalEvidenceIdentity(input);
-}
-
-/** Authentication is independent of the context ceiling at a model boundary. */
-export async function assertLegalEvidenceIdentity(input: AnswerQuestion): Promise<void> {
   const endpoints = input.temporalScope.kind === "comparison"
     ? [input.temporalScope.left, input.temporalScope.right] : [input.temporalScope];
   const allowedTimes = new Set(endpoints.map(timeIdentity));
   const identities = new Set<string>();
+  if (input.evidence.length > MAX_LEGAL_EVIDENCE_SOURCES
+    || input.evidence.reduce((size, evidence) => size + evidence.text.length, 0) > MAX_LEGAL_EVIDENCE_CHARACTERS) {
+    throw new Error("EVIDENCE_CONTEXT_EXCEEDED");
+  }
   for (const evidence of input.evidence) {
     const source = evidence.source;
     const url = new URL(source.officialUrl);
@@ -29,7 +24,7 @@ export async function assertLegalEvidenceIdentity(input: AnswerQuestion): Promis
       || !["verified", "direct_validated"].includes(source.verificationState)
       || !["current", "historical"].includes(source.status)
       || url.protocol !== "https:" || !["lex.uz", "www.lex.uz"].includes(url.hostname)
-      || url.username || url.password || url.port || !/^\/(?:ru\/|uz\/|uzc\/|en\/)?docs\/-?\d+\/?$/u.test(url.pathname)
+      || url.username || url.password || url.port || !/^\/(?:ru\/|uz\/|uzc\/|en\/)?docs\/\d+\/?$/u.test(url.pathname)
       || !/^[a-f0-9]{64}$/.test(source.contentSha256) || !evidence.text.trim()
       || !allowedTimes.has(timeIdentity(evidence.endpoint))
       || (evidence.endpoint.kind === "current") !== (source.status === "current")) {

@@ -3,7 +3,6 @@ import type {ResearchFormulator} from "./research-formulation";
 import {documentModelContext} from "./document-context";
 import type {ResearchPacket,ResearchRequest} from "./research";
 import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
-import {selectResearchEvidence} from "./research-selection";
 
 type RemoteSession={
   search(input:CorpusSearchInput):PromiseLike<ResearchPacket>;
@@ -24,9 +23,6 @@ export function createRemoteCorpusResearch(input:{
   requestId:string;
   environment:CorpusSessionInput["environment"];
   formulate:ResearchFormulator;
-  safetyIdentifier?:Parameters<typeof selectResearchEvidence>[2]["safetyIdentifier"];
-  onAttempt?:Parameters<typeof selectResearchEvidence>[2]["onAttempt"];
-  onAttemptFinished?:Parameters<typeof selectResearchEvidence>[2]["onAttemptFinished"];
 }) {
   let opening:Promise<RemoteSession>|undefined;
   let session:RemoteSession|undefined;
@@ -90,7 +86,7 @@ export function createRemoteCorpusResearch(input:{
           const packet=await active.search({round:request.round,plan});
           signal?.throwIfAborted();
           if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
-          return await selectResearchEvidence({...request,question:{...request.question,signal:attemptSignal}},packet,input);
+          return packet;
         }catch(error){
           if(staged)await Promise.resolve(session?.discard?.(request.round)).catch(()=>undefined);
           throw error;

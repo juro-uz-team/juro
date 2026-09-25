@@ -15,49 +15,6 @@ const evidence:LegalEvidence={source:{id:"source:one",actTitle:"Synthetic rules"
   sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"private-parent-hash"},
   text:"A qualifying applicant may request the record.",textSha256:"private-text-hash",endpoint:{kind:"current"},origin:"indexed"};
 
-test("planner and assessment generation admit only actual topic indices",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  let invalid=false;
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));
-    assert.deepEqual(body.text.format.schema.properties.queries.items.properties.topicIndices.items.enum,[0,1]);
-    const queries=[{...query,topicIndices:invalid?[0,1,2]:[0,1]}];
-    const output=body.text.format.name==="legal_research_coverage"?{needs:[],resolved:null,queries}
-      :{queries:body.text.format.name==="legal_indexed_queries"?queries.map(({text,topicIndices})=>({text,topicIndices})):queries};
-    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
-  });
-  const input={...request,question:{...request.question,topics:["Access","Remedy"]}};
-  for(const method of ["formulate","formulateIndexed","assess"] as const) {
-    const invoke=()=>createLegalResearchModel({requestId:method})[method]({...input,evidence:[]});
-    invalid=false;await invoke();
-    invalid=true;await assert.rejects(invoke(),/RESEARCH_QUERY_TOPIC_INVALID/);
-  }
-});
-
-test("public repair replans oversized queries while indexed repair preserves their complete text",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const longQuery={...query,text:"record access conditions and qualifications ".repeat(4).trim()};
-  const calls:string[]=[];
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));calls.push(body.text.format.name);
-    if(body.text.format.name==="legal_research_queries")assert.deepEqual(JSON.parse(body.input).indexedFormulations,[longQuery]);
-    const output=body.text.format.name==="legal_research_coverage"?{needs:[],resolved:null,queries:[longQuery]}:{queries:[query]};
-    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
-  });
-  const model=createLegalResearchModel({requestId:"public-repair"});
-  await model.assess({...request,evidence:[]});
-  assert.equal((await model.formulate(request)).formulations[0]!.text,query.text);
-  assert.equal((await model.formulateIndexed(request)).formulations[0]!.text,longQuery.text);
-  assert.deepEqual(calls,["legal_research_coverage","legal_research_queries"]);
-});
-
-test("public formulations reject overlong provider output without truncating it",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{
-    type:"output_text",text:JSON.stringify({queries:[{...query,text:"x".repeat(101)}]})}]}]}));
-  await assert.rejects(createLegalResearchModel({requestId:"public-limit"}).formulate(request));
-});
-
 test("standalone initial research preserves the complete question and every interpreted topic without another model call",async context=>{
   context.mock.method(globalThis,"fetch",async()=>{throw new Error("Standalone formulation must not call a provider");});
   const question="Can an applicant inspect a record and challenge a refusal as of 2020-01-01?";
@@ -148,8 +105,8 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));payloads.push(body);
     const assessment=JSON.parse(body.input).evidence.length>0;
-    assert.deepEqual(body.reasoning,body.model==="gpt-6-luna"?{effort:"none"}:undefined);
-    const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIndices:[0]}],
+    assert.deepEqual(body.reasoning,!assessment&&body.model==="gpt-6-luna"?{effort:"none"}:undefined);
+    const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
       queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
@@ -163,7 +120,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const next=await model.formulate({...input,round:1});
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-5.6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
   for(const payload of payloads) {
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));
@@ -177,11 +134,11 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
 test("research rejects fabricated resolution source IDs and operational-gap approvals",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  let sourceIndex=99;
+  let sourceId="invented";
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{
-    type:"output_text",text:JSON.stringify({needs:[],resolved:[{needIndex:0,sourceIndices:[sourceIndex]}],queries:[query]})}]}]}));
+    type:"output_text",text:JSON.stringify({needs:[],resolved:[{needIndex:0,sourceIds:[sourceId]}],queries:[query]})}]}]}));
   await assert.rejects(createLegalResearchModel({requestId:"request"}).assess({...request,evidence:[evidence]}),/RESOLUTION_INVALID/);
-  sourceIndex=0;
+  sourceId="source:one";
   await assert.rejects(createLegalResearchModel({requestId:"request"}).assess({...request,
     needs:[{reason:"source_unavailable",detail:"The source reader failed."}],evidence:[evidence]}),/RESOLUTION_INVALID/);
 });
@@ -199,7 +156,7 @@ test("coverage generation offers only substantive needs and admitted source IDs 
   await createLegalResearchModel({requestId:"mixed"}).assess({...request,
     needs:[outage,request.needs[0]!,{reason:"unresolved_reference",detail:"The exception is missing."}],evidence:[evidence]});
   assert.deepEqual(schemas[0]!.items.properties.needIndex.enum,[1,2]);
-  assert.equal(schemas[0]!.items.properties.sourceIndices.items.const,0);
+  assert.equal(schemas[0]!.items.properties.sourceIds.items.const,"source:one");
   await createLegalResearchModel({requestId:"outage"}).assess({...request,needs:[outage],evidence:[evidence]});
   await createLegalResearchModel({requestId:"empty"}).assess({...request,evidence:[]});
   assert.equal(schemas[1]!.type,"null");assert.equal(schemas[2]!.type,"null");

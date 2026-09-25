@@ -3,8 +3,6 @@ import type { AnswerQuestion, LegalEvidence } from "./answer-engine";
 import { assertAnswerEvidence } from "./evidence-boundary";
 import { fitsLegalEvidenceBudget } from "../legal/legal-evidence-budget";
 import { LEGAL_CHAT_MAX_RESEARCH_ROUNDS } from "./execution-limits";
-import type {SourceObservation} from "../legal/source-observation";
-import type {LegalTime} from "./answer-engine";
 
 export const researchNeedSchema = z.object({
   reason: z.enum(["missing_rule", "unresolved_reference", "ambiguous_revision", "source_unavailable", "context_budget", "search_budget"]),
@@ -12,21 +10,12 @@ export const researchNeedSchema = z.object({
 }).strict();
 export type ResearchNeed = z.infer<typeof researchNeedSchema>;
 export const researchObservationSchema=z.object({
-  kind:z.enum(["candidate_read_limit","candidate_context_limit","candidate_temporal_ineligible","search_query_limit","historical_live_unavailable"]),
+  kind:z.enum(["candidate_read_limit","candidate_context_limit","search_query_limit","historical_live_unavailable"]),
   lane:z.enum(["indexed","official"]),omitted:z.number().int().positive(),
 }).strict();
 export type ResearchObservation=z.infer<typeof researchObservationSchema>;
 export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sourceUnavailable"|"onStage"> & {topics:readonly string[]};
-export type ResearchReferenceNeed={need:ResearchNeed;article:string;sourceIds:readonly string[];
-  discoveryReason:"reference_not_found"|"lookup_budget"|"member_budget"};
 export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly ResearchNeed[];
-  temporalRejections?:readonly {sourceId:string;endpoint:LegalTime;observation:SourceObservation}[];
-  /** Authenticated discovery pool, never answer context until selection. */
-  selectionCandidates?:readonly LegalEvidence[];
-  selectionResolutions?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[];
-  selection?:readonly {sourceId:string;relevant:boolean;retained:boolean;reason:string}[];
-  referenceNeeds?:readonly ResearchReferenceNeed[];
-  excludedReferences?:readonly ResearchReferenceNeed[];
   observations?:readonly ResearchObservation[];
   resolved?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[]};
 export type ResearchRequest = {question:ResearchQuestion; needs:readonly ResearchNeed[]; round:number};
@@ -54,8 +43,6 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   let sourceUnavailable=false;
   let rounds=0;
   const observations:ResearchObservation[]=[];
-  const excludedReferences:ResearchReferenceNeed[]=[];
-  const temporalRejections:NonNullable<ResearchPacket["temporalRejections"]>[number][]=[];
   // Structural readers may report one failure per bounded source read. Their
   // inventory is not the model's 40-item response schema; preserve these gaps
   // without discarding otherwise authenticated, useful evidence.
@@ -65,8 +52,6 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
     checkCancellation();
     const incoming=parseNeeds(packet.needs);
     observations.push(...z.array(researchObservationSchema).parse(packet.observations??[]));
-    excludedReferences.push(...packet.excludedReferences??[]);
-    temporalRejections.push(...packet.temporalRejections??[]);
     if(!fitsLegalEvidenceBudget(packet.evidence.map(item=>item.text))) {
       // This packet is not admitted at all. Do not truncate it, attempt to
       // authenticate an arbitrary prefix, or turn a size limit into an outage.
@@ -151,5 +136,5 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   if(!evidence.length && !needs.length) needs.push({reason:"missing_rule",detail:"No authenticated official evidence was found for the question."});
   if(rounds===LEGAL_CHAT_MAX_RESEARCH_ROUNDS && needs.length) needs.push({reason:"search_budget",detail:"The bounded official research rounds are exhausted; unresolved coverage remains."});
   sourceUnavailable ||= needs.some(need=>need.reason==="source_unavailable");
-  return {evidence,needs,sourceUnavailable,rounds,observations,excludedReferences,temporalRejections};
+  return {evidence,needs,sourceUnavailable,rounds,observations};
 }

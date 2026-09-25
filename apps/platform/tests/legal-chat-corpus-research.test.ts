@@ -46,8 +46,6 @@ function fixture() {
     candidateCatalog:{revalidate:async()=>[candidate]},
     evidenceResolver:{resolveControlling:async()=>{calls.reads++;return {controlling,materialCitation:controlling.officialCitation};}},
     referenceDiscovery:async()=>({candidates:[],unresolved:[]}),
-    verifyHistoricalSource:async()=>({eligible:true,observation:{version:2,observedAt:instant,
-      officialUrl:controlling.officialCitation.url,current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}}),
     verifyCurrentSource:async()=>({pinnedTextSha256:"b".repeat(64),observation:{version:2,observedAt:instant,
       officialUrl:controlling.officialCitation.url,current:true,normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}}),
   };
@@ -150,38 +148,6 @@ test("unresolved explicit references survive even when the referring rule was re
   assert.equal(result.evidence.length,1);
   assert.match(result.needs[0]!.detail,/Article 12/);
   assert.equal(result.needs[0]!.reason,"unresolved_reference");
-});
-
-test("reference scope records authenticated referrers but never labels lookup outages irrelevant",async()=>{
-  for(const reason of ["reference_not_found","lookup_unavailable"] as const) {
-    const {services,search}=fixture();
-    services.evidenceResolver.resolveControlling=async id=>{
-      const resolution=articleResolution(id,"7");
-      resolution.articleContext.provisionText+=" Eligibility is governed by article 12 of this Act.";
-      return resolution;
-    };
-    services.referenceDiscovery=async()=>({candidates:[],unresolved:[{reason,
-      query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
-    const result=await search(request);
-    assert.equal(result.needs.length,1);
-    assert.deepEqual(result.referenceNeeds,reason==="lookup_unavailable"?[]:[{need:result.needs[0],article:"12",
-      sourceIds:[result.evidence[0]!.source.id],discoveryReason:reason}]);
-  }
-});
-
-test("reference scope includes referrers discovered during dependency expansion",async()=>{
-  const {services,search}=fixture();
-  services.evidenceResolver.resolveControlling=async id=>{
-    const resolution=articleResolution(id,id==="rendition:reference"?"99":"7");
-    resolution.articleContext.provisionText+=" Eligibility is governed by article 12 of this Act.";
-    if(id!=="rendition:reference")resolution.articleContext.provisionText+=" See article 99 of this Act.";
-    return resolution;
-  };
-  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:reference")],unresolved:[{reason:"reference_not_found",
-    query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
-  const result=await search(request);
-  assert.equal(result.evidence.length,2);
-  assert.deepEqual(new Set(result.referenceNeeds![0]!.sourceIds),new Set(result.evidence.map(item=>item.source.id)));
 });
 
 test("request-local caches cannot be reused by a different question",async()=>{
@@ -571,70 +537,6 @@ test("ordinary candidate saturation is visible to assessment without manufacturi
   assert.equal(result.rounds,1);
   assert.deepEqual(result.needs,[]);
   assert.equal(result.evidence.length,24);
-});
-
-test("historical whole-act repeal removes ineligible evidence and its substantive references with provenance",async()=>{
-  const {services,search}=fixture();
-  services.evidenceResolver.resolveControlling=async id=>{
-    const value=articleResolution(id,"7");value.articleContext.provisionText+=" See article 99 of this Act.";return value;
-  };
-  services.referenceDiscovery=async()=>({candidates:[],unresolved:[{reason:"reference_not_found",query:{article:"99",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]});
-  services.verifyHistoricalSource=async()=>({eligible:false,observation:{version:2,officialUrl:controlling.officialCitation.url,
-    observedAt:instant,current:false,lifecycle:{repealedOn:"1996-12-27"},normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)}});
-  const packet=await search({...request,question:{...request.question,temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}});
-  assert.deepEqual(packet.evidence,[]);assert.deepEqual(packet.selectionCandidates,[]);assert.deepEqual(packet.needs,[]);
-  assert.equal(packet.temporalRejections?.length,1);assert.equal(packet.temporalRejections?.[0]?.observation.lifecycle?.repealedOn,"1996-12-27");
-  assert.equal(packet.excludedReferences?.length,1);
-});
-
-test("historical publisher failure remains operational unavailability",async()=>{
-  const {services,search}=fixture();services.verifyHistoricalSource=async()=>{throw Error("Publisher unavailable");};
-  const packet=await search({...request,question:{...request.question,temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}});
-  assert.deepEqual(packet.evidence,[]);assert.equal(packet.needs[0]?.reason,"source_unavailable");
-  assert.deepEqual(packet.temporalRejections,[]);
-});
-
-test("a recovered historical publisher read explicitly resolves its earlier operational failure",async()=>{
-  const {services,search}=fixture();const verify=services.verifyHistoricalSource;let calls=0;
-  services.verifyHistoricalSource=async(...args)=>{if(!calls++)throw Error("Temporary outage");return verify(...args);};
-  const question={...request.question,temporalScope:{kind:"timestamp" as const,instant:"2020-01-01T00:00:00.000Z"}};
-  const first=await search({...request,question});assert.equal(first.needs[0]?.reason,"source_unavailable");
-  const second=await search({...request,question,round:1,needs:first.needs});
-  assert.deepEqual(second.needs,[]);assert.equal(second.evidence.length,1);
-  assert.deepEqual(second.selectionResolutions,[{need:first.needs[0],sourceIds:[second.evidence[0]!.source.id]}]);
-});
-
-test("historical verification pins ranked canonical identity and recovers through another article fragment",async()=>{
-  const {services,search}=fixture();let round=0;
-  services.candidateCatalog.revalidate=async()=>round?[anotherCandidate("rendition:second")]
-    :[anotherCandidate("rendition:first"),anotherCandidate("rendition:second")];
-  const first=Promise.withResolvers<void>();
-  services.evidenceResolver.resolveControlling=async id=>{
-    if(id==="rendition:first")await first.promise;else first.resolve();return articleResolution(id);
-  };
-  const verify=services.verifyHistoricalSource;
-  services.verifyHistoricalSource=async(evidence,endpoint)=>{
-    assert.ok("provisionRenditionId" in evidence);
-    assert.equal(evidence.provisionRenditionId,"rendition:first");
-    if(!round)throw Error("Temporary outage");return verify(evidence,endpoint);
-  };
-  const question={...request.question,temporalScope:{kind:"timestamp" as const,instant:"2020-01-01T00:00:00.000Z"}};
-  const failed=await search({...request,question});round++;
-  const recovered=await search({...request,question,round,needs:failed.needs});
-  assert.equal(recovered.evidence.length,1);assert.deepEqual(recovered.resolved?.map(item=>item.need),failed.needs);
-});
-
-test("repair discovery bounds cached and new sources together while preserving reference capacity",async()=>{
-  const {services,search}=fixture();let round=0,reads=0;
-  services.candidateCatalog.revalidate=async()=>Array.from({length:round?48:12},(_,index)=>anotherCandidate(`rendition:${index}`));
-  services.evidenceResolver.resolveControlling=async id=>{reads++;return articleResolution(id,id.split(":")[1]!);};
-  services.referenceDiscovery=async()=>({candidates:round?Array.from({length:12},(_,index)=>anotherCandidate(`rendition:${index+100}`)):[],unresolved:[]});
-  await search(request);round++;
-  const result=await search({...request,round:1});
-  assert.equal(result.selectionCandidates?.length,48);
-  assert.equal(reads,48);
-  assert.equal(result.selectionCandidates?.filter(item=>Number(item.source.article)>=100).length,12);
-  assert.ok(result.observations?.some(item=>item.kind==="candidate_read_limit"&&item.omitted===12));
 });
 
 test("a required reference denied the bounded read allowance remains an explicit unresolved need",async()=>{

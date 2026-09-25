@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lexDocumentIsRepealed, lexDocumentRepealedOn, publisherTextFingerprint, readLexPublisherObservation } from "../lib/legal/lex-document-status";
+import { lexDocumentIsRepealed, publisherTextFingerprint, readLexPublisherObservation } from "../lib/legal/lex-document-status";
 import {normalizeLegalSourceHtml} from "../lib/legal/source-parser";
 import {PDFDocument,StandardFonts} from "pdf-lib";
 import {createSourceObservationReader, isCurrentSourceObservation, sourceObservationSchema} from "../lib/legal/source-observation";
@@ -10,16 +10,6 @@ test("official repeal banners exclude obsolete law in every corpus language", ()
     "Ҳужжат кучини йўқотган 17.04.1998", "Document has lost its force 17.04.1998"]) {
     assert.equal(lexDocumentIsRepealed(`<header id="doc_header"><span>${text}</span></header>`), true);
   }
-});
-
-test("repeal dates come only from an unambiguous valid whole-act banner",()=>{
-  for(const text of ["Акт утратил силу&nbsp;27.12.1996","Hujjat kuchini yo‘qotgan 27.12.1996",
-    "Ҳужжат кучини йўқотган 27.12.1996","Document has lost its force 27.12.1996"])
-    assert.equal(lexDocumentRepealedOn(`<header id="doc_header">${text}</header>`),"1996-12-27");
-  for(const text of ["Акт частично утратил силу 27.12.1996","Акт утратил силу 31.02.2020",
-    "Акт утратил силу","Акт утратил силу 27.12.1996 Акт утратил силу 28.12.1996"])
-    assert.equal(lexDocumentRepealedOn(`<header id="doc_header">${text}</header>`),null);
-  assert.equal(lexDocumentRepealedOn('<header id="doc_header">Действующий акт</header><main>Акт утратил силу 27.12.1996</main>'),null);
 });
 
 test("repealing another instrument does not repeal the current document", () => {

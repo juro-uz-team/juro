@@ -14,7 +14,7 @@ import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RuntimeServices = ReturnType<typeof createRuntimeLegalEvidenceServices>;
 type CorpusServices = Pick<RuntimeServices,
-  "releaseResolver" | "candidateIndex" | "evidenceResolver" | "referenceDiscovery" | "verifyCurrentSource" | "verifyHistoricalSource">
+  "releaseResolver" | "candidateIndex" | "evidenceResolver" | "referenceDiscovery" | "verifyCurrentSource">
   & {candidateCatalog:Pick<RuntimeServices["candidateCatalog"],"revalidate">};
 type EndpointRelease = {endpoint:LegalTime;release:PinnedCandidateRelease};
 const MAX_CANDIDATE_READS = 48;
@@ -33,10 +33,8 @@ export function createCorpusResearch(input: {
   let owner:string|undefined;
   let pinned:Promise<EndpointRelease[]>|undefined;
   type CurrentVerifier={key:string;detail:string;verify:()=>ReturnType<CorpusServices["verifyCurrentSource"]>};
-  type HistoricalVerifier={key:string;detail:string;endpoint:LegalTime;verify:()=>ReturnType<CorpusServices["verifyHistoricalSource"]>};
-  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;verifier?:CurrentVerifier;historicalVerifier?:HistoricalVerifier}>>();
+  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;verifier?:CurrentVerifier}>>();
   const currentVerifiers=new Map<string,CurrentVerifier>();
-  const historicalVerifiers=new Map<string,HistoricalVerifier>();
   const articles=new Map<string,PreparedCorpusEvidence>();
   const verifiedArticles=new Map<string,LegalEvidence>();
   const pendingReads=new Map<string,ResearchNeed[]>();
@@ -84,10 +82,6 @@ export function createCorpusResearch(input: {
     }
     check();
     const needs:ResearchNeed[]=[];
-    const referenceNeeds:NonNullable<ResearchPacket["referenceNeeds"]>[number][]=[];
-    const temporalRejections:NonNullable<ResearchPacket["temporalRejections"]>[number][]=[];
-    const referenceQueries:{need:ResearchNeed;query:LegalReferenceQuery;index:number;
-      discoveryReason:NonNullable<ResearchPacket["referenceNeeds"]>[number]["discoveryReason"]}[]=[];
     const resolutions:NonNullable<ResearchPacket["resolved"]>[number][]=[];
     const evidence=new Map<string,PreparedCorpusEvidence>();
     const primaryEvidence=new Set<string>();
@@ -144,6 +138,7 @@ export function createCorpusResearch(input: {
         needs.push({reason:"source_unavailable",detail:`Indexed search was incomplete for ${timeIdentity(endpoint)}.`});
       }
     }
+    let reads=0;
     let unreadCandidates=0;
     const prepareRead=(candidate:RevalidatedCandidate,index:number,reference=false):(()=>Promise<void>)=>{
       check();
@@ -155,8 +150,7 @@ export function createCorpusResearch(input: {
           if(!reference&&item)primaryEvidence.add(item.source.id);
         };
       }
-      // Cached reads still occupy this round's discovery/context pool.
-      if(seen.size>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
+      if(!saved.has(key)&&reads>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
         return async()=>{
         if(reference) {
           const need:ResearchNeed={reason:"unresolved_reference",detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}: The source read budget did not cover this explicitly referenced provision.`};
@@ -169,15 +163,14 @@ export function createCorpusResearch(input: {
       seen.add(key);
         let pending=saved.get(key);
         if(!pending) {
+          reads++;
           pending=(async()=>{
             const resolution=await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt});
             check();
             const prepared=await prepareCorpusEvidence({resolution,endpoint});
             return {prepared,...(endpoint.kind==="current"?{verifier:{key,
               detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}`,
-              verify:()=>input.services.verifyCurrentSource(resolution.controlling)}}:{historicalVerifier:{key,
-              detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}`,endpoint,
-              verify:()=>input.services.verifyHistoricalSource(resolution.controlling,endpoint)}})};
+              verify:()=>input.services.verifyCurrentSource(resolution.controlling)}}:{})};
           })();
           saved.set(key,pending);
           // A transient reader failure may recover in a later bounded round.
@@ -191,7 +184,6 @@ export function createCorpusResearch(input: {
         check();
         const item=articles.get(result.item.prepared.source.id)??result.item.prepared;
         if(!articles.has(item.source.id)&&result.item.verifier)currentVerifiers.set(item.source.id,result.item.verifier);
-        if(!articles.has(item.source.id)&&result.item.historicalVerifier)historicalVerifiers.set(item.source.id,result.item.historicalVerifier);
         articles.set(item.source.id,item);
         readEvidence.set(key,item);
         resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
@@ -264,11 +256,6 @@ export function createCorpusResearch(input: {
             detail:`Article ${gap.query.article} in revision ${gap.query.textRevisionId} (${gap.query.languageTag}) at ${timeIdentity(endpoint)} remains unresolved: ${gap.reason}.`};
           needs.push(need);
           pendingReferences.set(JSON.stringify(need),{need,query:gap.query,endpoint});
-          // Only substantive discovery gaps may become irrelevant when every
-          // referring source is explicitly excluded. Unavailability never can.
-          if(gap.reason!=="lookup_unavailable") {
-            referenceQueries.push({need,query:gap.query,index,discoveryReason:gap.reason});
-          }
         }
         await readOrdered(references.candidates.map(candidate=>({candidate,index})),true);
       } catch {
@@ -277,19 +264,6 @@ export function createCorpusResearch(input: {
       }
     }
     check();
-    // Expanded dependencies can also refer to a missing article. Finalize
-    // provenance only after every reference candidate has been authenticated.
-    for(const {need,query,index,discoveryReason} of referenceQueries) {
-      const {release,endpoint}=releases[index]!,sourceIds=new Set<string>();
-      for(const referring of resolved[index]!) {
-        if(referring.candidate.textRevisionId!==query.textRevisionId
-          ||!sameInstrumentArticleReferences(referring.provisionText).includes(query.article))continue;
-        const source=readEvidence.get(JSON.stringify([release.id,timeIdentity(endpoint),referring.candidate.provisionRenditionId]));
-        if(source&&({ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"}[source.source.locale])===query.languageTag)
-          sourceIds.add(source.source.id);
-      }
-      referenceNeeds.push({need,article:query.article,sourceIds:[...sourceIds],discoveryReason});
-    }
     // Reference discovery does not return targets it already saw in the
     // candidate pool. Preserve those dependencies before deduplication/context
     // selection too, using the same instrument, revision, language and endpoint.
@@ -342,42 +316,35 @@ export function createCorpusResearch(input: {
     const observations:ResearchObservation[]=[];
     if(unreadCandidates)observations.push({kind:"candidate_read_limit",lane:"indexed",omitted:unreadCandidates});
     if(excludedCandidates)observations.push({kind:"candidate_context_limit",lane:"indexed",omitted:excludedCandidates});
-    // Authenticate the complete bounded pool before semantic selection. The
-    // rank-bounded compatibility packet remains separate from that pool.
+    // Selection is independent of publisher results. Every selected source must
+    // pass; a failed current observation cannot be replaced by a lower-ranked hit.
     const answerEvidence:LegalEvidence[]=[];
     // A bounded worker follows each publication through all its articles.
     // Finished workers immediately pick another document instead of waiting
     // for the slowest publication in a batch.
     const byPublication=new Map<string,PreparedCorpusEvidence[]>();
-    for(const item of evidence.values()){
+    for(const item of admitted){
       const publication=byPublication.get(item.source.officialUrl)??[];
       publication.push(item);byPublication.set(item.source.officialUrl,publication);
     }
     const verifyItem=async(item:PreparedCorpusEvidence)=>{
         check();
         const verifier=currentVerifiers.get(item.source.id);
-        const historicalVerifier=historicalVerifiers.get(item.source.id);
         try {
-          const historical=await historicalVerifier?.verify();
-          check();
-          if(historical&&!historical.eligible)return {rejection:{sourceId:item.source.id,
-            endpoint:historicalVerifier!.endpoint,observation:historical.observation}};
           const currentSourceStatus=await verifier?.verify();
           check();
           const verified=item.finalize({currentAt:new Date(now()).toISOString(),currentSourceStatus});
           const canonical=verifiedArticles.get(verified.source.id)??verified;
           verifiedArticles.set(canonical.source.id,canonical);
-          const key=verifier?.key??historicalVerifier?.key;
-          if(key)for(const need of pendingReads.get(key)??[])resolutions.push({need,sourceIds:[canonical.source.id]});
           return {item:canonical};
         } catch(error) {
           check();
           const unconfirmed=error instanceof Error&&error.message==="CORPUS_CURRENT_SOURCE_UNCONFIRMED";
           const need:ResearchNeed={reason:unconfirmed?"ambiguous_revision":"source_unavailable",
-            detail:`${verifier?.detail??historicalVerifier?.detail??item.source.id}: `+(unconfirmed
+            detail:`${verifier?.detail??item.source.id}: `+(unconfirmed
               ?"A retrieved revision could not be confirmed against the current official publication."
-              :"The admitted source could not be verified against the official publisher status.")};
-          return {need,key:verifier?.key??historicalVerifier?.key};
+              :"The admitted source could not be verified against the current official publication.")};
+          return {need,key:verifier?.key};
         }
     };
     const publications=[...byPublication.values()];let nextPublication=0;
@@ -387,7 +354,6 @@ export function createCorpusResearch(input: {
         for(const item of publication){
           const result=await verifyItem(item);
           if(result.item)answerEvidence.push(result.item);
-          else if(result.rejection)temporalRejections.push(result.rejection);
           else {
             needs.push(result.need);
             if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
@@ -397,20 +363,11 @@ export function createCorpusResearch(input: {
       }
     }));
     check();
-    const rejectedIds=new Set(temporalRejections.map(rejection=>rejection.sourceId));
-    const excludedReferences=referenceNeeds.filter(reference=>reference.sourceIds.length>0&&reference.sourceIds.every(id=>rejectedIds.has(id)));
-    const excludedNeedKeys=new Set(excludedReferences.map(reference=>JSON.stringify(reference.need)));
-    if(temporalRejections.length)observations.push({kind:"candidate_temporal_ineligible",lane:"indexed",omitted:temporalRejections.length});
-    const candidatePositions=new Map([...evidence.keys()].map((id,index)=>[id,index]));
-    answerEvidence.sort((left,right)=>candidatePositions.get(left.source.id)!-candidatePositions.get(right.source.id)!);
-    return {evidence:admitted.flatMap(item=>answerEvidence.filter(source=>source.source.id===item.source.id)),
-      selectionCandidates:answerEvidence,
-      selectionResolutions:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
-        .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()],
-      needs:[...new Map(needs.filter(need=>!excludedNeedKeys.has(JSON.stringify(need))).map(need=>[JSON.stringify(need),need])).values()],referenceNeeds,
-      temporalRejections,excludedReferences,
+    const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
+    answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
+    return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],
       observations,
-      resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>admittedIds.has(id)&&answerEvidence.some(item=>item.source.id===id)))
+      resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
         .map(resolution=>[JSON.stringify(resolution.need),resolution])).values()]};
   };
   return request=>runIndexedRetrieval(request.question.signal,signal=>
