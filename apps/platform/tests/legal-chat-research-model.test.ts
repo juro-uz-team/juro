@@ -33,7 +33,7 @@ test("contextual and oversized initial questions retain generative decomposition
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),payload=JSON.parse(body.input);inputs.push(payload);
     return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({queries:[{
-      ...query,topicIndices:payload.topics.map((_:string,index:number)=>index)}]})}]}]});
+      text:query.text,topicIndices:payload.topics.map((_:string,index:number)=>index)}]})}]}]});
   });
   const variants:ResearchRequest["question"][]=[
     {...request.question,priorTurns:[{question:"My earlier issue",answer:"Unverified prior answer"}]},
@@ -52,8 +52,8 @@ test("contextual and oversized initial questions retain generative decomposition
 test("streamed planning emits a closed formulation before completion and preserves escaped query text",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const firstEmitted=Promise.withResolvers<void>();
-  const first={...query,text:'procedure for a "record [request]" and \\ reference'};
-  const second={...query,text:"record refusal qualification"};
+  const first={topicIndices:query.topicIndices,text:'procedure for a "record [request]" and \\ reference'};
+  const second={topicIndices:query.topicIndices,text:"record refusal qualification"};
   const prefix='{"queries":['+JSON.stringify(first),tail=','+JSON.stringify(second)+']}';
   const encoder=new TextEncoder();let completed=false;
   const event=(type:string,value:Record<string,unknown>)=>encoder.encode(`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`);
@@ -83,10 +83,11 @@ test("streamed planning emits a closed formulation before completion and preserv
 test("streamed planning rejects staging and partial validation failures despite a valid final response",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   let invalidPartial=false;
+  const indexedQuery={text:query.text,topicIndices:query.topicIndices};
   context.mock.method(globalThis,"fetch",async()=>{
     const event=(type:string,value:Record<string,unknown>)=>`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`;
-    const text=JSON.stringify({queries:[query]});
-    return new Response(event("response.output_text.delta",{delta:JSON.stringify({queries:[invalidPartial?{...query,topicIndices:[23]}:query]})})+
+    const text=JSON.stringify({queries:[indexedQuery]});
+    return new Response(event("response.output_text.delta",{delta:JSON.stringify({queries:[invalidPartial?{...indexedQuery,topicIndices:[23]}:indexedQuery]})})+
       event("response.completed",{response:{id:"response",status:"completed",output:[{content:[{type:"output_text",text}]}]}}),
       {headers:{"content-type":"text/event-stream"}});
   });
@@ -179,4 +180,30 @@ test("research planning and coverage receive the selected private context with r
   await model.formulate(input);await model.assess({...input,evidence:[evidence]});
   assert.deepEqual(payloads,[userContext,userContext]);
   await assert.rejects(model.formulate({...input,question:{...input.question,userContext:{...userContext,rejectedFacts:[]}}}),/RESEARCH_MODEL_REQUEST_MISMATCH/);
+});
+
+
+test("compact indexed plans cannot seed public discovery without private-name classification",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const schemas:string[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),name=body.text.format.name;schemas.push(name);
+    const planned=name==="legal_indexed_queries"?{text:"Alice Example record access",topicIndices:[0]}
+      :{...query,text:"Alice Example record access",privateNameSpans:["Alice Example"]};
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({queries:[planned]})}]}]});
+  });
+  const model=createLegalResearchModel({requestId:"separate-discovery"});
+  const indexed=await model.formulateIndexed(request);
+  const publicPlan=await model.formulate(request);
+  assert.deepEqual(schemas,["legal_indexed_queries","legal_research_queries"]);
+  assert.deepEqual(indexed.formulations[0]!.privateNameSpans,[]);
+  assert.deepEqual(publicPlan.formulations[0]!.privateNameSpans,["Alice Example"]);
+});
+
+test("compact indexed planning rejects omitted interpreted topics",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{
+    type:"output_text",text:JSON.stringify({queries:[{text:query.text,topicIndices:[0]}]})}]}]}));
+  await assert.rejects(createLegalResearchModel({requestId:"indexed-topic-gap"}).formulateIndexed({
+    ...request,question:{...request.question,topics:["Record access","Challenging refusal"]}}),/RESEARCH_QUERY_TOPIC_MISSING/);
 });
