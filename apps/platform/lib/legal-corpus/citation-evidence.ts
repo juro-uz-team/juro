@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createCompleteArticleIndex, completeDocumentText } from "../legal/article-context";
+import { createCompleteArticleIndex, completeDocumentText, completeResolutionIntroductionContext } from "../legal/article-context";
 import { normalizedLegalSourceSnapshotSchema } from "../legal/source-parser";
 import { legalEnvironmentSchema, legalLanguageSchema, lexDocumentUrlSchema, sha256Schema } from "./target-domain-schemas";
 import { acceptsPrivateServiceRequest, declaredRequestBodyWithinLimit, privateServiceJson } from "./private-service-boundary";
@@ -62,7 +62,7 @@ export async function resolveCitationEvidence(bucket: Pick<LegalEvidenceBucket, 
       if(matches.length!==1)throw new TypeError("CITATION_SECTION_UNAVAILABLE");
       text=matches[0]!.text;
     } else if (value.kind === "normalized-document") {
-      const document = value.articleNumber === null && completeDocumentText(snapshot);
+      const document = value.articleNumber === null && (completeDocumentText(snapshot)??completeResolutionIntroductionContext(snapshot));
       if (!document) throw new TypeError("CITATION_DOCUMENT_UNAVAILABLE");
       text = document;
     } else {

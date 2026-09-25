@@ -1,4 +1,4 @@
-import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, isPublicationMetadataText } from "../legal/article-context";
+import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, completeResolutionIntroductionContext, isPublicationMetadataText } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
 import {importedSourceContexts} from "../legal/imported-source-context";
@@ -15,6 +15,7 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
     const fragment = original.provisionText.replace(/\s+/gu," ").trim();
     let text = isPublicationMetadataText(fragment)
       ? completeDocumentText(parent.snapshot) : completeUnnumberedDocumentText(parent.snapshot);
+    if(!text)text=completeResolutionIntroductionContext(parent.snapshot,fragment);
     let section=false;
     if(!text && fragment){
       const source=parent.snapshot.blocks.map(block=>block.text).join(" ").replace(/\s+/gu," ").trim();

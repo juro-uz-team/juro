@@ -14,10 +14,10 @@ export function completeUnnumberedDocumentText(snapshot: NormalizedLegalSourceSn
 }
 
 /** Whole-instrument evidence retains every block and makes no article claim. */
-export function completeDocumentText(snapshot: NormalizedLegalSourceSnapshot): string | null {
+export function completeDocumentText(snapshot: NormalizedLegalSourceSnapshot, maximumCharacters=MAX_LEGAL_EVIDENCE_CHARACTERS): string | null {
   if (snapshot.blocks.length < 2) return null;
   const text = normalize(snapshot.blocks.map(block => block.text).join(" "));
-  return !text || text.length > MAX_LEGAL_EVIDENCE_CHARACTERS || /:\s*$/u.test(text) ? null : text;
+  return !text || text.length > maximumCharacters || /:\s*$/u.test(text) ? null : text;
 }
 
 /** Imported publication footers can carry spurious article numbers. Accept only
@@ -92,4 +92,17 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
         ?result.candidates.filter(candidate=>candidate.text.includes(fragment)).map(candidate=>({...candidate,article})):[];
     });
   }});
+}
+
+/** An introduction may name a year that a legacy importer mistook for an
+ * article. It does not identify any one following rule. Only the complete
+ * unnumbered instrument can supply its context, within the citation limit;
+ * the smaller answer budget still controls admission to model evidence. */
+export function completeResolutionIntroductionContext(snapshot:NormalizedLegalSourceSnapshot,fragment?:string):string|null {
+  if(snapshot.blocks.some(block=>block.semanticRole==="article"||isLegalArticleHeading(block)))return null;
+  const first=snapshot.blocks.findIndex(block=>/^1\.\s/u.test(block.text));
+  if(first<1)return null;
+  const introductions=snapshot.blocks.slice(0,first).filter(block=>/(?:qaror qiladi|қарор қилади|постановляет):\s*$/iu.test(block.text));
+  if(introductions.length!==1||fragment!==undefined&&normalize(introductions[0]!.text)!==fragment)return null;
+  return completeDocumentText(snapshot,200_000);
 }

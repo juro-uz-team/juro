@@ -30,7 +30,10 @@ export function createNormalizedSourceReader(bucket: Pick<LegalEvidenceBucket, "
       if (bytes.byteLength !== object.size || actual !== sha256) throw new TypeError("PINNED_SOURCE_REVISION_INVALID");
       const snapshot = normalizedLegalSourceSnapshotSchema.parse(JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)));
       const parent = {snapshot, r2Key, byteCount: bytes.byteLength, sha256};
-      while (cached.size >= 3 || cachedBytes + parent.byteCount > 8_000_000) {
+      // A turn can read dozens of provisions from several large codes.
+      // Keep their authenticated parents for the turn instead of repeatedly
+      // parsing an evicted code. This remains bounded and request-local.
+      while (cached.size >= 24 || cachedBytes + parent.byteCount > 32_000_000) {
         const oldest = cached.entries().next().value;
         if (!oldest) break;
         cached.delete(oldest[0]); cachedBytes -= oldest[1].byteCount;

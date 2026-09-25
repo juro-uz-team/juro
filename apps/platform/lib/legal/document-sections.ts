@@ -47,7 +47,7 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
   if(hasArticles)return [];
   // An amendment schedule names the affected decision at each top-level
   // clause. Its quoted replacement provisions can have arbitrary numbering.
-  const decisionClause=/^\d+\.\s*«?.+»ги\s+(?:қарори\s+)?\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+\d+\p{L}*-сонли\s+қарори?:$/u;
+  const decisionClause=/^\d+\.\s*«?.+»(?:ги)?\s+(?:қарори\s+)?\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\d/]+\p{L}*-сон(?:ли)?\s+қарори?(?::|(?:нинг)?\s+.+[.;:])$/u;
   const firstNumbered=blocks.find(block=>/^\d+\.\s/u.test(block.text));
   const amendingDecisions=!!firstNumbered&&decisionClause.test(firstNumbered.text);
   const boundaries:{index:number;structural:boolean;level:number}[]=[];
@@ -69,8 +69,13 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
         boundaries.push({index,structural:false,level:7});expected=Number(number)+1;afterStructure=false;
       }
     }
+    const quotedBefore=quoted;
     for(const character of block.text){if(character==="«"||character==="“")quoted++;
       else if(character==="»"||character==="”")quoted=Math.max(0,quoted-1);}
+    // Official inline replacements sometimes nest book-title guillemets
+    // without repeating the outer closing mark. The terminal replacement
+    // instruction closes this block; it is not a multi-block quotation.
+    if(!quotedBefore&&/^[^«“]+«.+[«»] деган сўзлар «.+[«»] деган сўзлар билан алмаштирилсин[.;]$/u.test(block.text))quoted=0;
   }
   if(quoted)ambiguousTail=true;
   const first=boundaries[0];if(!first)return [];

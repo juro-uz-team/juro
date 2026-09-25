@@ -278,7 +278,10 @@ export function createCorpusResearch(input: {
       Number(referenceEvidence.has(right.source.id))-Number(referenceEvidence.has(left.source.id)))) {
       if(fitsLegalEvidenceBudget(admitted.map(value=>value.text).concat(item.text))) admitted.push(item);
       else if(referenceEvidence.has(item.source.id)) needs.push({reason:"context_budget",detail:"A complete explicitly referenced provision did not fit the answer evidence budget."});
-      else excludedCandidates++;
+      else {
+        excludedCandidates++;
+        if(!fitsLegalEvidenceBudget([item.text]))needs.push({reason:"context_budget",detail:"A complete source instrument exceeded the answer evidence budget and was not admitted."});
+      }
     }
     const observations:ResearchObservation[]=[];
     if(unreadCandidates)observations.push({kind:"candidate_read_limit",lane:"indexed",omitted:unreadCandidates});

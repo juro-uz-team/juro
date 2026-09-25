@@ -171,6 +171,13 @@ test("accepted parent recovery authenticates full article context without replac
   const sourceStatus = await verify(anchored);
   assert.equal(sourceStatus.observation, null);
   assert.equal(reads, 1, "Article expansion and publisher comparison share one freshly authenticated parent");
+  for(let index=0;index<4;index++){
+    const revision=`revision:nearby-${index}`;
+    bucket.objects.set(`corpus/normalized/${revision}.json`,{bytes,customMetadata:{}});
+    await readParent(revision,sha256(bytes));
+  }
+  await readParent(sourceRevisionId,sha256(bytes));
+  assert.equal(reads,5,"a turn revisiting a code after nearby parents does not read and parse it again");
   await assert.rejects(verify({...anchored, languageTag: "en"}));
   assert.match(context!.provisionText, /2\) the requested action/u);
   assert.doesNotMatch(context!.provisionText, /Article 8/u);

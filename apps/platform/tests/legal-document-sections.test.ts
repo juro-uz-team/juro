@@ -138,3 +138,17 @@ test("an article fragment duplicated in an annex cannot bypass failed article re
     evidence:{provisionRenditionId:"rendition:annex",r2Key:"fragment",byteCount:100,sha256:"b".repeat(64),sourceNormalizedSha256:hash(bytes),schemaVersion:1}});
   assert.equal(await createNormalizedDocumentEvidenceReader(bucket)(original),null);
 });
+
+
+test("amending schedules preserve slash identifiers and optional grammatical suffixes",()=>{
+ const source=snapshot(["The plenary court adopts these amendments:",
+ "I. First section:",
+ "1. Ўзбекистон Республикаси Олий суди Пленумининг «Суд ҳокимияти тўғрисида»ги 1996 йил 20 декабрдаги 1/60-сонли қарори:",
+ "The affected decision is amended as follows:","27.1. This subordinate replacement rule remains in its named decision.",
+ "2. Ўзбекистон Республикаси Олий суди Пленумининг «Суд ишлари тўғрисида» 2000 йил 20 декабрдаги 19-сонли қарори:","44-бандидаги «Adopted «Old title» деган сўзлар «Approved «New title» деган сўзлар билан алмаштирилсин.",
+ "45-бандидаги «Old phrase« деган сўзлар «New phrase» деган сўзлар билан алмаштирилсин;",
+ "II. Second section:","1. Ўзбекистон Республикаси Олий суди Пленумининг «Суд ишлари тўғрисида»ги 2001 йил 20 декабрдаги 20-сонли қарори:","The third complete amendment applies."]);
+ const sections=completeDocumentSections(source);assert.equal(sections.length,3);
+ assert.match(sections[0]!.text,/27.1/);assert.doesNotMatch(sections[0]!.text,/second complete/);
+ assert.match(sections[2]!.text,/Second section/);
+});

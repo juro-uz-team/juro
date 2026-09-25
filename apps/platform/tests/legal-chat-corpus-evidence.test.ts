@@ -248,3 +248,21 @@ test("imported chapter headings and annex adoption tails reopen complete source 
     assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(duplicate)}}),null);
   }
 });
+
+
+test("an imported resolution introduction authenticates its entire bounded instrument without claiming an article",async()=>{
+ const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+ const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+ const fragment="2022-yil adopted rules require clarification; the court qaror qiladi:";
+ snapshot.blocks=["Resolution title",fragment,"1. The first complete rule applies. "+"Further complete conditions apply. ".repeat(2100),"2. The final rule applies."]
+  .map((text,index)=>({index,kind:"paragraph",text}));
+ const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+ const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+ const documentContext=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(documentContext);
+ const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,materialCitation:documentContext.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:currentAt}});
+ assert.ok(evidence.text.length>64_000);assert.equal(evidence.source.article,null);
+ assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+ snapshot.blocks.push({index:4,kind:"paragraph",text:"Article 7. An incomplete statutory article"});
+ const changed=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes:changed,customMetadata:{}});
+ assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(changed)}}),null);
+});
