@@ -163,7 +163,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const next=await model.formulate({...input,round:1});
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
   for(const payload of payloads) {
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));

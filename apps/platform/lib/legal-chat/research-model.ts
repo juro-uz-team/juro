@@ -92,9 +92,9 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     onOutputTextBuffer?:(input:{text:string})=>Promise<void>,providerSchema?:z.ZodType)=>{
     if(JSON.stringify(payload).length>200_000) throw new Error("RESEARCH_MODEL_CONTEXT_EXCEEDED");
     const result=await callOpenAiStructured({instructions:`${schemaName==="legal_indexed_queries"?indexedInstructions:instructions}\n${schemaName==="legal_research_queries"?"Public search accepts at most 100 characters per query. Decompose into focused queries covering every topic and material qualification; never truncate a query or omit a topic to fit.":""}\n${privateDocumentPolicy}`,input:payload,schemaName,schema:z.toJSONSchema(providerSchema??schema),
-      parse:value=>schema.parse(value),model:request.question.mode==="fast"
+      parse:value=>schema.parse(value),model:schemaName==="legal_research_coverage"?"gpt-5.6-terra":request.question.mode==="fast"
         ?"gpt-6-luna":openAiChatModel(request.question.mode),maxAttempts:1,
-      ...(request.question.mode==="fast"?{reasoningEffort:"none" as const}:{}),
+      ...(request.question.mode==="fast"&&schemaName!=="legal_research_coverage"?{reasoningEffort:"none" as const}:{}),
       ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
       timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,deadlineAt:options.deadlineAt,requestId:options.requestId,
       safetyIdentifier:options.safetyIdentifier,signal:request.question.signal,
