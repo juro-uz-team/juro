@@ -1,4 +1,4 @@
-import { answerFromEvidence, type AnswerModel, type AnswerOutcome, type AnswerQuestion } from "./answer-engine";
+import { answerFromEvidence, type AnswerModel, type AnswerOutcome, type AnswerQuestion, type AnswerFailureObservation } from "./answer-engine";
 import { interpretLegalQuestion, type QuestionContext, type QuestionContextInput } from "./question-context";
 import { researchLegalQuestion, type LegalResearchServices, type ResearchNeed, type ResearchObservation } from "./research";
 import { runReservedLegalChat } from "./reserved-execution";
@@ -29,6 +29,8 @@ export function executeLegalChat<Saved>(input:{
   commit:(terminal:LegalChatTerminal,sources:readonly LegalSourceContext[])=>Promise<Saved>;
   release:(reason:"cancelled"|"lease_lost"|"failed")=>Promise<void>;
   onStage?:(stage:LegalChatStage)=>void;
+  /** Opt-in internal diagnostics, separate from terminal persistence and public events. */
+  onAnswerFailure?:(observation:AnswerFailureObservation)=>void|Promise<void>;
 }):Promise<Saved> {
   return runReservedLegalChat<{terminal:LegalChatTerminal;sources:readonly LegalSourceContext[]},Saved>({signal:input.context.signal,renew:input.renew,
     commit:({terminal,sources})=>{input.onStage?.("saving");return input.commit(terminal,sources);},release:input.release,
@@ -52,7 +54,7 @@ export function executeLegalChat<Saved>(input:{
       const observe=input.observeSource;
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model,
-        {correction:input.mode==="fast"?"never":"once",...(observe?{validateSources:async evidence=>{
+        {correction:input.mode==="fast"?"never":"once",onFailure:input.onAnswerFailure,...(observe?{validateSources:async evidence=>{
           validated=await validateAnswerSources({evidence,observe,signal});
           sourceUnavailable ||= validated.size!==evidence.length;
           return validated;

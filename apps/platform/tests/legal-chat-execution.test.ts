@@ -23,6 +23,25 @@ const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:
   retention:[],coverage:[{issue:"Record access",findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
   complete:true,gaps:[],questions:[]};
 
+for(const failedStage of ["writing","verifying","correcting"] as const) {
+test(`answer ${failedStage} failures remain observable without leaking into the saved answer`,async()=>{
+  const failure=new Error("Invalid source passage: private diagnostic detail");
+  const failures:unknown[]=[];
+  let writes=0;
+  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:failedStage==="correcting"?"deep":"fast",answerMode:"short",
+    interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
+    research:{indexed:async()=>({evidence:[evidence],needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
+    model:{write:async()=>{if(failedStage==="writing"||writes++>0)throw failure;return draft;},
+      verify:async()=>{if(failedStage==="verifying")throw failure;return {...review,complete:false,gaps:["Eligibility unresolved."]};}},
+    onAnswerFailure:observation=>{failures.push(observation);if(failedStage==="verifying")return Promise.reject(Error("Diagnostic sink unavailable"));throw Error("Diagnostic sink unavailable");},
+    renew:async()=>true,commit:async terminal=>terminal,release:async()=>{},
+  });
+  assert.deepEqual(failures,[{stage:failedStage,error:failure}]);
+  assert.equal(result.kind,failedStage==="correcting"?"partial":"unavailable");
+  assert.doesNotMatch(JSON.stringify(result),/private diagnostic detail|Diagnostic sink/);
+});
+}
+
 for(const stage of ["interpreting","researching"] as const) {
   test(`runtime ${stage} timeout cannot publish a supported answer`,async context=>{
     const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});

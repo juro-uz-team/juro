@@ -43,6 +43,10 @@ export type AnswerModel = {
   verify(input: { question: AnswerQuestion; draft: LegalDraft; claims: ReturnType<typeof legalDraftClaims>;
     previous: { draft: LegalDraft; verification: LegalVerification } | null }): Promise<unknown>;
 };
+export type AnswerFailureObservation = {
+  stage: "writing" | "verifying" | "correcting";
+  error: unknown;
+};
 
 export function emptyLegalAnswer(input:Pick<AnswerQuestion,"locale"|"mode"|"answerMode"|"unresolved">): LegalChatResponse {
   const summary = aiText(input.locale,
@@ -169,7 +173,14 @@ function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutc
 export async function answerFromEvidence(input: AnswerQuestion, model: AnswerModel, options?:{
   validateSources?:(evidence:readonly LegalEvidence[])=>Promise<ReadonlyMap<string,LegalSourceContext>>;
   correction?:"once"|"never";
+  /** Internal only; errors may contain private model output. Never serialize into answers. */
+  onFailure?:(observation:AnswerFailureObservation)=>void|Promise<void>;
 }): Promise<AnswerOutcome> {
+  let stage:AnswerFailureObservation["stage"]="writing";
+  const observeFailure=(error:unknown)=>{
+    // Diagnostics cannot authorize publication, fail the request, or extend its deadline.
+    try { void Promise.resolve(options?.onFailure?.({stage,error})).catch(()=>{}); } catch {}
+  };
   const finalize=async(draft:LegalDraft,verification:LegalVerification):Promise<AnswerOutcome>=>{
     const projected=projectVerifiedAnswer(input,draft,verification);
     if(!options?.validateSources||!projected.result.sources.length)return projected;
@@ -197,18 +208,21 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     input.onStage?.("writing");
     draft = legalDraftSchema.parse(await model.write({ question: input, correction: null }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
+    stage="verifying";
     input.onStage?.("verifying");
     verification = legalVerificationSchema.parse(await model.verify({ question: input, draft, claims: legalDraftClaims(draft), previous: null }));
-  } catch { return unavailableAnswer(input, input.signal?.aborted ? "AI_CANCELLED" : "ANSWER_PROVIDER_UNAVAILABLE"); }
+  } catch(error) { observeFailure(error); return unavailableAnswer(input, input.signal?.aborted ? "AI_CANCELLED" : "ANSWER_PROVIDER_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   const first = projectVerifiedAnswer(input, draft, verification);
   if (first.kind === "complete" || options?.correction === "never") return finalize(draft,verification);
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   try {
+    stage="correcting";
     input.onStage?.("correcting");
     const correction = { draft, verification };
     const corrected = legalDraftSchema.parse(await model.write({ question: input, correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
+    stage="verifying";
     input.onStage?.("verifying");
     const checked = legalVerificationSchema.parse(await model.verify({ question: input, draft: corrected, claims: legalDraftClaims(corrected), previous: correction }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
@@ -217,7 +231,8 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
     // repaired finding. Missing retained content is a coverage gap in this
     // draft, never a reason to restore another whole answer.
     return finalize(corrected,checked);
-  } catch {
+  } catch(error) {
+    observeFailure(error);
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     if (first.kind !== "partial") return unavailableAnswer(input, "ANSWER_CORRECTION_UNAVAILABLE");
     return { ...await finalize(draft,verification), errorCode: "ANSWER_CORRECTION_UNAVAILABLE" };
