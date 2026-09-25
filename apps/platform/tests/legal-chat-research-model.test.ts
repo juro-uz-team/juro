@@ -7,6 +7,29 @@ import type {ResearchRequest} from "../lib/legal-chat/research";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
+
+test("research provider can generate only topic indices belonging to this question",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const offered:unknown[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    const item=body.text.format.schema.properties.queries.items.properties.topicIndices.items;
+    offered.push(item.enum??(item.const===undefined?null:[item.const]));
+    const planned={...query,topicIndices:JSON.parse(body.input).topics.map((_:string,index:number)=>index)};
+    const output=body.text.format.name==="legal_research_coverage"
+      ?{needs:[],resolved:[],queries:[planned]}:{queries:[body.text.format.name==="legal_indexed_queries"
+        ?{text:planned.text,topicIndices:planned.topicIndices}:planned]};
+    return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  for(const topics of [["Record access"],["Record access","Challenging refusal"]]) {
+    const input={...request,question:{...request.question,topics}};
+    await createLegalResearchModel({requestId:"public-topics"}).formulate(input);
+    await createLegalResearchModel({requestId:"indexed-topics"}).formulateIndexed(input);
+    await createLegalResearchModel({requestId:"coverage-topics"}).assess({...input,evidence:[evidence]});
+  }
+  assert.deepEqual(offered,[[0],[0],[0],[0,1],[0,1],[0,1]],"Every provider query schema must exclude nonexistent topics");
+});
 const request:ResearchRequest={round:0,needs:[{reason:"missing_rule",detail:"The eligibility condition is missing."}],
   question:{question:"How can I request a record?",topics:["Record access"],locale:"en",mode:"fast",
     answerMode:"detailed",temporalScope:{kind:"current"}}};
