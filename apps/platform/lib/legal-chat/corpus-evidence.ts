@@ -22,7 +22,7 @@ export async function corpusAnswerEvidence(input: {
   const original = resolution.controlling;
   // Textual authority is preserved audit metadata, not source eligibility.
   // Authenticated identities, complete text and temporal checks still apply.
-  const article = resolution.documentContext ? null : citationArticleNumber(original.officialCitation.label,
+  const article = resolution.documentContext ? null : citationArticleNumber(resolution.articleContext?.officialCitation.label ?? original.officialCitation.label,
     resolution.articleContext?.provisionText ?? original.provisionText);
   if (article && !resolution.articleContext) throw new Error("CORPUS_COMPLETE_ARTICLE_UNAVAILABLE");
   const complete = resolution.articleContext ?? resolution.documentContext ?? original;

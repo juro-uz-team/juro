@@ -1,6 +1,7 @@
 import { createCompleteArticleIndex, completeUnnumberedDocumentText, completeDocumentText, isPublicationMetadataText } from "../legal/article-context";
 import {createNormalizedSourceReader, type NormalizedSourceReader} from "./normalized-source-reader";
 import type { LegalEvidenceBucket, ResolvedOfficialEvidence } from "./target-evidence";
+import {importedSourceContexts} from "../legal/imported-source-context";
 import {documentSections} from "../legal/document-sections";
 
 export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenceBucket, "get">,
@@ -16,8 +17,19 @@ export function createNormalizedDocumentEvidenceReader(bucket: Pick<LegalEvidenc
       ? completeDocumentText(parent.snapshot) : completeUnnumberedDocumentText(parent.snapshot);
     let section=false;
     if(!text && fragment){
+      const source=parent.snapshot.blocks.map(block=>block.text).join(" ").replace(/\s+/gu," ").trim();
+      const first=source.indexOf(fragment);
+      if(first<0||source.indexOf(fragment,first+1)>=0)return null;
       const matches=documentSections(parent.snapshot).filter(context=>context.text.includes(fragment));
-      if(matches.length===1&&matches[0]!.complete){text=matches[0]!.text;section=true;}
+      if(matches.length){
+        if(matches.length!==1||!matches[0]!.complete)return null;
+        text=matches[0]!.text;section=true;
+      }
+    }
+    if(!text && fragment){
+      const matches=importedSourceContexts(parent.snapshot).filter(context=>
+        (!context.headingOnly||context.headingOnly===fragment)&&context.text.includes(fragment));
+      if(matches.length===1){text=matches[0]!.text;section=true;}
     }
     if (!text || !fragment || !text.includes(fragment)) return null;
     return {...original, provisionText:text,
@@ -46,6 +58,17 @@ export function createNormalizedArticleEvidenceReader(bucket: Pick<LegalEvidence
     // requiring a prefix loses earlier scope and later exceptions.
     if (!originalText) return null;
     const {candidates, occurrences} = readArticle(article);
+    // Imported headings sometimes used a year as an article number. Resolve
+    // only a unique complete article from the same authenticated parent when
+    // that claimed number has no article occurrence at all.
+    if(occurrences===0){
+      const matches=readArticle.containing(originalText);
+      if(matches.length!==1)return null;
+      const context=matches[0]!;
+      return {...original,provisionText:context.text,
+        officialCitation:{url:original.officialCitation.url,label:`${parent.snapshot.documentTitle} — Article ${context.article}`},
+        evidence:{...original.evidence,r2Key:parent.r2Key,byteCount:parent.byteCount,sha256:parent.sha256}};
+    }
     if (candidates.length !== occurrences) return null;
     const matches = candidates.filter(context => context.text.includes(originalText));
     if (matches.length !== 1) return null;

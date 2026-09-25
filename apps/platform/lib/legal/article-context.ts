@@ -72,7 +72,7 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
       nextBoundary = index;
     } else if (block.semanticRole === "chapter" || block.semanticRole === "section" || isLegalAnnexHeading(block)) nextBoundary = index;
   }
-  return (article: string) => {
+  const read = (article: string) => {
     const occurrences = ranges.get(article) ?? [];
     const candidates = occurrences.flatMap(({start, end}) => {
       if (end - start < 2 && !hasInlineArticleBody(captured[start]!)) return [];
@@ -82,4 +82,14 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
     });
     return {occurrences: occurrences.length, candidates};
   };
+  return Object.assign(read, {containing(fragment:string) {
+    const source=normalize(captured.map(block=>block.text).join(" "));
+    const first=source.indexOf(fragment);
+    if(!fragment||first<0||source.indexOf(fragment,first+1)>=0)return [];
+    return [...ranges.keys()].flatMap(article=>{
+      const result=read(article);
+      return result.candidates.length===result.occurrences
+        ?result.candidates.filter(candidate=>candidate.text.includes(fragment)).map(candidate=>({...candidate,article})):[];
+    });
+  }});
 }

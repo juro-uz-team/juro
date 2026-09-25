@@ -211,3 +211,40 @@ test("different chunks of the same authenticated article share one evidence iden
       provisionRenditionId:other.provisionRenditionId}}},currentSourceStatus,currentAt,endpoint:{kind:"current"}});
   assert.deepEqual(first,second);
 });
+
+
+test("incorrect imported article numbers recover only a unique complete parent article",async()=>{
+  const {bucket,resolution}=await fixture();
+  const original={...resolution.controlling,officialCitation:{url,label:"Synthetic rules — Article 2025"}};
+  const reader=createNormalizedArticleEvidenceReader(bucket),articleContext=await reader(original,"2025");
+  assert.ok(articleContext);
+  const evidence=await corpusAnswerEvidence({resolution:{controlling:original,articleContext,materialCitation:articleContext.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:currentAt}});
+  assert.equal(evidence.source.article,"7");
+  assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+  assert.equal(await reader(original,"8"),null,"an existing but mismatching article number is not replaced");
+  const key="corpus/normalized/revision:one.json",snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+  snapshot.blocks.push({index:5,kind:"paragraph",text:"Article 9. "+original.provisionText});
+  const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+  assert.equal(await createNormalizedArticleEvidenceReader(bucket)({...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(bytes)}},"2025"),null,"an incomplete duplicate must prevent false uniqueness");
+});
+
+test("imported chapter headings and annex adoption tails reopen complete source scopes",async()=>{
+  const adoption="Oʻzbekiston Respublikasi Prezidentining 2025-yil 21-fevraldagi PF-26-son Farmoniga";
+  for(const [texts,fragment] of [
+    [["Instrument introduction.","1-боб. Rules","Article 7. Filing","The complete filing requirement applies.","2-боб. Other rules","Article 8. Other","The other rule applies."],"1-боб. Rules"],
+    [["Instrument introduction.","1. Schedules are adopted.","An unrelated complete condition. ".repeat(2300),adoption+"\n1-ILOVA","The first complete schedule applies.",adoption+"\n2-ILOVA","The second complete schedule applies."],"The first complete schedule applies. "+adoption],
+  ] as const){
+    const {bucket,resolution}=await fixture(),key="corpus/normalized/revision:one.json";
+    const snapshot=JSON.parse(new TextDecoder().decode(bucket.objects.get(key)!.bytes));
+    snapshot.blocks=texts.map((text,index)=>({index,kind:"paragraph",text}));
+    const bytes=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes,customMetadata:{}});
+    const original={...resolution.controlling,provisionText:fragment,evidence:{...resolution.controlling.evidence,sourceNormalizedSha256:hash(bytes)}};
+    const documentContext=await createNormalizedDocumentEvidenceReader(bucket)(original);assert.ok(documentContext);
+    const evidence=await corpusAnswerEvidence({resolution:{controlling:original,documentContext,materialCitation:documentContext.officialCitation},currentAt,endpoint:{kind:"timestamp",instant:currentAt}});
+    assert.equal(evidence.source.article,null);
+    assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+    snapshot.blocks.push({index:99,kind:"paragraph",text:fragment});
+    const duplicate=new TextEncoder().encode(JSON.stringify(snapshot));bucket.objects.set(key,{bytes:duplicate,customMetadata:{}});
+    assert.equal(await createNormalizedDocumentEvidenceReader(bucket)({...original,evidence:{...original.evidence,sourceNormalizedSha256:hash(duplicate)}}),null);
+  }
+});
