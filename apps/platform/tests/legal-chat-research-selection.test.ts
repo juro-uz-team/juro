@@ -36,22 +36,23 @@ test("selection preserves complete connected context, all topics and operational
     if(payload.primarySourceIndices.includes(8))assert.ok(payload.evidence.some((s:{sourceIndex:number})=>s.sourceIndex===0));
     seen.push(payload.primarySourceIndices);
     return Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({
-      decisions:payload.primarySourceIndices.map((sourceIndex:number)=>({sourceIndex,relevant:sourceIndex===0,reason:"Scope assessed from complete rule."}))})}]}]});
+      decisions:Object.fromEntries(payload.primarySourceIndices.map((sourceIndex:number)=>[String(sourceIndex),sourceIndex===0?"rule":"unrelated"]))})}]}]});
   });
   const result=await selectResearchEvidence(request,packet,{requestId:"selection"});
   assert.equal(seen.length,2);assert.deepEqual(result.evidence,[evidence[0],evidence[8]]);
   assert.deepEqual(result.needs,[outage]);assert.deepEqual(result.resolved,[]);
   assert.deepEqual(result.selection?.find(item=>item.sourceId==="source:8"),{
-    sourceId:"source:8",relevant:false,retained:true,reason:"Scope assessed from complete rule."});
+    sourceId:"source:8",relevant:false,retained:true,reason:"unrelated"});
 });
 
-test("duplicate, missing and invented selection decisions fail rather than choosing a prefix",async context=>{
+test("missing, invented and invalid selection decisions fail rather than choosing a prefix",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  let indices=[0,0];
+  let decisions:Record<string,string>={};
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({
-    decisions:indices.map(sourceIndex=>({sourceIndex,relevant:true,reason:"Required rule."}))})}]}]}));
-  for(const invalid of [[0,0],[0],[0,2]]) {
-    indices=invalid;
+    decisions})}]}]}));
+  const invalidDecisions:Record<string,string>[]=[{"0":"rule"},{"0":"rule","1":"rule","2":"rule"},{"0":"rule","1":"invented"}];
+  for(const invalid of invalidDecisions) {
+    decisions=invalid;
     await assert.rejects(selectResearchEvidence(request,{evidence:[source(0),source(1)],needs:[]},{requestId:"invalid"}));
   }
 });
@@ -73,7 +74,7 @@ test("a reference cannot connect a different temporal endpoint or language",asyn
       citationEvidenceReceipt:{...source(2).source.citationEvidenceReceipt!,capability:"history" as const,articleNumber:"2"}},
       endpoint:{kind:"timestamp" as const,instant:"2020-01-01T00:00:00Z"}}];
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({
-    decisions:[0,1,2].map(sourceIndex=>({sourceIndex,relevant:sourceIndex===0,reason:"Scope assessed."}))})}]}]}));
+    decisions:{"0":"rule","1":"unrelated","2":"unrelated"}})}]}]}));
   const result=await selectResearchEvidence({...request,question:{...request.question,temporalScope:{kind:"comparison",
     left:evidence[2]!.endpoint,right:{kind:"current"}}}},{evidence,needs:[]},{requestId:"endpoints"});
   assert.deepEqual(result.evidence,[evidence[0]]);
@@ -85,7 +86,7 @@ test("identical URL and endpoint cannot join references across authenticated par
   other.source={...other.source,contentSha256:"b".repeat(64),citationEvidenceReceipt:{
     ...other.source.citationEvidenceReceipt!,r2Key:"another-parent",sha256:"b".repeat(64)}};
   context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",output:[{content:[{type:"output_text",text:JSON.stringify({
-    decisions:[0,1].map(sourceIndex=>({sourceIndex,relevant:sourceIndex===0,reason:"Scope assessed."}))})}]}]}));
+    decisions:{"0":"rule","1":"unrelated"}})}]}]}));
   const result=await selectResearchEvidence(request,{evidence:[first,other],needs:[]},{requestId:"revisions"});
   assert.deepEqual(result.evidence,[first]);
 });

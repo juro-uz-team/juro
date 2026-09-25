@@ -13,7 +13,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
     const body=JSON.parse(String(init?.body));calls++;const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     const output=schema==="legal_question_context"?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
-      :schema==="legal_provision_relevance"?{decisions:[{sourceIndex:0,relevant:true,reason:"Establishes record access."}]}
+      :schema==="legal_provision_relevance"?{decisions:{"0":"rule"}}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :schema==="legal_answer"?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
@@ -53,7 +53,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     const output=schema==="legal_question_context"
       ?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
-      :schema==="legal_provision_relevance"?{decisions:[{sourceIndex:0,relevant:true,reason:"Establishes record access."}]}
+      :schema==="legal_provision_relevance"?{decisions:{"0":"rule"}}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :null;
     if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
