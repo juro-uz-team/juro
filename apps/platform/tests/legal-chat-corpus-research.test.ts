@@ -353,11 +353,39 @@ test("publisher verification overlaps distinct documents and preserves admission
   const pending=search(request);
   try{await entered.promise;await new Promise(resolve=>setImmediate(resolve));
     assert.ok(seen.includes("https://lex.uz/docs/778"));
-    assert.ok(seen.includes("https://lex.uz/docs/779"));assert.equal(seen.length,4);
+    assert.ok(seen.includes("https://lex.uz/docs/779"));assert.equal(seen.length,3);
   }finally{release.resolve();}
   const result=await pending;
   assert.deepEqual(result.evidence.map(item=>item.source.article),["0","1","2","3","4","5"]);
   assert.deepEqual(result.needs,[]);assert.equal(seen.length,6);
+});
+
+test("publisher workers continue past a slow document without exceeding four checks",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:6},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>{
+    const index=Number(id.split(":")[1]),resolution=articleResolution(id,String(index));
+    const citation={...resolution.controlling.officialCitation,url:`https://lex.uz/docs/${777+index}`};
+    return {...resolution,controlling:{...resolution.controlling,officialCitation:citation},
+      articleContext:{...resolution.articleContext,officialCitation:citation},materialCitation:citation};
+  };
+  const entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),seen:string[]=[];
+  const verify=services.verifyCurrentSource;let active=0,maximum=0;
+  services.verifyCurrentSource=async source=>{
+    active++;maximum=Math.max(maximum,active);seen.push(source.provisionRenditionId);entered.resolve();
+    try{if(source.provisionRenditionId==="rendition:0")await release.promise;
+      const result=await verify(source);assert.ok(result.observation);
+      return {...result,observation:{...result.observation,officialUrl:source.officialCitation.url}};
+    }finally{active--;}
+  };
+  const pending=search(request);
+  try{await entered.promise;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(seen.length,6,"Later documents start while the first document remains pending");
+    assert.ok(maximum<=4);assert.equal(active,1);
+  }finally{release.resolve();}
+  const result=await pending;
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["0","1","2","3","4","5"]);
+  assert.deepEqual(result.needs,[]);
 });
 
 test("overlapping article fragments retain the first ranked canonical source despite reverse completion",async()=>{

@@ -319,19 +319,16 @@ export function createCorpusResearch(input: {
     // Selection is independent of publisher results. Every selected source must
     // pass; a failed current observation cannot be replaced by a lower-ranked hit.
     const answerEvidence:LegalEvidence[]=[];
-    // Several articles can share one publication refresh. Interleave documents
-    // so four pending copies of that refresh cannot delay independent sources.
+    // A bounded worker follows each publication through all its articles.
+    // Finished workers immediately pick another document instead of waiting
+    // for the slowest publication in a batch.
     const byPublication=new Map<string,PreparedCorpusEvidence[]>();
     for(const item of admitted){
       const publication=byPublication.get(item.source.officialUrl)??[];
       publication.push(item);byPublication.set(item.source.officialUrl,publication);
     }
-    const verificationOrder:PreparedCorpusEvidence[]=[];
-    for(let index=0;verificationOrder.length<admitted.length;index++){
-      for(const publication of byPublication.values())if(publication[index])verificationOrder.push(publication[index]!);
-    }
-    for(let offset=0;offset<verificationOrder.length;offset+=4) {
-      const batch=await Promise.all(verificationOrder.slice(offset,offset+4).map(async item=>{
+    const verifyItem=async(item:PreparedCorpusEvidence)=>{
+        check();
         const verifier=currentVerifiers.get(item.source.id);
         try {
           const currentSourceStatus=await verifier?.verify();
@@ -349,16 +346,22 @@ export function createCorpusResearch(input: {
               :"The admitted source could not be verified against the current official publication.")};
           return {need,key:verifier?.key};
         }
-      }));
-      for(const result of batch) {
-        if(result.item)answerEvidence.push(result.item);
-        else {
-          needs.push(result.need);
-          if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
-            .map(value=>[JSON.stringify(value),value])).values()]);
+    };
+    const publications=[...byPublication.values()];let nextPublication=0;
+    await Promise.all(Array.from({length:Math.min(4,publications.length)},async()=>{
+      while(nextPublication<publications.length){
+        check();const publication=publications[nextPublication++]!;
+        for(const item of publication){
+          const result=await verifyItem(item);
+          if(result.item)answerEvidence.push(result.item);
+          else {
+            needs.push(result.need);
+            if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
+              .map(value=>[JSON.stringify(value),value])).values()]);
+          }
         }
       }
-    }
+    }));
     check();
     const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
     answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
