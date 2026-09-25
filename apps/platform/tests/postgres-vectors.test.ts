@@ -28,12 +28,14 @@ test("compact generations expand original identities and become unusable after s
   const original = Array(1536).fill(0); original[1] = 1;
   const question = Array(1536).fill(0); question[0] = 1; question[1] = 0.0001234567;
   let groupReads = 0;
+  let eligibilityProbes = 0;
   const pool = new Proxy(db.pool, {get(target, property) {
     if (property === "connect") return async () => {
       const client = await target.connect();
       return new Proxy(client, {get(connection, member) {
         if (member === "query") return (sql: string, parameters?: unknown[]) => {
           if (sql.includes("FROM storage.vector_search_groups g")) groupReads++;
+          if (sql.startsWith("SELECT id FROM storage.embeddings")) eligibilityProbes++;
           return connection.query(sql, parameters);
         };
         const value = Reflect.get(connection, member);
@@ -68,29 +70,32 @@ test("compact generations expand original identities and become unusable after s
     assert.deepEqual(result.matches[0]!.values, original);
     const digest=(await db.pool.query("SELECT encode(digest,'hex') AS digest FROM storage.vector_search_groups WHERE generation_id=$1",[generation])).rows[0].digest;
     let candidateCalls=0;
-    const accelerated=new PostgresVectorIndex(db.pool,name,async request=>{
+    const accelerated=new PostgresVectorIndex(pool,name,async request=>{
       candidateCalls++;
       assert.equal(request.collection,name);assert.equal(request.generation,generation);
       assert.equal(request.instant,10);assert.equal(request.values[1],question[1]);
       assert.match(request.sourceRevision,/^\d+$/u);
       return [digest];
     });
+    const probesBefore = eligibilityProbes;
     assert.deepEqual((await accelerated.query(question,{topK:50,filter,returnMetadata:"all",returnValues:true})).matches,result.matches);
+    assert.equal(eligibilityProbes,probesBefore,"verified exhaustive candidates skip the redundant eligibility scan");
     await accelerated.query(question,{topK:1,namespace:"",filter});
+    assert.equal(eligibilityProbes,probesBefore+1,"unsupported scopes retain the eligibility scan");
     assert.equal(candidateCalls,1,"unsupported scopes cannot use prepared candidates");
     await assert.rejects(new PostgresVectorIndex(db.pool,name,async()=>{throw Error("Candidate offline");}).query(question,{topK:50,filter}),/Candidate offline/);
     await index.query(question, {topK: 1, namespace: "", filter});
     await index.query(question, {topK: 1, filter: {$and: [filter]}});
-    assert.equal(groupReads, 1, "unqualified namespace/nested scopes must retain the generic path");
+    assert.equal(groupReads, 2, "unqualified namespace/nested scopes must retain the generic path");
     for (const coordinate of [1_000_000, 1e-9]) {
       const outsideHalf = Array(1536).fill(0); outsideHalf[0] = coordinate;
       assert.equal((await index.query(outsideHalf, {topK: 1, filter})).count, 1);
     }
-    assert.equal(groupReads, 1, "valid original queries outside halfvec representation must use the generic path");
+    assert.equal(groupReads, 2, "valid original queries outside halfvec representation must use the generic path");
     await db.pool.query("UPDATE storage.embeddings SET embedding=$3::vector WHERE collection=$1 AND id=$2",
       [name, "10002", JSON.stringify(question)]);
     const refreshed = await index.query(question, {topK: 1, filter});
-    assert.equal(groupReads, 1, "a changed source cannot use the old generation");
+    assert.equal(groupReads, 2, "a changed source cannot use the old generation");
     assert.equal(refreshed.matches[0]!.id, "10002");
     assert.equal(refreshed.matches[0]!.score, 1);
     assert.equal((await accelerated.query(question,{topK:1,filter})).matches[0]!.id,"10002");

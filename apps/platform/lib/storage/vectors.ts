@@ -118,6 +118,17 @@ export class PostgresVectorIndex {
       const select = `SELECT id,namespace,${score} AS score${options.returnMetadata && options.returnMetadata !== "none" ? ",metadata" : ""}
         ${options.returnValues ? ",embedding::text AS values" : ""} FROM storage.embeddings
         WHERE ${where.join(" AND ")}`;
+      const scope = configuration.metric === "cosine" && configuration.dimensions === 1536 && topK <= 50 && supportsCompactVector(values)
+          ? compactVectorScope(options.filter, options.namespace) : null;
+      const generation = scope ? (await client.query<{id: string; current: boolean; source_revision:string}>(`SELECT g.id,g.source_revision,c.source_revision=g.source_revision AS current
+          FROM storage.vector_search_generations g JOIN storage.vector_collections c
+          ON c.name=g.collection
+          WHERE g.collection=$1 AND g.state='verified'
+          ORDER BY (c.source_revision=g.source_revision) DESC,g.created_at DESC,g.id LIMIT 1`, [this.name])).rows[0] : undefined;
+      // Verified exhaustive candidates already bound the nearest groups. The
+      // original eligibility predicates and underfill fallback below remain
+      // authoritative, so a separate selectivity scan adds no information.
+      const exhaustiveCandidates = this.readCandidates && generation?.current;
       // Small eligible sets are faster and complete with exact distances. Probe
       // IDs only, avoiding vector decompression while estimating selectivity.
       // Temporal probes follow the metadata index instead of repeatedly scanning
@@ -126,20 +137,13 @@ export class PostgresVectorIndex {
       const probeOrder=options.filter && Object.hasOwn(options.filter,"valid_from_epoch")
         && Object.hasOwn(options.filter,"valid_to_epoch")
         ? " ORDER BY metadata #> '{valid_to_epoch}',metadata #> '{valid_from_epoch}'" : "";
-      const eligible = where.length > 1 ? (await client.query(
+      const eligible = !exhaustiveCandidates && where.length > 1 ? (await client.query(
         `SELECT id FROM storage.embeddings WHERE ${where.join(" AND ")} AND $2::text IS NOT NULL${probeOrder} LIMIT 10001`, parameters.slice(0, -1))).rows : null;
       if (eligible && eligible.length <= 10000) {
         const exactParameters = [...parameters, eligible.map(row => row.id)];
         rows = (await client.query(`${select} AND id=ANY($${exactParameters.length}::text[])
           ORDER BY (${distance}) + 0,id LIMIT $${parameters.length}`, exactParameters)).rows;
       } else {
-        const scope = configuration.metric === "cosine" && configuration.dimensions === 1536 && topK <= 50 && supportsCompactVector(values)
-          ? compactVectorScope(options.filter, options.namespace) : null;
-        const generation = scope ? (await client.query<{id: string; current: boolean; source_revision:string}>(`SELECT g.id,g.source_revision,c.source_revision=g.source_revision AS current
-          FROM storage.vector_search_generations g JOIN storage.vector_collections c
-          ON c.name=g.collection
-          WHERE g.collection=$1 AND g.state='verified'
-          ORDER BY (c.source_revision=g.source_revision) DESC,g.created_at DESC,g.id LIMIT 1`, [this.name])).rows[0] : undefined;
         if (generation && !generation.current) {
           // A stale prepared graph cannot silently lower recall. Exhaustive
           // original-vector fallback remains subject to the shared deadline.
