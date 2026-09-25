@@ -1,6 +1,35 @@
 import {normalizedLegalSourceSnapshotSchema} from "../legal/source-parser";
 import type {LegalEvidenceBucket} from "./target-evidence";
 
+type Snapshot=ReturnType<typeof normalizedLegalSourceSnapshotSchema.parse>;
+const parsedSnapshots=new Map<string,{snapshot:Snapshot;estimatedBytes:number}>();
+let parsedBytes=0;
+const PARSED_BUDGET=128*1024*1024;
+
+/** Estimate retained JS strings/containers while making shared derived state
+ * immutable. Physical source bytes are never retained by this cache. */
+function freezeSnapshot(value:unknown):number {
+  if(typeof value==="string")return 32+value.length*2;
+  if(value===null||typeof value!=="object")return 8;
+  let bytes=Array.isArray(value)?64+value.length*8:128;
+  for(const [key,item] of Object.entries(value))bytes+=key.length*2+freezeSnapshot(item);
+  Object.freeze(value);return bytes;
+}
+function parsedSnapshot(sha256:string,bytes:Uint8Array):Snapshot {
+  const cached=parsedSnapshots.get(sha256);
+  if(cached){parsedSnapshots.delete(sha256);parsedSnapshots.set(sha256,cached);return cached.snapshot;}
+  const snapshot=normalizedLegalSourceSnapshotSchema.parse(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes)));
+  const estimatedBytes=freezeSnapshot(snapshot);
+  if(estimatedBytes<=PARSED_BUDGET){
+    while(parsedSnapshots.size>=64||parsedBytes+estimatedBytes>PARSED_BUDGET){
+      const oldest=parsedSnapshots.entries().next().value;if(!oldest)break;
+      parsedSnapshots.delete(oldest[0]);parsedBytes-=oldest[1].estimatedBytes;
+    }
+    parsedSnapshots.set(sha256,{snapshot,estimatedBytes});parsedBytes+=estimatedBytes;
+  }
+  return snapshot;
+}
+
 /** A reader belongs to one request, never to a process-wide cache. Every new
  * request authenticates physical parent bytes before using their projection. */
 export function createNormalizedSourceReader(bucket: Pick<LegalEvidenceBucket, "get">) {
@@ -28,7 +57,9 @@ export function createNormalizedSourceReader(bucket: Pick<LegalEvidenceBucket, "
       const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
       const actual = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
       if (bytes.byteLength !== object.size || actual !== sha256) throw new TypeError("PINNED_SOURCE_REVISION_INVALID");
-      const snapshot = normalizedLegalSourceSnapshotSchema.parse(JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)));
+      // Reuse only derived, frozen state after this request authenticates
+      // the current physical object. A warm cache cannot hide corruption.
+      const snapshot = parsedSnapshot(actual,bytes);
       const parent = {snapshot, r2Key, byteCount: bytes.byteLength, sha256};
       // A turn can read dozens of provisions from several large codes.
       // Keep their authenticated parents for the turn instead of repeatedly
