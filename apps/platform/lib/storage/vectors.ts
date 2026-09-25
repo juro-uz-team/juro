@@ -46,9 +46,33 @@ function filterSql(filter: Record<string, unknown>, parameters: unknown[], depth
 }
 
 export class PostgresVectorIndex {
+  private qualificationScope?:Readonly<{generation:string;sourceRevision:string}>;
+
+  /** Trusted operator composition for preactivation verification. Ordinary
+   * request options cannot opt into it; neither collection readiness nor any
+   * evidence gate is mutated. Each read fences the exact verified generation. */
+  static forQualification(pool:Pool,name:string,scope:{generation:string;sourceRevision:string},readCandidates?:VectorCandidateReader) {
+    if(!/^[a-f0-9-]{36}$/u.test(scope.generation)||!/^(?:0|[1-9]\d*)$/u.test(scope.sourceRevision))throw new TypeError("VECTOR_QUALIFICATION_SCOPE_INVALID");
+    const index=new PostgresVectorIndex(pool,name,readCandidates);
+    index.qualificationScope=Object.freeze({...scope});
+    return index;
+  }
+
+  private qualificationQuery() {
+    return {text:`SELECT EXISTS(SELECT 1 FROM storage.vector_search_generations g
+      JOIN storage.vector_collections c ON c.name=g.collection
+      WHERE g.id=$2::uuid AND g.collection=$1 AND g.state='verified'
+        AND g.source_revision=$3::bigint AND c.source_revision=g.source_revision) AS valid`,
+      values:[this.name,this.qualificationScope!.generation,this.qualificationScope!.sourceRevision]};
+  }
+
   constructor(readonly pool: Pool, readonly name: string, private readonly readCandidates?:VectorCandidateReader) {}
 
   async isReady(): Promise<boolean> {
+    if(this.qualificationScope){
+      const query=this.qualificationQuery();
+      return (await retrievalQuery(this.pool,query.text,query.values)).rows[0]?.valid===true;
+    }
     const result = await retrievalQuery(this.pool,"SELECT ready FROM storage.vector_collections WHERE name=$1", [this.name]);
     return result.rows[0]?.ready === true;
   }
@@ -92,7 +116,10 @@ export class PostgresVectorIndex {
     await beginVectorRead(client);
     const configuration = (await client.query<Configuration>("SELECT dimensions,metric,model,ready FROM storage.vector_collections WHERE name=$1", [this.name])).rows[0];
     if (!configuration) throw new Error(`Vector collection is unavailable: ${this.name}`);
-    if (!configuration.ready) throw new Error("Vector collection import has not been verified");
+    if(this.qualificationScope){
+      const query=this.qualificationQuery();
+      if((await client.query(query.text,query.values)).rows[0]?.valid!==true)throw new Error("VECTOR_QUALIFICATION_SOURCE_CHANGED");
+    }else if (!configuration.ready) throw new Error("Vector collection import has not been verified");
     const literal = vectorLiteral(values, configuration.dimensions);
     if (configuration.metric === "cosine" && Array.from(values).every(value => value === 0)) throw new Error("Cosine query requires a nonzero vector");
     const topK = options.topK ?? 10;
@@ -128,6 +155,7 @@ export class PostgresVectorIndex {
       // Verified exhaustive candidates already bound the nearest groups. The
       // original eligibility predicates and underfill fallback below remain
       // authoritative, so a separate selectivity scan adds no information.
+      if(this.qualificationScope&&generation&&generation.id!==this.qualificationScope.generation)throw new Error("VECTOR_QUALIFICATION_GENERATION_CHANGED");
       const exhaustiveCandidates = this.readCandidates && generation?.current;
       // Small eligible sets are faster and complete with exact distances. Probe
       // IDs only, avoiding vector decompression while estimating selectivity.
