@@ -327,11 +327,15 @@ test("overlapping article fragments retain the first ranked canonical source des
     if(id==="rendition:first")await first;
     return articleResolution(id);
   };
+  const checked:string[]=[];
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async source=>{checked.push(source.provisionRenditionId);return verify(source);};
   const pending=search(request);
   await new Promise(resolve=>setImmediate(resolve));
   releaseFirst();
   const result=await pending;
   assert.equal(result.evidence.length,1);
+  assert.deepEqual(checked,["rendition:first"]);
   const {services:baseline,search:baselineSearch}=fixture();
   baseline.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:first")];
   baseline.evidenceResolver.resolveControlling=async id=>articleResolution(id);
@@ -479,4 +483,41 @@ test("a reference target already in the ranked pool retains priority before cont
   services.referenceDiscovery=async()=>({candidates:[],unresolved:[]});
   const result=await search(request);
   assert.ok(result.evidence.some(item=>item.source.article==="35"));
+});
+
+
+test("publisher checks run only after deterministic context admission and never replace failed evidence",async()=>{
+  const {services,search}=fixture();
+  const candidates=parseRevalidatedCandidates(Array.from({length:3},(_,index)=>({...candidate,
+    provisionRenditionId:`rendition:${index}`,candidate:{...candidate.candidate,itemKey:`item:${index}`,
+      fusionScore:3-index}})));
+  services.candidateCatalog.revalidate=async()=>candidates;
+  services.evidenceResolver.resolveControlling=async id=>({controlling:parseResolvedOfficialEvidence({...controlling,
+    provisionRenditionId:id,provisionText:id+"x".repeat(31_000)}),materialCitation:controlling.officialCitation});
+  const checked:string[]=[];
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async source=>{
+    checked.push(source.provisionRenditionId);
+    if(source.provisionRenditionId==="rendition:0")throw new Error("Publisher unavailable");
+    return verify(source);
+  };
+  const packet=await search(request);
+  assert.deepEqual(checked,["rendition:0","rendition:1"]);
+  assert.equal(packet.evidence.length,1);
+  assert.ok(packet.evidence[0]!.text.startsWith("rendition:1"));
+  assert.ok(packet.needs.some(need=>need.reason==="source_unavailable"));
+  assert.deepEqual(packet.observations,[{kind:"candidate_context_limit",lane:"indexed",omitted:1}]);
+});
+
+test("admitted current evidence is withheld while its publisher check is pending",async()=>{
+  const {services,search}=fixture();
+  const entered=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
+  const verify=services.verifyCurrentSource;
+  services.verifyCurrentSource=async source=>{entered.resolve();await finish.promise;return verify(source);};
+  let published=false;
+  const result=search(request).then(packet=>{published=true;return packet;});
+  await entered.promise;
+  assert.equal(published,false);
+  finish.resolve();
+  assert.equal((await result).evidence.length,1);
 });

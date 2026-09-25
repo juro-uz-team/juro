@@ -12,12 +12,18 @@ const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.di
 /** Only the authenticated reader supplies text and citation metadata. Search
  * hits and model selections cannot manufacture either. Article fragments are
  * withheld if their complete parent article could not be recovered. */
-export async function corpusAnswerEvidence(input: {
+export type PreparedCorpusEvidence = {
+  source: Pick<LegalEvidence["source"], "id" | "actTitle" | "officialUrl" | "article" | "locale">;
+  text: string;
+  finalize(input: {currentAt:string;currentSourceStatus?:PinnedSourceStatus}): LegalEvidence;
+};
+
+/** Authenticated discovery text is not yet answer evidence. Current publisher
+ * eligibility is checked only when finalize admits it to an answer packet. */
+export async function prepareCorpusEvidence(input: {
   resolution: ControllingEvidenceResolution;
   endpoint: LegalTime;
-  currentAt: string;
-  currentSourceStatus?: PinnedSourceStatus;
-}): Promise<LegalEvidence> {
+}): Promise<PreparedCorpusEvidence> {
   const resolution = parseControllingEvidenceResolution(input.resolution);
   const original = resolution.controlling;
   // Textual authority is preserved audit metadata, not source eligibility.
@@ -43,13 +49,6 @@ export async function corpusAnswerEvidence(input: {
     || complete.evidence.sha256 !== complete.evidence.sourceNormalizedSha256)) {
     throw new Error("CORPUS_ARTICLE_RECEIPT_INVALID");
   }
-  const checkedAt = Date.parse(input.currentAt);
-  if (!Number.isFinite(checkedAt)) throw new Error("CORPUS_OBSERVATION_TIME_INVALID");
-  if (input.endpoint.kind === "current" && (!input.currentSourceStatus
-    || !isCurrentSourceObservation(input.currentSourceStatus.observation, {
-      officialUrl: complete.officialCitation.url,
-      normalizedTextSha256: input.currentSourceStatus.pinnedTextSha256, now: checkedAt,
-    }))) throw new Error("CORPUS_CURRENT_SOURCE_UNCONFIRMED");
   const textSha256 = await digest(complete.provisionText);
   const receipt = citationEvidenceReceiptSchema.parse({
     version: 1, capability: input.endpoint.kind === "current" ? "current" : "history",
@@ -63,18 +62,42 @@ export async function corpusAnswerEvidence(input: {
   // Their identity is the exact saved text at the requested endpoint.
   const id = `corpus-${await digest(JSON.stringify([timeIdentity(input.endpoint), receipt]))}`;
   return {
-    source: {
-      id, actTitle: complete.officialCitation.label, actIdentifier: original.legalInstrumentId,
-      officialUrl: original.officialCitation.url, article,
-      revisionDate: null, publishedAt: null, lastCheckedAt: input.currentAt,
-      verifiedAt: input.currentAt, locale: {ru:"ru", "uz-Latn":"uz", "uz-Cyrl":"uzc", en:"en"}[complete.languageTag],
-      sourceType: "lex", sourceClass: "OFFICIAL_LEGISLATION",
-      status: input.endpoint.kind === "current" ? "current" : "historical",
-      applicabilityStatus: input.endpoint.kind === "current" ? "current" : "historical",
-      verificationState: "verified", contentSha256: receipt.sha256,
-      citationEvidenceReceipt: receipt,
-      ...(input.endpoint.kind === "current" ? {currentSourceStatus: input.currentSourceStatus} : {}),
+    source: {id, actTitle:complete.officialCitation.label, officialUrl:complete.officialCitation.url,
+      article, locale:{ru:"ru", "uz-Latn":"uz", "uz-Cyrl":"uzc", en:"en"}[complete.languageTag]},
+    text:complete.provisionText,
+    finalize(admission) {
+      const checkedAt = Date.parse(admission.currentAt);
+      if (!Number.isFinite(checkedAt)) throw new Error("CORPUS_OBSERVATION_TIME_INVALID");
+      if (input.endpoint.kind === "current" && (!admission.currentSourceStatus
+        || !isCurrentSourceObservation(admission.currentSourceStatus.observation, {
+          officialUrl: complete.officialCitation.url,
+          normalizedTextSha256: admission.currentSourceStatus.pinnedTextSha256, now: checkedAt,
+        }))) throw new Error("CORPUS_CURRENT_SOURCE_UNCONFIRMED");
+      return {
+        source: {
+          id, actTitle: complete.officialCitation.label, actIdentifier: original.legalInstrumentId,
+          officialUrl: original.officialCitation.url, article,
+          revisionDate: null, publishedAt: null, lastCheckedAt: admission.currentAt,
+          verifiedAt: admission.currentAt, locale: {ru:"ru", "uz-Latn":"uz", "uz-Cyrl":"uzc", en:"en"}[complete.languageTag],
+          sourceType: "lex", sourceClass: "OFFICIAL_LEGISLATION",
+          status: input.endpoint.kind === "current" ? "current" : "historical",
+          applicabilityStatus: input.endpoint.kind === "current" ? "current" : "historical",
+          verificationState: "verified", contentSha256: receipt.sha256,
+          citationEvidenceReceipt: receipt,
+          ...(input.endpoint.kind === "current" ? {currentSourceStatus: admission.currentSourceStatus} : {}),
+        },
+        text: complete.provisionText, textSha256, endpoint: input.endpoint, origin: "indexed",
+      };
     },
-    text: complete.provisionText, textSha256, endpoint: input.endpoint, origin: "indexed",
   };
+}
+
+export async function corpusAnswerEvidence(input: {
+  resolution: ControllingEvidenceResolution;
+  endpoint: LegalTime;
+  currentAt: string;
+  currentSourceStatus?: PinnedSourceStatus;
+}): Promise<LegalEvidence> {
+  const prepared=await prepareCorpusEvidence(input);
+  return prepared.finalize(input);
 }
