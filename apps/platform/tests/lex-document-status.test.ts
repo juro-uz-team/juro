@@ -156,3 +156,47 @@ test("one publisher observation verifies both retained and superscript-preservin
     assert.equal(isCurrentSourceObservation(observation,{...expected,now:expected.now+300000}),false);
   }
 });
+
+
+test("fresh identical HTML can reuse only fingerprints from the same normalizer policy",async context=>{
+  let html='<header id="doc_header">Current act</header><main>Official provisions.</main>',failed=false,fetches=0,normalizations=0;
+  context.mock.method(globalThis,"fetch",async(input:RequestInfo|URL)=>{
+    fetches++;if(failed)throw new Error("Publisher unavailable");
+    return String(input).endsWith("/robots.txt")?new Response("User-agent: *\nAllow: /",{headers:{"content-type":"text/plain"}})
+      :new Response(html,{headers:{"content-type":"text/html; charset=utf-8"}});
+  });
+  const policy="d".repeat(64),url="https://lex.uz/ru/docs/777";
+  const fingerprintHtml=async()=>{normalizations++;return {normalizedTextSha256:"a".repeat(64),normalizedTextSha256V2:"b".repeat(64)};};
+  const first=await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy});
+  const previous={...first,observedAt:"2020-01-01T00:00:00.000Z"};
+  const second=await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy,previous});
+  assert.equal(normalizations,1);assert.equal(fetches,4);
+  assert.notEqual(second.observedAt,previous.observedAt);
+  assert.equal(second.rawContentSha256,previous.rawContentSha256);
+  await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:"e".repeat(64),previous});
+  await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy,previous:{...previous,officialUrl:"https://lex.uz/ru/docs/888"}});
+  await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy,previous:{...previous,normalizedTextSha256V2:undefined}});
+  assert.equal(normalizations,4);
+  html='<header id="doc_header">Документ утратил силу 01.01.2026</header><main>Official provisions.</main>';
+  assert.equal((await readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy,previous})).current,false);
+  assert.equal(normalizations,5);
+  failed=true;
+  await assert.rejects(readLexPublisherObservation(url,{fingerprintHtml,normalizationPolicy:policy,previous}));
+});
+
+test("unchanged PDF wrapper HTML cannot reuse fingerprints when its PDF changes",async context=>{
+  const makePdf=async(text:string)=>{const pdf=await PDFDocument.create();pdf.addPage().drawText(text.repeat(6),{x:30,y:750,size:10,maxWidth:500});return pdf.save();};
+  let bytes=await makePdf("Official proposal requires a written request. ");
+  context.mock.method(globalThis,"fetch",async(input:RequestInfo|URL)=>{
+    const url=String(input);
+    if(url.endsWith("/robots.txt"))return new Response("User-agent: *\nAllow: /",{headers:{"content-type":"text/plain"}});
+    if(url.includes("/pdffile/"))return new Response(new Uint8Array(bytes),{headers:{"content-type":"application/pdf"}});
+    return new Response('<html><div class="docHeader">Effective 03.07.2026</div><div id="pdfBody"></div><script>PDFObject.embed("/pdffile/777", "#pdfBody");</script></html>',{headers:{"content-type":"text/html; charset=utf-8"}});
+  });
+  const normalizationPolicy="d".repeat(64),url="https://lex.uz/ru/docs/777";
+  const first=await readLexPublisherObservation(url,{normalizationPolicy});
+  bytes=await makePdf("The changed official proposal requires an oral request. ");
+  const second=await readLexPublisherObservation(url,{normalizationPolicy,previous:{...first,normalizedTextSha256V2:first.normalizedTextSha256}});
+  assert.equal(second.rawContentSha256,first.rawContentSha256);
+  assert.notEqual(second.normalizedTextSha256,first.normalizedTextSha256);
+});

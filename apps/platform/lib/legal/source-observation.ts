@@ -7,6 +7,7 @@ export const sourceObservationSchema = z.object({
   /** Independently normalized from the same fetched HTML with the v2 profile. */
   normalizedTextSha256V2: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   rawContentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  normalizationPolicy: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
 }).strict();
 export type SourceObservation = z.infer<typeof sourceObservationSchema>;
 export const pinnedSourceStatusSchema = z.object({observation: sourceObservationSchema.nullable(),

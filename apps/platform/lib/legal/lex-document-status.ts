@@ -1,7 +1,7 @@
 import {parse, type DefaultTreeAdapterTypes} from "parse5";
 import { classifyLegalSourceUrl, fetchLegalSource, fetchLexPdfRepresentation, type FetchedLegalSource } from "./source-fetch";
 import {normalizeLegalSourceHtml, normalizeLegalSourceHtmlProfiles, type NormalizedLegalSourceSnapshot} from "./source-parser";
-import {createSourceObservationReader, type SourceObservation, type SourceObservationStore} from "./source-observation";
+import {createSourceObservationReader, sourceObservationSchema, type SourceObservation, type SourceObservationStore} from "./source-observation";
 
 /** Compare normalized official text and identity, excluding volatile raw HTML. */
 export async function publisherTextFingerprint(snapshot: NormalizedLegalSourceSnapshot): Promise<string> {
@@ -23,7 +23,7 @@ export async function publisherHtmlFingerprints(input: Parameters<typeof normali
   return {normalizedTextSha256,normalizedTextSha256V2};
 }
 
-export async function readLexPublisherObservation(url: string, options?: {wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal;
+export async function readLexPublisherObservation(url: string, options?: {previous?:SourceObservation;normalizationPolicy?:string;wait?: (delayMs: number) => Promise<void>;signal?:AbortSignal;
   fingerprintHtml?:(input:Parameters<typeof publisherHtmlFingerprints>[0],signal?:AbortSignal)=>ReturnType<typeof publisherHtmlFingerprints>}): Promise<SourceObservation> {
   options?.signal?.throwIfAborted();
   const fetchOptions={
@@ -35,20 +35,35 @@ export async function readLexPublisherObservation(url: string, options?: {wait?:
     }} : {}),
     timeoutMs: 4_000, maxBytes: 16 * 1024 * 1024};
   const fetched = await fetchLegalSource(url, {adviceEnabled: false, crawlDelayMode: options?.wait ? "wait" : "proceed",...fetchOptions});
+  options?.signal?.throwIfAborted();
+  const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
+  const standard=/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html);
+  const previous=sourceObservationSchema.safeParse(options?.previous);
+  // A fresh full publisher fetch authenticates unchanged bytes. Reuse only
+  // derived HTML fingerprints from the exact same implementation policy.
+  // PDF wrapper bytes do not authenticate the separately fetched PDF.
+  if(standard&&options?.normalizationPolicy&&previous.success
+    &&previous.data.normalizationPolicy===options.normalizationPolicy
+    &&previous.data.officialUrl===fetched.canonicalUrl
+    &&previous.data.rawContentSha256===fetched.contentSha256
+    &&previous.data.normalizedTextSha256V2) {
+    return {...previous.data,observedAt:fetched.fetchedAt};
+  }
+  const policy=options?.normalizationPolicy?{normalizationPolicy:options.normalizationPolicy}:{};
   if (options?.fingerprintHtml) {
     const html=new TextDecoder("utf-8",{fatal:true}).decode(fetched.bytes);
     if (/<header\b[^>]*\bid=["']doc_header["'][^>]*>[\s\S]*?<\/header>/iu.test(html)) {
       const fingerprints=await options.fingerprintHtml({html,reference:fetched,rawContentSha256:fetched.contentSha256},options.signal);
       options.signal?.throwIfAborted();
       return {version:2,officialUrl:fetched.canonicalUrl,observedAt:fetched.fetchedAt,
-        current:!lexDocumentIsRepealed(html),rawContentSha256:fetched.contentSha256,...fingerprints};
+        current:!lexDocumentIsRepealed(html),rawContentSha256:fetched.contentSha256,...fingerprints,...policy};
     }
   }
   const {snapshot,current,structuredSnapshot}=await normalizeLexPublisherDocument(fetched,{...fetchOptions,signal:options?.signal,includeStructured:true});
   const normalizedTextSha256V2 = structuredSnapshot ? await publisherTextFingerprint(structuredSnapshot) : undefined;
   options?.signal?.throwIfAborted();
   return {version: 2, officialUrl: fetched.canonicalUrl, observedAt: fetched.fetchedAt,
-    current, rawContentSha256: fetched.contentSha256,
+    current, rawContentSha256: fetched.contentSha256,...policy,
     normalizedTextSha256: await publisherTextFingerprint(snapshot),
     ...(normalizedTextSha256V2 ? {normalizedTextSha256V2} : {})};
 }

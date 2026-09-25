@@ -5,7 +5,7 @@ import {createD1SourceObservationStore} from "./source-observation-store";
 import {createSourceObservationReader, isFreshSourceObservation, sourceObservationSchema, type SourceObservation} from "./source-observation";
 
 export function createSharedSourceObservationRefresh(input: {
-  db: D1Database; readPublisher?: (url: string) => Promise<SourceObservation>;
+  db: D1Database; readPublisher?: (url: string,previous?:SourceObservation) => Promise<SourceObservation>;
   now?: () => number; wait?: () => Promise<void>;
 }) {
   const now = input.now ?? Date.now;
@@ -55,7 +55,10 @@ export function createSharedSourceObservationRefresh(input: {
       const completed = await store.get(url);
       if (isFreshSourceObservation(completed, url, now())
         && (Date.parse(completed.observedAt) > previousObservedAt || now() - Date.parse(completed.observedAt) < 180_000)) return completed;
-      const observation = sourceObservationSchema.parse(await (input.readPublisher ?? readLexPublisherObservation)(url));
+      const prior=sourceObservationSchema.safeParse(completed??previous);
+      const observation = sourceObservationSchema.parse(await (input.readPublisher
+        ?input.readPublisher(url,prior.success?prior.data:undefined)
+        :readLexPublisherObservation(url,{previous:prior.success?prior.data:undefined})));
       if (!isFreshSourceObservation(observation, url, now())) throw new TypeError("SOURCE_OBSERVATION_UNAVAILABLE");
       await renewal;
       if (ownershipLost) throw new TypeError("SOURCE_OBSERVATION_REFRESH_OWNERSHIP_LOST");
@@ -71,7 +74,7 @@ export function createSharedSourceObservationRefresh(input: {
   };
 }
 
-export function createSharedLexDocumentObservationReader(db: D1Database,readPublisher?: (url:string)=>Promise<SourceObservation>) {
+export function createSharedLexDocumentObservationReader(db: D1Database,readPublisher?: (url:string,previous?:SourceObservation)=>Promise<SourceObservation>) {
   return createSourceObservationReader({store: createD1SourceObservationStore(db),
     readPublisher: createSharedSourceObservationRefresh({db,readPublisher})});
 }

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type {PreparedMembershipReader} from "./prepared-membership";
-import {fingerprintPublisherHtml} from "../runtime/publisher-source-normalization";
-import {readLexPublisherObservation} from "../legal/lex-document-status";
+import {readNativePublisherObservation} from "../runtime/publisher-source-normalization";
 import {createSourceObservationReader} from "../legal/source-observation";
 import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
@@ -625,8 +624,8 @@ export function createRuntimeEvidenceServices(
 onReleaseResolved: dependencies.onReleaseResolved,
 verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,
       observe: dependencies.sharedSourceObservationsEnabled
-        ? createSharedLexDocumentObservationReader(db,url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal(),fingerprintHtml:fingerprintPublisherHtml}))
-        : createSourceObservationReader({readPublisher:url=>readLexPublisherObservation(url,{signal:indexedRetrievalSignal(),fingerprintHtml:fingerprintPublisherHtml})})}),
+        ? createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
+        : createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})})}),
 environment,
 releaseResolver,
 candidateIndex,
