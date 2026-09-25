@@ -3,6 +3,24 @@ import test from "node:test";
 import { PostgresDatabase } from "../lib/storage/postgres";
 import { PostgresVectorIndex } from "../lib/storage/vectors";
 
+test("vector upsert preserves every float32 coordinate bit including signed zero", async () => {
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const name=`test-${crypto.randomUUID()}`,index=new PostgresVectorIndex(db.pool,name);
+  const values=new Float32Array([1,-0,0.1234567]);
+  try {
+    await index.create({dimensions:3,metric:"cosine"});
+    await index.upsert([{id:"original",values}]);
+    const actual=(await db.pool.query("SELECT vector_send(embedding) AS bytes FROM storage.embeddings WHERE collection=$1 AND id='original'",[name])).rows[0].bytes;
+    const expected=Buffer.alloc(16);expected.writeUInt16BE(3,0);
+    values.forEach((value,i)=>expected.writeFloatBE(value,4+i*4));
+    assert.deepEqual(actual,expected);
+  } finally {
+    await db.pool.query("DELETE FROM storage.embeddings WHERE collection=$1",[name]);
+    await db.pool.query("DELETE FROM storage.vector_collections WHERE name=$1",[name]);
+    await db.close();
+  }
+});
+
 test("compact generations expand original identities and become unusable after source changes", async () => {
   const db = new PostgresDatabase(process.env.DATABASE_URL!);
   const name = `test-${crypto.randomUUID()}`;

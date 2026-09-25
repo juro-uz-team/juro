@@ -14,7 +14,7 @@ type QueryOptions = { topK?: number; namespace?: string; filter?: Record<string,
 function vectorLiteral(values: number[] | Float32Array, dimensions: number): string {
   const array = Array.from(values);
   if (array.length !== dimensions || !array.every(Number.isFinite)) throw new Error("Invalid embedding dimensions or values");
-  return `[${array.join(",")}]`;
+  return `[${array.map(value=>Object.is(value,-0)?"-0":String(value)).join(",")}]`;
 }
 
 /** Compile only supported filter operators; paths and values are always parameters. */
