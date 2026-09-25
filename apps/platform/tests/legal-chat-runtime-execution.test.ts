@@ -10,11 +10,11 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   let calls=0;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));calls++;
+    const body=JSON.parse(String(init?.body));calls++;const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
-    const output=calls===1?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
-      :calls===2?{queries:[query]}:calls===3?{needs:[],resolved:[],queries:[query]}
-      :calls===4?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
+    const output=schema==="legal_question_context"?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
+      :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
+      :schema==="legal_answer"?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
       :{sourceAudit:{source:{p0:{material:true,actionRequired:true,
@@ -30,7 +30,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
     service:{async openLegalResearch(){return {async search(){return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
-  assert.equal(calls,5,"The normal writer and verifier both completed before final source validation");
+  assert.equal(calls,4,"The normal writer and verifier both completed before final source validation");
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
   assert.equal(result.result.failureReason,"official_research_unavailable");
   assert.deepEqual(result.result.confirmedFindings,[]);
@@ -48,12 +48,11 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const models:string[]=[];
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));models.push(body.model);
+    const body=JSON.parse(String(init?.body));models.push(body.model);const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
-    const output=models.length===1
+    const output=schema==="legal_question_context"
       ?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
-      :models.length===2?{queries:[query]}
-      :models.length===3?{needs:[],resolved:[],queries:[query]}
+      :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :null;
     if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
@@ -71,7 +70,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     commit:async terminal=>{assert.equal(terminal.kind,"unavailable");throw new Error("synthetic save failure");},
     release:async reason=>{assert.equal(reason,"failed");released++;},
   }),/synthetic save failure/);
-  assert.deepEqual(models,["gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(models,["gpt-5.6-terra","gpt-5.6-terra","gpt-5.6-terra"]);
   assert.equal(opened,1);assert.equal(reads,1);assert.equal(disposed,1);
   assert.equal(renewed,2);assert.equal(released,1);
 });

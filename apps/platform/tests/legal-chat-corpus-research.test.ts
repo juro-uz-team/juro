@@ -550,6 +550,22 @@ test("references of an omitted primary cannot displace an independent formulatio
   assert.ok(result.needs.some(need=>need.reason==="context_budget"));
 });
 
+test("a wholly omitted connected group that fits alone remains a discovery observation",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:0"),anotherCandidate("rendition:1")];
+  services.evidenceResolver.resolveControlling=async id=>{
+    const resolution=articleResolution(id,id.split(":")[1]!);
+    resolution.articleContext.provisionText+=id==="rendition:0"?"x".repeat(40_000):
+      id==="rendition:1"?" Conditions under article 99 of this Act. "+"x".repeat(15_000):"x".repeat(15_000);
+    return resolution;
+  };
+  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
+  const result=await search(request);
+  assert.deepEqual(result.evidence.map(item=>item.source.article),["0"]);
+  assert.deepEqual(result.needs,[]);
+  assert.deepEqual(result.observations,[{kind:"candidate_context_limit",lane:"indexed",omitted:1}]);
+});
+
 test("cyclic and shared references enter once with their primary rule",async()=>{
   const {services,search}=fixture();
   services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:0"),anotherCandidate("rendition:1")];

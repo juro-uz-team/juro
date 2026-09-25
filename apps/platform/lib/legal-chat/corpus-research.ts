@@ -300,7 +300,7 @@ export function createCorpusResearch(input: {
         for(const item of group.values()){admitted.push(item);admittedIds.add(item.source.id);}
       } else {
         excludedCandidates++;
-        if(group.size>1||!fitsLegalEvidenceBudget([...group.values()].map(item=>item.text))) {
+        if(!fitsLegalEvidenceBudget([...group.values()].map(item=>item.text))) {
           needs.push({reason:"context_budget",detail:`Complete connected context for source ${id} did not fit the answer evidence budget.`});
         }
       }

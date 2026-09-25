@@ -15,16 +15,22 @@ import LegalCorpusService from "../../worker/legal-corpus-worker";
 import { handleCustomSearchRequest, type CustomSearchEnv } from "../legal-corpus/custom-search-service";
 import {CustomRuntimeCache} from "../legal-corpus/custom-runtime-cache";
 import {createNativeCorpusService} from "./native-corpus";
+import {runtimeProductRevision,executingProductRevision} from "./product-revision";
 import { handleTargetReasoningServiceRequest } from "../legal-corpus/target-reasoning-service";
 import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
 import type { PlatformJobEnv } from "../../worker/platform-jobs";
 
 type Runtime = BuilderRuntimeEnv & PlatformJobEnv;
-const state = globalThis as typeof globalThis & { juroRuntime?: Runtime };
+const state = globalThis as typeof globalThis & { juroRuntime?: Runtime; juroRuntimeProductRevision?:string };
 
 export function getSelfHostedRuntime(): Runtime {
-  if (state.juroRuntime) return state.juroRuntime;
+  if (state.juroRuntime) {
+    if(state.juroRuntimeProductRevision&&state.juroRuntimeProductRevision!=="unqualified"
+      &&state.juroRuntimeProductRevision!==executingProductRevision())throw Error("NATIVE_RUNTIME_BUILD_MISMATCH");
+    return state.juroRuntime;
+  }
+  const productRevision=runtimeProductRevision();
   const application = database("app");
   const catalog = database("legal");
   const root = resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects");
@@ -84,7 +90,8 @@ export function getSelfHostedRuntime(): Runtime {
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
   const retrieval=createNativeCorpusService({pool:application.pool,catalog,objectRoot:root,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
-    productRevision:process.env.SELF_HOSTED_PRODUCT_REVISION??"",fallback:legal});
+    productRevision,fallback:legal});
+  state.juroRuntimeProductRevision=productRevision;
   state.juroRuntime = { ...env, ...queues, ...deadLetters, LEGAL_RETRIEVAL_SERVICE: retrieval } as unknown as Runtime;
   return state.juroRuntime;
 }

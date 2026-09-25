@@ -46,6 +46,8 @@ Indexed Retrieval shares a ten-second deadline across session setup, query formu
 
 Each native corpus search binding keeps at most 512 MiB of authenticated immutable sparse artifacts in memory. Cache identities include pinned artifact hashes and sizes; ordinal projections also include the release identity. This cache retains neither question text nor generated answers. Restarting a process empties it, so first-touch latency must be measured separately from steady-state retrieval.
 
+Accepted corpus selections bind qualification proofs to a committed product revision. The platform build embeds its clean Git revision and records it in `.next/BUILD_ID`; runtime composition requires the executing revision, build identity and clean source checkout to agree. Source-run handlers capture their revision when loaded, and shared runtimes reject callers from another build. Rebuild and restart after code changes, then qualify and select the matching acceptance. Dirty source, missing output, or a stale build cannot claim an accepted revision.
+
 Membership lookup readers accept existing three-nibble leaves and new four-nibble leaves. Derived lookup roots remain catalog-pinned and hash-checked against the original mapping inventory. Retain these lookup objects with the operational corpus and include them in backup verification. Creating a lookup or index does not qualify source authority or open a collection's readiness gate.
 
 Temporal eligibility probes use a metadata index before selecting exact or approximate search. The probe's index order does not change the distance ranking; namespace and metadata predicates still apply within the same repeatable-read transaction.

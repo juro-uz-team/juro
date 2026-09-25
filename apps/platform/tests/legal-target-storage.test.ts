@@ -18,6 +18,8 @@ test("native retrieval binds PostgreSQL catalogs and local evidence objects", ()
   assert.match(runtime, /database\("legal"\)/u);
   assert.match(runtime, /LEGAL_EVIDENCE_BUCKET: bucket/u);
   assert.match(runtime, /LEGAL_HISTORY_EVIDENCE_BUCKET: bucket/u);
-  assert.match(runtime, /LEGAL_RETRIEVAL_SERVICE: legal/u);
+  assert.match(runtime, /LEGAL_RETRIEVAL_SERVICE: retrieval/u);
+  assert.match(runtime, /createNativeCorpusService/u);
+  assert.match(runtime, /fallback:legal/u);
   assert.doesNotMatch(runtime, /LEGAL_AI_SEARCH_NAMESPACE|LEGAL_AI_SEARCH_SOURCE_BUCKET/u);
 });
