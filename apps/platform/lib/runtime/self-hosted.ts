@@ -14,6 +14,7 @@ import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/con
 import LegalCorpusService from "../../worker/legal-corpus-worker";
 import { handleCustomSearchRequest, type CustomSearchEnv } from "../legal-corpus/custom-search-service";
 import {CustomRuntimeCache} from "../legal-corpus/custom-runtime-cache";
+import {createNativeCorpusService} from "./native-corpus";
 import { handleTargetReasoningServiceRequest } from "../legal-corpus/target-reasoning-service";
 import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
@@ -81,6 +82,9 @@ export function getSelfHostedRuntime(): Runtime {
   } as unknown as ConstructorParameters<typeof LegalCorpusService>[0]);
   const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, "development"))]));
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
-  state.juroRuntime = { ...env, ...queues, ...deadLetters, LEGAL_RETRIEVAL_SERVICE: legal } as unknown as Runtime;
+  const retrieval=createNativeCorpusService({pool:application.pool,catalog,objectRoot:root,
+    candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
+    productRevision:process.env.SELF_HOSTED_PRODUCT_REVISION??"",fallback:legal});
+  state.juroRuntime = { ...env, ...queues, ...deadLetters, LEGAL_RETRIEVAL_SERVICE: retrieval } as unknown as Runtime;
   return state.juroRuntime;
 }

@@ -58,6 +58,13 @@ test("prepared membership authenticates every source page and member before immu
       await assert.rejects(()=>stale.query(sql("UPDATE storage.corpus_membership_generations SET state='verified' WHERE id=$1"),[id]),/REQUIRES_READ_COMMITTED/);
     } finally {await stale.query("ROLLBACK");stale.release();}
     await publish();
+    const pins=new Map([[release,{generation:id,sha256:hash(manifest),count:2}]]);
+    const pinnedRead=createPreparedMembershipReader(pool,pins),pinnedOrdinals=createPreparedOrdinalReader(pool,pins);
+    assert.deepEqual(await pinnedRead(input),await read(input));
+    assert.deepEqual(await pinnedOrdinals({...input,ordinals:[1]}),[members[0]!.itemKey]);
+    await assert.rejects(pinnedRead({...input,memberCount:3}),/PIN_MISMATCH/);
+    const wrong=createPreparedMembershipReader(pool,new Map([[release,{generation:randomUUID(),sha256:hash(manifest),count:2}]]));
+    await assert.rejects(wrong(input),/GENERATION_UNAVAILABLE/);
     assert.deepEqual(await read(input),new Map(members.map(member=>[member.itemKey,{ordinal:member.ordinal,legalIdentitySha256:member.legalIdentitySha256}])));
     assert.deepEqual(await readOrdinals({...input,ordinals:[2,1,2]}),[members[1]!.itemKey,members[0]!.itemKey,members[1]!.itemKey]);
     assert.equal(await readOrdinals({...input,sourceInventorySha256:"f".repeat(64),ordinals:[1]}),null);
@@ -73,6 +80,8 @@ test("prepared membership authenticates every source page and member before immu
     await assert.rejects(()=>query("TRUNCATE storage.corpus_membership_generations CASCADE"),/TRUNCATE_FORBIDDEN/);
     await assert.rejects(()=>query("DELETE FROM storage.corpus_membership_generations WHERE id=$1",[id]),/MUST_RETIRE/);
     await query("UPDATE storage.corpus_membership_generations SET state='retired' WHERE id=$1",[id]);
+    await assert.rejects(pinnedRead(input),/GENERATION_UNAVAILABLE/);
+    await assert.rejects(pinnedOrdinals({...input,ordinals:[1]}),/GENERATION_UNAVAILABLE/);
     assert.equal(await read(input),null);
     assert.equal(await readOrdinals({...input,ordinals:[1]}),null);
     await query("DELETE FROM storage.corpus_membership_generations WHERE id=$1",[id]);

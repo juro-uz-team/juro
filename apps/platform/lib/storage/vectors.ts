@@ -47,6 +47,7 @@ function filterSql(filter: Record<string, unknown>, parameters: unknown[], depth
 
 export class PostgresVectorIndex {
   private qualificationScope?:Readonly<{generation:string;sourceRevision:string}>;
+  private requireAcceptedReadiness=false;
 
   /** Trusted operator composition for preactivation verification. Ordinary
    * request options cannot opt into it; neither collection readiness nor any
@@ -58,12 +59,21 @@ export class PostgresVectorIndex {
     return index;
   }
 
+  /** Selected native releases keep their exact source fence after activation.
+   * Unlike operator qualification, accepted runtime reads require readiness. */
+  static forAccepted(pool:Pool,name:string,scope:{generation:string;sourceRevision:string},readCandidates?:VectorCandidateReader) {
+    const index=PostgresVectorIndex.forQualification(pool,name,scope,readCandidates);
+    index.requireAcceptedReadiness=true;
+    return index;
+  }
+
   private qualificationQuery() {
     return {text:`SELECT EXISTS(SELECT 1 FROM storage.vector_search_generations g
       JOIN storage.vector_collections c ON c.name=g.collection
       WHERE g.id=$2::uuid AND g.collection=$1 AND g.state='verified'
-        AND g.source_revision=$3::bigint AND c.source_revision=g.source_revision) AS valid`,
-      values:[this.name,this.qualificationScope!.generation,this.qualificationScope!.sourceRevision]};
+        AND g.source_revision=$3::bigint AND c.source_revision=g.source_revision
+        AND (NOT $4::boolean OR c.ready)) AS valid`,
+      values:[this.name,this.qualificationScope!.generation,this.qualificationScope!.sourceRevision,this.requireAcceptedReadiness]};
   }
 
   constructor(readonly pool: Pool, readonly name: string, private readonly readCandidates?:VectorCandidateReader) {}

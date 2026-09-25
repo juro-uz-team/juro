@@ -86,8 +86,11 @@ test("compact generations expand original identities and become unusable after s
     await assert.rejects(new PostgresVectorIndex(db.pool,name,async()=>{throw Error("Candidate offline");}).query(question,{topK:50,filter}),/Candidate offline/);
     const sourceRevision=(await db.pool.query("SELECT source_revision FROM storage.vector_collections WHERE name=$1",[name])).rows[0].source_revision;
     const qualification=PostgresVectorIndex.forQualification(db.pool,name,{generation,sourceRevision});
+    const accepted=PostgresVectorIndex.forAccepted(db.pool,name,{generation,sourceRevision});
     await db.pool.query("UPDATE storage.vector_collections SET ready=false WHERE name=$1",[name]);
     assert.equal(await index.isReady(),false);
+    assert.equal(await accepted.isReady(),false);
+    await assert.rejects(accepted.query(question),/VECTOR_QUALIFICATION_SOURCE_CHANGED/);
     await assert.rejects(index.query(question,{topK:1,filter}),/import has not been verified/);
     assert.equal(await qualification.isReady(),true);
     assert.deepEqual((await qualification.query(question,{topK:50,filter,returnMetadata:"all",returnValues:true})).matches,result.matches);
@@ -96,6 +99,8 @@ test("compact generations expand original identities and become unusable after s
     assert.equal(await wrong.isReady(),false);
     await assert.rejects(wrong.query(question),/VECTOR_QUALIFICATION_SOURCE_CHANGED/);
     await db.pool.query("UPDATE storage.vector_collections SET ready=true WHERE name=$1",[name]);
+    assert.equal(await accepted.isReady(),true);
+    assert.deepEqual((await accepted.query(question,{topK:50,filter,returnMetadata:"all",returnValues:true})).matches,result.matches);
     await index.query(question, {topK: 1, namespace: "", filter});
     await index.query(question, {topK: 1, filter: {$and: [filter]}});
     assert.equal(groupReads, 2, "unqualified namespace/nested scopes must retain the generic path");
@@ -107,6 +112,7 @@ test("compact generations expand original identities and become unusable after s
     await db.pool.query("UPDATE storage.embeddings SET embedding=$3::vector WHERE collection=$1 AND id=$2",
       [name, "10002", JSON.stringify(question)]);
     assert.equal(await qualification.isReady(),false);
+    assert.equal(await accepted.isReady(),false);
     await assert.rejects(qualification.query(question),/VECTOR_QUALIFICATION_SOURCE_CHANGED/);
     const refreshed = await index.query(question, {topK: 1, filter});
     assert.equal(groupReads, 2, "a changed source cannot use the old generation");
