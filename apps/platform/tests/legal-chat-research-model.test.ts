@@ -8,6 +8,30 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
 
+test("repair assessment receives earlier formulations without treating unissued proposals as searches",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const histories:unknown[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    histories.push(input.priorFormulations);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      needs:[],resolved:[],queries:[query],supportedAnswerAvailable:false,
+    })}]}]});
+  });
+  const initial={...request,needs:[]};
+  const model=createLegalResearchModel({requestId:"query-history"});
+  await model.formulateIndexed(initial);
+  await model.assess({...initial,evidence:[evidence]});
+  await model.assess({...initial,evidence:[evidence]});
+  const repair={...request,round:1};
+  await model.formulateIndexed(repair);
+  await model.assess({...repair,evidence:[evidence]});
+  await createLegalResearchModel({requestId:"separate-query-history"}).assess({...initial,evidence:[evidence]});
+  const seeded=[{round:0,lane:"indexed",queries:[request.question.question,...request.question.topics]}];
+  assert.deepEqual(histories,[seeded,seeded,[...seeded,{round:1,lane:"indexed",queries:[query.text]}],[]]);
+});
+
 test("compact coverage references preserve canonical evidence and reject decoded duplicates",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
