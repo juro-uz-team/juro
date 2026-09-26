@@ -39,6 +39,7 @@ test("verification binds server-owned claim sentences without copying their text
     actions:[],risks:[],questions:[],unresolved:[]});
   let fabricated=false;
   let duplicate=false;
+  let invalidCoverage=false;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
     assert.deepEqual(input.context.topics,["Record request eligibility", "Deadline and starting event"]);
@@ -48,8 +49,16 @@ test("verification binds server-owned claim sentences without copying their text
     assert.equal(sentences.length,2);
     assert.equal(sentences.map(item=>item.text).join(" "),draft.findings[0]!.explanation);
     assert.ok(sentences.every(item=>item.claimId==="finding:0"));
+    const schema=body.text.format.schema;
+    const resolve=(node:ProviderSchemaNode):ProviderSchemaNode=>node.$ref
+      ? resolve(node.$ref.slice(2).split("/").reduce((value:Record<string,unknown>,key:string)=>
+        value[key] as Record<string,unknown>,schema) as ProviderSchemaNode) : node;
+    const coverage=resolve(resolve(resolve(schema.properties.verification).properties!.coverage!).items!);
+    assert.equal(resolve(coverage.properties!.actionIds!).type,"null","No actions means no eligible action binding");
+    const findingReference=resolve(resolve(coverage.properties!.findingIds!).items!);
+    assert.deepEqual(findingReference.enum??[findingReference.const],["finding:0"]);
     const output={verification:{claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported"})),
-      retention:[],coverage:[{issue:"Request timing",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[]}],complete:true,gaps:[],questions:[]},
+      retention:[],coverage:[{issue:"Request timing",findingIds:[invalidCoverage?"gap:0":"finding:0"],actionIds:null,actionRequired:false,gaps:[]}],complete:true,gaps:[],questions:[]},
       sourceAudit:{s0:{p0:{material:true,actionRequired:false,missingContent:[],
         findingSupport:fabricated?["finding:0:invented"]:sentences.map(item=>item.id),actionSupport:null}}}};
     if(duplicate)Object.assign(output.sourceAudit,{[sourceId]:output.sourceAudit.s0});
@@ -62,6 +71,8 @@ test("verification binds server-owned claim sentences without copying their text
   fabricated=true;
   await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
   fabricated=false;duplicate=true;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
+  duplicate=false;invalidCoverage=true;
   await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
 });
 

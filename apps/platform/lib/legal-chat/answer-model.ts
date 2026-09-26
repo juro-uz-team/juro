@@ -200,6 +200,13 @@ function sourcePassages(text: string) {
 
 type ClaimSentence={id:string;claimId:string;text:string};
 function verificationResponseSchema(question: AnswerQuestion, claims: ReturnType<typeof legalDraftClaims>,sentences:readonly ClaimSentence[],provider=false) {
+  const coverageReferences = (kind: "finding" | "action") => {
+    const ids = claims.filter(claim => claim.kind === kind).map(claim => claim.id);
+    if (ids.length) return z.array(z.enum(ids)).max(16);
+    // A missing-law question or gap is not a legal explanation or action.
+    // Null also survives provider compatibility removing array length bounds.
+    return provider ? z.null() : z.array(z.string()).max(0).nullable().transform(value => value ?? []);
+  };
   const support = (kind: "finding" | "action", sourceId: string) => {
     const ids = claims.filter(claim => claim.kind === kind && claim.sourceIds.includes(sourceId)).map(claim => claim.id);
     const sentenceIds=sentences.filter(sentence=>ids.includes(sentence.claimId)).map(sentence=>sentence.id);
@@ -214,7 +221,11 @@ function verificationResponseSchema(question: AnswerQuestion, claims: ReturnType
     return provider?references:z.union([references,z.array(passageClaimSupportSchema.extend({claimId:z.enum(ids)})).max(16)]);
   };
   return z.object({
-    verification:legalVerificationSchema.omit({sourceGaps:true}),
+    verification:legalVerificationSchema.omit({sourceGaps:true}).extend({
+      coverage:z.array(legalVerificationSchema.shape.coverage.element.extend({
+        findingIds:coverageReferences("finding"), actionIds:coverageReferences("action"),
+      })).max(24),
+    }),
     sourceAudit:z.object(Object.fromEntries(question.evidence.map(item => {
       const verdict = passageVerdictSchema.extend({
         findingSupport: support("finding",item.source.id), actionSupport: support("action",item.source.id),
