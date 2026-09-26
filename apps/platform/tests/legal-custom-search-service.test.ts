@@ -133,8 +133,10 @@ test(physicalAlias
   const delayedEmbeddingStarted = new Promise<void>(resolve => { embeddingStarted = resolve; });
   const delayedEmbeddingRelease = new Promise<void>(resolve => { releaseEmbedding = resolve; });
   const embeddingBatchSizes: number[] = [];
+  const denseVectorStarts:number[][]=[];
   const dense = {
     async query(_vector: number[], options: VectorizeQueryOptions) {
+      denseVectorStarts.push(_vector.slice(0,3));
       observed.denseOptions = options;
       return { count: 1, matches: [{ id: "b".repeat(64), score: 0.9,
         metadata: { item_key: ITEM_KEY, release_id: DENSE_METADATA_RELEASE_ID, language: "en",
@@ -233,6 +235,23 @@ test(physicalAlias
           "x-juro-service-binding": "custom-search-runtime-v1",
           "x-juro-legal-environment": "staging" }, body,
       }), searchEnv);
+    const repeatedBody=JSON.stringify({...JSON.parse(batchBody),queries:["work","contract","work"]});
+    const callsBeforeRepeated=embeddingBatchSizes.length;
+    const repeated=await handleCustomSearchRequest(new Request(
+      "http://legal-corpus.internal/internal/legal-corpus/custom-search",{
+        method:"POST",headers:{"content-type":"application/json",
+          "content-length":String(new TextEncoder().encode(repeatedBody).byteLength),
+          "x-juro-service-binding":"custom-search-runtime-v1","x-juro-legal-environment":"staging"},body:repeatedBody,
+      }),env);
+    assert.equal(repeated.status,200);
+    const repeatedResult=await repeated.json() as typeof batchResult;
+    assert.deepEqual(repeatedResult.results.map(entry=>entry.queryIndex),[0,1,2]);
+    assert.deepEqual(repeatedResult.results[0]!.hits,repeatedResult.results[2]!.hits);
+    assert.deepEqual(denseVectorStarts.slice(-3),[[1,0,0],[0,1,0],[1,0,0]],
+      "each original formulation retains its corresponding dense vector");
+    assert.equal(embeddingBatchSizes.length-callsBeforeRepeated,1);
+    assert.equal(embeddingBatchSizes.at(-1),2,"identical formulations in one request need only one embedding");
+    assert.equal(repeatedResult.tokenUsage,2,"usage reflects only unique provider inputs");
     bucket.reads.clear();
     const prepared=await send({...env,PREPARED_ORDINALS:async input=>{
       assert.deepEqual(input,{releaseId:RELEASE_ID,sourceInventorySha256:"c".repeat(64),memberCount:1,ordinals:[0]});

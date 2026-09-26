@@ -151,11 +151,14 @@ async function queryEmbeddings(env: CustomSearchEnv, queries: string[]): Promise
   vectors: number[][]; tokenUsage: number;
 }> {
   if (!env.OPENAI_API_KEY) throw new TypeError("CUSTOM_QUERY_EMBEDDING_UNAVAILABLE");
+  // Formulations can cover different requirements with identical text. Reuse
+  // their vector only within this request, preserving every output position.
+  const uniqueQueries=[...new Set(queries)];
   const response = await (env.EMBEDDING_FETCH ?? fetch)("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
     body: JSON.stringify({ model: CUSTOM_EMBEDDING_MODEL, dimensions: CUSTOM_EMBEDDING_DIMENSIONS,
-      encoding_format: "float", input: queries }),
+      encoding_format: "float", input: uniqueQueries }),
     signal: indexedRetrievalSignal() ?? AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new TypeError("CUSTOM_QUERY_EMBEDDING_UNAVAILABLE");
@@ -163,11 +166,12 @@ async function queryEmbeddings(env: CustomSearchEnv, queries: string[]): Promise
   if (contentLength > 768 * 1024) throw new TypeError("CUSTOM_QUERY_EMBEDDING_RESPONSE_TOO_LARGE");
   const result = embeddingResponseSchema.parse(await response.json());
   const byIndex = new Map(result.data.map((entry) => [entry.index, entry.embedding]));
-  if (byIndex.size !== queries.length
-    || queries.some((_, index) => !byIndex.has(index))) {
+  if (byIndex.size !== uniqueQueries.length
+    || uniqueQueries.some((_, index) => !byIndex.has(index))) {
     throw new TypeError("CUSTOM_QUERY_EMBEDDING_RESPONSE_INCOMPLETE");
   }
-  return { vectors: queries.map((_, index) => normalizeCustomEmbedding(byIndex.get(index)!)),
+  const vectors=new Map(uniqueQueries.map((query,index)=>[query,normalizeCustomEmbedding(byIndex.get(index)!)]));
+  return { vectors: queries.map(query => [...vectors.get(query)!]),
     tokenUsage: result.usage.prompt_tokens };
 }
 
