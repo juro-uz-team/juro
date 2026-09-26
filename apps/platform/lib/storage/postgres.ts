@@ -21,10 +21,10 @@ export type SqlResult<T> = {
 };
 
 /** Parameter values never enter SQL text. Quoted text and comments retain literal question marks. */
-function bindParameters(source: string): string {
+function bindParameters(source: string, previousChanges?: number): string {
   let index = 0;
   let alias = false;
-  const normalized = postgresSql(source);
+  const normalized = postgresSql(source,previousChanges);
   const identifiers = normalized.replace(/'(?:''|[^'])*'|--[^\n]*|\/\*[\s\S]*?\*\//g, " ");
   const aliases = new Set(Array.from(identifiers.matchAll(/\bAS\s+([A-Za-z_]\w*)/gi), match => match[1]).filter(name => /[A-Z]/.test(name)));
   return normalized.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|`[^`]*`|--[^\n]*|\/\*[\s\S]*?\*\/|[A-Za-z_][\w]*|\?|[^\s]/g, (token) => {
@@ -91,12 +91,13 @@ export class PostgresDatabase {
 
   prepare(sql: string): PostgresStatement { return new PostgresStatement(this, sql); }
 
-  async execute<T>(statement: PostgresStatement, client?: PoolClient): Promise<SqlResult<T>> {
+  async execute<T>(statement: PostgresStatement, client?: PoolClient, batchState?: {changes:number}): Promise<SqlResult<T>> {
     if (statement.database !== this) throw new Error("Statement belongs to another database");
     const started = performance.now();
-    const result = await (client ? client.query<QueryResultRow>(bindParameters(statement.sql), statement.parameters)
+    const result = await (client ? client.query<QueryResultRow>(bindParameters(statement.sql,batchState?.changes), statement.parameters)
       : retrievalQuery(this.pool,bindParameters(statement.sql),[...statement.parameters])).catch(error => { throw databaseError(error); });
     const changes = /^(INSERT|UPDATE|DELETE)$/.test(result.command) ? result.rowCount ?? 0 : 0;
+    if(batchState&&/^(INSERT|UPDATE|DELETE)$/.test(result.command))batchState.changes=changes;
     // The compatibility query API exposes SQL JSON expressions as serialized text,
     // matching the persisted text columns. Direct pgvector queries retain native JSON.
     const jsonFields = result.fields.filter(field => field.dataTypeID === 114 || field.dataTypeID === 3802);
@@ -113,7 +114,8 @@ export class PostgresDatabase {
     try {
       await client.query("BEGIN");
       const results: SqlResult<T>[] = [];
-      for (const statement of statements) results.push(await this.execute<T>(statement, client));
+      const batchState={changes:0};
+      for (const statement of statements) results.push(await this.execute<T>(statement, client,batchState));
       await client.query("COMMIT");
       return results;
     } catch (error) {

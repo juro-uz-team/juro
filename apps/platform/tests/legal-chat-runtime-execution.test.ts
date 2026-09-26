@@ -14,7 +14,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     const output=schema==="legal_question_context"?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
-      :schema==="legal_answer"?{sourceReview:[{sourceId:"source",coverage:[{passageId:"p0",issueIndices:[0],unresolvedIndices:[]}]}],
+      :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
       :{sourceAudit:{source:{p0:{material:true,actionRequired:true,

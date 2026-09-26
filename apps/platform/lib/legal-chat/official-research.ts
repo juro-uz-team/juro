@@ -6,6 +6,7 @@ import {privateResearchQueries} from "./research-query";
 import type {ResearchPacket,ResearchRequest,ResearchNeed,ResearchObservation} from "./research";
 import type {LegalEvidence} from "./answer-engine";
 import type {LegalSourceLocale} from "../legal/source-fetch";
+import {MAX_OFFICIAL_RESEARCH_QUERY_CHARACTERS} from "./research-formulation";
 
 const MAX_OFFICIAL_ARTICLES=12;
 const OFFICIAL_READ_TIMEOUT_MS=10_000;
@@ -49,7 +50,7 @@ export function createOfficialResearch(input:{
       check();
       // The official site's retained search interface accepts 100 characters.
       // Never silently search an arbitrary prefix of a longer formulation.
-      if(formulation.text.length>100) {
+      if(formulation.text.length>MAX_OFFICIAL_RESEARCH_QUERY_CHARACTERS) {
         observations.push({kind:"search_query_limit",lane:"official",omitted:1});
         continue;
       }

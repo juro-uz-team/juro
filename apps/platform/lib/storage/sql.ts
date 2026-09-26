@@ -1,5 +1,5 @@
 /** Normalize the application's parameterized SQL surface to PostgreSQL. Values remain bound. */
-export function postgresSql(source: string): string {
+export function postgresSql(source: string, previousChanges?: number): string {
   const literals: string[] = [];
   let sql = source.replace(/'(?:''|[^'])*'|--[^\n]*|\/\*[\s\S]*?\*\//g, value => {
     literals.push(value); return `\u0001${literals.length - 1}\u0002`;
@@ -11,6 +11,13 @@ export function postgresSql(source: string): string {
   // SQLite folds ASCII only for LIKE; the C collation gives PostgreSQL the same boundary.
   sql = sql.replace(/\b(NOT\s+)?LIKE\b/gi, (_, not) => `COLLATE "C" ${not ?? ""}ILIKE`);
   sql = sql.replace(/\bifnull\s*\(/gi, "coalesce(");
+  // The pooled adapter can establish the prior write only inside one batch.
+  // Never carry another request's connection-local row count into a guard.
+  sql = sql.replace(/"(?:""|[^"])*"|`(?:``|[^`])*`|(?<![\w.$])changes\s*\(\s*\)/gi, (token,offset) => {
+    if(token.startsWith('"')||token.startsWith('`')||sql.slice(0,offset).trimEnd().endsWith('.'))return token;
+    if (!Number.isSafeInteger(previousChanges) || previousChanges! < 0) throw new Error("CHANGES_REQUIRES_BATCH");
+    return String(previousChanges);
+  });
   sql = sql.replace(/\bIS\s+(NOT\s+)?(?=(?:NEW|OLD)\.|`|"|\?)/gi,
     (_, not) => not ? "IS DISTINCT FROM " : "IS NOT DISTINCT FROM ");
   sql = sql.replace(/\?(?=\s+IS\s+(?:NOT\s+)?NULL\b)/gi, "?::text");

@@ -8,6 +8,96 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
 
+test("compact coverage references preserve canonical evidence and reject decoded duplicates",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const canonical="corpus:"+"a".repeat(64);
+  const sources=[{...evidence,source:{...evidence.source,id:"s0"}},
+    {...evidence,source:{...evidence.source,id:canonical},text:`Literal ${canonical} is unchanged evidence text.`}];
+  let duplicate=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    assert.equal(input.mode,"fast");
+    assert.deepEqual(input.evidence.map((item:{id:string})=>item.id),["s0","s1"]);
+    assert.equal(input.evidence[1].text,sources[1]!.text);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      needs:[],queries:[],supportedAnswerAvailable:true,
+      selectedSourceIds:duplicate?["s1",canonical]:["s0","s1"],
+      resolved:[{needIndex:0,sourceIds:["s1"]}],
+    })}]}]});
+  });
+  const assess=()=>createLegalResearchModel({requestId:"compact-research"}).assess({...request,evidence:sources});
+  const result=await assess();
+  assert.deepEqual(result.selectedSourceIds,["s0",canonical]);
+  assert.deepEqual(result.resolved,[{need:request.needs[0],sourceIds:[canonical]}]);
+  duplicate=true;
+  await assert.rejects(assess(),/SELECTION_EVIDENCE_INVALID/);
+});
+
+test("coverage selection is constrained to the authenticated inventory",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let forged=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    const item=body.text.format.schema.properties.selectedSourceIds.items;
+    assert.deepEqual(item.enum??[item.const],[evidence.source.id]);
+    assert.equal(body.text.format.schema.properties.supportedAnswerAvailable.type,"boolean");
+    const output={needs:[],resolved:[],queries:[],supportedAnswerAvailable:true,selectedSourceIds:[forged?"invented":evidence.source.id]};
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const result=await createLegalResearchModel({requestId:"selection"}).assess({...request,evidence:[evidence]});
+  assert.deepEqual(result.selectedSourceIds,[evidence.source.id]);
+  assert.equal(result.supportedAnswerAvailable,true);
+  forged=true;
+  await assert.rejects(createLegalResearchModel({requestId:"forged-selection"}).assess({...request,evidence:[evidence]}),/SELECTION_EVIDENCE_INVALID/);
+});
+
+test("public planning enforces publisher bounds without rejecting useful indexed repair formulations",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const longText="Relevant legal formulation ".repeat(6);
+  const offeredBounds:string[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    const name=body.text.format.name;
+    offeredBounds.push(body.text.format.schema.properties.queries.items.properties.text.description);
+    const planned={...query,text:longText};
+    const output=name==="legal_research_coverage"?{needs:[],resolved:[],queries:[planned]}
+      :{queries:[name==="legal_indexed_queries"?{text:longText,topicIndices:[0]}:planned]};
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const indexed=await createLegalResearchModel({requestId:"long-indexed"}).formulateIndexed(request);
+  assert.equal(indexed.formulations[0]!.text,longText.trim());
+  await assert.rejects(createLegalResearchModel({requestId:"long-public"}).formulate(request),{code:"INVALID_AI_OUTPUT"});
+  const repairModel=createLegalResearchModel({requestId:"long-repair"});
+  await repairModel.assess({...request,evidence:[evidence]});
+  const repair=await repairModel.formulateIndexed({...request,round:1});
+  assert.equal(repair.formulations[0]!.text,longText.trim(),"Preserve the complete longer formulation for indexed repair");
+  assert.match(offeredBounds[0]!,/maxLength=900/);
+  assert.match(offeredBounds[1]!,/maxLength=100/);
+  assert.match(offeredBounds[2]!,/maxLength=100/);
+});
+
+test("sufficient evidence needs no speculative repair queries and an empty plan is not reused",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const stages:string[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    const stage=body.text.format.name;stages.push(stage);
+    assert.equal(body.text.verbosity,"low");
+    const result=stage==="legal_research_coverage"?{needs:[],resolved:null,queries:[]}:{queries:[query]};
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(result)}]}]});
+  });
+  const input={...request,needs:[]};
+  const model=createLegalResearchModel({requestId:"no-speculative-queries"});
+  assert.deepEqual(await model.assess({...input,evidence:[evidence]}),{needs:[],resolved:[]});
+  const plan=await model.formulate({...input,round:1});
+  assert.equal(plan.formulations.length,1);
+  assert.deepEqual(stages,["legal_research_coverage","legal_research_queries"]);
+});
+
 test("research provider can generate only topic indices belonging to this question",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
@@ -169,7 +259,7 @@ test("research rejects fabricated resolution source IDs and operational-gap appr
 test("coverage generation offers only substantive needs and admitted source IDs as resolutions",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const schemas:Array<Record<string,any>>=[];
+  const schemas:Array<{type:string;items?:{properties:{needIndex:{enum:number[]};sourceIds:{items:{const:string}}}}}>=[];
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));schemas.push(body.text.format.schema.properties.resolved);
     return Response.json({id:"response",output:[{content:[{type:"output_text",
@@ -178,8 +268,8 @@ test("coverage generation offers only substantive needs and admitted source IDs 
   const outage={reason:"source_unavailable" as const,detail:"The source reader failed."};
   await createLegalResearchModel({requestId:"mixed"}).assess({...request,
     needs:[outage,request.needs[0]!,{reason:"unresolved_reference",detail:"The exception is missing."}],evidence:[evidence]});
-  assert.deepEqual(schemas[0]!.items.properties.needIndex.enum,[1,2]);
-  assert.equal(schemas[0]!.items.properties.sourceIds.items.const,"source:one");
+  assert.deepEqual(schemas[0]!.items!.properties.needIndex.enum,[1,2]);
+  assert.equal(schemas[0]!.items!.properties.sourceIds.items.const,"source:one");
   await createLegalResearchModel({requestId:"outage"}).assess({...request,needs:[outage],evidence:[evidence]});
   await createLegalResearchModel({requestId:"empty"}).assess({...request,evidence:[]});
   assert.equal(schemas[1]!.type,"null");assert.equal(schemas[2]!.type,"null");

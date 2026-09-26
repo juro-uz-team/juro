@@ -29,6 +29,15 @@ const approval = {
   complete: true, gaps: [], questions: [],
 };
 
+test("citations preserve the source language independently of the answer language", async () => {
+  for (const [locale, language] of [["ru", "ru"], ["uz", "uz-Latn"], ["uzc", "uz-Cyrl"], ["en", "en"], ["uz-Cyrl", "uz-Cyrl"], ["unknown", undefined]]) {
+    const evidence = question.evidence.map(item => ({...item, source: {...item.source, locale: locale!}}));
+    const outcome = await answerFromEvidence({...question, evidence}, {write: async () => draft, verify: async () => approval});
+    assert.equal(outcome.kind, "complete");
+    assert.equal(outcome.result.sources[0]?.language, language, locale);
+  }
+});
+
 test("same-section qualifications survive together and are withheld together when support is lost", async () => {
   const qualified = {...draft, findings: [...draft.findings,
     {title:"General rule", explanation:"The filing period applies subject to the following exception.",sourceIds:["official-fixture"]},

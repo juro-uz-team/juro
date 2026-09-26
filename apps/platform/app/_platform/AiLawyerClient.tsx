@@ -612,7 +612,7 @@ function LegalSourceCard({
   const fallback:ArticleDetails={documentTitle:source.actTitle,documentType:source.documentType??null,documentNumber:source.documentNumber??null,
     adoptingAuthority:source.adoptingAuthority??null,sourceClass:source.sourceClass??"OFFICIAL_LEGISLATION",articleNumber:source.article,
     articleTitle:null,part:null,chapter:null,section:null,text:source.excerpt??null,fullArticle:false,evidenceUnavailable:true,
-    truncated:false,language:source.language??locale,status:source.status,validFrom:source.effectiveDate,validTo:null,versionDate:null,
+    truncated:false,language:source.language??"",status:source.status,validFrom:source.effectiveDate,validTo:null,versionDate:null,
     officialUrl:source.originalUrl,verifiedAt:retrievedAt??source.verifiedAt,availableLanguages:[],versionHistory:[]};
   const display=details??fallback;
   const closeSourceDialog=()=>{requestRef.current?.abort();requestRef.current=null;setOpen(false);};
@@ -635,7 +635,7 @@ function LegalSourceCard({
       if(!response.ok)throw new Error("CITATION_UNAVAILABLE");
       const value=await response.json() as ArticleDetails;
       if(typeof value.fullArticle!=="boolean"||typeof value.documentTitle!=="string"||(!privateSource&&!safeOfficialUrl(value.officialUrl)))throw new Error("CITATION_INVALID");
-      if(!controller.signal.aborted)setDetails({...fallback,...value,availableLanguages:(value.availableLanguages??[]).filter(item=>safeOfficialUrl(item.officialUrl)),versionHistory:value.versionHistory??[]});
+      if(!controller.signal.aborted)setDetails({...fallback,...value,evidenceUnavailable:value.evidenceUnavailable??!value.fullArticle,availableLanguages:(value.availableLanguages??[]).filter(item=>safeOfficialUrl(item.officialUrl)),versionHistory:value.versionHistory??[]});
     }catch{if(!controller.signal.aborted)setError(aiText(locale,"Не удалось открыть цитированную редакцию.","Iqtibos keltirilgan tahrirni ochib bo‘lmadi.","The cited revision could not be opened."));}
     finally{if(requestRef.current===controller){requestRef.current=null;setLoading(false);}}
   }
@@ -647,7 +647,7 @@ function LegalSourceCard({
       {source.adoptingAuthority && <small>{source.adoptingAuthority}</small>}
       {source.excerpt && <q>{source.excerpt}</q>}
       <em>{sourceStatusLabel(source.status, locale)}{source.effectiveDate ? ` · ${formatDate(source.effectiveDate, locale)}` : ""}</em>
-      <small>{sourceClassLabel(source.sourceClass, locale)} · {languageLabel(source.language ?? (locale === "uz" ? "uz-Latn" : locale === "en" ? "en" : "ru"), locale)} · {privateSource ? aiText(locale, "защищённый индекс", "himoyalangan indeks", "secure index") : secondarySource ? aiText(locale, "открытый интернет", "ochiq internet", "public web") : origin === "live" ? "live Lex.uz" : aiText(locale, "локальный индекс", "lokal indeks", "local index")}</small>
+      <small>{sourceClassLabel(source.sourceClass, locale)} · {languageLabel(source.language ?? "", locale)} · {privateSource ? aiText(locale, "защищённый индекс", "himoyalangan indeks", "secure index") : secondarySource ? aiText(locale, "открытый интернет", "ochiq internet", "public web") : origin === "live" ? "live Lex.uz" : aiText(locale, "локальный индекс", "lokal indeks", "local index")}</small>
       <small>{privateSource
         ? aiText(locale, "Доступ и целостность файла проверены для текущего пользователя", "Faylga kirish va uning yaxlitligi joriy foydalanuvchi uchun tekshirildi", "File access and integrity were verified for the current user")
         : secondarySource
@@ -859,7 +859,8 @@ function languageLabel(language: string, locale: PlatformLocale): string {
   if (language === "uz-Latn") return aiText(locale, "Узбекский (латиница)", "O‘zbekcha (lotin)", "Uzbek (Latin)");
   if (language === "uz-Cyrl") return aiText(locale, "Узбекский (кириллица)", "Ўзбекча (кирилл)", "Uzbek (Cyrillic)");
   if (language === "en") return "English";
-  return aiText(locale, "Русский", "Rus tili", "Russian");
+  if (language === "ru") return aiText(locale, "Русский", "Rus tili", "Russian");
+  return aiText(locale, "Язык не указан", "Til ko‘rsatilmagan", "Language unspecified");
 }
 
 function sourceClassLabel(sourceClass: string | undefined, locale: PlatformLocale): string {

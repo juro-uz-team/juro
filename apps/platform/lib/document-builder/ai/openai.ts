@@ -51,6 +51,7 @@ interface ResponsesApiPayload {
   incomplete_details?: { reason?: string } | null;
   output?: Array<{
     type?: string;
+    phase?: "commentary" | "final_answer" | null;
     action?: { sources?: Array<{ type?: string; url?: string }> };
     content?: Array<{
       type?: string;
@@ -314,7 +315,14 @@ export async function callOpenAiStructured<T>(options: {
           reason,
         );
       }
-      const text = content.find((item) => item.type === "output_text" && item.text)?.text;
+      // A completed response can include a prose preamble before its structured
+      // final answer. Never parse commentary as the result or fall back to it
+      // when the final answer is absent or malformed. Older responses omit phase.
+      const messages = payload.output ?? [];
+      const finalMessages = messages.filter(item => item.phase === "final_answer");
+      const answerContent = (finalMessages.length ? finalMessages : messages.filter(item => item.phase == null))
+        .flatMap(item => item.content ?? []);
+      const text = answerContent.find((item) => item.type === "output_text" && item.text)?.text;
       if (!text) {
         attemptErrorCode = "INVALID_AI_OUTPUT";
         if (attempt < maxAttempts) continue;

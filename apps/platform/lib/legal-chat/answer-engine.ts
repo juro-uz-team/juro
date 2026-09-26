@@ -116,6 +116,9 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     article: source.article ?? null, excerpt: source.excerpt ?? null, originalUrl: source.officialUrl,
     status: source.status, effectiveDate: source.effectiveDate ?? null, verifiedAt: source.verifiedAt,
     sourceClass: source.sourceClass, sourceOrigin: origin,
+    language: source.locale === "uz" || source.locale === "uz-Latn" ? "uz-Latn"
+      : source.locale === "uzc" || source.locale === "uz-Cyrl" ? "uz-Cyrl"
+      : source.locale === "ru" || source.locale === "en" ? source.locale : undefined,
   }));
   const requiredTimes = input.temporalScope.kind === "comparison" ? [input.temporalScope.left, input.temporalScope.right] : [input.temporalScope];
   const missingTime = requiredTimes.some(time => !input.evidence.some(item => sourceIds.has(item.source.id)

@@ -7,6 +7,12 @@ import { createLegalAnswerModel } from "../lib/legal-chat/answer-model";
 import { answerFromEvidence, type AnswerQuestion } from "../lib/legal-chat/answer-engine";
 import { legalDraftClaims, legalDraftSchema, legalVerificationSchema } from "../lib/legal-chat/answer-contract";
 
+type ProviderSchemaNode = {
+  $ref?: string; type?: string; enum?: string[]; const?: string;
+  required?: string[]; additionalProperties?: boolean;
+  properties?: Record<string, ProviderSchemaNode>; items?: ProviderSchemaNode;
+};
+
 function assertStrictProviderObjects(value: unknown): void {
   if (Array.isArray(value)) {value.forEach(assertStrictProviderObjects); return;}
   if (!value || typeof value !== "object") return;
@@ -18,6 +24,76 @@ function assertStrictProviderObjects(value: unknown): void {
   }
   Object.values(node).forEach(assertStrictProviderObjects);
 }
+
+test("verification binds server-owned claim sentences without copying their text into the response",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const sourceId=`corpus-${createHash("sha256").update("sentence source").digest("hex")}`;
+  const question:AnswerQuestion={question:"When can I request a record?",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[{source:{id:sourceId,actTitle:"Synthetic source",
+      actIdentifier:null,officialUrl:"https://lex.uz/docs/123",revisionDate:null,lastCheckedAt:"2026-09-20",locale:"en",
+      publishedAt:null,sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"parent"},
+      text:"An applicant may request a record within ten days of notice.",textSha256:"fixture",endpoint:{kind:"current"},origin:"indexed"}]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Request the record within ten days of notice.",sourceIds:[sourceId]},
+    findings:[{title:"Record request",explanation:"An applicant may request a record. The request must arrive within ten days of notice.",sourceIds:[sourceId]}],
+    actions:[],risks:[],questions:[],unresolved:[]});
+  let fabricated=false;
+  let duplicate=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    assert.equal(input.context.evidence[0].id,"s0");
+    assert.deepEqual(input.claims[0].sourceIds,["s0"]);
+    const sentences=input.claimSentences as Array<{id:string;claimId:string;text:string}>;
+    assert.equal(sentences.length,2);
+    assert.equal(sentences.map(item=>item.text).join(" "),draft.findings[0]!.explanation);
+    assert.ok(sentences.every(item=>item.claimId==="finding:0"));
+    const output={verification:{claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported"})),
+      retention:[],coverage:[{issue:"Request timing",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[]}],complete:true,gaps:[],questions:[]},
+      sourceAudit:{s0:{p0:{material:true,actionRequired:false,missingContent:[],
+        findingSupport:fabricated?["finding:0:invented"]:sentences.map(item=>item.id),actionSupport:null}}}};
+    if(duplicate)Object.assign(output.sourceAudit,{[sourceId]:output.sourceAudit.s0});
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const verify=()=>createLegalAnswerModel({requestId:"sentence-bindings",onVerificationProduced:audited=>{
+    assert.equal(audited.sourceAudit[0]!.sourceId,sourceId,"Diagnostics and publication receive canonical IDs");
+  }}).verify({question,draft,claims:legalDraftClaims(draft),previous:null});
+  assert.equal(legalVerificationSchema.parse(await verify()).complete,true);
+  fabricated=true;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
+  fabricated=false;duplicate=true;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
+});
+
+test("writer produces the answer without redundant planning references and cites only supplied evidence", async context => {
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const ids=["s0",...Array.from({length:23},(_,index)=>`corpus-${createHash("sha256").update(String(index)).digest("hex")}`)];
+  const question:AnswerQuestion={question:"What is supported?",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"current"},unresolved:[],evidence:ids.map(id=>({
+      source:{id,actTitle:"Synthetic official evidence",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
+        revisionDate:null,lastCheckedAt:"2026-09-26",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
+        verificationState:"verified",verifiedAt:"2026-09-26",contentSha256:"parent"},
+      text:"An applicant may request a copy.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed",
+    }))};
+  context.mock.method(globalThis,"fetch",async (_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    const schema=body.text.format.schema;
+    const resolve=(value:ProviderSchemaNode):ProviderSchemaNode=>value.$ref
+      ? resolve(value.$ref.slice(2).split("/").reduce((node:Record<string,unknown>,key:string)=>
+        node[key] as Record<string,unknown>,schema) as ProviderSchemaNode) : value;
+    assert.deepEqual(Object.keys(schema.properties),["answer"],"Coverage belongs to the independent audit, not a second writer-authored reference map");
+    const wireIds=ids.map((_,index)=>`s${index}`);
+    assert.deepEqual(JSON.parse(body.input).context.evidence.map((item:{id:string})=>item.id),wireIds,
+      "Every source still reaches the writer");
+    const mainPoint=resolve(resolve(schema.properties.answer).properties!.mainPoint!);
+    assert.deepEqual(resolve(resolve(mainPoint.properties!.sourceIds!).items!).enum,wireIds);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      answer:{mainPoint:{text:"The applicant may request a copy.",sourceIds:[wireIds[1]]},
+        issues:[],risks:[],questions:[],unresolved:[]},
+    })}]}]});
+  });
+  const draft=await createLegalAnswerModel({requestId:"source-grammar"}).write({question,correction:null});
+  assert.deepEqual(legalDraftSchema.parse(draft).mainPoint.sourceIds,[ids[1]]);
+});
 
 test("a stalled answer provider is cancelled by the selected chat mode watchdog",async context=>{
   const previousKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
@@ -49,14 +125,13 @@ test("legal model transport pins each mode and keeps source locators out of prov
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   const sourceText=["Official provision", "", "A qualifying condition follows.",
     ...Array.from({length:161},(_,index)=>`Line ${index}.`)].join("\n");
-  const payloads: Array<{model:string;input:string;reasoning:{effort:string;mode:string};text:{format:{strict:boolean}}}> = [];
+  const payloads: Array<{model:string;input:string;reasoning:{effort:string;mode:string};text:{verbosity:string;format:{strict:boolean}}}> = [];
   context.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     assertStrictProviderObjects(body.text.format.schema);
     payloads.push(body);
     return Response.json({ id: "response", model: body.model,
       output: [{ content: [{ type: "output_text", text: JSON.stringify({
-        sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [0], unresolvedIndices: [] }] }],
         answer: {
         mainPoint: { text: "Supported result", sourceIds: ["source"] },
         issues: [{finding:{title:"Application",explanation:"A written application is required.",sourceIds:["source"]},
@@ -82,6 +157,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!("sourceReview" in draft));
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "high"]);
   assert.deepEqual(payloads.map(body=>body.reasoning),[
     {effort:"none",mode:"standard"},{effort:"max",mode:"pro"},
   ]);
@@ -118,6 +194,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     assert.deepEqual(body.reasoning,{effort:"medium",mode:"standard"},"The fast draft still receives a separate deliberative verification");
+    assert.equal(body.text.verbosity,"low","Internal audit concision does not reduce passage coverage or reasoning effort");
     const schema=body.text.format.schema;
     assertStrictProviderObjects(schema);
     function inspect(value:unknown) {
@@ -171,14 +248,13 @@ test("maximum evidence audit fits provider schema limits without losing passages
   context.diagnostic(`Maximum audit: ${propertyCount} properties, ${schemaStrings} name/value characters, ${nesting} nesting levels`);
 });
 
-test("a fabricated source passage is rejected before a draft can reach verification", async context => {
+test("a fabricated citation is rejected before a draft can reach verification", async context => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{sourceId:"source", coverage:[{passageId:"p999",issueIndices:[0],unresolvedIndices:[]}]}],
-      answer: {mainPoint:{text:"Pay the penalty",sourceIds:["source"]}, issues:[],risks:[],questions:[],unresolved:[]},
+      answer: {mainPoint:{text:"Pay the penalty",sourceIds:["fabricated-source"]}, issues:[],risks:[],questions:[],unresolved:[]},
     }) }] }], usage: {input_tokens:10,output_tokens:10},
   }));
   const question: AnswerQuestion = {
@@ -188,7 +264,8 @@ test("a fabricated source passage is rejected before a draft can reach verificat
       verificationState:"verified",verifiedAt:"2026-09-14",contentSha256:"parent"},
       text:"The person may request review.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed"}],
   };
-  await assert.rejects(createLegalAnswerModel({requestId:"forged-passage"}).write({question,correction:null}), /Invalid source passage/);
+  await assert.rejects(createLegalAnswerModel({requestId:"forged-passage"}).write({question,correction:null}),
+    (error:unknown)=>error instanceof Error && "code" in error && error.code==="INVALID_AI_OUTPUT");
 });
 
 test("verification cannot discard a material omission found in its source audit", async context => {
@@ -269,7 +346,7 @@ test("separate excerpts of one claim are all checked without rejecting a repeate
   actionSupport[1]!.excerpt=qualification;
   for(const claimId of ["action:9","finding:0"]) {
     actionSupport[1]!.claimId=claimId;
-    await assert.rejects(verify(),/Invalid audited claim binding/);
+    await assert.rejects(verify(),(error:unknown)=>error instanceof Error && "code" in error && error.code==="INVALID_AI_OUTPUT");
   }
   actionSupport[1]!.claimId="action:0";
   actionSupported=false;
@@ -297,17 +374,32 @@ test("source-audit support cannot approve a claim that does not cite that source
   const draft=legalDraftSchema.parse({mainPoint:{text,sourceIds:["cited"]},
     findings:[{title:"Record access",explanation:text,sourceIds:["cited"]}],
     actions:[{title:"Request a record",description:text,sourceIds:["cited"]}],risks:[],questions:[],unresolved:[]});
-  context.mock.method(globalThis,"fetch",async()=>Response.json({id:"response",model:"gpt-5.6-luna",output:[{content:[{type:"output_text",text:JSON.stringify({
+  let invalidBinding=true;let materialUncited=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const schema=JSON.parse(String(init?.body)).text.format.schema;
+    const resolve=(value:ProviderSchemaNode):ProviderSchemaNode=>value.$ref
+      ?resolve(value.$ref.slice(2).split("/").reduce((node:Record<string,unknown>,key:string)=>node[key] as Record<string,unknown>,schema) as ProviderSchemaNode):value;
+    const passage=resolve(resolve(resolve(schema.properties.sourceAudit).properties!.uncited!).properties!.p0!) as ProviderSchemaNode&{anyOf:ProviderSchemaNode[]};
+    const verdict=passage.anyOf.map(resolve).find(value=>value.type==="object")!;
+    assert.equal(resolve(verdict.properties!.findingSupport!).type,"null");
+    assert.equal(resolve(verdict.properties!.actionSupport!).type,"null");
+    return Response.json({id:"response",model:"gpt-5.6-luna",output:[{content:[{type:"output_text",text:JSON.stringify({
     verification:{claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Approved"})),retention:[],coverage:[],complete:true,gaps:[],questions:[]},
     sourceAudit:{cited:{p0:{material:false,actionRequired:false,findingSupport:[],actionSupport:[],missingContent:[]}},
-      uncited:{p0:{material:true,actionRequired:true,findingSupport:[{claimId:"finding:0",excerpt:text}],
-        actionSupport:[{claimId:"action:0",excerpt:text}],missingContent:[]}}},
-  })}]}]}));
-  const checked=legalVerificationSchema.parse(await createLegalAnswerModel({requestId:"citation-binding"}).verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
-  assert.equal(checked.complete,false);
-  assert.equal(checked.claims.find(claim=>claim.id==="finding:0")?.supported,false);
-  assert.equal(checked.claims.find(claim=>claim.id==="action:0")?.supported,false);
-  assert.equal(checked.sourceGaps[0]?.sourceId,"uncited");
+      uncited:{p0:invalidBinding?{material:true,actionRequired:true,findingSupport:[{claimId:"finding:0",excerpt:text}],
+        actionSupport:[{claimId:"action:0",excerpt:text}],missingContent:[]}:materialUncited?{material:true,actionRequired:false,findingSupport:null,actionSupport:null,missingContent:[]}:null}},
+  })}]}]});});
+  const verify=()=>createLegalAnswerModel({requestId:"citation-binding"}).verify({question,draft,claims:legalDraftClaims(draft),previous:null});
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
+  invalidBinding=false;
+  const checked=legalVerificationSchema.parse(await verify());
+  assert.equal(checked.claims.find(claim=>claim.id==="finding:0")?.supported,true,
+    "An explicitly irrelevant duplicate cannot invalidate a claim supported by its actual citation");
+  assert.deepEqual(checked.sourceGaps,[]);
+  materialUncited=true;
+  const omitted=legalVerificationSchema.parse(await verify());
+  assert.equal(omitted.complete,false,"Null support cannot conceal a material uncited rule");
+  assert.equal(omitted.sourceGaps[0]!.sourceId,"uncited");
 });
 
 test("unconfirmed action evidence cannot survive correction failure alongside supported findings", async context => {
@@ -396,6 +488,12 @@ test("a material passage needs separately supported legal and practical coverage
   const originalAction=draft.actions[0]!.description;
   actionExcerpt=originalAction.replace(/\.$/u,";");
   assert.equal((await verify()).complete,true, "Terminal quotation punctuation does not change the quoted operative words");
+  draft.actions[0]!.description=`You may ${originalAction[0]!.toLowerCase()}${originalAction.slice(1)}`;
+  actionExcerpt=originalAction;
+  assert.equal((await verify()).complete,true,"Capitalizing the first word of a quoted clause preserves its operative words");
+  actionExcerpt=originalAction.toUpperCase();
+  assert.equal((await verify()).complete,false,"Quotation matching does not fold the case of the whole claim");
+  draft.actions[0]!.description=originalAction;
   actionExcerpt="12.";
   for (const period of ["120", "12.5", "12/25", "12:30", "12–15", "12 000"]) {
     draft.actions[0]!.description=`Request review within ${period} days after written notice.`;
@@ -434,9 +532,9 @@ test("a material passage needs separately supported legal and practical coverage
   assert.equal(missingFinding.complete,false);
   assert.match(missingFinding.sourceGaps[0]!.passages[0]!.missingContent.join(" "),/legal explanation/i);
   findingIds=["action:0"];
-  await assert.rejects(verify(),/audit.*claim/i);
+  await assert.rejects(verify(),(error:unknown)=>error instanceof Error && "code" in error && error.code==="INVALID_AI_OUTPUT");
   findingIds=["finding:99"];
-  await assert.rejects(verify(),/audit.*claim/i);
+  await assert.rejects(verify(),(error:unknown)=>error instanceof Error && "code" in error && error.code==="INVALID_AI_OUTPUT");
 });
 
 test("one whole correction can reuse approved claims without rewriting their conditions", async context => {
@@ -465,10 +563,8 @@ test("one whole correction can reuse approved claims without rewriting their con
   });
   let findingReuse = "finding:0";
   let actionSource = "source";
-  let issueIndex = 0;
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [issueIndex], unresolvedIndices: [] }] }],
       answer: { mainPoint: { reuse: "mainPoint" },
         issues: [{ finding: { reuse: findingReuse }, actions: [{ title: "Request review",
           instruction: "Record the written-notice date and request review within ten days after it.", sourceIds: [actionSource] }] }],
@@ -476,6 +572,7 @@ test("one whole correction can reuse approved claims without rewriting their con
       },
     }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
   }));
+  question.evidence=[...question.evidence,{...question.evidence[0]!,source:{...question.evidence[0]!.source,id:"unrelated-source"}}];
   const model = createLegalAnswerModel({ requestId: "reuse-supported-claims" });
   const corrected = legalDraftSchema.parse(await model.write({ question, correction: { draft, verification } }));
   assert.deepEqual(corrected.mainPoint, draft.mainPoint);
@@ -493,9 +590,6 @@ test("one whole correction can reuse approved claims without rewriting their con
   await model.write({ question, correction: { draft, verification } });
   draft.findings[0]!.sourceIds = ["source"];
   actionSource = "source";
-  issueIndex = 1;
-  await assert.rejects(model.write({ question, correction: { draft, verification } }), /answer issue/);
-  issueIndex = 0;
   findingReuse = "mainPoint";
   await assert.rejects(model.write({ question, correction: { draft, verification } }));
   findingReuse = "finding:0";
@@ -525,7 +619,6 @@ test("a material passage can remain explicitly unresolved without inventing pair
   const gap = "The referenced exceptions are not supplied, so eligibility remains unresolved.";
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [{ sourceId: "source", coverage: [{ passageId: "p0", issueIndices: [], unresolvedIndices: [0] }] }],
       answer: { mainPoint: { text: "There is insufficient evidence for an eligibility conclusion.", sourceIds: [] },
         issues: [], risks: [], questions: [], unresolved: [gap] },
     }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
@@ -542,6 +635,12 @@ test("qualified issues preserve action membership without duplicating explanator
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   const question: AnswerQuestion = { question: "How do I apply?", locale: "en", mode: "fast", answerMode: "detailed",
     temporalScope: { kind: "current" }, unresolved: [], evidence: [] };
+  for(const id of ["rule","procedure",...Array.from({length:12},(_,index)=>`source-${index}`),"additional-source"]) {
+    question.evidence=[...question.evidence,{source:{id,actTitle:"Synthetic rule",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
+      revisionDate:null,lastCheckedAt:"2026-09-26",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
+      verificationState:"verified",verifiedAt:"2026-09-26",contentSha256:"parent"},text:"A synthetic rule.",
+      textSha256:"text",endpoint:{kind:"current"},origin:"indexed"}];
+  }
   let explanation = "Workers may apply within ten days after written notice.";
   let instruction = "Record the notice date and submit your application.";
   let findingSources = ["rule"];
@@ -550,7 +649,7 @@ test("qualified issues preserve action membership without duplicating explanator
   let hasAction = true;
   context.mock.method(globalThis, "fetch", async () => Response.json({
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      sourceReview: [], answer: {
+      answer: {
         mainPoint: { text: "Application guidance", sourceIds: [] },
         issues: [{ finding: { title: "Application", explanation, sourceIds: findingSources },
           actions: hasAction ? [reuseAction ? { reuse: "action:0" }

@@ -5,7 +5,7 @@ import {fileURLToPath} from "node:url";
 
 export async function startNativePlatform(port=3099, application="platform") {
   const cwd=fileURLToPath(new URL(application === "website" ? "../../../website/" : "../../",import.meta.url));
-  const loader=fileURLToPath(new URL("../../node_modules/tsx/dist/loader.mjs",import.meta.url));
+  const loader=new URL("../../node_modules/tsx/dist/loader.mjs",import.meta.url).href;
   let output="";
   const child=spawn(process.execPath,["--import",loader,"server/index.ts"],{cwd,windowsHide:true,
     env:{...process.env,NODE_ENV:"production",PRIVATE_DEVELOPMENT:"true",PORT:String(port),WEBSITE_PORT:String(port)},stdio:["ignore","pipe","pipe"]});

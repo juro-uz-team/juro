@@ -2,6 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PostgresDatabase } from "../lib/storage/postgres";
 
+test("conditional audit writes use only their own batch's last write count",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const id=crypto.randomUUID();
+  try {
+    await db.prepare("CREATE TABLE IF NOT EXISTS storage_changes_probe (id text PRIMARY KEY)").run();
+    const [changed,unchanged]=await Promise.all([
+      db.batch([
+        db.prepare("INSERT INTO storage_changes_probe(id) VALUES (?)").bind(id),
+        db.prepare('SELECT \'changes()\' AS literalValue, changes() AS "changes()"'),
+        db.prepare("INSERT INTO storage_changes_probe(id) SELECT ? WHERE changes()=1").bind(id+":audit"),
+      ]),
+      db.batch([
+        db.prepare("UPDATE storage_changes_probe SET id=id WHERE id=?").bind(id+":absent"),
+        db.prepare("INSERT INTO storage_changes_probe(id) SELECT ? WHERE changes()=1").bind(id+":unexpected"),
+      ]),
+    ]);
+    assert.equal(changed[2]!.meta.changes,1,"An intervening read preserves the last write count");
+    assert.equal(unchanged[1]!.meta.changes,0,"Concurrent batches never share write counts");
+    assert.deepEqual(changed[1]!.results,[{literalValue:"changes()","changes()":1}]);
+    const fresh=await db.batch([db.prepare("SELECT changes() AS previous")]);
+    assert.equal(fresh[0]!.results[0]!.previous,0,"A reused pooled connection cannot import another batch's count");
+    await assert.rejects(db.prepare("SELECT changes()").all(),/CHANGES_REQUIRES_BATCH/);
+    await assert.rejects(db.batch([
+      db.prepare("INSERT INTO storage_changes_probe(id) VALUES (?)").bind(id+":rollback"),
+      db.prepare("INSERT INTO storage_changes_probe(id) SELECT ? WHERE changes()=1").bind(id),
+    ]));
+    assert.equal(await db.prepare("SELECT id FROM storage_changes_probe WHERE id=?").bind(id+":rollback").first(),null);
+  } finally {
+    await db.prepare("DELETE FROM storage_changes_probe WHERE id LIKE ?").bind(id+"%").run();
+    await db.close();
+  }
+});
+
 test("a failed document write rolls back every statement in its batch", async () => {
   const db = new PostgresDatabase(process.env.DATABASE_URL!);
   try {
