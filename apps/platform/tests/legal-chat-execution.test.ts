@@ -126,6 +126,43 @@ for(const scenario of ["unchanged","changed","unavailable","historical","cancell
   });
 }
 
+test("final publisher refreshes overlap within a bounded batch and saving waits for all sources",async()=>{
+  const packet=Array.from({length:6},(_,index)=>({...evidence,source:{...evidence.source,id:`source-${index}`,
+    officialUrl:`https://lex.uz/docs/${999990+Math.max(0,index-1)}`,
+    currentSourceStatus:{pinnedTextSha256:"b".repeat(64),observation:null}}}));
+  const sourceIds=packet.map(item=>item.source.id);
+  const candidate=legalDraftSchema.parse({...draft,mainPoint:{...draft.mainPoint,sourceIds},
+    findings:draft.findings.map(item=>({...item,sourceIds})),actions:draft.actions.map(item=>({...item,sourceIds}))});
+  let releaseReads!:()=>void,startRead!:()=>void;
+  const gate=new Promise<void>(resolve=>{releaseReads=resolve;});
+  const started=new Promise<void>(resolve=>{startRead=resolve;});
+  let active=0,peak=0,saves=0;
+  const urls:string[]=[];
+  const running=executeLegalChat({context:{question:"May I request my record?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
+    interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
+    research:{indexed:async()=>({evidence:packet,needs:[]}),official:async()=>assert.fail("No recovery needed"),assess:async()=>[]},
+    model:{write:async()=>candidate,verify:async()=>review},renew:async()=>true,release:async()=>{},
+    observeSource:async officialUrl=>{
+      urls.push(officialUrl);active++;peak=Math.max(peak,active);startRead();
+      await gate;active--;
+      return {version:2,officialUrl,observedAt:new Date().toISOString(),current:true,
+        normalizedTextSha256:"b".repeat(64),rawContentSha256:"c".repeat(64)};
+    },
+    commit:async(terminal,sources)=>{saves++;assert.equal(active,0);assert.equal(sources.length,6);return terminal;},
+  });
+  try {
+    await started;
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.ok(active>1,"Independent publisher requests must overlap");
+    assert.ok(active<=4,"Publisher concurrency must stay bounded");
+    assert.equal(saves,0,"Do not publish while a required refresh is pending");
+  } finally {releaseReads();}
+  const result=await running;
+  assert.equal(result.kind,"complete");assert.equal(saves,1);
+  assert.equal(urls.length,5,"Sources from the same publication share one refresh");
+  assert.equal(new Set(urls).size,5);assert.ok(peak<=4);
+});
+
 test("one stale source withholds dependent claims while preserving an independent supported topic",async()=>{
   const old=new Date(Date.now()-600_000).toISOString();
   const packet=["source","other"].map(id=>({...evidence,source:{...evidence.source,id,

@@ -18,13 +18,18 @@ export async function validateAnswerSources(input:{evidence:readonly LegalEviden
     input.signal?.throwIfAborted();
     return observation;
   };
-  for(const item of input.evidence) {
-    input.signal?.throwIfAborted();
-    const source={...item.source,applicabilityStatus:item.endpoint.kind==="current"?"current" as const:"historical" as const};
-    try {
-      const result=await validateFinalSourceObservations({sources:[source],sourceIds:[source.id],observe});
-      validated.set(source.id,result.get(source.id)!);
-    } catch {input.signal?.throwIfAborted();}
+  // Independent publications need not wait for one another. Bound publisher
+  // load, share same-URL reads, and retain input order regardless of completion.
+  for(let offset=0;offset<input.evidence.length;offset+=4) {
+    const results=await Promise.all(input.evidence.slice(offset,offset+4).map(async item=>{
+      input.signal?.throwIfAborted();
+      const source={...item.source,applicabilityStatus:item.endpoint.kind==="current"?"current" as const:"historical" as const};
+      try {
+        const result=await validateFinalSourceObservations({sources:[source],sourceIds:[source.id],observe});
+        return result.get(source.id);
+      } catch {input.signal?.throwIfAborted();return undefined;}
+    }));
+    for(const source of results)if(source)validated.set(source.id,source);
   }
   // A source can expire while a later source is read. Recheck all survivors
   // without another publisher attempt or a timestamp manufactured by us.
