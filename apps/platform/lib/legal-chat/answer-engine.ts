@@ -17,6 +17,8 @@ export type LegalEvidence = {
 };
 export type AnswerQuestion = {
   question: string;
+  /** Interpreted research scope, never legal authority or confirmed facts. */
+  topics?: readonly string[];
   locale: "ru" | "uz" | "en";
   mode: "fast" | "deep";
   answerMode: "short" | "detailed";

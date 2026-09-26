@@ -29,6 +29,7 @@ test("verification binds server-owned claim sentences without copying their text
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const sourceId=`corpus-${createHash("sha256").update("sentence source").digest("hex")}`;
   const question:AnswerQuestion={question:"When can I request a record?",locale:"en",mode:"fast",answerMode:"short",
+    topics:["Record request eligibility", "Deadline and starting event"],
     temporalScope:{kind:"current"},unresolved:[],evidence:[{source:{id:sourceId,actTitle:"Synthetic source",
       actIdentifier:null,officialUrl:"https://lex.uz/docs/123",revisionDate:null,lastCheckedAt:"2026-09-20",locale:"en",
       publishedAt:null,sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"parent"},
@@ -40,6 +41,7 @@ test("verification binds server-owned claim sentences without copying their text
   let duplicate=false;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    assert.deepEqual(input.context.topics,["Record request eligibility", "Deadline and starting event"]);
     assert.equal(input.context.evidence[0].id,"s0");
     assert.deepEqual(input.claims[0].sourceIds,["s0"]);
     const sentences=input.claimSentences as Array<{id:string;claimId:string;text:string}>;
@@ -144,6 +146,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   const model = createLegalAnswerModel({ requestId: "request", onAttemptFinished: value => { observations.push(value); } });
   for (const mode of ["fast", "deep"] as const) {
     const question: AnswerQuestion = { question: "Question", locale: "en", mode, answerMode: "detailed",
+      topics:["Record request eligibility", "Application procedure"],
       temporalScope: { kind: "current" }, unresolved: [], documents:[privateDocumentContext()], evidence: [{ source: {
         id: "source", actTitle: "Title", actIdentifier: null, officialUrl: "https://lex.uz/docs/123",
         revisionDate: null, lastCheckedAt: "2026-09-14", locale: "en", publishedAt: null,
@@ -169,6 +172,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!body.input.includes("https://lex.uz"));
     assert.ok(body.input.includes("Official provision"));
     const input=JSON.parse(body.input);
+    assert.deepEqual(input.context.topics,["Record request eligibility", "Application procedure"]);
     assert.deepEqual(input.context.privateDocuments,[{id:privateDocumentContext().source.id,
       title:"Uploaded agreement",text:privateDocumentContext().text}]);
     assert.doesNotMatch(body.input,/juro-private:|private-object-checksum/);
