@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import {setImmediate as nextTurn} from "node:timers/promises";
+import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
 import { buildCustomBm25Artifacts, customBm25TermHash } from "../lib/legal-corpus/custom-bm25";
 import { buildCustomBm25RuntimeArtifacts, queryCustomBm25Runtime, queryCustomBm25RuntimeBatch,
@@ -26,6 +28,44 @@ class MemoryR2 {
       bytes.byteOffset, bytes.byteOffset + bytes.byteLength); } };
   }
 }
+
+async function streamSearchFixture() {
+  const built=await buildCustomBm25Artifacts(Array.from({length:20},(_,index)=>({
+    segmentId:"base",itemKey:`record-${index}`,language:"en",documentType:"law",validFromEpoch:1,validToEpoch:null,
+    fields:{title:"Employment contract",hierarchy:"Rights",article:String(index+1),text:"employment contract annual leave notice"},
+  })),{analyzer:"word-v1"});
+  const runtime=await buildCustomBm25RuntimeArtifacts({releaseId:"release:test:concurrent-cache",
+    sparseManifestSha256:"a".repeat(64),manifest:built.manifest});
+  const bucket=new MemoryR2();
+  bucket.objects.set(runtime.documentsReference.key,runtime.documentsBytes);
+  for(const artifact of built.artifacts)bucket.objects.set(artifact.key,artifact.bytes);
+  const search=(cache:CustomRuntimeCache)=>queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
+    runtime.descriptor,[{text:"employment annual leave",atEpoch:2,topK:10}],cache);
+  return {bucket,runtime,search};
+}
+
+test("cancelling a search closes its pending document stream and permits a clean retry",async context=>{
+  const {bucket,runtime,search}=await streamSearchFixture();
+  const get=bucket.get.bind(bucket),entered=Promise.withResolvers<void>();
+  let cancelled=false;
+  context.mock.method(bucket,"get",async(...args:Parameters<typeof get>)=>{
+    const object=await get(...args);
+    if(!object||args[0]!==runtime.documentsReference.key)return object;
+    return {...object,body:new ReadableStream<Uint8Array>({
+      pull(){entered.resolve();},cancel(){cancelled=true;},
+    })};
+  });
+  const controller=new AbortController(),reason=new Error("Search cancelled"),cache=new CustomRuntimeCache();
+  const pending=runIndexedRetrieval(controller.signal,()=>search(cache));
+  const rejected=assert.rejects(pending,error=>error===reason);
+  await entered.promise;
+  controller.abort(reason);
+  await rejected;
+  await nextTurn();
+  assert.equal(cancelled,true);
+  context.mock.restoreAll();
+  assert.equal((await search(cache))[0]!.length,10);
+});
 
 test("native ordinal lookup caches compact identities only after authenticating the pinned page",async()=>{
   const keys=[`retrieval-chunk-v1:${"a".repeat(64)}`,`retrieval-chunk-v1:${"b".repeat(64)}`];

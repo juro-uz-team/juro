@@ -491,61 +491,72 @@ async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocument
   }
   const hash = createHash("sha256");
   const reader = object.body.getReader();
-  const selected = new Map<number, RuntimeDocument>();
-  let pending = new Uint8Array();
-  let totalBytes = 0;
-  let expectedRecords: number | undefined;
-  let records = 0;
-  let previousOrdinal = -1;
-  while (true) {
+  let signal:AbortSignal|undefined;
+  const cancel=()=>{void reader.cancel(signal?.reason).catch(()=>undefined);};
+  try {
+    signal=indexedRetrievalSignal();
+    signal?.addEventListener("abort",cancel,{once:true});
+    const selected = new Map<number, RuntimeDocument>();
+    let pending = new Uint8Array();
+    let totalBytes = 0;
+    let expectedRecords: number | undefined;
+    let records = 0;
+    let previousOrdinal = -1;
+    while (true) {
+      indexedRetrievalSignal();
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      hash.update(value);
+      if(retained) {
+        if(totalBytes+value.byteLength>retained.byteLength)throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
+        retained.set(value,totalBytes);
+      }
+      totalBytes += value.byteLength;
+      const bytes = pending.byteLength === 0 ? value : (() => {
+        const joined = new Uint8Array(pending.byteLength + value.byteLength);
+        joined.set(pending); joined.set(value, pending.byteLength);
+        return joined;
+      })();
+      let offset = 0;
+      if (expectedRecords === undefined) {
+        if (bytes.byteLength < HEADER_SIZE) { pending = bytes.slice(); continue; }
+        if (!MAGIC.every((byte, index) => bytes[index] === byte)) {
+          throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
+        }
+        const header = new DataView(bytes.buffer, bytes.byteOffset, HEADER_SIZE);
+        if (header.getUint32(8, true) !== 1) {
+          throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
+        }
+        expectedRecords = header.getUint32(12, true);
+        offset = HEADER_SIZE;
+      }
+      while (bytes.byteLength - offset >= RECORD_SIZE) {
+        const view = new DataView(bytes.buffer, bytes.byteOffset + offset, RECORD_SIZE);
+        const ordinal = view.getUint32(0, true);
+        if (ordinal <= previousOrdinal) throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
+        previousOrdinal = ordinal;
+        if (requested.has(ordinal)) {
+          selected.set(ordinal,decodeRuntimeDocument(view));
+        }
+        records++;
+        offset += RECORD_SIZE;
+      }
+      pending = bytes.slice(offset);
+    }
     indexedRetrievalSignal();
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    hash.update(value);
-    if(retained) {
-      if(totalBytes+value.byteLength>retained.byteLength)throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
-      retained.set(value,totalBytes);
+    if (pending.byteLength !== 0 || expectedRecords === undefined || records !== expectedRecords
+      || totalBytes !== reference.sizeBytes || hash.digest("hex") !== reference.sha256
+      || selected.size !== requested.size) {
+      throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
     }
-    totalBytes += value.byteLength;
-    const bytes = pending.byteLength === 0 ? value : (() => {
-      const joined = new Uint8Array(pending.byteLength + value.byteLength);
-      joined.set(pending); joined.set(value, pending.byteLength);
-      return joined;
-    })();
-    let offset = 0;
-    if (expectedRecords === undefined) {
-      if (bytes.byteLength < HEADER_SIZE) { pending = bytes.slice(); continue; }
-      if (!MAGIC.every((byte, index) => bytes[index] === byte)) {
-        throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
-      }
-      const header = new DataView(bytes.buffer, bytes.byteOffset, HEADER_SIZE);
-      if (header.getUint32(8, true) !== 1) {
-        throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
-      }
-      expectedRecords = header.getUint32(12, true);
-      offset = HEADER_SIZE;
-    }
-    while (bytes.byteLength - offset >= RECORD_SIZE) {
-      const view = new DataView(bytes.buffer, bytes.byteOffset + offset, RECORD_SIZE);
-      const ordinal = view.getUint32(0, true);
-      if (ordinal <= previousOrdinal) throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
-      previousOrdinal = ordinal;
-      if (requested.has(ordinal)) {
-        selected.set(ordinal,decodeRuntimeDocument(view));
-      }
-      records++;
-      offset += RECORD_SIZE;
-    }
-    pending = bytes.slice(offset);
+    if(retained)cache!.put(identity,retained);
+    return selected;
+  } finally {
+    signal?.removeEventListener("abort",cancel);
+    await reader.cancel().catch(()=>undefined);
+    reader.releaseLock();
   }
-  if (pending.byteLength !== 0 || expectedRecords === undefined || records !== expectedRecords
-    || totalBytes !== reference.sizeBytes || hash.digest("hex") !== reference.sha256
-    || selected.size !== requested.size) {
-    throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");
-  }
-  if(retained)cache!.put(identity,retained);
-  return selected;
 }
 
 const postingBlockSchema = z.object({
