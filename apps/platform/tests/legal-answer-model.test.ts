@@ -125,7 +125,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
   const sourceText=["Official provision", "", "A qualifying condition follows.",
     ...Array.from({length:161},(_,index)=>`Line ${index}.`)].join("\n");
-  const payloads: Array<{model:string;input:string;reasoning:{effort:string;mode:string};text:{verbosity:string;format:{strict:boolean}}}> = [];
+  const payloads: Array<{model:string;input:string;prompt_cache_options?:unknown;reasoning:{effort:string;mode:string};text:{verbosity:string;format:{strict:boolean}}}> = [];
   context.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     assertStrictProviderObjects(body.text.format.schema);
@@ -158,6 +158,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
   assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "high"]);
+  assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
   assert.deepEqual(payloads.map(body=>body.reasoning),[
     {effort:"none",mode:"standard"},{effort:"max",mode:"pro"},
   ]);
@@ -194,6 +195,7 @@ test("maximum evidence audit fits provider schema limits without losing passages
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     assert.deepEqual(body.reasoning,{effort:"medium",mode:"standard"},"The fast draft still receives a separate deliberative verification");
+    assert.deepEqual(body.prompt_cache_options,{mode:"explicit"},"One-shot audits must not incur unused automatic cache writes");
     assert.equal(body.text.verbosity,"low","Internal audit concision does not reduce passage coverage or reasoning effort");
     const schema=body.text.format.schema;
     assertStrictProviderObjects(schema);

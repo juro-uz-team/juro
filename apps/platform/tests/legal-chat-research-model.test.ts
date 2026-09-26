@@ -18,6 +18,7 @@ test("compact coverage references preserve canonical evidence and reject decoded
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
     assert.equal(input.mode,"fast");
+    assert.deepEqual(body.prompt_cache_options,{mode:"explicit"},"Unique assessment inputs must not incur unused automatic cache writes");
     assert.deepEqual(input.evidence.map((item:{id:string})=>item.id),["s0","s1"]);
     assert.equal(input.evidence[1].text,sources[1]!.text);
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({

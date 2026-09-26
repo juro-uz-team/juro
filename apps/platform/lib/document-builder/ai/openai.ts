@@ -172,6 +172,8 @@ export async function callOpenAiStructured<T>(options: {
   /** Optional provider execution mode; omitted callers retain provider defaults. */
   reasoningMode?: "standard" | "pro";
   textVerbosity?: "low" | "medium" | "high";
+  /** Explicit mode without input breakpoints avoids caching one-use prefixes. */
+  promptCacheMode?: "implicit" | "explicit";
   /** Bound generated output for latency-sensitive structured interactions. */
   maxOutputTokens?: number;
   /** Browsing is opt-in and constrained to a server-owned purpose. */
@@ -229,6 +231,7 @@ export async function callOpenAiStructured<T>(options: {
             instructions: options.instructions,
             input: options.rawInput ? options.input : typeof options.input === "string" ? options.input : JSON.stringify(options.input),
             ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
+            ...(options.promptCacheMode ? {prompt_cache_options:{mode:options.promptCacheMode}} : {}),
             ...(options.reasoningEffort || options.reasoningMode ? { reasoning: {
               ...(options.reasoningEffort ? {effort:options.reasoningEffort} : {}),
               ...(options.reasoningMode ? {mode:options.reasoningMode} : {}),
