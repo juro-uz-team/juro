@@ -24,7 +24,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
   }):Promise<Saved> {
   const options={requestId:input.requestId,deadlineAt:Date.now()+LEGAL_CHAT_EXECUTION_TIMEOUT_MS,
     safetyIdentifier:input.safetyIdentifier,onAttempt:input.onAttempt,onAttemptFinished:input.onAttemptFinished};
-  const model=createLegalResearchModel(options);
+  const model=createLegalResearchModel({...options,draftDuringAssessment:input.mode==="fast",responseTone:input.responseTone});
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
     requestId:input.requestId,formulate:model.formulateIndexed});
   try {

@@ -8,6 +8,59 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
 
+test("bounded Fast assessment returns a provisional issue draft with canonical citations",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const source={...evidence,source:{...evidence.source,id:"authenticated-source-with-long-canonical-identity"}};
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.text.format.name,"legal_research_answer");
+    assert.equal(body.model,"gpt-6-luna");
+    const payload=JSON.parse(body.input);assert.equal(payload.evidence[0].text,source.text);
+    assert.equal(payload.answerMode,"short");
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      assessment:{selectedSourceIds:["s0"],supportedAnswerAvailable:true,needs:[],resolved:null,queries:[]},
+      draft:{answer:{issues:[{finding:{title:"Access",explanation:"Applicants may request their record.",sourceIds:["s0"]},
+        actions:[{title:"Request",instruction:"Ask for your record.",sourceIds:["s0"]}]}],
+        risks:[],questions:[],unresolved:[],mainPoint:{text:"You may request your record.",sourceIds:["s0"]}}},
+    })}]}]});
+  });
+  const result=await createLegalResearchModel({requestId:"combined",draftDuringAssessment:true}).assess({
+    ...request,needs:[],question:{...request.question,mode:"fast",answerMode:"short"},evidence:[source],
+  });
+  assert.deepEqual(result.selectedSourceIds,[source.source.id]);
+  assert.deepEqual(result.provisionalDraft?.mainPoint.sourceIds,[source.source.id]);
+  assert.deepEqual(result.provisionalDraft?.ruleBindings,[{findingId:"finding:0",actionIds:["action:0"]}]);
+  assert.equal(result.provisionalDraft?.actions[0]?.description,"Ask for your record.");
+});
+
+test("research drafting never expands the answer context budget to the larger selection budget",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.text.format.name,"legal_research_coverage");
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      selectedSourceIds:[evidence.source.id],supportedAnswerAvailable:true,needs:[],resolved:null,queries:[],
+    })}]}]});
+  });
+  const result=await createLegalResearchModel({requestId:"large-selection",draftDuringAssessment:true}).assess({
+    ...request,needs:[],question:{...request.question,mode:"fast"},evidence:[{...evidence,text:"a".repeat(64001)}],
+  });
+  assert.equal(result.provisionalDraft,undefined);
+});
+
+test("an invalid combined draft does not discard a valid research assessment",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  context.mock.method(globalThis,"fetch",async()=>Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+    assessment:{selectedSourceIds:[evidence.source.id],supportedAnswerAvailable:true,needs:[],resolved:null,queries:[]},
+    draft:{answer:{mainPoint:{text:"An unsupported citation",sourceIds:["invented"]},issues:[],risks:[],questions:[],unresolved:[]}},
+  })}]}]}));
+  const result=await createLegalResearchModel({requestId:"invalid-proposal",draftDuringAssessment:true}).assess({
+    ...request,needs:[],question:{...request.question,mode:"fast"},evidence:[evidence],
+  });
+  assert.deepEqual(result.selectedSourceIds,[evidence.source.id]);
+  assert.equal(result.provisionalDraft,undefined);
+});
+
 test("a bound research model rejects a changed initial plan for the same question",async()=>{
   const question={...request.question,initialQueries:[query]};
   const model=createLegalResearchModel({requestId:"initial-plan-owner"});

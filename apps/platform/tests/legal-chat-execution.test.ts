@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
 import {privateDocumentContext} from "./helpers/private-document-context";
 import {createHash} from "node:crypto";
 import {executeLegalChat,type LegalChatTerminal} from "../lib/legal-chat/execution";
@@ -23,6 +24,17 @@ const review={claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:
   retention:[],coverage:[{issue:"Record access",findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
   complete:true,gaps:[],questions:[]};
 
+test("an admitted research draft skips rewriting but still requires independent verification before save",async()=>{
+  let verified=false;
+  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
+    interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
+    research:{indexed:async()=>({evidence:[evidence],needs:[]}),official:async()=>({evidence:[],needs:[]}),
+      assess:async()=>({needs:[],resolved:[],supportedAnswerAvailable:true,provisionalDraft:legalDraftSchema.parse(draft)})},
+    model:{write:async()=>{throw Error("Draft must not be regenerated");},verify:async()=>{verified=true;return review;}},
+    renew:async()=>true,commit:async terminal=>{assert.ok(verified);return terminal;},release:async()=>{},
+  });
+  assert.equal(result.kind,"complete");
+});
 for(const failedStage of ["writing","verifying","correcting"] as const) {
 test(`answer ${failedStage} failures remain observable without leaking into the saved answer`,async()=>{
   const failure=new Error("Invalid source passage: private diagnostic detail");

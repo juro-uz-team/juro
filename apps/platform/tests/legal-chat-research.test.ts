@@ -5,6 +5,7 @@ import {researchLegalQuestion,type ResearchQuestion,type ResearchNeed} from "../
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 import {createLegalResearchModel} from "../lib/legal-chat/research-model";
 import {env} from "./helpers/runtime-env";
+import {legalDraftSchema} from "../lib/legal-chat/answer-contract";
 
 function evidence(id:string,text="Synthetic rule: an applicant may request a record."):LegalEvidence {
   return {source:{id,actTitle:"Synthetic rules",actIdentifier:null,officialUrl:"https://lex.uz/docs/999999",
@@ -16,6 +17,31 @@ function evidence(id:string,text="Synthetic rule: an applicant may request a rec
 const question:ResearchQuestion={question:"How can I request a record?",topics:["Record request"],
   locale:"en",mode:"deep",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
+
+test("research discards a provisional draft when selection removes its cited evidence",async()=>{
+  const draft=legalDraftSchema.parse({mainPoint:{text:"An applicant may request a record.",sourceIds:["removed"]},
+    findings:[{title:"Access",explanation:"An applicant may request a record.",sourceIds:["removed"]}],
+    actions:[],risks:[],questions:[],unresolved:[]});
+  const result=await researchLegalQuestion({...question,mode:"fast"},{
+    indexed:async()=>({evidence:[evidence("retained"),evidence("removed")],needs:[]}),
+    official:async()=>{throw Error("No further search expected");},
+    assess:async()=>({selectedSourceIds:["retained"],supportedAnswerAvailable:true,needs:[],resolved:[],provisionalDraft:draft}),
+  });
+  assert.deepEqual(result.evidence.map(item=>item.source.id),["retained"]);
+  assert.equal(result.provisionalDraft,undefined);
+});
+
+test("an uncited research proposal falls back to standalone drafting",async()=>{
+  const draft=legalDraftSchema.parse({mainPoint:{text:"An applicant may request a record.",sourceIds:["retained"]},
+    findings:[{title:"Access",explanation:"An applicant may request a record.",sourceIds:[]}],
+    actions:[],risks:[],questions:[],unresolved:[]});
+  const result=await researchLegalQuestion({...question,mode:"fast"},{
+    indexed:async()=>({evidence:[evidence("retained")],needs:[]}),official:async()=>({evidence:[],needs:[]}),
+    assess:async()=>({selectedSourceIds:["retained"],supportedAnswerAvailable:true,needs:[],resolved:[],provisionalDraft:draft}),
+  });
+  assert.equal(result.provisionalDraft,undefined);
+  assert.equal(result.evidence.length,1);
+});
 
 test("assessment resolution retains its complete supporting source when the selection omits it",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";

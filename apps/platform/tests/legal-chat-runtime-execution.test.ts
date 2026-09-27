@@ -12,9 +12,12 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));calls++;const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
+    const answer={mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
+      actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]};
     const output=schema==="legal_question_research"?{
       interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{queries:[query]}}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
+      :schema==="legal_research_answer"?{assessment:{needs:[],resolved:null,queries:[],selectedSourceIds:["source"],supportedAnswerAvailable:true},draft:{answer}}
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
@@ -32,7 +35,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
       return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
-  assert.equal(calls,4,"The normal writer and verifier both completed before final source validation");
+  assert.equal(calls,3,"Combined research drafting and independent verification complete before final source validation");
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
   assert.equal(result.result.failureReason,"official_research_unavailable");
   assert.deepEqual(result.result.confirmedFindings,[]);

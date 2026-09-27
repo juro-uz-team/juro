@@ -5,6 +5,7 @@ import { fitsLegalEvidenceBudget } from "../legal/legal-evidence-budget";
 import {selectResearchEvidence} from "./research-evidence";
 import { LEGAL_CHAT_MAX_RESEARCH_ROUNDS } from "./execution-limits";
 import type {InitialResearchQueries} from "./initial-research-plan";
+import {legalDraftSchema,legalDraftClaims,type LegalDraft} from "./answer-contract";
 
 export const researchNeedSchema = z.object({
   reason: z.enum(["missing_rule", "unresolved_reference", "ambiguous_revision", "source_unavailable", "context_budget", "search_budget"]),
@@ -22,6 +23,8 @@ export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly 
   resolved?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[]};
 export type ResearchRequest = {question:ResearchQuestion; needs:readonly ResearchNeed[]; round:number};
 export type ResearchAssessment = {
+  /** Unverified answer proposed while reading the same bounded evidence. */
+  provisionalDraft?:LegalDraft;
   selectedSourceIds?:readonly string[];
   supportedAnswerAvailable?:boolean;
   needs:readonly ResearchNeed[];
@@ -33,6 +36,7 @@ export type LegalResearchServices = {
   assess(request:ResearchRequest & {evidence:readonly LegalEvidence[];observations?:readonly ResearchObservation[]}):Promise<readonly ResearchNeed[]|ResearchAssessment>;
 };
 export type LegalResearchResult = ResearchPacket & {
+  provisionalDraft?:LegalDraft;
   sourceUnavailable:boolean;
   rounds:number;
   observations:readonly ResearchObservation[];
@@ -50,6 +54,7 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   let packetResolutions:NonNullable<ResearchPacket["resolved"]>=[];
   const known=new Map<string,LegalEvidence>();
   let supportedAnswerAvailable=false;
+  let provisionalDraft:LegalDraft|undefined;
   const selections=new Map<string,{sourceIds:readonly string[];supportedAnswerAvailable:boolean|undefined}>();
   const signature=(items:readonly LegalEvidence[])=>JSON.stringify(items.map(item=>item.source.id).sort());
   let stalled=false;
@@ -95,6 +100,9 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   };
   const search=async(lane:"indexed"|"official",request:ResearchRequest)=>{
     checkCancellation();
+    // Any further research invalidates the earlier answer proposal, including
+    // an outage that changes the known coverage without adding a source.
+    provisionalDraft=undefined;
     let packet:ResearchPacket;
     try {packet=await services[lane](request);}
     catch {
@@ -148,6 +156,19 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
       evidence=selected;pending=selected;packetResolutions=[];
       const answerable=cached?cached.supportedAnswerAvailable:assessment.supportedAnswerAvailable;
       supportedAnswerAvailable=answerable===true;
+      if(assessment.provisionalDraft && supportedAnswerAvailable
+        && fitsLegalEvidenceBudget(candidates.map(item=>item.text))) {
+        const candidate=legalDraftSchema.parse(assessment.provisionalDraft);
+        const selectedIds=new Set(selected.map(item=>item.source.id));
+        // Dependency restoration can introduce evidence the assessor did not
+        // see. A removed citation or new provision requires a fresh writer.
+        if(candidate.findings.length && selected.every(item=>candidates.some(source=>source.source.id===item.source.id))
+          && legalDraftClaims(candidate).every(claim=>
+            (["question","gap"].includes(claim.kind)||claim.sourceIds.length>0)
+            && claim.sourceIds.every(id=>selectedIds.has(id)))) {
+          provisionalDraft=candidate;
+        }
+      }
       // A negative answerability verdict is itself an unresolved coverage fact.
       // Missing prose must not turn related evidence into successful research.
       if(answerable===false&&!needs.length&&!next.length)next.push({reason:"missing_rule",
@@ -180,5 +201,5 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   if(rounds===LEGAL_CHAT_MAX_RESEARCH_ROUNDS && needs.length) needs.push({reason:"search_budget",detail:"The bounded official research rounds are exhausted; unresolved coverage remains."});
   else if(stalled && needs.length) needs.push({reason:"search_budget",detail:"Research stopped after both search lanes added no authenticated evidence; unresolved coverage remains."});
   sourceUnavailable ||= needs.some(need=>need.reason==="source_unavailable");
-  return {evidence,needs,sourceUnavailable,rounds,observations};
+  return {evidence,needs,sourceUnavailable,rounds,observations,...(provisionalDraft?{provisionalDraft}:{})};
 }

@@ -215,6 +215,8 @@ function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutc
 export async function answerFromEvidence(input: AnswerQuestion, model: AnswerModel, options?:{
   validateSources?:(evidence:readonly LegalEvidence[])=>Promise<ReadonlyMap<string,LegalSourceContext>>;
   correction?:"once"|"never";
+  /** Research may propose a draft, never a verification verdict. */
+  initialDraft?:LegalDraft;
   /** Internal only; errors may contain private model output. Never serialize into answers. */
   onFailure?:(observation:AnswerFailureObservation)=>void|Promise<void>;
 }): Promise<AnswerOutcome> {
@@ -248,7 +250,7 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
   let verification: LegalVerification;
   try {
     input.onStage?.("writing");
-    draft = legalDraftSchema.parse(await model.write({ question: input, correction: null }));
+    draft = legalDraftSchema.parse(options?.initialDraft ?? await model.write({ question: input, correction: null }));
     if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
     stage="verifying";
     input.onStage?.("verifying");
