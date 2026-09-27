@@ -171,6 +171,8 @@ sourceAudit: inspect every supplied source and passage using its required key. R
 
 Separate claim truth from answer completeness. If a provision independently grants A and B, a correctly scoped statement of A is supported even if it omits B; record B as a coverage/source gap when material, not as a reason to call A false. If instead the provision grants A ONLY under condition B, omitting B makes an unconditional assertion of A unsupported. Reject missing restrictions that change eligible actors, operative clocks/triggers, scope, amount or exceptions. Do not reject a correctly scoped permission merely because a separate benefit or additional explanation is absent. The same distinction applies independently to findings and actions. All MainPoint deadline/trigger checks below remain required; incomplete coverage never authorizes a false claim or a complete-answer flag.
 
+Claim transport: when a claim has title and sentenceIds instead of text, its complete text is that title followed by the referenced claimSentences in the listed order. Audit all of it exactly as a text claim. A title still cannot substitute for legal explanation or practical guidance in passage coverage.
+
 verification.claims: return exactly one verdict for EVERY supplied claim ID. Keep each supported reason to one concise sentence; explain a rejection precisely enough to identify the defect. Do not repeat the full answer or source text in reason. supported is true only if its legal substance is entailed by the actual cited evidence, IDs exist, and its actors, conditions, exceptions, legal numbers, triggers and temporal scope are correct. Before approving an operative claim, compare each entitlement, permission, prohibition and consequence with its cited provision: who qualifies, under which conditions, and with which exceptions? In reason, identify any material difference between the draft's scope and the source's scope, rather than just confirming their shared topic. Test whether the draft would also cover a person or event excluded by the source. Check every member of a list separately: a shared introductory noun does not erase different eligibility restrictions on its members. Preserve the scope of modifiers when translating; neither drop a restriction nor extend it to neighboring categories without source support. A practical recommendation may still contain a false legal premise or an overbroad promise of protection; its advisory wording does not make that premise supported. Reconcile independent protections rather than allowing one permission to override another prohibition. Reject an unsupported assertion even if the rest of that claim is correct. Practical suggestions may be reasonable applications of the cited rule when clearly recommendations; do not demand a statute that literally recites every sensible recommendation. A mandatory step or purported legal obligation needs official support. Assess semantic equivalence, not a requirement to repeat a particular phrase.
 
 Judge the proposition actually asserted. A summary that says separate or conditional rules exist and points to their explanation does not by itself assert that every person in that broad topic receives a particular entitlement. Do not invent a universal quantifier or permission that the text never states. Conversely, when a claim actually grants a benefit, permits conduct or fixes a deadline, its essential eligibility and limiting conditions must be present in that claim or in clearly connected qualifying claims in the same public section. Record those essential qualifying claim IDs in dependsOn, even when every claim is supported. Before returning [], consider the section with all its other claims removed: would this claim then lose an essential eligibility limit, exception or time qualification? If so, identify the claims supplying those qualifications. This also applies when describing a possible sanction whose exclusions are stated separately; the word 'may' does not supply an omitted exclusion. Use [] for self-contained claims. Dependencies may only connect distinct findings to findings, actions to actions, or risks to risks; never borrow from another section, questions or gaps. An operative MainPoint must be self-contained. A dependency is not evidence: approve the contextual conclusion only if its qualifying claims are also supported. The server withholds a dependent conclusion whenever any required qualification is withheld. Distinguish an accurate signpost from an operative legal conclusion.
@@ -322,18 +324,41 @@ export function createLegalAnswerModel(options: {
         ...draft.actions.map((claim, index) => [legalClaimId("action", index), claim.description] as const),
       ]);
       const segmenter=new Intl.Segmenter(question.locale,{granularity:"sentence"});
-      const claimSentences:ClaimSentence[]=[...claimBodies].flatMap(([claimId,body])=>
-        [...segmenter.segment(body)].map(({segment},index)=>({id:`${claimId}:${index}`,claimId,text:segment.trim()})).filter(item=>item.text));
+      const claimSentences:ClaimSentence[]=[...claimBodies].flatMap(([claimId,body])=>{
+        const sentences:ClaimSentence[]=[];
+        let leadingWhitespace="";
+        [...segmenter.segment(body)].forEach(({segment},index)=>{
+          if(!segment.trim()) {
+            const previous=sentences.at(-1);
+            if(previous)previous.text+=segment;
+            else leadingWhitespace+=segment;
+          } else {
+            sentences.push({id:`${claimId}:${index}`,claimId,text:leadingWhitespace+segment});
+            leadingWhitespace="";
+          }
+        });
+        return sentences;
+      });
+      const auditClaims=transport.claims(claims).map(({text,...claim})=>{
+        const body=claimBodies.get(claim.id);
+        const sentences=claimSentences.filter(sentence=>sentence.claimId===claim.id);
+        // Compress only when the supplied claim can be reconstructed exactly.
+        // A different caller-supplied body remains visible to the verifier.
+        if(body&&text.endsWith(`\n${body}`)&&sentences.map(sentence=>sentence.text).join("")===body) {
+          return {...claim,title:text.slice(0,-body.length-1),sentenceIds:sentences.map(sentence=>sentence.id)};
+        }
+        return {...claim,text};
+      });
       const bySentence=new Map(claimSentences.map(sentence=>[sentence.id,sentence]));
       const materializeSupport=(bindings:readonly (string|z.infer<typeof passageClaimSupportSchema>)[]|null)=>
         (bindings??[]).map(binding=>{
           if(typeof binding!=="string")return binding;
           const sentence=bySentence.get(binding);
           if(!sentence)throw new Error("Invalid audited sentence binding");
-          return {claimId:sentence.claimId,excerpt:sentence.text};
+          return {claimId:sentence.claimId,excerpt:sentence.text.trim()};
         });
       const response = await run(question, "verifying", verifierInstructions, {
-        context: modelContext(transport.question), claims:transport.claims(claims),claimSentences,
+        context: modelContext(transport.question), claims:auditClaims,claimSentences,
         previousClaims: previous ? transport.claims(legalDraftClaims(previous.draft).filter(claim =>
           previous.verification.claims.filter(verdict => verdict.id === claim.id).length === 1
           && previous.verification.claims.some(verdict => verdict.id === claim.id && verdict.supported))) : [],

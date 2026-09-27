@@ -25,6 +25,44 @@ function assertStrictProviderObjects(value: unknown): void {
   Object.values(node).forEach(assertStrictProviderObjects);
 }
 
+test("verification sends complete claim bodies once while retaining titles and ordered sentence references",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const question:AnswerQuestion={question:"Explain the supplied conditions.",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Only registered applicants qualify.",sourceIds:[]},
+    findings:[{title:"Registered applicants only",explanation:"A request is permitted.  Written notice starts the period.\n\nReview pauses it.",sourceIds:[]}],
+    actions:[{title:"After written notice",description:"Keep the notice.\nApply within the stated period; review pauses it.",sourceIds:[]}],
+    risks:[],questions:["Have you received written notice?"],unresolved:[]});
+  const claims=legalDraftClaims(draft);
+  let input:{claims:Array<{id:string;text?:string;title?:string;sentenceIds?:string[]}>;claimSentences:Array<{id:string;text:string}>}={claims:[],claimSentences:[]};
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    input=JSON.parse(String(JSON.parse(String(init?.body)).input));
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({sourceAudit:{},verification:{
+      claims:Object.fromEntries(claims.map(({id})=>[id,{supported:false,reason:"No official evidence supplied.",dependsOn:[]} ])),
+      retention:[],coverage:[],complete:false,gaps:[],questions:[],
+    }})}]}]});
+  });
+  const result=legalVerificationSchema.parse(await createLegalAnswerModel({requestId:"single-claim-body"}).verify({question,draft,claims,previous:null}));
+  for(const [id,title,body] of [
+      ["finding:0","Registered applicants only","A request is permitted.  Written notice starts the period.\n\nReview pauses it."],
+      ["action:0","After written notice","Keep the notice.\nApply within the stated period; review pauses it."],
+    ]) {
+      const claim=input.claims.find(item=>item.id===id)!;
+      assert.equal(claim.text,undefined,"The provider must not receive a second copy of the body");
+      assert.equal(claim.title,title,"A title may contain a material eligibility condition");
+      assert.ok(claim.sentenceIds);
+      assert.equal(claim.sentenceIds.map(sentenceId=>input.claimSentences.find(s=>s.id===sentenceId)!.text).join(""),body,
+        "The ordered sentence references retain every character, including paragraph boundaries");
+    }
+  assert.equal(input.claims[0]!.text,"Only registered applicants qualify.");
+  assert.equal(input.claims.at(-1)!.text,"Have you received written notice?");
+  assert.ok(result.claims.every(claim=>!claim.supported));
+  claims[1]!.text="A different caller-supplied assertion must not be replaced by the draft.";
+  await createLegalAnswerModel({requestId:"unaltered-claim-body"}).verify({question,draft,claims,previous:null});
+  assert.equal(input.claims[1]!.text,"A different caller-supplied assertion must not be replaced by the draft.");
+  assert.equal(input.claims[1]!.sentenceIds,undefined);
+});
+
 test("verification binds server-owned claim sentences without copying their text into the response",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const sourceId=`corpus-${createHash("sha256").update("sentence source").digest("hex")}`;
@@ -50,7 +88,7 @@ test("verification binds server-owned claim sentences without copying their text
     assert.deepEqual(input.claims[0].sourceIds,["s0"]);
     const sentences=input.claimSentences as Array<{id:string;claimId:string;text:string}>;
     assert.equal(sentences.length,2);
-    assert.equal(sentences.map(item=>item.text).join(" "),draft.findings[0]!.explanation);
+    assert.equal(sentences.map(item=>item.text).join(""),draft.findings[0]!.explanation);
     assert.ok(sentences.every(item=>item.claimId==="finding:0"));
     const schema=body.text.format.schema;
     const resolve=(node:ProviderSchemaNode):ProviderSchemaNode=>node.$ref
