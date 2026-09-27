@@ -3,6 +3,8 @@ import test from "node:test";
 import {createHash} from "node:crypto";
 import {researchLegalQuestion,type ResearchQuestion,type ResearchNeed} from "../lib/legal-chat/research";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
+import {createLegalResearchModel} from "../lib/legal-chat/research-model";
+import {env} from "./helpers/runtime-env";
 
 function evidence(id:string,text="Synthetic rule: an applicant may request a record."):LegalEvidence {
   return {source:{id,actTitle:"Synthetic rules",actIdentifier:null,officialUrl:"https://lex.uz/docs/999999",
@@ -14,6 +16,46 @@ function evidence(id:string,text="Synthetic rule: an applicant may request a rec
 const question:ResearchQuestion={question:"How can I request a record?",topics:["Record request"],
   locale:"en",mode:"deep",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
+
+test("assessment resolution retains its complete supporting source when the selection omits it",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  context.mock.method(globalThis,"fetch",async()=>Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+    selectedSourceIds:["rule"],supportedAnswerAvailable:true,needs:[],queries:[],
+    resolved:[{needIndex:0,sourceIds:["eligibility"]}],
+  })}]}]}));
+  const sources=[evidence("rule"),evidence("eligibility","Synthetic eligibility: the applicant must own the record."),evidence("unrelated")];
+  const model=createLegalResearchModel({requestId:"resolution-dependency"});
+  const result=await researchLegalQuestion({...question,mode:"fast"},{
+    indexed:async()=>({evidence:sources,needs:[missing]}),
+    official:async()=>{throw new Error("No further search is required");},assess:model.assess,
+  });
+  assert.deepEqual(result.evidence,[sources[0],sources[1]]);
+  assert.deepEqual(result.needs,[]);
+  assert.equal(result.rounds,1);
+});
+
+test("an oversized selection with resolution dependencies preserves the unresolved gap",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const initial=Array.from({length:24},(_,index)=>evidence(`rule-${index}`));
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const input=JSON.parse(JSON.parse(String(init?.body)).input);
+    const hasDependency=input.evidence.some((item:{id:string})=>item.id==="eligibility");
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      selectedSourceIds:initial.map(item=>item.source.id),supportedAnswerAvailable:false,needs:[],queries:[],
+      resolved:hasDependency?[{needIndex:0,sourceIds:["eligibility"]}]:[],
+    })}]}]});
+  });
+  const model=createLegalResearchModel({requestId:"oversized-resolution-dependency"});
+  const result=await researchLegalQuestion(question,{
+    indexed:async()=>({evidence:initial,needs:[missing]}),
+    official:async()=>({evidence:[evidence("eligibility")],needs:[]}),assess:model.assess,
+  });
+  assert.deepEqual(result.evidence,initial);
+  assert.ok(result.needs.some(need=>need.detail===missing.detail));
+  assert.ok(result.needs.some(need=>need.reason==="context_budget"));
+});
 
 test("fast research preserves initial supported context and gaps for independent partial-answer verification",async()=>{
   let officialCalls=0;

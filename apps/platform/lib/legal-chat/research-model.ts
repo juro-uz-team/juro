@@ -216,8 +216,13 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
       });
       if(result.selectedSourceIds&&(new Set(result.selectedSourceIds).size!==result.selectedSourceIds.length
         ||result.selectedSourceIds.some(id=>!sourceIds.includes(id))))throw new Error("RESEARCH_SELECTION_EVIDENCE_INVALID");
+      // Resolving a gap also selects its supporting complete provisions. Keep
+      // these dependencies in the writer packet; the coordinator still checks
+      // the resulting context budget before clearing any need.
+      const selectedSourceIds=result.selectedSourceIds
+        ?[...new Set([...result.selectedSourceIds,...resolved.flatMap(item=>item.sourceIds)])]:undefined;
       nextQueries=result.queries.length?result.queries:undefined;
-      return {needs:result.needs,resolved,...(result.supportedAnswerAvailable===undefined?{}:{supportedAnswerAvailable:result.supportedAnswerAvailable}),...(result.selectedSourceIds?{selectedSourceIds:result.selectedSourceIds}:{})};
+      return {needs:result.needs,resolved,...(result.supportedAnswerAvailable===undefined?{}:{supportedAnswerAvailable:result.supportedAnswerAvailable}),...(selectedSourceIds?{selectedSourceIds}:{})};
     },
   };
 }
