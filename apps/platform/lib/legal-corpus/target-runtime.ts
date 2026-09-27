@@ -6,6 +6,7 @@ import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import {createSharedLexDocumentObservationReader} from "../legal/shared-source-observation";
 import {createNormalizedSourceReader} from "./normalized-source-reader";
 import {createPinnedSourceVerifier} from "./pinned-source-observation";
+import {createDiscoveryMetadataReader} from "./discovery-metadata";
 
 import {
   createProviderCandidateIndex,
@@ -28,7 +29,7 @@ import { resolveCustomTrustedLegalTitles } from "./custom-search-trusted-titles"
 import { createCustomMembershipLookupReader } from "./custom-membership-lookup";
 import {loadCandidateMembershipProjection, readCandidateMembershipProofs, verifyProjectedCandidateMembership} from "./candidate-membership-projection";
 import { assertCompleteCorpusCurrentInterval, resolveCompleteCorpusEvidence, resolveControllingEvidence,
-  resolveR2NativeCustomEvidence, readR2NativeDiscoveryMetadata,
+  resolveR2NativeCustomEvidence,
   type LegalEvidenceBucket } from "./target-evidence";
 import { resolveProvisionLineage } from "./target-lineage";
 import { createNormalizedArticleEvidenceReader, createNormalizedDocumentEvidenceReader } from "./normalized-article-evidence";
@@ -618,14 +619,15 @@ export function createRuntimeEvidenceServices(
   const historicalArticleContext = createNormalizedArticleEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
   const currentDocumentContext = createNormalizedDocumentEvidenceReader(evidenceBucket, readCurrentParent);
   const historicalDocumentContext = createNormalizedDocumentEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
+  const observeCurrent=dependencies.sharedSourceObservationsEnabled
+    ? createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
+    : createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})});
+  const readDiscoveryMetadata=createDiscoveryMetadataReader({observeCurrent,signal:indexedRetrievalSignal});
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
     {membershipProofsEnabled: dependencies.membershipProofsEnabled,preparedMembership:dependencies.preparedMembership});
   return {
 onReleaseResolved: dependencies.onReleaseResolved,
-verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,
-      observe: dependencies.sharedSourceObservationsEnabled
-        ? createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
-        : createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})})}),
+verifyCurrentSource: createPinnedSourceVerifier({bucket: evidenceBucket, readParent: readCurrentParent,observe:observeCurrent}),
 environment,
 releaseResolver,
 candidateIndex,
@@ -639,7 +641,7 @@ evidenceResolver: {
           ||instance.id===customInstanceId("history",environment)))return null;
         const identity=r2IdentityByRendition.get(provisionRenditionId);
         if(!identity)return null;
-        return readR2NativeDiscoveryMetadata({
+        return readDiscoveryMetadata({
           bucket:selectRuntimeEvidenceBucket(context.release.capability,evidenceBucket,historyEvidenceBucket),currentAt:context.currentAt,
         },identity,endpoint);
       },
