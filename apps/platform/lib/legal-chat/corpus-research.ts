@@ -14,9 +14,18 @@ import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RuntimeServices = ReturnType<typeof createRuntimeLegalEvidenceServices>;
 type CorpusServices = Pick<RuntimeServices,
-  "releaseResolver" | "candidateIndex" | "evidenceResolver" | "referenceDiscovery" | "verifyCurrentSource">
-  & {candidateCatalog:Pick<RuntimeServices["candidateCatalog"],"revalidate">};
+  "releaseResolver" | "candidateIndex" | "referenceDiscovery" | "verifyCurrentSource">
+  & {candidateCatalog:Pick<RuntimeServices["candidateCatalog"],"revalidate">;
+    evidenceResolver:Pick<RuntimeServices["evidenceResolver"],"resolveControlling">};
 type EndpointRelease = {endpoint:LegalTime;release:PinnedCandidateRelease};
+export type CandidatePrioritizer = (input:{
+  renditionIds:readonly string[];
+  formulations:readonly string[];
+  endpoint:LegalTime;
+  release:PinnedCandidateRelease;
+  currentAt:string;
+  signal?:AbortSignal;
+})=>Promise<readonly string[]>;
 const MAX_CANDIDATE_READS = 48;
 const RESERVED_REFERENCE_READS = 12;
 
@@ -26,6 +35,7 @@ const RESERVED_REFERENCE_READS = 12;
 export function createCorpusResearch(input: {
   services:CorpusServices;
   formulate:ResearchFormulator;
+  prioritize?:CandidatePrioritizer;
   now?:()=>number;
 }):(request:ResearchRequest)=>Promise<ResearchPacket> {
   const now=input.now??Date.now;
@@ -139,7 +149,15 @@ export function createCorpusResearch(input: {
             if(candidate&&!ordered.has(candidate.provisionRenditionId)) ordered.set(candidate.provisionRenditionId,candidate);
           }
         }
-        queues.push([...ordered.values()]);
+        const priority=await input.prioritize?.({renditionIds:[...ordered.keys()],
+          formulations:interpretation.formulations.map(formulation=>formulation.text),endpoint,release,currentAt,signal})??[];
+        check();
+        if(priority.some(id=>!ordered.has(id)))throw new Error("CORPUS_DISCOVERY_PRIORITY_INVALID");
+        // A discovery hint changes order only. Keep original authenticated
+        // objects and every unprioritized candidate in its original order.
+        const prioritized=new Set(priority);
+        queues.push([...prioritized].map(id=>ordered.get(id)!).concat(
+          [...ordered.values()].filter(candidate=>!prioritized.has(candidate.provisionRenditionId))));
       } catch {
         check();
         queues.push([]);

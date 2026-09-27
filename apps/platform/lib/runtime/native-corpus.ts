@@ -12,6 +12,7 @@ import {CustomRuntimeCache} from "../legal-corpus/custom-runtime-cache";
 import {LegalResearchSession} from "../../worker/legal-research-session";
 import type LegalCorpusService from "../../worker/legal-corpus-worker";
 import {createCorpusResearch} from "../legal-chat/corpus-research";
+import {createDiscoveryPrioritizer} from "../legal-chat/discovery-priority";
 import {corpusSessionSchema,type CorpusSessionInput} from "../legal-chat/corpus-session";
 
 type Dependencies={pool:Pool;catalog:PostgresDatabase;objectRoot:string;candidateUrl:string;apiKey:string};
@@ -66,12 +67,16 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
   return {async openLegalResearch(sessionInput:CorpusSessionInput){
     const scope=corpusSessionSchema.parse(sessionInput);
     if(scope.environment!==config.environment)throw Error("CORPUS_RESEARCH_ENVIRONMENT_MISMATCH");
-    return new LegalResearchSession(scope,formulate=>createCorpusResearch({formulate,
-      services:createRuntimeEvidenceServices({environment:config.environment,db:input.catalog as unknown as D1Database,
+    const services=createRuntimeEvidenceServices({environment:config.environment,db:input.catalog as unknown as D1Database,
         evidenceBucket:bucket(config.evidenceNamespace),historyEvidenceBucket:bucket(config.historyEvidenceNamespace),
         customArtifactBucket:artifactReader as unknown as R2Bucket,preparedMembership:createPreparedMembershipReader(input.pool,membershipPins),
         sharedSourceObservationsEnabled:true},candidateIndex,
-      {resolve:async endpoint=>pinned(endpoint),resolveComparison:async(left,right)=>({left:pinned(left),right:pinned(right)})}),
+      {resolve:async endpoint=>pinned(endpoint),resolveComparison:async(left,right)=>({left:pinned(left),right:pinned(right)})});
+    const prioritize=createDiscoveryPrioritizer({requestId:scope.requestId,
+      readMetadata:services.evidenceResolver.readDiscoveryMetadata,
+      onAttemptFinished:observation=>{console.info(JSON.stringify({event:"legal.discovery_priority_attempt",requestId:scope.requestId,...observation}));},
+    });
+    return new LegalResearchSession(scope,formulate=>createCorpusResearch({formulate,services,prioritize,
     }));
   }};
 }

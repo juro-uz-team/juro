@@ -28,7 +28,7 @@ import { resolveCustomTrustedLegalTitles } from "./custom-search-trusted-titles"
 import { createCustomMembershipLookupReader } from "./custom-membership-lookup";
 import {loadCandidateMembershipProjection, readCandidateMembershipProofs, verifyProjectedCandidateMembership} from "./candidate-membership-projection";
 import { assertCompleteCorpusCurrentInterval, resolveCompleteCorpusEvidence, resolveControllingEvidence,
-  resolveR2NativeCustomEvidence,
+  resolveR2NativeCustomEvidence, readR2NativeDiscoveryMetadata,
   type LegalEvidenceBucket } from "./target-evidence";
 import { resolveProvisionLineage } from "./target-lineage";
 import { createNormalizedArticleEvidenceReader, createNormalizedDocumentEvidenceReader } from "./normalized-article-evidence";
@@ -634,6 +634,15 @@ referenceDiscovery: customArtifactBucket ? createRuntimeReferenceDiscovery({db, 
       identities: r2IdentityByRendition, revalidate: candidateCatalog.revalidate,
       preparePacket: candidateCatalog.prepareReferencePacket}) : undefined,
 evidenceResolver: {
+      async readDiscoveryMetadata(provisionRenditionId:string,endpoint:TemporalEndpoint,context:{release:PinnedCandidateRelease;currentAt:string}) {
+        if(!context.release.instances.some(instance=>instance.id===customInstanceId("current",environment)
+          ||instance.id===customInstanceId("history",environment)))return null;
+        const identity=r2IdentityByRendition.get(provisionRenditionId);
+        if(!identity)return null;
+        return readR2NativeDiscoveryMetadata({
+          bucket:selectRuntimeEvidenceBucket(context.release.capability,evidenceBucket,historyEvidenceBucket),currentAt:context.currentAt,
+        },identity,endpoint);
+      },
       async resolveControlling(provisionRenditionId: string, endpoint: TemporalEndpoint, context: {release: PinnedCandidateRelease; currentAt: string}) {
         if (context.release.instances.some((instance) =>
           instance.id === customInstanceId("current", environment)

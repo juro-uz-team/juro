@@ -568,6 +568,27 @@ test("a required reference denied the bounded read allowance remains an explicit
   assert.ok(!result.evidence.some(item=>item.source.article==="62"));
 });
 
+test("discovery priority brings a later provision and its reference into complete answer evidence",async()=>{
+  const {services}=fixture();
+  services.candidateCatalog.revalidate=async()=>Array.from({length:40},(_,index)=>anotherCandidate(`rendition:${index}`));
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id.split(":")[1]!);
+  services.referenceDiscovery=async sources=>({candidates:sources.some(source=>source.candidate.provisionRenditionId==="rendition:39")
+    ?[{...anotherCandidate("rendition:99"),candidate:{...candidate.candidate,referenceOrigin:{
+      itemKey:anotherCandidate("rendition:39").candidate.itemKey,article:"99",
+    }}}]:[],unresolved:[]});
+  const packet=await createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant),
+    prioritize:async input=>{
+      assert.deepEqual(input.formulations,["Synthetic record request"]);
+      assert.equal("question" in input,false);
+      assert.equal(input.release.id,"release:current");assert.ok(input.signal);
+      return ["rendition:39"];
+    },
+  })(request);
+  assert.equal(packet.evidence[0]?.source.article,"39");
+  assert.ok(packet.evidence.some(item=>item.source.article==="99"));
+  assert.equal(packet.evidence.length,24);
+});
+
 test("a reference target already in the ranked pool retains priority before context admission",async()=>{
   const {services,search}=fixture();
   services.candidateCatalog.revalidate=async()=>Array.from({length:36},(_,index)=>anotherCandidate(`rendition:${index}`));

@@ -1559,16 +1559,11 @@ export async function resolveCompleteCorpusEvidence(
     materialCitation: evidence.officialCitation });
 }
 
-/** Resolves immutable evidence through the body-free R2-native runtime mapping. */
-export async function resolveR2NativeCustomEvidence(
-  dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string;
-    readArticleContext?: (original: ResolvedOfficialEvidence, article: string,
-      sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null>;
-    readDocumentContext?: (original: ResolvedOfficialEvidence,
-      sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null> },
+async function readR2NativeProvision(
+  dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string },
   identity: CustomRuntimeLegalIdentity,
   untrustedEndpoint: TemporalEndpoint,
-): Promise<ControllingEvidenceResolution> {
+) {
   const endpoint = temporalEndpointSchema.parse(untrustedEndpoint);
   assertCompleteCorpusCurrentInterval(identity,
     endpoint.kind === "timestamp" ? endpoint.instant : dependencies.currentAt);
@@ -1581,6 +1576,7 @@ export async function resolveR2NativeCustomEvidence(
   let officialCitation = identity.citation;
   let articleNumber: string | undefined;
   let sourceRevisionId: string | undefined;
+  let metadata: DiscoveryMetadata | null = null;
   if (identity.evidence.mediaType === "text/plain;charset=utf-8") {
     try { provisionText = new TextDecoder("utf-8", { fatal: true }).decode(evidenceBytes); }
     catch { throw new LegalEvidenceError("SOURCE_UNAVAILABILITY"); }
@@ -1602,11 +1598,43 @@ export async function resolveR2NativeCustomEvidence(
     provisionText = provision.provisionText;
     articleNumber = provision.articleNumber;
     sourceRevisionId = provision.textRevisionId;
+    const heading=importObjectSchema.shape.articleTitle.safeParse(provision.articleTitle);
+    if(heading.success)metadata = {actTitle:provision.actTitle,articleTitle:heading.data??null,languageTag:provision.languageTag};
     officialCitation = {
       label: `${provision.actTitle} — Article ${provision.articleNumber}`,
       url: provision.sourceUrl,
     };
   }
+  return {provisionText,officialCitation,articleNumber,sourceRevisionId,metadata};
+}
+
+/** Discovery hints never establish Requirement Support or publication eligibility. */
+export type DiscoveryMetadata = {
+  actTitle: string;
+  articleTitle: string | null;
+  languageTag: CustomRuntimeLegalIdentity["languageTag"];
+};
+
+export async function readR2NativeDiscoveryMetadata(
+  dependencies: {bucket: Pick<LegalEvidenceBucket,"get">;currentAt:string},
+  identity: CustomRuntimeLegalIdentity,
+  endpoint: TemporalEndpoint,
+): Promise<DiscoveryMetadata | null> {
+  return (await readR2NativeProvision(dependencies,identity,endpoint)).metadata;
+}
+
+/** Resolves immutable evidence through the body-free R2-native runtime mapping. */
+export async function resolveR2NativeCustomEvidence(
+  dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string;
+    readArticleContext?: (original: ResolvedOfficialEvidence, article: string,
+      sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null>;
+    readDocumentContext?: (original: ResolvedOfficialEvidence,
+      sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null> },
+  identity: CustomRuntimeLegalIdentity,
+  untrustedEndpoint: TemporalEndpoint,
+): Promise<ControllingEvidenceResolution> {
+  const {provisionText,officialCitation,articleNumber,sourceRevisionId} =
+    await readR2NativeProvision(dependencies,identity,untrustedEndpoint);
   const evidence = resolvedEvidenceSchema.parse({
     legalInstrumentId: identity.legalInstrumentId,
     officialExpressionId: identity.officialExpressionId,
