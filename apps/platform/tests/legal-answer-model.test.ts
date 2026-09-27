@@ -36,10 +36,13 @@ test("verification binds server-owned claim sentences without copying their text
       text:"An applicant may request a record within ten days of notice.",textSha256:"fixture",endpoint:{kind:"current"},origin:"indexed"}]};
   const draft=legalDraftSchema.parse({mainPoint:{text:"Request the record within ten days of notice.",sourceIds:[sourceId]},
     findings:[{title:"Record request",explanation:"An applicant may request a record. The request must arrive within ten days of notice.",sourceIds:[sourceId]}],
-    actions:[],risks:[],questions:[],unresolved:[]});
+    actions:[],risks:[],questions:["Which record do you need?"],unresolved:[]});
   let fabricated=false;
   let duplicate=false;
   let invalidCoverage=false;
+  let missingClaim=false;
+  let unexpectedClaim=false;
+  let keyedClaims=true;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
     assert.deepEqual(input.context.topics,["Record request eligibility", "Deadline and starting event"]);
@@ -54,10 +57,18 @@ test("verification binds server-owned claim sentences without copying their text
       ? resolve(node.$ref.slice(2).split("/").reduce((value:Record<string,unknown>,key:string)=>
         value[key] as Record<string,unknown>,schema) as ProviderSchemaNode) : node;
     const coverage=resolve(resolve(resolve(schema.properties.verification).properties!.coverage!).items!);
+    const claimInventory=resolve(resolve(schema.properties.verification).properties!.claims!);
+    assert.equal(claimInventory.type,"object","Every supplied claim owns one required provider verdict");
+    assert.deepEqual(claimInventory.required,["mainPoint","finding:0","question:0"]);
+    assert.equal(claimInventory.additionalProperties,false);
     assert.equal(resolve(coverage.properties!.actionIds!).type,"null","No actions means no eligible action binding");
     const findingReference=resolve(resolve(coverage.properties!.findingIds!).items!);
     assert.deepEqual(findingReference.enum??[findingReference.const],["finding:0"]);
-    const output={verification:{claims:legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported"})),
+    const verdicts=legalDraftClaims(draft).map(claim=>({id:claim.id,supported:true,reason:"Supported"}));
+    if(missingClaim)verdicts.pop();
+    if(unexpectedClaim)verdicts.at(-1)!.id="question:9";
+    const output={verification:{claims:keyedClaims
+      ?Object.fromEntries(verdicts.map(({id,...verdict})=>[id,verdict])):verdicts,
       retention:[],coverage:[{issue:"Request timing",findingIds:[invalidCoverage?"gap:0":"finding:0"],actionIds:null,actionRequired:false,gaps:[]}],complete:true,gaps:[],questions:[]},
       sourceAudit:{s0:{p0:{material:true,actionRequired:false,missingContent:[],
         findingSupport:fabricated?["finding:0:invented"]:sentences.map(item=>item.id),actionSupport:null}}}};
@@ -68,12 +79,21 @@ test("verification binds server-owned claim sentences without copying their text
     assert.equal(audited.sourceAudit[0]!.sourceId,sourceId,"Diagnostics and publication receive canonical IDs");
   }}).verify({question,draft,claims:legalDraftClaims(draft),previous:null});
   assert.equal(legalVerificationSchema.parse(await verify()).complete,true);
+  keyedClaims=false;
+  assert.equal(legalVerificationSchema.parse(await verify()).complete,true,"Complete legacy captures still replay");
+  keyedClaims=true;
   fabricated=true;
   await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
   fabricated=false;duplicate=true;
   await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
   duplicate=false;invalidCoverage=true;
   await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"});
+  invalidCoverage=false;missingClaim=true;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"},"An incomplete claim audit cannot reach publication");
+  missingClaim=false;unexpectedClaim=true;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"},"A fabricated claim cannot replace an expected verdict");
+  keyedClaims=false;
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"},"Legacy verdicts have the same identity requirement");
 });
 
 test("writer produces the answer without redundant planning references and cites only supplied evidence", async context => {
@@ -206,6 +226,13 @@ test("maximum evidence audit fits provider schema limits without losing passages
   }));
   const question:AnswerQuestion={question:"What applies?",locale:"en",mode:"fast",answerMode:"detailed",
     temporalScope:{kind:"current"},unresolved:[],evidence};
+  const sourceIds=evidence.slice(0,12).map(item=>item.source.id);
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Rule.",sourceIds},
+    findings:Array.from({length:16},(_,index)=>({title:`Finding ${index}`,explanation:"Rule.",sourceIds})),
+    actions:Array.from({length:16},(_,index)=>({title:`Action ${index}`,description:"Rule.",sourceIds})),
+    risks:Array.from({length:16},(_,index)=>({level:"low",title:`Risk ${index}`,explanation:"Rule.",sourceIds})),
+    questions:Array.from({length:8},(_,index)=>`Fact ${index}?`),
+    unresolved:Array.from({length:40},(_,index)=>`Unresolved issue ${index}.`)});
   let propertyCount=0; let schemaStrings=0; let nesting=0; let explicitPracticalRelevance=false;
   context.mock.method(globalThis,"fetch",async (_url:string|URL|Request,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
@@ -248,15 +275,16 @@ test("maximum evidence audit fits provider schema limits without losing passages
       Array.from({length:160},(_,index)=>[`p${index}`,{material:false,findingSupport:[],actionSupport:[],missingContent:[]}]),
     )]));
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify({
-      sourceAudit,verification:{retention:[],coverage:[],claims:[],complete:true,gaps:[],questions:[]},
+      sourceAudit,verification:{retention:[],coverage:[],claims:Object.fromEntries(legalDraftClaims(draft)
+        .map(claim=>[claim.id,{supported:true,reason:"Fixture verdict",dependsOn:[]}])),complete:true,gaps:[],questions:[]},
     })}]}],usage:{input_tokens:10,output_tokens:10}});
   });
   let auditedPassages=0;
   const model=createLegalAnswerModel({requestId:"maximum-audit",onVerificationProduced:value=>{
     auditedPassages=value.sourceAudit.reduce((sum,source)=>sum+source.passages.length,0);
   }});
-  const draft=legalDraftSchema.parse({mainPoint:{text:"No conclusion",sourceIds:[]},findings:[],actions:[],risks:[],questions:[],unresolved:[]});
-  await model.verify({question,draft,claims:[],previous:null});
+  const verified=legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  assert.equal(verified.claims.length,97);
   assert.equal(auditedPassages,24*160);
   assert.equal(explicitPracticalRelevance,true);
   assert.ok(propertyCount<=5000,`Provider schema contains ${propertyCount} object properties`);
@@ -370,7 +398,7 @@ test("separate excerpts of one claim are all checked without rejecting a repeate
   assert.equal((await verify()).complete,false,"Exact excerpts cannot approve an unsupported claim");
   actionSupported=true;
   duplicateActionVerdict=true;
-  assert.equal((await verify()).complete,false,"Repeated excerpts cannot legitimize duplicate verdicts");
+  await assert.rejects(verify(),{code:"INVALID_AI_OUTPUT"},"Repeated excerpts cannot legitimize duplicate verdicts");
   duplicateActionVerdict=false;
   findingSupport[1]!.excerpt="A late request must always be accepted.";
   const unconfirmedFinding=await verify();

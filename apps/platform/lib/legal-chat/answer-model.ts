@@ -200,6 +200,16 @@ function sourcePassages(text: string) {
 
 type ClaimSentence={id:string;claimId:string;text:string};
 function verificationResponseSchema(question: AnswerQuestion, claims: ReturnType<typeof legalDraftClaims>,sentences:readonly ClaimSentence[],provider=false) {
+  const claimIds=new Set(claims.map(claim=>claim.id));
+  const claimVerdicts=legalVerificationSchema.shape.claims.refine(verdicts=>
+    verdicts.length===claimIds.size&&new Set(verdicts.map(verdict=>verdict.id)).size===claimIds.size
+      &&verdicts.every(verdict=>claimIds.has(verdict.id)),"Incomplete or invalid claim audit");
+  const claimInventory=z.object(Object.fromEntries([...claimIds].map(id=>
+    [id,legalVerificationSchema.shape.claims.element.omit({id:true})]))).strict();
+  // Required object keys prevent omission/duplication during generation. Keep
+  // complete legacy arrays replayable, with the same exact inventory check.
+  const decodedClaims=z.union([claimInventory.transform(inventory=>
+    Object.entries(inventory).map(([id,verdict])=>({id,...verdict}))),claimVerdicts]);
   const coverageReferences = (kind: "finding" | "action") => {
     const ids = claims.filter(claim => claim.kind === kind).map(claim => claim.id);
     if (ids.length) return z.array(z.enum(ids)).max(16);
@@ -222,6 +232,7 @@ function verificationResponseSchema(question: AnswerQuestion, claims: ReturnType
   };
   return z.object({
     verification:legalVerificationSchema.omit({sourceGaps:true}).extend({
+      claims:provider?claimInventory:decodedClaims,
       coverage:z.array(legalVerificationSchema.shape.coverage.element.extend({
         findingIds:coverageReferences("finding"), actionIds:coverageReferences("action"),
       })).max(24),
