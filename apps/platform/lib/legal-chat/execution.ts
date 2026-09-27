@@ -42,7 +42,7 @@ export function executeLegalChat<Saved>(input:{
         mode:input.mode,answerMode:input.answerMode,temporalScope:context.temporalScope,
         caseFacts:context.caseFacts,userContext:context.userContext,documents:context.documents,priorTurns:context.priorTurns,signal};
       input.onStage?.("researching");
-      const research=await researchLegalQuestion(question,input.research);
+      const research=await researchLegalQuestion({...question,...(context.initialQueries?{initialQueries:context.initialQueries}:{})},input.research);
       // Research feedback is not approved public legal prose. Keep detailed
       // source needs inside research; publication receives a neutral limitation.
       const unresolved=research.needs.length?[aiText(question.locale,

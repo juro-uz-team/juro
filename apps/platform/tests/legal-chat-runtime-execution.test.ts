@@ -12,7 +12,8 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));calls++;const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
-    const output=schema==="legal_question_context"?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
+    const output=schema==="legal_question_research"?{
+      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{queries:[query]}}
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
@@ -27,7 +28,9 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
   const stale={...evidence,source:{...evidence.source,verifiedAt:new Date(Date.now()-600_000).toISOString()}};
   const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode:"fast",answerMode:"short",
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
-    service:{async openLegalResearch(){return {async search(){return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
+    service:{async openLegalResearch(){return {async search(input){
+      assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"],"Initial generated queries survive runtime composition unchanged");
+      return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
   assert.equal(calls,4,"The normal writer and verifier both completed before final source validation");

@@ -8,6 +8,41 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
 
+test("a bound research model rejects a changed initial plan for the same question",async()=>{
+  const question={...request.question,initialQueries:[query]};
+  const model=createLegalResearchModel({requestId:"initial-plan-owner"});
+  await model.formulateIndexed({...request,needs:[],question});
+  await assert.rejects(model.formulateIndexed({...request,needs:[],question:{...question,
+    initialQueries:[{...query,text:"different record review"}]}}),/RESEARCH_MODEL_REQUEST_MISMATCH/);
+});
+
+test("initial contextual queries stay indexed while public discovery and repair retain their own plans",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const first={...request,needs:[],question:{...request.question,priorTurns:[{question:"My name is Ada.",answer:"Unverified prior answer"}],
+    documents:[privateDocumentContext()],initialQueries:[{...query,text:"Ada record access",privateNameSpans:["Ada"]}]}};
+  let calls=0;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    calls++;
+    const body=JSON.parse(String(init?.body));
+    const output=body.text.format.name==="legal_research_coverage"
+      ?{needs:[],resolved:[],queries:[{...query,text:"record review procedure"}],supportedAnswerAvailable:false}
+      :{queries:[{...query,text:"public record access"}]};
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+  });
+  const model=createLegalResearchModel({requestId:"contextual-initial"});
+  const indexed=await model.formulateIndexed(first);
+  assert.deepEqual(indexed.formulations.map(item=>item.text),["Ada record access"]);
+  assert.equal(calls,0,"Validated initial context needs no second provider formulation");
+  assert.deepEqual((await model.formulate(first)).formulations.map(item=>item.text),["public record access"]);
+  assert.equal(calls,1,"Public discovery must perform its independent formulation");
+  await model.assess({...first,evidence:[evidence]});
+  assert.deepEqual((await model.formulateIndexed({...first,round:1})).formulations.map(item=>item.text),["record review procedure"]);
+  const controller=new AbortController();controller.abort();
+  await assert.rejects(createLegalResearchModel({requestId:"aborted-initial"}).formulateIndexed({...first,
+    question:{...first.question,signal:controller.signal}}),{name:"AbortError"});
+});
+
 test("repair assessment receives earlier formulations without treating unissued proposals as searches",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});

@@ -16,9 +16,21 @@ it does not establish completeness. Productive research may still use all three
 rounds. A repeated search result cannot justify another assessment of identical
 evidence or silently clear an existing gap.
 
-Fast chat uses GPT-6 Luna: standard reasoning for every model operation, no
-deliberation for query formulation and drafting, and medium effort for question
-interpretation, coverage assessment and independent verification. Client
+Fast chat uses GPT-6 Astra with low/standard reasoning to combine Question
+Interpretation and initial indexed search planning in one bounded call.
+Interpreted topics alone did not reliably express the general governing
+mechanisms needed for discovery; separate planning adds a serial model call.
+The combined output preserves exact user facts, selected private context and
+Temporal Scope validation, and requires a query association for every topic.
+These formulations are request-local discovery proposals, not evidence or
+Official Coverage. Only initial indexed retrieval consumes them; public
+discovery keeps independent private-name classification, and subsequent
+research retains its assessment-driven repair plans. Invalid combined output
+cannot produce a ready Question Interpretation.
+
+Remaining Fast operations use GPT-6 Luna with standard reasoning: no
+deliberation for query formulation and drafting, and medium effort for
+coverage assessment and independent verification. Client
 watchdogs are 15 seconds for interpretation, 45 seconds for formulation and
 assessment, and 60 seconds for drafting and verification. Deep chat uses
 GPT-5.6 Terra with a 120-second client watchdog; whole-answer writing and

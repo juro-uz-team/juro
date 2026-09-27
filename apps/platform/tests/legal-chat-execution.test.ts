@@ -51,7 +51,8 @@ for(const stage of ["interpreting","researching"] as const) {
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
       calls++;
       if(stage==="researching"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
-        text:JSON.stringify({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]})}]}]});
+        text:JSON.stringify({interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
+          research:{queries:[{text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]}})}]}]});
       return new Promise<Response>((_resolve,reject)=>{
         init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});stalled.resolve();
       });

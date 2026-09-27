@@ -4,6 +4,7 @@ import { assertAnswerEvidence } from "./evidence-boundary";
 import { fitsLegalEvidenceBudget } from "../legal/legal-evidence-budget";
 import {selectResearchEvidence} from "./research-evidence";
 import { LEGAL_CHAT_MAX_RESEARCH_ROUNDS } from "./execution-limits";
+import type {InitialResearchQueries} from "./initial-research-plan";
 
 export const researchNeedSchema = z.object({
   reason: z.enum(["missing_rule", "unresolved_reference", "ambiguous_revision", "source_unavailable", "context_budget", "search_budget"]),
@@ -15,7 +16,7 @@ export const researchObservationSchema=z.object({
   lane:z.enum(["indexed","official"]),omitted:z.number().int().positive(),
 }).strict();
 export type ResearchObservation=z.infer<typeof researchObservationSchema>;
-export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sourceUnavailable"|"onStage"> & {topics:readonly string[]};
+export type ResearchQuestion = Omit<AnswerQuestion,"evidence"|"unresolved"|"sourceUnavailable"|"onStage"> & {topics:readonly string[];initialQueries?:InitialResearchQueries};
 export type ResearchPacket = {evidence:readonly LegalEvidence[]; needs:readonly ResearchNeed[];
   observations?:readonly ResearchObservation[];
   resolved?:readonly {need:ResearchNeed;sourceIds:readonly string[]}[]};

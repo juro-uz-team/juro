@@ -16,11 +16,11 @@ test("question interpretation and research label private excerpts as untrusted c
   context.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     payloads.push(body);
-    const interpretation = body.text.format.name === "legal_question_context";
-    const output = interpretation
-      ? {topics: ["Agreement enforceability"], facts: [], temporal: {kind: "current"}, questions: [],
-          selectedDocumentIds: [document.source.id], selectedMemoryIds: []}
-      : {queries: [{text: "agreement enforceability", topicIndices: [0], privateNameSpans: [], legalTitleSpans: []}]};
+    const interpretation = {topics: ["Agreement enforceability"], facts: [], temporal: {kind: "current"}, questions: [],
+      selectedDocumentIds: [document.source.id], selectedMemoryIds: []};
+    const research = {queries: [{text: "agreement enforceability", topicIndices: [0], privateNameSpans: [], legalTitleSpans: []}]};
+    const output = body.text.format.name === "legal_question_research"?{interpretation,research}
+      :body.text.format.name === "legal_question_context"?interpretation:research;
     return Response.json({id: "response", output: [{content: [{type: "output_text", text: JSON.stringify(output)}]}]});
   });
   for (const mode of ["fast", "deep"] as const) {
@@ -33,7 +33,7 @@ test("question interpretation and research label private excerpts as untrusted c
     }});
   }
   assert.deepEqual(payloads.map(payload => payload.model),
-    ["gpt-6-luna", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-terra"]);
+    ["gpt-6-astra", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-terra"]);
   for (const payload of payloads) {
     assert.deepEqual(JSON.parse(payload.input).privateDocuments,
       [{id: document.source.id, title: document.source.actTitle, text: document.text}]);
