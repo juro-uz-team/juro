@@ -33,7 +33,7 @@ test("question interpretation and research label private excerpts as untrusted c
     }});
   }
   assert.deepEqual(payloads.map(payload => payload.model),
-    ["gpt-6-astra", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-terra"]);
+    ["gpt-6-luna", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-terra"]);
   for (const payload of payloads) {
     assert.deepEqual(JSON.parse(payload.input).privateDocuments,
       [{id: document.source.id, title: document.source.actTitle, text: document.text}]);

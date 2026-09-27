@@ -16,7 +16,7 @@ it does not establish completeness. Productive research may still use all three
 rounds. A repeated search result cannot justify another assessment of identical
 evidence or silently clear an existing gap.
 
-Fast chat uses GPT-6 Astra with low/standard reasoning to combine Question
+Fast chat uses GPT-6 Luna with medium/standard reasoning to combine Question
 Interpretation and initial indexed search planning in one bounded call.
 Interpreted topics alone did not reliably express the general governing
 mechanisms needed for discovery; separate planning adds a serial model call.
@@ -35,6 +35,11 @@ watchdogs are 15 seconds for interpretation, 45 seconds for formulation and
 assessment, and 60 seconds for drafting and verification. Deep chat uses
 GPT-5.6 Terra with a 120-second client watchdog; whole-answer writing and
 verification retain its maximum/pro profile.
+
+The permitted text-chat models are GPT-6 Luna and GPT-5.6 Terra, including
+diagnostics. This restriction supersedes the earlier Astra interpretation
+choice; Sol is not permitted. Earlier results from other models do not qualify
+the current route. Model overrides must not bypass this restriction.
 
 These are operational bounds, not revised qualification criteria. Indexed
 Retrieval still includes all required indexed work under its shared ten-second
