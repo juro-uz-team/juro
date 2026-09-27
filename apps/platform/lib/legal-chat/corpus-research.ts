@@ -117,18 +117,26 @@ export function createCorpusResearch(input: {
         check();
         // Interleave each formulation's ranked candidates. A multi-part
         // question must not allocate all source reads to its first topic.
-        const byFormulation=interpretation.formulations.map(formulation=>candidates
+        const byFormulation=interpretation.formulations.map(formulation=>{
+          const seenProvisions=new Set<string>();
+          return candidates
           .filter(item=>item.candidate.formulationIds.includes(formulation.id))
           .sort((a,b)=>{
             const rank=(item:RevalidatedCandidate)=>item.candidate.formulationMatches
               ?.find(match=>match.formulationId===formulation.id)?.rank??Number.MAX_SAFE_INTEGER;
             return rank(a)-rank(b)||b.candidate.fusionScore-a.candidate.fusionScore;
-          }));
+          }).filter(item=>{
+            // Rank complete provisions, not repeated chunks of one provision.
+            // Preserve the first (best-ranked) representative in each query.
+            if(seenProvisions.has(item.provisionRenditionId))return false;
+            seenProvisions.add(item.provisionRenditionId);return true;
+          });
+        });
         const ordered=new Map<string,RevalidatedCandidate>();
         for(let rank=0;byFormulation.some(items=>rank<items.length);rank++) {
           for(const items of byFormulation) {
             const candidate=items[rank];
-            if(candidate) ordered.set(candidate.provisionRenditionId,candidate);
+            if(candidate&&!ordered.has(candidate.provisionRenditionId)) ordered.set(candidate.provisionRenditionId,candidate);
           }
         }
         queues.push([...ordered.values()]);

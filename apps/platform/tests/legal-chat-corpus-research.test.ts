@@ -309,6 +309,26 @@ function articleResolution(id:string,article="7") {
     evidence:{...original.evidence,r2Key:`corpus/normalized/${article}`,sha256:original.evidence.sourceNormalizedSha256}}};
 }
 
+test("repeated chunks cannot crowd a formulation's next distinct provision out of answer evidence",async()=>{
+  const {services}=fixture();
+  const plan={...interpretation,formulations:[interpretation.formulations[0]!,
+    {...interpretation.formulations[0]!,id:"query:two",text:"Record retention"}]};
+  const chunks=Array.from({length:30},(_,index)=>({...anotherCandidate("rendition:shared"),
+    canonicalChunkId:`chunk:shared:${index}`,candidate:{...candidate.candidate,itemKey:`item:shared:${index}`,
+      formulationMatches:[{formulationId:"query:one",rank:index+1,fusionScore:1}]}}));
+  const governing={...anotherCandidate("rendition:governing"),candidate:{...candidate.candidate,
+    itemKey:"item:governing",formulationMatches:[{formulationId:"query:one",rank:31,fusionScore:1}]}};
+  const other=Array.from({length:35},(_,index)=>({...anotherCandidate(`rendition:other:${index}`),
+    candidate:{...candidate.candidate,itemKey:`item:other:${index}`,formulationIds:["query:two"],
+      formulationMatches:[{formulationId:"query:two",rank:index+1,fusionScore:1}]}}));
+  services.candidateCatalog.revalidate=async()=>parseRevalidatedCandidates([...chunks,governing,...other]);
+  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,
+    id==="rendition:governing"?"999":id==="rendition:shared"?"998":String(Number(id.split(":").at(-1))+1));
+  const packet=await createCorpusResearch({services,formulate:async()=>plan,now:()=>Date.parse(instant)})(request);
+  assert.deepEqual(packet.evidence.slice(0,4).map(item=>item.source.article),["998","1","999","2"]);
+  assert.ok(packet.observations?.some(item=>item.kind==="candidate_read_limit"),"Remaining unread candidates stay visible");
+});
+
 test("independent evidence reads overlap while ranked admission waits for the earlier source",async()=>{
   const {services,search}=fixture();
   services.candidateCatalog.revalidate=async()=>Array.from({length:6},(_,index)=>anotherCandidate(`rendition:${index}`));
