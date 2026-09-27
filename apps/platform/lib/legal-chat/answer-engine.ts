@@ -100,8 +100,33 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Barcha muhim masalalar tasdiqlanmagan; qolgan qismlar tekshiruv talab qiladi.",
     "Not all material issues are supported; the remaining parts require verification.");
   const hasSourceGaps = verification.sourceGaps.some(source=>source.passages.some(passage=>passage.missingContent.length));
+  const incompleteIssues = verification.coverage.filter(item =>
+    item.gaps.length || !item.findingIds.length || (item.actionRequired && !item.actionIds.length)
+    || item.findingIds.some(id => accepted.get(id)?.kind !== "finding")
+    || item.actionIds.some(id => accepted.get(id)?.kind !== "action"));
+  // Identify limitations using reviewed public titles and authenticated source
+  // metadata. Internal audit prose can contain unverified legal assertions and
+  // is not a public explanation or a translation into the answer's language.
+  const issueTitles = new Map(draft.findings.map((finding,index)=>[legalClaimId("finding",index),finding.title]));
+  const limitationLabels = [
+    ...incompleteIssues.flatMap(item=>item.findingIds.filter(id=>accepted.get(id)?.kind === "finding")
+      .map(id=>aiText(input.locale,
+        `Этот вопрос освещен не полностью: «${issueTitles.get(id)}».`,
+        `Bu masala to‘liq yoritilmagan: «${issueTitles.get(id)}».`,
+        `Coverage remains incomplete for this issue: “${issueTitles.get(id)}”.`))),
+    ...verification.sourceGaps.filter(item=>item.passages.some(passage=>passage.missingContent.length)).flatMap(item=>{
+      const source = input.evidence.find(evidence=>evidence.source.id === item.sourceId)?.source;
+      if (!source) return [];
+      // Leave room for localized wording within the public gap length limit.
+      const title = source.actTitle.length > 800 ? `${source.actTitle.slice(0,799)}…` : source.actTitle;
+      return [aiText(input.locale,
+        `Ответ не полностью раскрывает применимые нормы этого официального источника: «${title}».`,
+        `Javobda ushbu rasmiy manbaning tegishli qoidalari to‘liq yoritilmagan: «${title}».`,
+        `The answer does not fully cover the relevant rules in this official source: “${title}”.`)];
+    }),
+  ];
   const verificationGaps = verification.gaps.length || hasSourceGaps || verification.coverage.some(item=>item.gaps.length)
-    ? [incompleteMessage] : [];
+    ? [incompleteMessage,...limitationLabels] : limitationLabels;
   const findings = draft.findings.filter((_, index) => accepted.has(legalClaimId("finding",index)));
   if (!findings.length) return { kind: "insufficient_evidence", verification, result: {
     ...emptyLegalAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps])],
@@ -129,10 +154,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Не для каждого запрошенного периода подтверждена правовая часть ответа.",
     "So‘ralgan har bir davr uchun javobning huquqiy qismi tasdiqlanmagan.",
     "The answer does not have supported legal findings for every requested time period.")] : [];
-  const completeCoverage = verification.coverage.length > 0 && verification.coverage.every(item =>
-    !item.gaps.length && item.findingIds.length > 0 && (!item.actionRequired || item.actionIds.length > 0)
-    && item.findingIds.every(id => accepted.get(id)?.kind === "finding")
-    && item.actionIds.every(id => accepted.get(id)?.kind === "action"));
+  const completeCoverage = verification.coverage.length > 0 && incompleteIssues.length === 0;
   const coverageGaps = completeCoverage ? [] : [aiText(input.locale,
     "Не для каждого существенного вопроса подтверждены правовое объяснение и практические шаги.",
     "Har bir muhim masala uchun huquqiy tushuntirish va amaliy qadamlar tasdiqlanmagan.",

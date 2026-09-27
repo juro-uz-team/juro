@@ -29,6 +29,55 @@ const approval = {
   complete: true, gaps: [], questions: [],
 };
 
+test("partial answers identify incomplete reviewed issues and source coverage without publishing audit prose", async () => {
+  const outcome = await answerFromEvidence(question, {
+    write: async () => draft,
+    verify: async () => ({...approval, complete:false,
+      coverage:[{...approval.coverage[0],gaps:["INTERNAL: additional qualification missing"]}],
+      sourceGaps:[{sourceId:"official-fixture",passages:[{id:"p0",missingContent:["INTERNAL: source rule missing"]}]}],
+    }),
+  }, {correction:"never"});
+  assert.equal(outcome.kind,"partial");
+  assert.ok(outcome.result.coverageGaps?.includes('Coverage remains incomplete for this issue: “Filing period”.'));
+  assert.ok(outcome.result.coverageGaps?.includes('The answer does not fully cover the relevant rules in this official source: “Synthetic fixture”.'));
+  assert.ok(!JSON.stringify(outcome.result).includes("INTERNAL:"));
+  assert.deepEqual(outcome.result.confirmedFindings,draft.findings);
+  assert.deepEqual(outcome.result.actionPlan,draft.actions);
+});
+
+test("coverage limitations never repeat rejected issue titles or invent a source label", async () => {
+  const candidate = {...draft,findings:[...draft.findings,
+    {title:"UNSUPPORTED entitlement",explanation:"An unsupported rule.",sourceIds:["official-fixture"]}]};
+  const outcome = await answerFromEvidence(question, {
+    write:async()=>candidate,
+    verify:async()=>({...approval,complete:false,
+      claims:[...approval.claims,{id:"finding:1",supported:false,reason:"Rejected assertion"}],
+      coverage:[...approval.coverage,{issue:"INTERNAL issue",findingIds:["finding:1"],actionIds:[],gaps:["INTERNAL gap"]}],
+      sourceGaps:[{sourceId:"unknown-source",passages:[{id:"p0",missingContent:["INTERNAL source gap"]}]}],
+    }),
+  },{correction:"never"});
+  assert.equal(outcome.kind,"partial");
+  assert.ok(!JSON.stringify(outcome.result).includes("UNSUPPORTED"));
+  assert.ok(!JSON.stringify(outcome.result).includes("INTERNAL"));
+  assert.ok(!JSON.stringify(outcome.result).includes("unknown-source"));
+  assert.ok(outcome.result.coverageGaps?.length);
+});
+
+test("missing practical coverage is identified in the answer language even without free-text audit gaps", async () => {
+  for (const [locale,expected] of [
+    ["en",'Coverage remains incomplete for this issue: “Filing period”.'],
+    ["ru",'Этот вопрос освещен не полностью: «Filing period».'],
+    ["uz",'Bu masala to‘liq yoritilmagan: «Filing period».'],
+  ] as const) {
+    const outcome = await answerFromEvidence({...question,locale},{
+      write:async()=>draft,
+      verify:async()=>({...approval,coverage:[{...approval.coverage[0],actionIds:[]}]}),
+    },{correction:"never"});
+    assert.equal(outcome.kind,"partial");
+    assert.ok(outcome.result.coverageGaps?.includes(expected),locale);
+  }
+});
+
 test("citations preserve the source language independently of the answer language", async () => {
   for (const [locale, language] of [["ru", "ru"], ["uz", "uz-Latn"], ["uzc", "uz-Cyrl"], ["en", "en"], ["uz-Cyrl", "uz-Cyrl"], ["unknown", undefined]]) {
     const evidence = question.evidence.map(item => ({...item, source: {...item.source, locale: locale!}}));
