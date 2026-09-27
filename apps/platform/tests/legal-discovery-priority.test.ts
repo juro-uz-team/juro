@@ -29,6 +29,29 @@ test("discovery maps bounded heading hints to authenticated identities without t
   assert.deepEqual(await prioritize(input),["rendition:c"]);
 });
 
+test("repeated act titles retain every candidate heading and language through compact transport",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const title="Synthetic rules governing administrative records, preservation, inspection and correction, including retention schedules, release restrictions and correction requests";
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),payload=JSON.parse(body.input);
+    assert.deepEqual(payload.actTitles,[title]);
+    assert.deepEqual(payload.candidates.map((candidate:{id:string;actTitleIndex:number;articleTitle:string|null;language:string})=>({
+      id:candidate.id,actTitle:payload.actTitles[candidate.actTitleIndex],articleTitle:candidate.articleTitle,language:candidate.language,
+    })),[
+      {id:"c0",actTitle:title,articleTitle:"Record inspection",language:"en"},
+      {id:"c1",actTitle:title,articleTitle:null,language:"ru"},
+      {id:"c2",actTitle:title,articleTitle:"Record correction",language:"en"},
+    ]);
+    assert.deepEqual(payload.researchFormulations,input.formulations);
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({priority:["c2","c0"]})}]}]});
+  });
+  const prioritize=createDiscoveryPrioritizer({requestId:"discovery-titles",readMetadata:async id=>({
+    actTitle:title,articleTitle:id==="rendition:a"?"Record inspection":id==="rendition:c"?"Record correction":null,
+    languageTag:id==="rendition:b"?"ru":"en",
+  })});
+  assert.deepEqual(await prioritize(input),["rendition:c","rendition:a"]);
+});
+
 test("unavailable metadata and invalid model identities leave original discovery available",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   let calls=0;
