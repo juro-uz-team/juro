@@ -13,6 +13,62 @@ type ProviderSchemaNode = {
   properties?: Record<string, ProviderSchemaNode>; items?: ProviderSchemaNode;
 };
 
+test("issue verification audits every source without a paragraph matrix and rejects incomplete inventories",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const question:AnswerQuestion={question:"Explain eligibility",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Only registered applicants qualify.",sourceIds:[]},
+    findings:[{title:"Eligibility",explanation:"Only registered applicants qualify.",sourceIds:[]}],
+    actions:[{title:"Check registration",description:"Check your registration before applying.",sourceIds:[]}],
+    ruleBindings:[{findingId:"finding:0",actionIds:["action:0"]}],risks:[],questions:[],unresolved:[]});
+  let omit=false;
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    assert.deepEqual(input.issues,[{findingId:"finding:0",actionIds:["action:0"]}]);
+    assert.equal(input.claims[1].text,"Eligibility\nOnly registered applicants qualify.");
+    assert.ok(!body.text.format.schema.properties.sourceAudit);
+    const claims=Object.fromEntries(legalDraftClaims(draft).map(({id})=>[id,{supported:false,reason:"No evidence",dependsOn:[]}]));
+    if(omit)delete claims["action:0"];
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({claims,sources:{},
+      coverage:[],complete:false,gaps:[],questions:[]})}]}]});
+  });
+  const model=createLegalAnswerModel({requestId:"issue-audit"});
+  const result=legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  assert.equal(result.claims.length,3);
+  assert.ok(result.claims.every(claim=>!claim.supported));
+  omit=true;
+  await assert.rejects(model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+});
+
+test("issue review preserves uncited source omissions and rejects missing or invented source reviews",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const question:AnswerQuestion={question:"Who qualifies?",locale:"en",mode:"fast",answerMode:"short",
+    temporalScope:{kind:"current"},unresolved:[],evidence:[{source:{id:"official-exception-with-authenticated-long-identity",actTitle:"Fixture",
+      actIdentifier:null,officialUrl:"https://lex.uz/docs/123",revisionDate:null,lastCheckedAt:"2026-09-20",locale:"en",
+      publishedAt:null,sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",contentSha256:"parent"},
+      text:"Registered applicants qualify.\nSuspended registrations do not qualify.",textSha256:"fixture",endpoint:{kind:"current"},origin:"indexed"}]};
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Applicants qualify.",sourceIds:[]},
+    findings:[{title:"Eligibility",explanation:"Applicants qualify.",sourceIds:[]}],actions:[],risks:[],questions:[],unresolved:[],
+    ruleBindings:[{findingId:"finding:0",actionIds:[]}]});
+  let mode="valid";
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
+    assert.deepEqual(input.context.evidence[0].passages,[{id:"p0",text:"Registered applicants qualify."},
+      {id:"p1",text:"Suspended registrations do not qualify."}]);
+    const sources=mode==="missing"?{}:{[mode==="invented"?"s99":"s0"]:[{
+      passageId:mode==="bad-passage"?"p99":"p1",missingContent:"Suspended registrations excluded"}]};
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      claims:Object.fromEntries(legalDraftClaims(draft).map(({id})=>[id,{supported:false,reason:"Eligibility overbroad",dependsOn:[]}])),
+      sources,coverage:[{issue:"Eligibility",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[]}],
+      complete:false,gaps:[],questions:[],
+    })}]}]});
+  });
+  const verify=()=>createLegalAnswerModel({requestId:"uncited-exception"}).verify({question,draft,claims:legalDraftClaims(draft),previous:null});
+  const verified=legalVerificationSchema.parse(await verify());
+  assert.deepEqual(verified.sourceGaps,[{sourceId:"official-exception-with-authenticated-long-identity",passages:[{id:"p1",missingContent:["Suspended registrations excluded"]}]}]);
+  for(mode of ["missing","invented","bad-passage"])await assert.rejects(verify());
+});
+
 function assertStrictProviderObjects(value: unknown): void {
   if (Array.isArray(value)) {value.forEach(assertStrictProviderObjects); return;}
   if (!value || typeof value !== "object") return;

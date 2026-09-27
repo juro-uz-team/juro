@@ -51,6 +51,16 @@ function result(overrides: Partial<LegalAnswerViewResult> = {}): LegalAnswerView
   };
 }
 
+test("issue cards display each rule beside its explicitly paired guidance",()=>{
+  const html=renderToStaticMarkup(createElement(LegalAnswerView,{locale:"en",result:result({
+    issues:[{findingIndex:0,actionIndices:[0]}],
+  })}));
+  assert.match(html,/data-answer-issue="0"/);
+  assert.equal((html.match(/Получите документы/g)??[]).length,1);
+  assert.ok(html.indexOf("Запрет в период отпуска")<html.indexOf("Получите документы"));
+  assert.doesNotMatch(html,/id="[^"]*-next"/);
+});
+
 test("Russian Legal Answer uses the product-owned structure and delegates section Markdown", () => {
   const value = result({
     clarificationQuestions: ["Когда вы получили приказ?"],

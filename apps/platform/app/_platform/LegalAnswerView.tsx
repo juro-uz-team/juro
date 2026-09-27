@@ -29,6 +29,7 @@ export type LegalAnswerViewResult = {
   answer: string;
   clarificationQuestions: string[];
   confirmedFindings: Array<{ title: string; explanation: string; sourceIds?: string[] }>;
+  issues?: Array<{findingIndex:number;actionIndices:number[]}>;
   assumptions: Array<{ statement: string; impact: string }>;
   risks: Array<{ level: "low" | "medium" | "high" | "critical"; title: string; explanation: string; sourceIds?: string[] }>;
   sources: LegalAnswerViewSource[];
@@ -315,14 +316,32 @@ export function LegalAnswerView({
         <CitationList sourceIds={branch.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}</div>
     </Section>}
-    {result.confirmedFindings.length > 0 && <Section id={`${id}-law`} title={copy.law}>
+    {result.issues?.map((issue,index)=>{
+      const finding=result.confirmedFindings[issue.findingIndex]!;
+      return <section className="legal-answer__section" data-answer-issue={index} key={issue.findingIndex} aria-labelledby={`${id}-issue-${index}`}>
+        <h2 id={`${id}-issue-${index}`}>{finding.title}</h2>
+        <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
+        <CitationList sourceIds={finding.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
+        {issue.actionIndices.length>0 && <>
+          <h3>{copy.next}</h3>
+          <ol className="legal-answer__steps">{issue.actionIndices.map(actionIndex=>{
+            const step=result.actionPlan[actionIndex]!;
+            return <li key={actionIndex}>
+              <div><h4>{step.title}</h4><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
+              <CitationList sourceIds={step.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
+            </li>;
+          })}</ol>
+        </>}
+      </section>;
+    })}
+    {!result.issues && result.confirmedFindings.length > 0 && <Section id={`${id}-law`} title={copy.law}>
       <div className="legal-answer__findings">{result.confirmedFindings.map((finding) => <article key={`${finding.title}:${finding.sourceIds?.join(":") ?? ""}`}>
         <h3>{finding.title}</h3>
         <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
         <CitationList sourceIds={finding.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}</div>
     </Section>}
-    {result.actionPlan.length > 0 && <Section id={`${id}-next`} title={copy.next}>
+    {!result.issues && result.actionPlan.length > 0 && <Section id={`${id}-next`} title={copy.next}>
       <ol className="legal-answer__steps">{result.actionPlan.map((step) => <li key={step.title}>
         <div><h3>{step.title}</h3><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
         <CitationList sourceIds={step.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />

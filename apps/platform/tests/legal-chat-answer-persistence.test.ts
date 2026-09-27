@@ -286,6 +286,7 @@ test("follow-ups retain the saved explanation, practical options and questions b
     const saved=await saveSignedInLegalAnswer({...input,result:{...result,
       confirmedFindings:[{title:"Representative",explanation:"An authorized representative may request the record.",sourceIds:["source"]}],
       actionPlan:[{title:"Second option",description:"Ask your representative to file the request.",sourceIds:["source"]}],
+      issues:[{findingIndex:0,actionIndices:[0]}],
       clarificationQuestions:["Has a representative been authorized?"],
     }});
     const context=await readConversationContext({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId,
@@ -294,6 +295,12 @@ test("follow-ups retain the saved explanation, practical options and questions b
     assert.match(context.turns[0]!.answer,/Ask your representative to file the request/);
     assert.match(context.turns[0]!.answer,/Has a representative been authorized/);
     assert.doesNotMatch(context.turns[0]!.answer,/exact\/provision|ephemeral source/);
+    assert.deepEqual(JSON.parse(context.turns[0]!.answer).issues,[{
+      rule:{title:"Representative",explanation:"An authorized representative may request the record."},
+      actions:[{title:"Second option",description:"Ask your representative to file the request."}],
+    }]);
+    const loaded=await readSavedLegalAnswer({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId});
+    assert.deepEqual(loaded?.result.issues,[{findingIndex:0,actionIndices:[0]}]);
     const display=await readSavedConversationTurns({db:d1,userId:"owner",workspaceId:"workspace",conversationId:saved.conversationId,responseMessageId:saved.messageId});
     assert.equal(display[0]!.answer,result.answer);
   } finally {sqlite.close();}

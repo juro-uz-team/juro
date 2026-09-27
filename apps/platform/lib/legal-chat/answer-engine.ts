@@ -103,7 +103,9 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
   const incompleteIssues = verification.coverage.filter(item =>
     item.gaps.length || !item.findingIds.length || (item.actionRequired && !item.actionIds.length)
     || item.findingIds.some(id => accepted.get(id)?.kind !== "finding")
-    || item.actionIds.some(id => accepted.get(id)?.kind !== "action"));
+    || item.actionIds.some(id => accepted.get(id)?.kind !== "action"
+      || (draft.ruleBindings.length>0 && !draft.ruleBindings.some(binding=>
+        item.findingIds.includes(binding.findingId)&&binding.actionIds.includes(id)))));
   // Identify limitations using reviewed public titles and authenticated source
   // metadata. Internal audit prose can contain unverified legal assertions and
   // is not a public explanation or a translation into the answer's language.
@@ -133,6 +135,19 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     clarificationQuestions: questions,
   } };
   const actions = draft.actions.filter((_, index) => accepted.has(legalClaimId("action",index)));
+  const findingPositions=new Map(draft.findings.flatMap((_,index)=>accepted.has(legalClaimId("finding",index))
+    ? [legalClaimId("finding",index)] : []).map((id,index)=>[id,index]));
+  const actionPositions=new Map(draft.actions.flatMap((_,index)=>accepted.has(legalClaimId("action",index))
+    ? [legalClaimId("action",index)] : []).map((id,index)=>[id,index]));
+  const issues=draft.ruleBindings.length ? draft.ruleBindings.flatMap(binding=>{
+    const findingIndex=findingPositions.get(binding.findingId);
+    return findingIndex===undefined ? [] : [{findingIndex,actionIndices:binding.actionIds.flatMap(id=>{
+      const index=actionPositions.get(id);return index===undefined?[]:[index];
+    })}];
+  }) : undefined;
+  if (issues) for (const findingIndex of findingPositions.values()) {
+    if (!issues.some(issue=>issue.findingIndex===findingIndex)) issues.push({findingIndex,actionIndices:[]});
+  }
   const risks = draft.risks.filter((_, index) => accepted.has(legalClaimId("risk",index)));
   const sourceIds = new Set([
     ...(accepted.has("mainPoint") ? draft.mainPoint.sourceIds : []),
@@ -174,7 +189,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     summary: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
     summarySourceIds: accepted.has("mainPoint") ? draft.mainPoint.sourceIds : [],
     answer: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
-    confirmedFindings: findings, actionPlan: actions, risks, sources,
+    confirmedFindings: findings, actionPlan: actions, ...(issues?{issues}:{}), risks, sources,
     clarificationQuestions: questions,
     coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps,
       ...identityGaps, ...coverageGaps, ...outageGaps])],

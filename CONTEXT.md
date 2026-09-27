@@ -7,8 +7,12 @@ JURO helps people obtain source-grounded explanations of Uzbekistan law and turn
 ### Answer structure
 
 **Legal Answer**:
-A structured, source-grounded response to a legal question, led by the Main Point and followed by What the Law Says and What to Do Next. Supporting sections appear only when they contain relevant information.
+A structured, source-grounded response to a legal question, led by the Main Point and followed by Legal Issues that connect What the Law Says with What to Do Next. Supporting sections appear only when they contain relevant information.
 _Avoid_: AI response, generated text, chat completion
+
+**Legal Issue**:
+A decision-relevant part of a Legal Answer containing a complete Qualified Rule, its Citations and any practical steps displayed alongside that rule.
+_Avoid_: article summary, independent action panel
 
 **Main Point**:
 The concise, plain-language conclusion that leads every substantive Legal Answer with the applicable ordinary governing rule, followed by any material supported qualification.
@@ -23,7 +27,7 @@ The ordered practical guidance that follows from the supported legal analysis.
 _Avoid_: action-plan upsell, recommendations panel, suggested prompts
 
 **Qualified Rule**:
-A source-grounded legal proposition together with the actors, conditions, exceptions and temporal qualifications that determine its meaning. Its explanation and practical application share that meaning without requiring identical wording across answer sections.
+A source-grounded legal proposition together with the actors, conditions, exceptions and temporal qualifications that determine its meaning. Its explanation and adjacent practical application share that meaning without requiring the practical steps to repeat the rule.
 _Avoid_: answer template, keyword match, isolated entitlement
 
 **Supporting Sections**:

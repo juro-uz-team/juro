@@ -18,11 +18,10 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
-      :{sourceAudit:{source:{p0:{material:true,actionRequired:true,
-        findingSupport:[{claimId:"finding:0",excerpt:text}],actionSupport:[{claimId:"action:0",excerpt:text}],missingContent:[]}}},
-        verification:{claims:["mainPoint","finding:0","action:0"].map(id=>({id,supported:true,reason:"Supported"})),
-          retention:[],coverage:[{issue:"Record access",actionRequired:true,findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
-          complete:true,gaps:[],questions:[]}};
+      :{sources:{source:[]},
+        claims:Object.fromEntries(["mainPoint","finding:0","action:0"].map(id=>[id,{supported:true,reason:null,dependsOn:[]}])),
+        coverage:[{issue:"Record access",actionRequired:true,findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
+        complete:true,gaps:[],questions:[]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
   const stale={...evidence,source:{...evidence.source,verifiedAt:new Date(Date.now()-600_000).toISOString()}};

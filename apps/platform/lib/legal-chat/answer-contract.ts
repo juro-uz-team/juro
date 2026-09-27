@@ -5,7 +5,7 @@ export const legalDraftSchema = z.object({
   mainPoint: z.object({ text: z.string().min(1).max(1500), sourceIds: z.array(z.string().min(1).max(160)).max(12) }).strict(),
   findings: z.array(legalFindingSchema.omit({ requirementIds: true, answerRole: true })).max(16),
   actions: z.array(actionStepSchema.omit({ requirementIds: true }).extend({
-    description: actionStepSchema.shape.description.describe("Usable practical guidance with the actor, eligibility, exceptions and each applicable duration paired with its own starting event. A trigger alone is not a deadline; details in a finding do not supply missing action content."),
+    description: actionStepSchema.shape.description.describe("Usable practical guidance read together with its explicitly paired adjacent qualified rule. Preserve additional action-specific conditions, durations and starting events."),
   })).max(16),
   risks: z.array(legalRiskSchema).max(16),
   questions: z.array(z.string().min(1).max(500)).max(8),

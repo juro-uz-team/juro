@@ -101,6 +101,11 @@ export const legalChatResponseSchema = z.object({
   // independently verifiable legal unit first so the server can validate and
   // stream a useful answer before the rest of the response finishes.
   confirmedFindings: z.array(legalFindingSchema).max(16),
+  // Explicit publication membership; absent on legacy saved answers.
+  issues: z.array(z.object({
+    findingIndex: z.number().int().nonnegative(),
+    actionIndices: z.array(z.number().int().nonnegative()).max(MAX_LEGAL_ACTION_STEPS),
+  }).strict()).max(16).optional(),
   responseKind: z.enum(["answer", "clarification_required"]),
   summary: z.string().min(1).max(1_500),
   summarySourceIds: sourceIdList.optional(),
@@ -134,7 +139,17 @@ export const legalChatResponseSchema = z.object({
   referenceNotes: z.array(legalReferenceNoteSchema).max(8).optional(),
   coverageGaps: z.array(z.string().min(1).max(1_000)).max(240).optional(),
   failureReason: z.enum(["question_interpretation_unavailable", "official_research_unavailable", "answer_verification_unavailable"]).optional(),
-}).strict();
+}).strict().superRefine((answer,ctx)=>{
+  if (!answer.issues) return;
+  const findings=answer.issues.map(issue=>issue.findingIndex);
+  const actions=answer.issues.flatMap(issue=>issue.actionIndices);
+  if (findings.length!==answer.confirmedFindings.length || new Set(findings).size!==findings.length
+    || findings.some(index=>index>=answer.confirmedFindings.length)
+    || actions.length!==answer.actionPlan.length || new Set(actions).size!==actions.length
+    || actions.some(index=>index>=answer.actionPlan.length)) {
+    ctx.addIssue({code:"custom",path:["issues"],message:"Issue membership must cover each published finding and action exactly once"});
+  }
+});
 
 export type LegalChatResponse = z.infer<typeof legalChatResponseSchema>;
 

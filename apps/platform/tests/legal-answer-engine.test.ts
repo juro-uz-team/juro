@@ -29,6 +29,33 @@ const approval = {
   complete: true, gaps: [], questions: [],
 };
 
+test("published issues retain explicit membership after unsupported claims are removed and reload", async () => {
+  const {decodeSavedLegalAnswer}=await import("../lib/legal-chat/saved-answer");
+  const candidate={...draft,findings:[{...draft.findings[0]!,title:"Unsupported issue"},...draft.findings],
+    ruleBindings:[{findingId:"finding:0",actionIds:[]},{findingId:"finding:1",actionIds:["action:0"]}]};
+  const outcome=await answerFromEvidence(question,{
+    write:async()=>candidate,
+    verify:async()=>({...approval,claims:[...approval.claims.filter(item=>item.id!=="finding:0"),
+      {id:"finding:0",supported:false,reason:"Not supported"},{id:"finding:1",supported:true,reason:"Supported"}],
+      coverage:[{...approval.coverage[0],findingIds:["finding:1"]}]}),
+  },{correction:"never"});
+  const saved=decodeSavedLegalAnswer(JSON.stringify(outcome.result));
+  assert.deepEqual(saved.issues,[{findingIndex:0,actionIndices:[0]}]);
+  assert.equal(saved.confirmedFindings[0]?.title,"Filing period");
+  assert.equal(saved.actionPlan[0]?.title,"File the notice");
+});
+
+test("coverage cannot borrow an action displayed under a different issue",async()=>{
+  const candidate={...draft,findings:[...draft.findings,{...draft.findings[0]!,title:"Separate issue"}],
+    ruleBindings:[{findingId:"finding:0",actionIds:[]},{findingId:"finding:1",actionIds:["action:0"]}]};
+  const outcome=await answerFromEvidence(question,{
+    write:async()=>candidate,
+    verify:async()=>({...approval,claims:[...approval.claims,{id:"finding:1",supported:true,reason:"Supported"}]}),
+  },{correction:"never"});
+  assert.equal(outcome.kind,"partial");
+  assert.ok(outcome.result.coverageGaps?.length);
+});
+
 test("partial answers identify incomplete reviewed issues and source coverage without publishing audit prose", async () => {
   const outcome = await answerFromEvidence(question, {
     write: async () => draft,

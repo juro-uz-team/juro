@@ -11,8 +11,15 @@ export function decodeSavedLegalAnswer(structuredJson: string): LegalChatRespons
 export function legalAnswerConversationText(result: LegalChatResponse): string {
   return JSON.stringify({
     mainPoint: result.summary, answer: result.answer,
-    findings: result.confirmedFindings.map(({title, explanation}) => ({title, explanation})),
-    actions: result.actionPlan.map(({title, description}) => ({title, description})),
+    ...(result.issues ? {issues:result.issues.map(issue=>{
+      const {title,explanation}=result.confirmedFindings[issue.findingIndex]!;
+      return {rule:{title,explanation},actions:issue.actionIndices.map(index=>{
+        const {title,description}=result.actionPlan[index]!;return {title,description};
+      })};
+    })} : {
+      findings: result.confirmedFindings.map(({title, explanation}) => ({title, explanation})),
+      actions: result.actionPlan.map(({title, description}) => ({title, description})),
+    }),
     risks: result.risks.map(({level, title, explanation}) => ({level, title, explanation})),
     questions: result.clarificationQuestions, unresolved: result.coverageGaps ?? [],
     conditionalBranches: result.conditionalBranches ?? [], assumptions: result.assumptions,
