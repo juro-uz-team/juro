@@ -75,14 +75,16 @@ export function normalizeUzbekLatin(value: string): string {
 /** Normalizes the Uzbek Cyrillic alphabet without translating it. */
 export function normalizeUzbekCyrillic(value: string): string {
   return normalized(value)
-    .replace(/[ЎҚҒҲ]/gu, (character) => character.toLocaleLowerCase("uz"))
+    .replace(/[ЎҚҒҲ]/gu, (character) => character.toLowerCase())
     .replace(/[Ё]/gu, "ё");
 }
 
 /** Transliteration is query-only; it must never replace the displayed official source. */
 export function transliterateUzbek(value: string): string {
+  // Only Cyrillic characters reach this callback; their case mapping is not
+  // locale-sensitive. Avoid initializing locale handling for each character.
   return normalizeUzbekCyrillic(value).replace(/[\p{Script=Cyrillic}]/gu, (character) =>
-    CYRILLIC_UZBEK.get(character.toLocaleLowerCase("uz")) ?? character,
+    CYRILLIC_UZBEK.get(character.toLowerCase()) ?? character,
   );
 }
 
