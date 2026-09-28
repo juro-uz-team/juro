@@ -37,12 +37,14 @@ test("writer produces the answer without redundant planning references and cites
     const mainPoint=resolve(resolve(schema.properties.answer).properties!.mainPoint!);
     assert.deepEqual(resolve(resolve(mainPoint.properties!.sourceIds!).items!).enum,wireIds);
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
-      answer:{mainPoint:{text:"The applicant may request a copy.",sourceIds:[wireIds[1]]},
+      answer:{mainPoint:{text:"The applicant may request a copy. [s1, s2] Keep [the original], [s3], [s0] and [s1](https://example.com).",sourceIds:[wireIds[1],wireIds[2]]},
         issues:[],risks:[],questions:[],unresolved:[]},
     })}]}]});
   });
-  const draft=await createLegalAnswerModel({requestId:"source-grammar"}).write({question,correction:null});
-  assert.deepEqual(legalDraftSchema.parse(draft).mainPoint.sourceIds,[ids[1]]);
+  const draft=legalDraftSchema.parse(await createLegalAnswerModel({requestId:"source-grammar"}).write({question,correction:null}));
+  assert.deepEqual(draft.mainPoint.sourceIds,[ids[1],ids[2]]);
+  assert.equal(draft.mainPoint.text,"The applicant may request a copy. Keep [the original], [s3], [s0] and [s1](https://example.com).",
+    "Remove redundant declared transport citations only; preserve ordinary brackets, undeclared aliases, canonical IDs and links");
 });
 
 test("a stalled answer provider is cancelled by the selected chat mode watchdog",async context=>{
