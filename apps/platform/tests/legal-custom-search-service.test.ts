@@ -318,6 +318,51 @@ test(physicalAlias
     assert.deepEqual(corpusResponses.map(response => response.status), [200, 200, 200]);
     assert.equal(independentCorpusFinished, true, "an independent corpus must finish while another corpus is stalled");
     assert.equal(enteredBeforeRelease, 2, "the second traversal in the stalled corpus must remain queued");
+    // A native server can admit two traversals while retaining a hard bound.
+    const nativeCache = new CustomRuntimeCache(0);
+    let nativeEntered = 0;
+    let releaseNative!: () => void;
+    let firstNative!: () => void;
+    const nativeStarted = new Promise<void>(resolve => { firstNative = resolve; });
+    const nativeRelease = new Promise<void>(resolve => { releaseNative = resolve; });
+    bucket.onRead = async key => {
+      if (key !== runtime.documentsReference.key) return;
+      nativeEntered++;
+      if (nativeEntered === 1) { firstNative(); await nativeRelease; }
+    };
+    const nativeEnv = {...env, RUNTIME_CACHE: nativeCache, SPARSE_TRAVERSAL_CONCURRENCY: 2 as const};
+    const slowNative = send(nativeEnv);
+    await nativeStarted;
+    const fastNative = send(nativeEnv);
+    let nativeFinished = false;
+    try {
+      nativeFinished = await Promise.race([fastNative.then(() => true), new Promise<false>(resolve => {
+        timer = setTimeout(() => resolve(false), 1_000);
+      })]);
+    } finally { clearTimeout(timer); releaseNative(); }
+    const nativeResponses = await Promise.all([slowNative, fastNative]);
+    bucket.onRead = previousRead;
+    assert.deepEqual(nativeResponses.map(response => response.status), [200, 200]);
+    assert.equal(nativeFinished, true, "native concurrent traversal must not queue behind stalled artifact I/O");
+    let releasePair!: () => void;
+    let notifyPair!: () => void;
+    let pairEntered = 0;
+    const pairStarted = new Promise<void>(resolve => { notifyPair = resolve; });
+    const pairRelease = new Promise<void>(resolve => { releasePair = resolve; });
+    bucket.onRead = async key => {
+      if (key !== runtime.documentsReference.key) return;
+      if (++pairEntered === 2) notifyPair();
+      await pairRelease;
+    };
+    const pair = [send(nativeEnv), send(nativeEnv)];
+    await pairStarted;
+    const queued = send(nativeEnv);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      assert.equal(pairEntered, 2, "a third native traversal must wait for capacity");
+    } finally { releasePair(); }
+    assert.deepEqual((await Promise.all([...pair, queued])).map(response => response.status), [200, 200, 200]);
+    bucket.onRead = previousRead;
   }
   const driftedCapabilityResponse = await handleCustomSearchRequest(new Request(
     "http://legal-corpus.internal/internal/legal-corpus/custom-search", {

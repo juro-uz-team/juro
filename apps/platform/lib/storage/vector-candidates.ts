@@ -16,7 +16,7 @@ export function createVectorCandidateReader(endpoint:string):VectorCandidateRead
     const signal=AbortSignal.any([AbortSignal.timeout(10_000),...[indexedRetrievalSignal()].filter((s):s is AbortSignal=>!!s)]);
     signal.throwIfAborted();
     const response=await fetch(url,{method:"POST",redirect:"error",headers:{"content-type":"application/json"},signal,
-      body:JSON.stringify({...request,expiresAt:Date.now()+indexedRetrievalRemainingMs()})});
+      body:JSON.stringify({...request,expiresAt:Date.now()+Math.min(10_000,indexedRetrievalRemainingMs())})});
     if(!response.ok)throw new Error("Vector candidate service unavailable");
     if(!response.body)throw new Error("Vector candidate response unavailable");
     const reader=response.body.getReader(),chunks:Uint8Array[]=[];

@@ -45,7 +45,7 @@ test(`${mode} reuses streamed planning and refuses publication without source fr
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
   assert.equal(staged.length,1,"Initial interpretation starts indexed work before final research");
-  assert.ok(remainingBudget<=3500,`Initial interpretation consumes the shared retrieval budget: ${remainingBudget}`);
+  assert.equal(remainingBudget,8500,"6.5 seconds of interpretation leaves 8.5 seconds of the shared acquisition budget");
   assert.deepEqual(searched,staged.map(fragment=>fragment.formulation),"Runtime reuses exactly the initial streamed formulations");
   assert.deepEqual(calls,["legal_question_research","legal_answer"]);
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
@@ -72,7 +72,7 @@ test("exhausted indexed budget cannot restart research through the public fallba
   });
   const result=await executeRuntimeLegalChat({requestId:"expired-fallback",environment:"staging",mode:"fast",answerMode:"short",
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
-    service:{async openLegalResearch(){return {async stage(){},async search(){monotonic=11001;
+    service:{async openLegalResearch(){return {async stage(){},async search(){monotonic=16001;
       throw new DOMException("Indexed retrieval deadline exceeded","TimeoutError");},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async terminal=>terminal,release:async()=>{},
   });

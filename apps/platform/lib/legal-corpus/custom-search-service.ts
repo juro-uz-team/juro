@@ -32,19 +32,24 @@ export function fuseCustomProvisionMatches(sparseKeys: string[], denseKeys: stri
     .slice(0, topK);
 }
 const QUERY_RESERVATION_USD_MICROS = 1_065;
-let customSparseTail: Promise<void> = Promise.resolve();
-const corpusSparseTails = new WeakMap<CustomRuntimeCache, Promise<void>>();
+type SparseQueue = {active:number; waiting:Array<() => void>};
+const sharedSparseQueue:SparseQueue={active:0,waiting:[]};
+const corpusSparseQueues = new WeakMap<CustomRuntimeCache, SparseQueue>();
 
-// Each persistent corpus cache owns one traversal queue. Independent corpora
-// can overlap I/O while each keeps its memory-intensive traversal serialized.
-// Runtimes without a corpus cache retain the shared traversal bound.
-function serializeCustomSparseSearch<T>(operation: () => Promise<T>, cache?: CustomRuntimeCache): Promise<T> {
-  const tail = cache ? corpusSparseTails.get(cache) ?? Promise.resolve() : customSparseTail;
-  const result = tail.then(()=>{indexedRetrievalSignal();return operation();});
-  const settled = result.then(() => undefined, () => undefined);
-  if (cache) corpusSparseTails.set(cache, settled);
-  else customSparseTail = settled;
-  return result;
+// Native servers may overlap two traversals per corpus. Other runtimes retain
+// the single-traversal memory bound. Queued work checks cancellation on entry.
+async function runCustomSparseSearch<T>(operation: () => Promise<T>, cache?: CustomRuntimeCache,
+  concurrency:1|2=1): Promise<T> {
+  const queue=cache ? corpusSparseQueues.get(cache) ?? {active:0,waiting:[]} : sharedSparseQueue;
+  if(cache)corpusSparseQueues.set(cache,queue);
+  const limit=cache?concurrency:1;
+  if(queue.active>=limit)await new Promise<void>(resolve=>queue.waiting.push(resolve));
+  else queue.active++;
+  try {indexedRetrievalSignal();return await operation();}
+  finally {
+    const next=queue.waiting.shift();
+    if(next)next();else queue.active--;
+  }
 }
 
 const endpointSchema = z.discriminatedUnion("kind", [
@@ -101,6 +106,7 @@ export type CustomSearchEnv = {
   DENSE: CustomVectorSearchIndex;
   ARTIFACTS: R2Bucket;
   RUNTIME_CACHE?: CustomRuntimeCache;
+  SPARSE_TRAVERSAL_CONCURRENCY?: 1 | 2;
   PREPARED_ORDINALS?: PreparedOrdinalReader;
   CATALOG_DB: D1Database;
   CUSTOM_SEARCH_CAPABILITY: "current" | "history";
@@ -253,8 +259,8 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
   const atEpoch = Math.floor(new Date(input.endpoint.kind === "timestamp"
     ? input.endpoint.instant : input.currentAt).getTime() / 1_000);
   const lanes = await Promise.allSettled([
-    timed("sparseMs", () => serializeCustomSparseSearch(() => queryCustomBm25RuntimeBatch(env.ARTIFACTS, descriptor,
-      queries.map(text => ({ text, atEpoch, topK: input.maxResults })),env.RUNTIME_CACHE),env.RUNTIME_CACHE)),
+    timed("sparseMs", () => runCustomSparseSearch(() => timed("sparseTraversalMs",()=>queryCustomBm25RuntimeBatch(env.ARTIFACTS, descriptor,
+      queries.map(text => ({ text, atEpoch, topK: input.maxResults })),env.RUNTIME_CACHE)),env.RUNTIME_CACHE,env.SPARSE_TRAVERSAL_CONCURRENCY)),
     timed("embeddingMs", () => queryEmbeddings(env, queries)).then(async embedding => ({
       tokenUsage: embedding.tokenUsage,
       results: await timed("denseMs", () => Promise.all(embedding.vectors.map(vector => queryCustomDenseLane(env.DENSE, {

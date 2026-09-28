@@ -43,6 +43,7 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
         CUSTOM_SEARCH_INSTANCE_ID:selected.instanceId,CUSTOM_SEARCH_SHARD_ID:selected.shardId,
         CUSTOM_RUNTIME_DESCRIPTOR_KEY:selected.descriptor.key,CUSTOM_RUNTIME_DESCRIPTOR_SHA256:selected.descriptor.sha256,
         OPENAI_API_KEY:input.apiKey,CATALOG_DB:input.catalog,ARTIFACTS:artifacts,RUNTIME_CACHE:cache,
+        SPARSE_TRAVERSAL_CONCURRENCY:2,
         PREPARED_ORDINALS:createPreparedOrdinalReader(input.pool,membershipPins),DENSE:index,
       } as unknown as CustomSearchEnv);
     }};

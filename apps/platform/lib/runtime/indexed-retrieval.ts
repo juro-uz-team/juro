@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 
-export const INDEXED_RETRIEVAL_TIMEOUT_MS=10_000;
+export const INDEXED_RETRIEVAL_TIMEOUT_MS=15_000;
 
 type RetrievalScope = {controller:AbortController;expiresAt:number};
 const scopes=new AsyncLocalStorage<RetrievalScope>();
