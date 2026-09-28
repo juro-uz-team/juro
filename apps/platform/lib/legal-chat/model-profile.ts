@@ -1,10 +1,12 @@
-import {openAiChatModel} from "../ai/provider-models";
+import {openAiChatModel,OPENAI_DEEP_CHAT_MODEL} from "../ai/provider-models";
 import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS} from "./execution-limits";
 
 type ChatModelStage="interpreting"|"formulating"|"assessing"|"writing";
 
 /** Execution cost differs by task; all drafts receive programmatic checks. */
 export function legalChatModelProfile(mode:"fast"|"deep",stage:ChatModelStage) {
+  if(mode==="fast"&&stage==="interpreting")return {model:OPENAI_DEEP_CHAT_MODEL,
+    reasoningMode:"standard" as const,reasoningEffort:"low" as const,timeoutMs:15_000};
   const model=openAiChatModel(mode);
   if(mode==="deep")return {model,timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,
     ...(stage === "writing"?{reasoningEffort:"max" as const,reasoningMode:"pro" as const}:{})};

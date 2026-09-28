@@ -53,7 +53,7 @@ test("Fast plans research with interpretation while Deep retains its existing in
     assert.deepEqual(result.initialQueries,mode==="fast"?queries:undefined);
   }
   assert.deepEqual(requests,[
-    {model:"gpt-6-luna",reasoning:{effort:"medium",mode:"standard"},schema:"legal_question_research"},
+    {model:"gpt-5.6-terra",reasoning:{effort:"low",mode:"standard"},schema:"legal_question_research"},
     {model:"gpt-5.6-terra",reasoning:undefined,schema:"legal_question_context"},
   ]);
 });

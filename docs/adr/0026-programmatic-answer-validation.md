@@ -2,7 +2,7 @@
 
 Status: accepted. Supersedes the independent model review requirements in ADRs 0020, 0023 and 0025.
 
-The owner explicitly requested removing model verification to reduce latency. Both Fast and Deep draft once and then use programmatic validation. No legacy draft path may invoke a verification model. Fast retains GPT-6 Luna and Deep retains GPT-5.6 Terra.
+The owner explicitly requested removing model verification to reduce latency. Both Fast and Deep draft once and then use programmatic validation. No legacy draft path may invoke a verification model. Fast writing retains GPT-6 Luna and Deep retains GPT-5.6 Terra.
 
 When the complete admitted evidence fits the existing context budget, pass it directly to the writer without a separate model assessment. Oversized evidence still requires bounded selection of complete provisions. The single acquisition pass and no automatic correction policy remain.
 
@@ -17,3 +17,5 @@ Correctness and usable-answer latency remain release qualification requirements.
 Search formulation and evidence assessment receive separate instructions. Query generation must not receive the assessment directive to return no further queries, evidence-selection fields or semantic approval language. The single writer uses concise general instructions covering every requested decision in its substantive issues, preserving operative qualifications and practical steps. Correction-only instructions are supplied only to callers explicitly requesting correction; runtime programmatic delivery remains one pass.
 
 Publisher discovery is now fallback only when indexed retrieval admits no evidence. A nonempty authenticated packet proceeds to writing with all known gaps preserved, rather than generating another search plan for structural gaps. This supersedes ADR0025's gap-triggered official retrieval. The eight-question native comparison found no additional admitted publisher sources from that repeated search. This tradeoff bounds acquisition latency; it does not establish that the indexed packet answers every requested decision. Empty or rejected-over-budget packets may still use the official lane once; evidence integrity failures remain fatal.
+
+Fast combined interpretation and initial research planning uses GPT-5.6 Terra in standard/low mode. Writing remains GPT-6 Luna. Initial planning explicitly searches both the specific relationship and the underlying legal mechanism for informal disputed conduct, without predefined legal routes, authorities or answers. This improves the measured eight-question sample to13.0s median/27.8s maximum, but repeatability, full quality and release qualification remain separate requirements. A single successful retrieval control does not establish reliable recall. Short answers use low provider output verbosity; detailed answer profiles are unchanged.
