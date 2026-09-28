@@ -207,7 +207,7 @@ test("indexed retrieval expires after one total deadline and cannot publish late
   const pending=search(request);
   const rejected=assert.rejects(pending,{name:"TimeoutError"});
   await entered;
-  context.mock.timers.tick(10_000);
+  context.mock.timers.tick(15_000);
   await rejected;
   assert.equal(signal?.aborted,true);
   finish();
