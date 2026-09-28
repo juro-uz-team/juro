@@ -13,6 +13,27 @@ type ProviderSchemaNode = {
   properties?: Record<string, ProviderSchemaNode>; items?: ProviderSchemaNode;
 };
 
+test("writer receives the selected output language as application policy in both modes", async context => {
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let expectedLanguage="";
+  context.mock.method(globalThis,"fetch",async (_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.ok(body.instructions.includes(`The required output language for THIS answer is ${expectedLanguage}.`));
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+      answer:{mainPoint:{text:"Synthetic answer",sourceIds:[]},issues:[],risks:[],questions:[],unresolved:[]},
+    })}]}]});
+  });
+  for(const mode of ["fast","deep"] as const) {
+    for(const [locale,language] of [["en","English"],["uz","Uzbek using the Latin script"],["ru","Russian"]] as const) {
+      expectedLanguage=language;
+      await createLegalAnswerModel({requestId:"output-language"}).write({question:{
+        question:"Synthetic question",locale,mode,answerMode:"short",temporalScope:{kind:"current"},unresolved:[],evidence:[],
+      },correction:null});
+    }
+  }
+});
+
 test("writer produces the answer without redundant planning references and cites only supplied evidence", async context => {
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
