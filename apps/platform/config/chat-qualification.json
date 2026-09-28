@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "concurrency": 5,
+  "scenarios": [
+    {
+      "id": "leave-ru",
+      "question": "Какова сейчас минимальная продолжительность ежегодного основного отпуска работника по Трудовому кодексу Узбекистана?",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 0,
+      "slot": 0,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "compound-worker",
+      "question": "Какова сейчас минимальная продолжительность ежегодного отпуска и как работник может оспорить увольнение в Узбекистане?",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 0,
+      "slot": 1,
+      "actor": "signed",
+      "answerMode": "detailed"
+    },
+    {
+      "id": "rental-deposit",
+      "question": "Я снимаю квартиру в Узбекистане. Может ли арендодатель удержать весь залог без объяснения причин? Договор я пока не предоставил.",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 0,
+      "slot": 2,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "dismissal-broad",
+      "question": "Какие у меня права, если меня увольняют в Узбекистане?",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 0,
+      "slot": 3,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "leave-uz",
+      "question": "O‘zbekistonda Mehnat kodeksi bo‘yicha har yilgi asosiy eng kam mehnat ta’tili necha kun?",
+      "locale": "uz",
+      "heldOut": false,
+      "wave": 0,
+      "slot": 4,
+      "actor": "guest",
+      "answerMode": "short"
+    },
+    {
+      "id": "leave-follow-up",
+      "question": "Мне 17 лет. Меняется ли для меня продолжительность отпуска?",
+      "locale": "ru",
+      "parent": "leave-ru",
+      "heldOut": false,
+      "wave": 1,
+      "slot": 0,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "unseen-policy",
+      "question": "Сколько дополнительных дней отпуска дает внутреннее положение моего работодателя? Название работодателя и документ я не предоставлял.",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 1,
+      "slot": 1,
+      "actor": "signed",
+      "answerMode": "detailed"
+    },
+    {
+      "id": "unverified-decree",
+      "question": "Мне сказали, что постановление «JURO-99999» гарантирует всем работникам 90 дней отпуска. Можете проверить это по официальным источникам Узбекистана?",
+      "locale": "ru",
+      "heldOut": false,
+      "wave": 1,
+      "slot": 2,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "overtime-en",
+      "locale": "en",
+      "question": "My employer in Uzbekistan asks me to work after my normal shift. What rules govern consent and compensation?",
+      "heldOut": true,
+      "wave": 1,
+      "slot": 3,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "wages-uz",
+      "locale": "uz",
+      "question": "O‘zbekistonda ish haqim kechiksa, qanday huquqlarim va murojaat qilish yo‘llarim bor?",
+      "heldOut": true,
+      "wave": 1,
+      "slot": 4,
+      "actor": "guest",
+      "answerMode": "short"
+    },
+    {
+      "id": "probation-ru",
+      "locale": "ru",
+      "question": "Я работаю в Узбекистане на испытательном сроке. Можно ли уволить меня без объяснения причин?",
+      "heldOut": true,
+      "wave": 2,
+      "slot": 0,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "resignation-en",
+      "locale": "en",
+      "question": "I work in Uzbekistan and want to resign. What notice and final payment rules apply?",
+      "heldOut": true,
+      "wave": 2,
+      "slot": 1,
+      "actor": "signed",
+      "answerMode": "detailed"
+    },
+    {
+      "id": "leave-history-ru",
+      "locale": "ru",
+      "question": "Какова была минимальная продолжительность ежегодного основного отпуска в Узбекистане на 1 января 2022 года?",
+      "heldOut": true,
+      "wave": 2,
+      "slot": 2,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "leave-comparison-en",
+      "locale": "en",
+      "question": "Compare the minimum annual basic leave in Uzbekistan on 1 January 2022 with the current rule. Keep the two dates separate.",
+      "heldOut": true,
+      "wave": 2,
+      "slot": 3,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "sale-refund-uz",
+      "locale": "uz",
+      "question": "O‘zbekistonda yangi sotib olgan maishiy texnikam ishlamasa, sotuvchidan nimalarni talab qilishim mumkin?",
+      "heldOut": true,
+      "wave": 2,
+      "slot": 4,
+      "actor": "guest",
+      "answerMode": "short"
+    },
+    {
+      "id": "rental-notice-ru",
+      "locale": "ru",
+      "question": "Я снимаю квартиру в Узбекистане. Хозяин требует выехать завтра, но договор я пока не предоставил. От чего зависит законность такого требования?",
+      "heldOut": true,
+      "wave": 3,
+      "slot": 0,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "salary-deduction-en",
+      "locale": "en",
+      "question": "My employer in Uzbekistan wants to deduct money from my wages for damaged equipment. What facts and legal conditions matter?",
+      "heldOut": true,
+      "wave": 3,
+      "slot": 1,
+      "actor": "signed",
+      "answerMode": "detailed"
+    },
+    {
+      "id": "unpaid-leave-uz",
+      "locale": "uz",
+      "question": "O‘zbekistonda ish beruvchi meni roziligimsiz ish haqi saqlanmaydigan ta’tilga yuborishi mumkinmi?",
+      "heldOut": true,
+      "wave": 3,
+      "slot": 2,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "minor-overtime-ru",
+      "locale": "ru",
+      "question": "Мне 17 лет, я работаю в Узбекистане. Может ли работодатель привлечь меня к сверхурочной работе?",
+      "heldOut": true,
+      "wave": 3,
+      "slot": 3,
+      "actor": "signed",
+      "answerMode": "short"
+    },
+    {
+      "id": "contract-missing-en",
+      "locale": "en",
+      "question": "I signed an employment contract in Uzbekistan but have not provided it. Can you tell me which additional benefits it grants me?",
+      "heldOut": true,
+      "wave": 3,
+      "slot": 4,
+      "actor": "guest",
+      "answerMode": "short"
+    }
+  ]
+}

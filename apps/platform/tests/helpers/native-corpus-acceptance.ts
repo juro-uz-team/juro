@@ -17,6 +17,7 @@ export function nativeAcceptanceFixture(change?:(proofs:Record<string,any>)=>voi
     legacyArtifactNamespace:"legacy",gatewayIdentity:"gateway",projectIdentity:"project",
     protocol:{bucket:"proofs",key:"protocol",sha256:hash(protocol),sizeBytes:protocol.length},
     proofs:{dense:ref,native:ref,semantic:ref,integrity:ref,verification:ref}});
+  if(manifest.version!==1)throw Error("Expected legacy fixture");
   const descriptors=new Map<string,Uint8Array>();
   for(const selected of [manifest.current,manifest.history]){
     const bytes=Buffer.from(JSON.stringify({schemaVersion:"custom-bm25-runtime-v1",releaseId:selected.releaseId,

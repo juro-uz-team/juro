@@ -5,6 +5,7 @@ import {stableSourceSnapshotJson} from "../legal-corpus/source-snapshot";
 import {parseCustomBm25RuntimeDescriptor} from "../legal-corpus/custom-bm25-runtime";
 import retainedReleases from "../../config/corpus-releases.json";
 import {retrievalQuery} from "./retrieval-connection";
+import {nativeChatProofSchema,verifyNativeChatProof} from "./native-chat-qualification";
 
 const digest=z.string().regex(/^[a-f0-9]{64}$/u);
 const identifier=z.string().min(1).max(700);
@@ -14,13 +15,17 @@ const release=z.object({releaseId:identifier,artifactNamespace:identifier,vector
   descriptor:artifact,membership:z.object({generation:z.uuid(),sha256:digest,count:z.number().int().positive()}).strict(),
   vector:z.object({generation:z.uuid(),sourceRevision:z.string().regex(/^(?:0|[1-9]\d*)$/u)}).strict(),
 }).strict();
-export const nativeCorpusAcceptanceSchema=z.object({version:z.literal(1),environment:z.literal("production"),
+const acceptanceFields={environment:z.literal("production"),
   productRevision:z.string().regex(/^[a-f0-9]{40}$/u),current:release,history:release,
   evidenceNamespace:identifier,historyEvidenceNamespace:identifier,legacyArtifactNamespace:identifier,
   gatewayIdentity:identifier,projectIdentity:identifier,
   protocol:artifact,
-  proofs:z.object({dense:artifact,native:artifact,semantic:artifact,integrity:artifact,verification:artifact}).strict(),
-}).strict().refine(manifest=>manifest.evidenceNamespace===retainedReleases.evidenceNamespace
+};
+const sharedProofs={dense:artifact,native:artifact,integrity:artifact,verification:artifact};
+export const nativeCorpusAcceptanceSchema=z.discriminatedUnion("version",[
+  z.object({...acceptanceFields,version:z.literal(1),proofs:z.object({...sharedProofs,semantic:artifact}).strict()}).strict(),
+  z.object({...acceptanceFields,version:z.literal(2),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
+]).refine(manifest=>manifest.evidenceNamespace===retainedReleases.evidenceNamespace
   &&manifest.historyEvidenceNamespace===retainedReleases.historyEvidenceNamespace,"Accepted citation stores must preserve receipt routing");
 export type NativeCorpusAcceptance=z.infer<typeof nativeCorpusAcceptanceSchema>;
 type Artifact=z.infer<typeof artifact>;
@@ -38,17 +43,21 @@ function exactIds(expected:readonly string[],actual:readonly string[]) {
     ||expected.length!==actual.length||expected.some(id=>!actual.includes(id)))throw Error("NATIVE_CORPUS_QUALIFICATION_COVERAGE");
 }
 const ids=z.array(identifier).min(1);
-const protocolSchema=z.object({version:z.literal("native-indexed-retrieval-v1"),
+const protocolFields={
   denseQueryIds:ids,heldOutQueryIds:ids,firstTouchIds:ids,expiredObservationIds:ids,warmAttemptIds:ids,
-  semanticCaseIds:ids,heldOutCaseIds:ids,requiredChecks:ids,expectedScopes:z.number().int().positive(),
+  requiredChecks:ids,expectedScopes:z.number().int().positive(),
   fixtureHashes:z.array(digest).min(1),sourceInventoryHashes:z.array(digest).min(2),
-}).strict();
+};
+const protocolSchema=z.discriminatedUnion("version",[
+  z.object({...protocolFields,version:z.literal("native-indexed-retrieval-v1"),semanticCaseIds:ids,heldOutCaseIds:ids}).strict(),
+  z.object({...protocolFields,version:z.literal("native-programmatic-chat-v2"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
+]);
 const base={bindingSha256:digest};
 const denseProof=z.object({...base,expectedQueryIds:ids,heldOutQueryIds:ids,
   results:z.array(z.object({id:identifier,recall:z.number().finite().min(.95).max(1)}).strict()).min(1)}).strict();
 const nativeProof=z.object({...base,expectedFirstTouchIds:ids,expectedExpiredObservationIds:ids,
   requests:z.array(z.object({id:identifier,phase:z.enum(["first_touch","expired_observation","warm"]),
-    concurrency:z.number().int().positive(),milliseconds:z.number().finite().nonnegative().max(10000),
+    concurrency:z.number().int().positive(),milliseconds:z.number().finite().nonnegative(),
     outcome:z.literal("success")}).strict()).min(1)}).strict();
 const semanticProof=z.object({...base,expectedCaseIds:ids,heldOutCaseIds:ids,
   results:z.array(z.object({id:identifier,completed:z.literal(true),passed:z.literal(true),
@@ -64,6 +73,7 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
   const protocolBytes=await read(manifest.protocol);
   if(protocolBytes.length!==manifest.protocol.sizeBytes||sha(protocolBytes)!==manifest.protocol.sha256)throw Error("NATIVE_CORPUS_PROTOCOL_CORRUPT");
   const protocol=protocolSchema.parse(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(protocolBytes)));
+  if((manifest.version===1)!==(protocol.version==="native-indexed-retrieval-v1"))throw Error("NATIVE_CORPUS_PROTOCOL_VERSION");
   const load=async<T>(reference:Artifact,schema:z.ZodType<T>)=>{
     const bytes=await read(reference);
     if(bytes.length!==reference.sizeBytes||sha(bytes)!==reference.sha256)throw Error("NATIVE_CORPUS_PROOF_CORRUPT");
@@ -77,6 +87,7 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
   exactIds(dense.expectedQueryIds,dense.results.map(result=>result.id));
   if(dense.heldOutQueryIds.some(id=>!dense.expectedQueryIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
   const native=await load(manifest.proofs.native,nativeProof);
+  if(native.requests.some(row=>row.milliseconds>(manifest.version===1?10000:15000)))throw Error("NATIVE_CORPUS_LATENCY_NOT_QUALIFIED");
   exactIds(protocol.firstTouchIds,native.expectedFirstTouchIds);
   exactIds(protocol.expiredObservationIds,native.expectedExpiredObservationIds);
   exactIds(native.expectedFirstTouchIds,native.requests.filter(r=>r.phase==="first_touch").map(r=>r.id));
@@ -85,12 +96,21 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
   exactIds(protocol.warmAttemptIds,warm.map(r=>r.id));
   if(warm.length<30||warm.some(r=>r.concurrency!==5))throw Error("NATIVE_CORPUS_CONCURRENCY_NOT_QUALIFIED");
   const times=warm.map(r=>r.milliseconds).sort((a,b)=>a-b);
-  if(times[Math.ceil(times.length*.95)-1]!>5000)throw Error("NATIVE_CORPUS_LATENCY_NOT_QUALIFIED");
-  const semantic=await load(manifest.proofs.semantic,semanticProof);
-  exactIds(protocol.semanticCaseIds,semantic.expectedCaseIds);
-  exactIds(protocol.heldOutCaseIds,semantic.heldOutCaseIds);
-  exactIds(semantic.expectedCaseIds,semantic.results.map(result=>result.id));
-  if(semantic.heldOutCaseIds.some(id=>!semantic.expectedCaseIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
+  if(manifest.version===1&&protocol.version==="native-indexed-retrieval-v1"){
+    if(times[Math.ceil(times.length*.95)-1]!>5000)throw Error("NATIVE_CORPUS_LATENCY_NOT_QUALIFIED");
+    const semantic=await load(manifest.proofs.semantic,semanticProof);
+    exactIds(protocol.semanticCaseIds,semantic.expectedCaseIds);
+    exactIds(protocol.heldOutCaseIds,semantic.heldOutCaseIds);
+    exactIds(semantic.expectedCaseIds,semantic.results.map(result=>result.id));
+    if(semantic.heldOutCaseIds.some(id=>!semantic.expectedCaseIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
+  }else if(manifest.version===2&&protocol.version==="native-programmatic-chat-v2"){
+    const chat=await load(manifest.proofs.chat,nativeChatProofSchema);
+    exactIds(protocol.chatCaseIds,chat.expectedCaseIds);
+    exactIds(protocol.heldOutChatCaseIds,chat.heldOutCaseIds);
+    exactIds(chat.expectedCaseIds,chat.results.map(result=>result.id));
+    if(chat.heldOutCaseIds.some(id=>!chat.expectedCaseIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
+    verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256);
+  }
   const integrity=await load(manifest.proofs.integrity,integrityProof);
   if(integrity.expectedScopes!==integrity.verifiedScopes||integrity.expectedScopes!==protocol.expectedScopes
     ||[manifest.current,manifest.history].some(r=>!integrity.sourceInventoryHashes.includes(r.membership.sha256)))throw Error("NATIVE_CORPUS_INTEGRITY_INCOMPLETE");

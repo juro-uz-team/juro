@@ -5,8 +5,10 @@ import {readFile} from "node:fs/promises";
 import {PostgresDatabase} from "../lib/storage/postgres";
 import {activateNativeCorpus,readSelectedNativeCorpus} from "../lib/storage/native-corpus-acceptance";
 import {nativeAcceptanceFixture} from "./helpers/native-corpus-acceptance";
+import {programmaticAcceptanceFixture} from "./helpers/programmatic-corpus-acceptance";
 
-test("native acceptance atomically selects both fenced releases and preserves its history",async()=>{
+for(const version of [1,2] as const){
+test(`native acceptance v${version} atomically selects both fenced releases and preserves its history`,async()=>{
   const db=new PostgresDatabase(process.env.DATABASE_URL!);
   const schema=`acceptance_${randomUUID().replaceAll("-","")}`;
   const sql=(statement:string)=>statement.replaceAll("storage.",`${schema}.`).replaceAll("legal.",`${schema}.`);
@@ -23,7 +25,7 @@ test("native acceptance atomically selects both fenced releases and preserves it
     }});};
     const value=Reflect.get(target,key);return typeof value==="function"?value.bind(target):value;
   }});
-  const fixture=nativeAcceptanceFixture(),manifest=fixture.manifest;
+  const fixture=version===1?nativeAcceptanceFixture():await programmaticAcceptanceFixture(),manifest=fixture.manifest;
   const activate=()=>activateNativeCorpus({pool,...fixture,productRevision:manifest.productRevision});
   try {
     await db.pool.query(`CREATE SCHEMA ${schema}`);
@@ -89,3 +91,4 @@ test("native acceptance atomically selects both fenced releases and preserves it
     assert.equal((await query("SELECT count(*) FROM storage.native_corpus_selections")).rows[0].count,2);
   } finally {await db.pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await db.close();}
 });
+}
