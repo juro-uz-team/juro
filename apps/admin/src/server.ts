@@ -2,14 +2,15 @@ import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import application from "./worker";
 
-if (process.env.PRIVATE_DEVELOPMENT !== "true") throw new Error("Admin requires private SSH access");
+if (process.env.PRIVATE_DEVELOPMENT !== "true" && !["production", "staging"].includes(process.env.DEPLOYMENT_ENVIRONMENT ?? "")) throw new Error("Admin requires an explicit native deployment");
 const port = Number(process.env.ADMIN_PORT ?? 3002);
-const platformOrigin = process.env.APP_URL ?? "http://localhost:3000";
+const platformOrigin = process.env.PLATFORM_INTERNAL_ORIGIN ?? `http://localhost:${process.env.PORT ?? 3000}`;
 if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(platformOrigin)) throw new Error("Admin requires a local platform origin");
 const env = {
-  APP_ENV: "development",
-  PLATFORM_ORIGIN: platformOrigin,
+  APP_ENV: process.env.PRIVATE_DEVELOPMENT === "true" ? "development" : process.env.DEPLOYMENT_ENVIRONMENT,
+  PLATFORM_ORIGIN: process.env.APP_URL ?? platformOrigin,
   ADMIN_INTERNAL_TOKEN: process.env.ADMIN_INTERNAL_TOKEN,
+  ADMIN_CONSOLE_TOKEN: process.env.ADMIN_CONSOLE_TOKEN ?? process.env.ADMIN_INTERNAL_TOKEN,
   PLATFORM_ADMIN_API: { fetch(request: Request) {
     const incoming = new URL(request.url);
     return fetch(new Request(new URL(incoming.pathname + incoming.search, platformOrigin), request), { redirect: "error" });

@@ -9,7 +9,6 @@ import { JOB_KINDS, expectedQueueName, handleQueue } from "../worker/platform-jo
 import { dispatchOutbox } from "../worker/platform-outbox";
 import { handleScheduled } from "../worker/platform-scheduled";
 
-if (process.env.PRIVATE_DEVELOPMENT !== "true") throw new Error("This worker requires private development configuration");
 const env = getSelfHostedRuntime();
 const pool = database().pool;
 const names = [...new Set(JOB_KINDS.map(kind => expectedQueueName(kind, env.APP_ENV)))];

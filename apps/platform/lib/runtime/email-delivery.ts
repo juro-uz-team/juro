@@ -1,10 +1,10 @@
 type EmailEnvironment = Record<string, string | undefined>;
 
-/** Capture is restricted to private deployments. Real delivery is explicit there. */
+/** Capture is restricted to private or staging deployments. Production requires real delivery. */
 export function emailDeliveryConfiguration(environment: EmailEnvironment) {
   const mode = environment.EMAIL_DELIVERY_MODE ?? (environment.PRIVATE_DEVELOPMENT === "true" ? "capture" : "resend");
   if (mode === "capture") {
-    if (environment.PRIVATE_DEVELOPMENT !== "true") throw new Error("Email capture requires a private deployment");
+    if (environment.PRIVATE_DEVELOPMENT !== "true" && environment.DEPLOYMENT_ENVIRONMENT !== "staging") throw new Error("Email capture requires a private or staging deployment");
     return { mode, apiKey: "local-capture", from: "JURO <noreply@localhost>" } as const;
   }
   if (mode !== "resend") throw new Error("Unsupported email delivery mode");

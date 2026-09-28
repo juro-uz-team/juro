@@ -10,7 +10,7 @@ export async function sendEmailRequest(init: RequestInit): Promise<Response> {
 }
 
 async function capture(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (process.env.PRIVATE_DEVELOPMENT !== "true") throw new Error("External email delivery is disabled");
+  if (process.env.PRIVATE_DEVELOPMENT !== "true" && process.env.DEPLOYMENT_ENVIRONMENT !== "staging") throw new Error("Email capture requires a private or staging deployment");
   const request = new Request(input, init);
   const headers = request.headers;
   const key = headers.get("idempotency-key") ?? randomUUID();

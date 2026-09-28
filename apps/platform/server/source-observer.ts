@@ -3,8 +3,9 @@ import {database} from "../lib/storage/connection";
 import {readNativePublisherObservation} from "../lib/runtime/publisher-source-normalization";
 import {runSourceObserverLoop} from "../lib/runtime/source-observer-loop";
 import {refreshPublicSourceObservations} from "../lib/legal/source-observation-refresh";
+import {nativeHttpConfiguration} from "../../../scripts/native-http.mjs";
 
-if (process.env.PRIVATE_DEVELOPMENT !== "true") throw new Error("This worker requires private development configuration");
+nativeHttpConfiguration(process.env, "platform");
 const controller = new AbortController();
 process.on("SIGTERM", () => controller.abort());
 process.on("SIGINT", () => controller.abort());

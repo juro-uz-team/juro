@@ -7,10 +7,13 @@ import next from "next";
 import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
 import { handleInternalAdminRequest } from "../lib/auth/admin-internal-api";
 import { INTERNAL_REQUEST_PATH_HEADER, isAuthenticatedPlatformPathReady } from "../lib/platform/routing";
+import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
 
-if (process.env.PRIVATE_DEVELOPMENT !== "true") throw new Error("This deployment requires private SSH access");
-const port = Number(process.env.PORT ?? 3000);
-const app = next({ dev: process.env.NODE_ENV !== "production", hostname: "localhost", port });
+const config = nativeHttpConfiguration(process.env, "platform");
+const { port } = config;
+const internalConfig = nativeHttpConfiguration({ ...process.env, PRIVATE_DEVELOPMENT: "true" }, "platform");
+// Next uses this port to construct route-handler URLs; the TCP listener below remains private.
+const app = next({ dev: process.env.NODE_ENV !== "production", hostname: new URL(config.origin).hostname, port: config.privateMode ? port : 443 });
 await app.prepare();
 const handle = app.getRequestHandler();
 
@@ -48,19 +51,23 @@ function boundedBody(request: IncomingMessage, response: ServerResponse, limit: 
 
 createServer(async (request, response) => {
   secureResponse(response);
-  const host = request.headers.host ?? "";
-  if (![ `localhost:${port}`, `127.0.0.1:${port}` ].includes(host)) {
+  const privateAdminRequest = !config.privateMode && internalConfig.hosts.includes(request.headers.host ?? "")
+    && (request.url ?? "").startsWith("/api/internal/admin/");
+  const url = normalizeNativeRequest(request, privateAdminRequest ? internalConfig : config);
+  if (!url) {
     response.writeHead(400); response.end(); return;
   }
-  const url = new URL(request.url ?? "/", `http://${host}`);
+  let decodedPath;
+  try { decodedPath = decodeURIComponent(url.pathname); } catch { response.writeHead(400); response.end(); return; }
+  const privateAccess = config.privateMode || privateAdminRequest || ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(String(request.headers["x-juro-client-ip"]));
+  if (!privateAccess && (decodedPath.startsWith("/api/internal/") || /^\/api\/platform\/admin(?:\/|$)/.test(decodedPath) || /^\/(?:ru|uz|en)\/admin(?:\/|$)/.test(decodedPath))) {
+    response.writeHead(404); response.end(); return;
+  }
   if (!isAuthenticatedPlatformPathReady(url.pathname)) { response.writeHead(404); response.end(); return; }
   if (!boundedBody(request, response, publicApiRequestBodyLimit(url.pathname, request.method ?? "GET") ?? 50 * 1024 * 1024)) return;
   for (const name of Object.keys(request.headers)) {
-    if (name.startsWith("cf-") || name.startsWith("x-forwarded-") || name === "forwarded"
-      || name === STATUS_ORIGIN_HEADER || name === LAWYER_HOST_REQUEST_HEADER
-      || name === "x-juro-client-ip" || name === INTERNAL_REQUEST_PATH_HEADER) delete request.headers[name];
+    if (name === STATUS_ORIGIN_HEADER || name === LAWYER_HOST_REQUEST_HEADER || name === INTERNAL_REQUEST_PATH_HEADER) delete request.headers[name];
   }
-  request.headers["x-juro-client-ip"] = request.socket.remoteAddress ?? "127.0.0.1";
   request.headers[INTERNAL_REQUEST_PATH_HEADER] = `${url.pathname}${url.search}`;
   try {
     if (url.pathname.startsWith("/api/internal/admin/")) {

@@ -21,6 +21,9 @@ import { handleTargetReasoningServiceRequest } from "../legal-corpus/target-reas
 import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
 import type { PlatformJobEnv } from "../../worker/platform-jobs";
+import { nativeHttpConfiguration } from "../../../../scripts/native-http.mjs";
+import { challengeSecretConfigured } from "../auth/native-challenge";
+import { parseIdentityKeyring } from "../auth/keyring";
 
 type Runtime = BuilderRuntimeEnv & PlatformJobEnv;
 const state = globalThis as typeof globalThis & { juroRuntime?: Runtime; juroRuntimeProductRevision?:string };
@@ -32,12 +35,18 @@ export function getSelfHostedRuntime(): Runtime {
     return state.juroRuntime;
   }
   const productRevision=runtimeProductRevision();
+  const config = nativeHttpConfiguration(process.env, "platform");
+  if (!config.privateMode) {
+    if (!challengeSecretConfigured(process.env.AUTH_CHALLENGE_SECRET)) throw new Error("Public authentication requires AUTH_CHALLENGE_SECRET");
+    if (!parseIdentityKeyring(process.env.IDENTITY_KEYRING)) throw new Error("Public authentication requires IDENTITY_KEYRING");
+  }
+  const appEnvironment = config.privateMode ? "development" : process.env.DEPLOYMENT_ENVIRONMENT!;
   const application = database("app");
   const catalog = database("legal");
   const root = resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects");
   const bucket = (name: string) => new LocalObjectStore(application.pool, root, name);
   const email = emailDeliveryConfiguration(process.env);
-  const env = { ...process.env, APP_ENV: "development", ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
+  const env = { ...process.env, APP_ENV: appEnvironment, ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
     CRON_ENABLED: "true", LEGAL_LEX_INGESTION_ENABLED: "false", LEGAL_ADVICE_INGESTION_ENABLED: "false",
     LEGAL_LEX_RSS_DISCOVERY_ENABLED: "false", LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED: "false",
     LEGAL_LEX_METADATA_MONITOR_ENABLED: "false", LEGAL_DIRECT_RETRIEVAL_ENABLED: "true",
@@ -46,7 +55,8 @@ export function getSelfHostedRuntime(): Runtime {
     ACCOUNT_DELETION_PURGE_ENABLED: "true", PAYMENT_FOUNDATION_ENABLED: "false", PAYMENT_PRODUCTION_APPROVED: "false",
     STAGING_LEGAL_EVALUATION_ENABLED: "false", STAGING_SYNTHETIC_PROBES_ENABLED: "false", PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
     LOCAL_AUTH_BYPASS: "false", ALLOW_PLATFORM_AUTH_HEADERS: "false",
-    TURNSTILE_SECRET_KEY: "private-local", TURNSTILE_SITE_KEY: "private-local",
+    TURNSTILE_SECRET_KEY: config.privateMode ? "private-local" : process.env.AUTH_CHALLENGE_SECRET,
+    TURNSTILE_SITE_KEY: config.privateMode ? "private-local" : "native-altcha",
     RESEND_API_KEY: email.apiKey, EMAIL_FROM: email.from,
     EMAIL_DELIVERY: email.mode === "capture" ? localEmailCapture : createResendDelivery(email.apiKey),
     OCR: localDocumentConverter, MALWARE_SCANNER: localMalwareScanner, MALWARE_SCAN_ENABLED: "true",
@@ -88,7 +98,7 @@ export function getSelfHostedRuntime(): Runtime {
     LEGAL_CUSTOM_SEARCH_SERVICE: search(releases.current), LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE: search(releases.history),
     LEGAL_CORPUS_REASONING_SERVICE: { fetch: (input: RequestInfo | URL, init?: RequestInit) => handleTargetReasoningServiceRequest(new Request(input, init), env as unknown as Parameters<typeof handleTargetReasoningServiceRequest>[1]) },
   } as unknown as ConstructorParameters<typeof LegalCorpusService>[0]);
-  const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, "development"))]));
+  const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, appEnvironment))]));
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
   const retrieval=createNativeCorpusService({pool:application.pool,catalog,objectRoot:root,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",

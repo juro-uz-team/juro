@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createResendDelivery, emailDeliveryConfiguration } from "../lib/runtime/email-delivery";
 
-test("capture is private-only and public configuration cannot silently capture account emails", () => {
+test("capture requires private or explicit staging configuration; production requires Resend", () => {
   assert.equal(emailDeliveryConfiguration({ PRIVATE_DEVELOPMENT: "true" }).mode, "capture");
-  assert.throws(() => emailDeliveryConfiguration({ EMAIL_DELIVERY_MODE: "capture" }), /private deployment/);
+  assert.throws(() => emailDeliveryConfiguration({ EMAIL_DELIVERY_MODE: "capture" }), /private or staging deployment/);
+  assert.throws(() => emailDeliveryConfiguration({ DEPLOYMENT_ENVIRONMENT: "production", EMAIL_DELIVERY_MODE: "capture" }), /private or staging deployment/);
+  assert.equal(emailDeliveryConfiguration({ DEPLOYMENT_ENVIRONMENT: "staging", EMAIL_DELIVERY_MODE: "capture" }).mode, "capture");
   assert.throws(() => emailDeliveryConfiguration({}), /Resend API key/);
   assert.throws(() => emailDeliveryConfiguration({ EMAIL_DELIVERY_MODE: "unknown" }), /Unsupported/);
 });

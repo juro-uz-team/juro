@@ -50,6 +50,8 @@ jobs:
         run: npm run build --prefix apps/platform && npm run build --prefix apps/website
       - name: Platform tests
         run: npm test --prefix apps/platform
+      - name: Native HTTP boundary tests
+        run: node --test scripts/native-http.test.mjs
       - name: Website tests
         working-directory: apps/website
         run: node --test tests/*.test.mjs

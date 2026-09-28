@@ -1,0 +1,53 @@
+{
+	email {$ACME_EMAIL}
+	admin 127.0.0.1:2019
+}
+
+(native_proxy) {
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy {args[0]} {
+		header_up X-Real-IP {remote_host}
+		header_up -Forwarded
+		header_up -CF-Connecting-IP
+		header_up -X-Juro-Client-IP
+		header_up -X-Juro-Status-Origin
+		header_up -X-Juro-Lawyer-Host
+		flush_interval -1
+	}
+}
+
+{$SITE_HOST} {
+	import native_proxy 127.0.0.1:3001
+}
+
+www.{$SITE_HOST} {
+	redir https://{$SITE_HOST}{uri} permanent
+}
+
+{$APP_HOST} {
+	@public_admin {
+		path /api/internal/* /api/platform/admin /api/platform/admin/* /ru/admin /ru/admin/* /uz/admin /uz/admin/* /en/admin /en/admin/*
+		not remote_ip 127.0.0.1 ::1
+	}
+	respond @public_admin 404
+	import native_proxy 127.0.0.1:3000
+}
+
+{$STAGING_SITE_HOST} {
+	basic_auth {
+		{$STAGING_ACCESS_USER} {$STAGING_ACCESS_HASH}
+	}
+	import native_proxy 127.0.0.1:3101
+}
+
+{$STAGING_APP_HOST} {
+	basic_auth {
+		{$STAGING_ACCESS_USER} {$STAGING_ACCESS_HASH}
+	}
+	@public_admin {
+		path /api/internal/* /api/platform/admin /api/platform/admin/* /ru/admin /ru/admin/* /uz/admin /uz/admin/* /en/admin /en/admin/*
+		not remote_ip 127.0.0.1 ::1
+	}
+	respond @public_admin 404
+	import native_proxy 127.0.0.1:3100
+}
