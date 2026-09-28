@@ -365,6 +365,25 @@ function purgeEnv(
   };
 }
 
+test("purge removes the closing lawyer's profile photo and keeps another lawyer's photo", async () => {
+  const { sqlite, d1 } = await seedRequest();
+  const bucket = new FakeR2Bucket();
+  try {
+    for (const [user, key] of [[USER_ID, "lawyer-photos/closing.jpg"], [OTHER_USER_ID, "lawyer-photos/other.jpg"]]) {
+      sqlite.prepare(`INSERT INTO lawyer_profiles(id,user_id,display_name,profile_photo_key,created_at,updated_at)
+        VALUES (?,?,?,?,?,?)`).run(`profile-${user}`, user, "Synthetic lawyer", key, NOW, NOW);
+      bucket.objects.add(key);
+    }
+    const result = await executeAccountDeletionPurge(purgeEnv(d1, bucket), REQUEST_ID, { now: () => new Date(NOW) });
+    assert.equal(result.status, "completed");
+    assert.equal(result.r2DeletedCount, 1);
+    assert.deepEqual(bucket.deleted, ["lawyer-photos/closing.jpg"]);
+    assert.equal(bucket.objects.has("lawyer-photos/other.jpg"), true);
+  } finally {
+    sqlite.close();
+  }
+});
+
 test("purge removes D1/R2 content, redacts shared comments, and retains immutable evidence", async () => {
   const { sqlite, d1 } = await seedRequest();
   const bucket = new FakeR2Bucket();

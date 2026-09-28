@@ -388,8 +388,12 @@ async function userObjectKeys(
       UNION
       SELECT r2_key AS objectKey
       FROM analysis_version_object_writes
-      WHERE owner_user_id=? AND status IN ('pending','attaching','deleting')`,
-  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId, userId).all<ObjectKeyRow>();
+      WHERE owner_user_id=? AND status IN ('pending','attaching','deleting')
+      UNION
+      SELECT profile_photo_key AS objectKey
+      FROM lawyer_profiles
+      WHERE user_id=? AND profile_photo_key IS NOT NULL`,
+  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId, userId, userId).all<ObjectKeyRow>();
   const keys = [...new Set(
     rows.results
       .map(row => row.objectKey)
