@@ -196,7 +196,7 @@ export function createLegalAnswerModel(options: {
         ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`)+`\n${languageInstruction}`,
       input, schemaName, schema: z.toJSONSchema(providerSchema??schema, {reused:"ref"}), parse: value => schema.parse(decode?decode(value):value),
       requestId: options.requestId, ...profile, maxAttempts: 2,retryOnlyOnHeadersTimeout:true,
-      textVerbosity: question.answerMode === "short" ? "low" : "medium",
+      textVerbosity: "low",
       deadlineAt: Math.min(options.deadlineAt??Infinity,Date.now()+profile.timeoutMs), signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       // Receive headers independently of generation; draft deltas remain internal.
       onProgress: options.onProgress??(()=>undefined),

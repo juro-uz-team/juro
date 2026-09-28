@@ -159,7 +159,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!("sourceReview" in draft));
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
-  assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "medium"]);
+  assert.deepEqual(payloads.map(body => body.text.verbosity), ["low", "low"]);
   assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Mode changes only the provider model");
   assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
   assert.deepEqual(payloads.map(body=>body.reasoning),[
@@ -172,6 +172,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!body.input.includes("https://lex.uz"));
     assert.ok(body.input.includes("Official provision"));
     const input=JSON.parse(body.input);
+    assert.equal(input.context.answerMode,"detailed","Concise provider output preserves the requested answer format");
     assert.deepEqual(input.context.topics,["Record request eligibility", "Application procedure"]);
     assert.deepEqual(input.context.privateDocuments,[{id:privateDocumentContext().source.id,
       title:"Uploaded agreement",text:privateDocumentContext().text}]);

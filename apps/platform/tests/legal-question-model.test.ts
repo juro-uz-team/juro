@@ -68,8 +68,8 @@ test("both modes plan research with interpretation in one bounded provider call"
     assert.deepEqual(result.initialQueries,[...queries,...underlying].map(query=>({...query,privateNameSpans:[],legalTitleSpans:[]})));
   }
   assert.deepEqual(requests,[
-    {model:"gpt-6-luna",reasoning:{effort:"low",mode:"standard"},schema:"legal_question_research"},
-    {model:"gpt-5.6-terra",reasoning:{effort:"low",mode:"standard"},schema:"legal_question_research"},
+    {model:"gpt-6-luna",reasoning:{effort:"none",mode:"standard"},schema:"legal_question_research"},
+    {model:"gpt-5.6-terra",reasoning:{effort:"none",mode:"standard"},schema:"legal_question_research"},
   ]);
   assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Planning mode changes only the model");
 });
