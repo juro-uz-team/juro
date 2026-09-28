@@ -1,0 +1,17 @@
+[Unit]
+Description=Activate JURO public HTTPS after DNS propagation
+After=network-online.target juro-caddy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/caddy/juro.env
+ExecStart=/usr/local/bin/node /usr/local/lib/juro/activate-public-https.mjs
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/caddy /var/lib/juro-public-https /etc/systemd/system
+

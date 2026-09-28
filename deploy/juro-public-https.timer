@@ -1,0 +1,11 @@
+[Unit]
+Description=Check JURO public DNS readiness
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=juro-public-https.service
+
+[Install]
+WantedBy=timers.target
