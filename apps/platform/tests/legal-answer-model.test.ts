@@ -26,6 +26,7 @@ test("writer produces the answer without redundant planning references and cites
     }))};
   context.mock.method(globalThis,"fetch",async (_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
+    assert.equal(body.text.verbosity,"low","Short answers use the provider's concise output profile");
     const schema=body.text.format.schema;
     const resolve=(value:ProviderSchemaNode):ProviderSchemaNode=>value.$ref
       ? resolve(value.$ref.slice(2).split("/").reduce((node:Record<string,unknown>,key:string)=>

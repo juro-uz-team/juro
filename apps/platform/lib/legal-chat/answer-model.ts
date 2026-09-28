@@ -192,7 +192,7 @@ export function createLegalAnswerModel(options: {
         ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`,
       input, schemaName, schema: z.toJSONSchema(providerSchema??schema, {reused:"ref"}), parse: value => schema.parse(decode?decode(value):value),
       requestId: options.requestId, ...legalChatModelProfile(question.mode,"writing"), maxAttempts: 1,
-      textVerbosity: question.mode === "deep" && question.answerMode === "detailed" ? "high" : "medium",
+      textVerbosity: question.answerMode === "short" ? "low" : question.mode === "deep" ? "high" : "medium",
       deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       onProgress: options.onProgress,
       onAttempt: ({ model }) => options.onAttempt?.({ stage, model }),
