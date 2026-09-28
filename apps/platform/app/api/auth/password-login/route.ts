@@ -21,6 +21,7 @@ import {
   passwordLoginRateLimit,
   reservePasswordLoginAttempt,
   verifyPassword,
+  upgradeVerifiedLegacyPassword,
 } from "../../../../lib/auth/password";
 import {
   parseJsonRequest,
@@ -165,7 +166,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
   const credential = profile
     ? await passwordCredentialForUser(db, profile.id)
     : null;
-  const authenticated = await verifyPassword(password, credential);
+  const verified = await verifyPassword(password, credential);
+  const authenticated = verified && credential !== null
+    && await upgradeVerifiedLegacyPassword(db, password, credential);
   if (!authenticated || !profile || !isAccountType(profile.accountType)) {
     await failPasswordLoginAttempt(db, attempt.reservation);
     return json({

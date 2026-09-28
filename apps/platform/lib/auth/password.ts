@@ -4,6 +4,7 @@ import type { SecurityEventGuard } from "./security-events";
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 256;
 export const PASSWORD_PBKDF2_ITERATIONS = 600_000;
+const LEGACY_PASSWORD_PBKDF2_ITERATIONS = 100_000;
 
 export type PasswordCredential = {
   userId: string;
@@ -226,7 +227,7 @@ export async function verifyPassword(
   if (
     selected.algorithm !== "PBKDF2-SHA256"
     || !Number.isSafeInteger(selected.iterations)
-    || selected.iterations < 310_000
+    || (selected.iterations !== LEGACY_PASSWORD_PBKDF2_ITERATIONS && selected.iterations < 310_000)
     || selected.iterations > 1_000_000
     || salt?.byteLength !== 16
     || expected?.byteLength !== 32
@@ -251,6 +252,22 @@ export async function passwordCredentialForUser(
        password_changed_at AS passwordChangedAt
      FROM user_password_credentials WHERE user_id=? LIMIT 1`,
   ).bind(userId).first<PasswordCredential>();
+}
+
+/** Call only after password verification. Compare-and-swap prevents a concurrent
+ * reset from being overwritten or used to continue a legacy password login. */
+export async function upgradeVerifiedLegacyPassword(
+  db: D1Database, password: string, credential: PasswordCredential, now = new Date(),
+): Promise<boolean> {
+  if (credential.iterations !== LEGACY_PASSWORD_PBKDF2_ITERATIONS) return true;
+  const replacement = await hashPassword(password);
+  const result = await db.prepare(
+    `UPDATE user_password_credentials SET iterations=?,salt_base64url=?,hash_base64url=?,updated_at=?
+     WHERE user_id=? AND algorithm=? AND iterations=? AND salt_base64url=? AND hash_base64url=? AND password_changed_at=?`,
+  ).bind(replacement.iterations, replacement.saltBase64url, replacement.hashBase64url, now.toISOString(),
+    credential.userId, credential.algorithm, credential.iterations, credential.saltBase64url,
+    credential.hashBase64url, credential.passwordChangedAt).run();
+  return Number(result.meta.changes) === 1;
 }
 
 export async function savePasswordCredential(
