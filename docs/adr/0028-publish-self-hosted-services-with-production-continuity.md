@@ -1,0 +1,7 @@
+# Publish self-hosted services with production continuity
+
+JURO will serve its public website at juro.uz and its application at app.juro.uz from the Oracle-hosted native runtime, preserving existing production accounts, workspaces, private files and registration/usage behavior. Billing remains disabled. This supersedes ADR 0016's private-only deployment, test-account-only migration and prohibition on production cutover; its storage, evidence-integrity and immutable-migration contracts remain in force.
+
+Cloudflare application services, authoritative DNS and incoming-email routing will be replaced. Transactional email retains Resend and the verified juro.uz sender: owning application execution and storage does not require operating an outbound mail server. Existing incoming-mail destinations and required DNS records must be preserved before changing delegation. Administration and internal services remain private behind loopback listeners, while a reverse proxy terminates public HTTPS.
+
+Public activation requires reconciled production data and identity keys, real account-email delivery, public abuse controls, verified user journeys and a recoverable release. A maintenance window is acceptable for cutover. Daily encrypted off-server backups with seven-day retention target at most 24 hours of lost changes and recovery within one working day; these targets require restore verification. Unfinished legal-chat improvements do not independently delay a verified working release.

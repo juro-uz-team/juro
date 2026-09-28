@@ -1,0 +1,72 @@
+name: Deploy native application
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not interrupt migrations or activation. Staging and production use separate locks.
+concurrency:
+  group: native-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      DEPLOY_REVISION: ${{ github.sha }}
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Check deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_ENABLED" == true ]] || { echo 'Environment is not provisioned for native deployment (DEPLOY_ENABLED).'; exit 1; }
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo 'Invalid deployment hostname.'; exit 1; }
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'Invalid deployment user.'; exit 1; }
+          [[ "$DEPLOY_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ -n "$DEPLOY_SSH_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]] || { echo 'Missing deployment SSH credentials or pinned host key.'; exit 1; }
+      - name: Check branch still points to the validated revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GH_REPO/git/ref/heads/$DEPLOY_BRANCH" --jq .object.sha)
+          [[ "$current" == "$DEPLOY_REVISION" ]] || { echo 'A newer revision superseded this deployment.'; exit 1; }
+      - name: Deploy the validated revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          install -d -m 700 "$RUNNER_TEMP/juro-ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/juro-ssh/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/juro-ssh/known_hosts"
+          ssh -i "$RUNNER_TEMP/juro-ssh/key" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/juro-ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "/usr/local/bin/juro-deploy $DEPLOY_ENVIRONMENT $DEPLOY_REVISION"
+      - name: Remove ephemeral SSH material
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/juro-ssh/key" "$RUNNER_TEMP/juro-ssh/known_hosts"

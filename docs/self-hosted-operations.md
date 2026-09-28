@@ -2,7 +2,7 @@
 
 The native deployment uses PostgreSQL 17 with pgvector, Node services for the platform, public website and administration interface, and a separate background-job process. PostgreSQL stores application records, legal catalogs, vector metadata, queue leases and captured email. Immutable source and generated-file bytes live in a local content-addressed directory, with namespace/key mappings and hashes in PostgreSQL.
 
-This deployment is restricted to loopback and SSH tunnels. Domain configuration and production Cloudflare resources are outside its operational commands. Legal imports retain activation, quarantine and historical eligibility; importing a record never publishes it. Search collections under import remain unavailable until their integrity and coverage have been verified.
+The private deployment described here is restricted to loopback and SSH tunnels. The public rollout is governed by [production continuity](adr/0028-publish-self-hosted-services-with-production-continuity.md) and [native staging/production deployments](deployment/native-environments.md); the private startup commands alone do not perform that cutover. Legal imports retain activation, quarantine and historical eligibility; importing a record never publishes it. Search collections under import remain unavailable until their integrity and coverage have been verified.
 
 ## Prepare the host
 
@@ -34,7 +34,7 @@ The separate `juro-self-hosted-source-observer` service refreshes publisher obse
 
 Object deletion records durable reclamation candidates and removes unreferenced bytes before reporting success. Shared content remains while another object references it. The job process retries interrupted reclamation and removes abandoned temporary writes. Open readers keep their file descriptors; backups pin referenced files until backup links exist. Completed backups retain their own copies, so apply the appropriate private-data retention policy to backup directories as well.
 
-Email is captured in `storage.captured_emails`; only authorized operators should inspect it because messages may contain authentication codes. Payments, automatic legal ingestion, development authentication bypasses and synthetic production probes are disabled. User-triggered document work uses local malware scanning and conversion. AI calls go directly to the configured providers.
+Private email defaults to capture in `storage.captured_emails`; only authorized operators should inspect it because messages may contain authentication codes. Set `EMAIL_DELIVERY_MODE=resend`, `RESEND_API_KEY` and a verified `EMAIL_FROM` to send through Resend. Capture is rejected outside private mode, and real delivery never falls back to capture on a provider error. Existing delivery retries and idempotency keys remain in force. Payments, automatic legal ingestion, development authentication bypasses and synthetic production probes are disabled. User-triggered document work uses local malware scanning and conversion. AI calls go directly to the configured providers.
 
 ## Vector search
 

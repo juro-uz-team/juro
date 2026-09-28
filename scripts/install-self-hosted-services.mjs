@@ -15,6 +15,12 @@ const directory = resolve(homedir(), ".config/systemd/user");
 await mkdir(directory, { recursive: true });
 const quote = value => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
 const production = process.argv.includes("--production");
+const environmentIndex = process.argv.indexOf("--environment");
+const deploymentEnvironment = environmentIndex >= 0 ? process.argv[environmentIndex + 1] : null;
+if (environmentIndex >= 0 && !["staging", "production"].includes(deploymentEnvironment)) throw new Error("Invalid deployment environment");
+const unitPrefix = deploymentEnvironment ? `juro-${deploymentEnvironment}` : "juro-self-hosted";
+const configuration = parseEnv(await readFile(environment, "utf8"));
+if (deploymentEnvironment && configuration.DEPLOYMENT_ENVIRONMENT !== deploymentEnvironment) throw new Error("Deployment environment mismatch");
 const services = [
   ["platform", "apps/platform", "server/index.ts"],
   ["jobs", "apps/platform", "server/jobs.ts"],
@@ -24,7 +30,7 @@ const services = [
 ];
 for (const [name, path, entry] of services) {
   const unit = `[Unit]
-Description=JURO private self-hosted ${name}
+Description=JURO ${deploymentEnvironment ?? "private self-hosted"} ${name}
 After=network.target
 
 [Service]
@@ -43,14 +49,13 @@ PrivateTmp=true
 [Install]
 WantedBy=default.target
 `;
-  await writeFile(resolve(directory, `juro-self-hosted-${name}.service`), unit, { mode: 0o600 });
+  await writeFile(resolve(directory, `${unitPrefix}-${name}.service`), unit, { mode: 0o600 });
 }
 execFileSync("systemctl", ["--user", "daemon-reload"], { stdio: "inherit" });
-execFileSync("systemd-analyze", ["--user", "verify", ...services.map(([name]) => resolve(directory, `juro-self-hosted-${name}.service`))], { stdio: "inherit" });
-execFileSync("systemctl", ["--user", "enable", ...services.map(([name]) => `juro-self-hosted-${name}.service`)], { stdio: "inherit" });
-execFileSync("systemctl", ["--user", "restart", ...services.map(([name]) => `juro-self-hosted-${name}.service`)], { stdio: "inherit" });
-for (const [name] of services) execFileSync("systemctl", ["--user", "is-active", `juro-self-hosted-${name}.service`], { stdio: "inherit" });
-const configuration = parseEnv(await readFile(environment, "utf8"));
+execFileSync("systemd-analyze", ["--user", "verify", ...services.map(([name]) => resolve(directory, `${unitPrefix}-${name}.service`))], { stdio: "inherit" });
+execFileSync("systemctl", ["--user", "enable", ...services.map(([name]) => `${unitPrefix}-${name}.service`)], { stdio: "inherit" });
+execFileSync("systemctl", ["--user", "restart", ...services.map(([name]) => `${unitPrefix}-${name}.service`)], { stdio: "inherit" });
+for (const [name] of services) execFileSync("systemctl", ["--user", "is-active", `${unitPrefix}-${name}.service`], { stdio: "inherit" });
 for (const [name, port, path] of [
   ["platform", configuration.PORT ?? 3000, "/robots.txt"],
   ["website", configuration.WEBSITE_PORT ?? 3001, "/robots.txt"],
