@@ -50,3 +50,20 @@ test("delivery refuses alternate destinations before exposing credentials", asyn
   }
   await assert.rejects(transport.fetch("https://api.resend.com/emails"), /Unsupported/);
 });
+
+test("batch delivery preserves both email-change proofs and their shared idempotency key", async () => {
+  const messages = [{to:["current@example.test"],text:"current proof"},{to:["next@example.test"],text:"new proof"}];
+  const transport = createResendDelivery("re_server", async input => {
+    assert.ok(input instanceof Request);
+    assert.equal(input.url, "https://api.resend.com/emails/batch");
+    assert.equal(input.headers.get("authorization"), "Bearer re_server");
+    assert.equal(input.headers.get("idempotency-key"), "email-change");
+    assert.equal(input.redirect, "error");
+    assert.deepEqual(await input.json(), messages);
+    return Response.json({data:[{id:"current"},{id:"next"}]});
+  });
+  const response = await transport.fetch("https://api.resend.com/emails/batch", {
+    method:"POST",headers:{"idempotency-key":"email-change"},body:JSON.stringify(messages),
+  });
+  assert.equal(response.status, 200);
+});

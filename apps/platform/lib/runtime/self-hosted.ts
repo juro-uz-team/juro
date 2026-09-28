@@ -39,6 +39,7 @@ export function getSelfHostedRuntime(): Runtime {
   if (!config.privateMode) {
     if (!challengeSecretConfigured(process.env.AUTH_CHALLENGE_SECRET)) throw new Error("Public authentication requires AUTH_CHALLENGE_SECRET");
     if (!parseIdentityKeyring(process.env.IDENTITY_KEYRING)) throw new Error("Public authentication requires IDENTITY_KEYRING");
+    if (process.env.IDENTITY_PROTECTION_MODE !== "dual_write") throw new Error("Public authentication requires IDENTITY_PROTECTION_MODE=dual_write");
   }
   const appEnvironment = config.privateMode ? "development" : process.env.DEPLOYMENT_ENVIRONMENT!;
   const application = database("app");

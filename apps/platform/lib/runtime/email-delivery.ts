@@ -22,7 +22,7 @@ export function createResendDelivery(apiKey: string, fetcher: typeof fetch = glo
   return {
     async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const request = new Request(input, init);
-      if (request.url !== "https://api.resend.com/emails" || request.method !== "POST") {
+      if (!["https://api.resend.com/emails", "https://api.resend.com/emails/batch"].includes(request.url) || request.method !== "POST") {
         throw new Error("Unsupported email delivery request");
       }
       const headers = new Headers(request.headers);

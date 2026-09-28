@@ -3,10 +3,10 @@ import { database } from "../storage/connection";
 import { getSelfHostedRuntime } from "./self-hosted";
 
 /** Use the configured delivery transport without changing caller retry/idempotency semantics. */
-export async function sendEmailRequest(init: RequestInit): Promise<Response> {
+export async function sendEmailRequest(init: RequestInit, batch = false): Promise<Response> {
   const delivery = getSelfHostedRuntime().EMAIL_DELIVERY;
   if (!delivery) throw new Error("Email delivery is unavailable");
-  return delivery.fetch("https://api.resend.com/emails", init);
+  return delivery.fetch(batch ? "https://api.resend.com/emails/batch" : "https://api.resend.com/emails", init);
 }
 
 async function capture(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

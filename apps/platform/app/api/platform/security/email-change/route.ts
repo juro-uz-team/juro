@@ -42,6 +42,7 @@ import {
   runtimeEnv,
 } from "../../../../../lib/document-builder/storage/runtime";
 import { renderJuroAuthEmail } from "../../../../../lib/auth/transactional-email";
+import { sendEmailRequest } from "../../../../../lib/runtime/email";
 import { ensureDefaultWorkspace } from "../../../../../lib/platform/workspace";
 import type { PlatformLocale } from "../../../../../lib/platform/routing";
 import { dispatchOutbox } from "../../../../../worker/platform-outbox";
@@ -247,7 +248,7 @@ async function queueVerificationEmails(input: {
   });
   let response: Response | null = null;
   try {
-    response = await fetch("https://api.resend.com/emails/batch", {
+    response = await sendEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${input.apiKey}`,
@@ -271,7 +272,7 @@ async function queueVerificationEmails(input: {
         },
       ]),
       signal: AbortSignal.timeout(8_000),
-    });
+    }, true);
     const accepted = response.ok;
     await response.body?.cancel();
     return accepted;
