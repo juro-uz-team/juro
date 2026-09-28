@@ -53,6 +53,30 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
 });
 
 const text="Synthetic rule: applicants may request a record.";
+
+test("exhausted indexed budget cannot restart research through the public fallback",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
+  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let monotonic=1000;
+  context.mock.method(performance,"now",()=>monotonic);
+  const calls:string[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body));calls.push(body.text.format.name);
+    if(body.text.format.name!=="legal_question_research")throw new Error("Unexpected second research transport");
+    return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify({
+      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
+      research:{directQueries:[{text:"record access",topicIndices:[0]}],underlyingRuleQueries:[]},
+    })}]}]});
+  });
+  const result=await executeRuntimeLegalChat({requestId:"expired-fallback",environment:"staging",mode:"fast",answerMode:"short",
+    context:{question:"May I request my record?",locale:"en",priorTurns:[]},
+    service:{async openLegalResearch(){return {async stage(){},async search(){monotonic=11001;
+      throw new DOMException("Indexed retrieval deadline exceeded","TimeoutError");},async cancel(){},[Symbol.dispose](){}};}},
+    renew:async()=>true,commit:async terminal=>terminal,release:async()=>{},
+  });
+  assert.deepEqual(calls,["legal_question_research"],"No planner, web search or writer starts after retrieval expires");
+  assert.equal(result.kind,"unavailable");
+});
 const evidence:LegalEvidence={source:{id:"source",actTitle:"Synthetic source",actIdentifier:null,
   officialUrl:"https://lex.uz/docs/999999",revisionDate:null,lastCheckedAt:"2026-09-20",locale:"en",
   publishedAt:null,sourceType:"lex",status:"current",verificationState:"verified",verifiedAt:"2026-09-20",

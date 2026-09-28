@@ -10,7 +10,7 @@ import type {CorpusSessionInput} from "./corpus-session";
 import type {AiProviderAttemptObservation} from "../document-builder/ai/openai";
 import type {AiResponseTone} from "../ai/runtime-settings";
 import {observeCurrentLexDocument} from "../legal/lex-document-status";
-import {INDEXED_RETRIEVAL_TIMEOUT_MS} from "../runtime/indexed-retrieval";
+import {INDEXED_RETRIEVAL_TIMEOUT_MS,runIndexedRetrieval} from "../runtime/indexed-retrieval";
 import {fitsLegalEvidenceBudget} from "../legal/legal-evidence-budget";
 
 /** Production composition owns all request-local model and research state.
@@ -25,7 +25,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
     onAttempt?:(input:{model:string})=>void|Promise<void>;
     onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
   }):Promise<Saved> {
-  // Interpretation, formulation and indexed reading share one deadline.
+  // Interpretation, formulation and both research lanes share one deadline.
   // Writing retains the separate execution budget.
   const retrievalExpiresAt=performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS;
   const interpretationDeadlineAt=Date.now()+INDEXED_RETRIEVAL_TIMEOUT_MS;
@@ -34,6 +34,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
   const model=createLegalResearchModel({...options,responseTone:input.responseTone});
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
     requestId:input.requestId,formulate:model.formulateIndexed,retrievalExpiresAt});
+  const official=createOfficialResearch({formulate:model.formulate});
   let stagedQueries=0;
   try {
     return await executeLegalChat({...input,
@@ -47,7 +48,8 @@ export async function executeRuntimeLegalChat<Saved>(input:
             await corpus.stage(request,{interpretationId:plan.id,formulation:plan.formulations[stagedQueries]!});
           }
         }}}),
-      research:{indexed:corpus.indexed,official:createOfficialResearch({formulate:model.formulate}),
+      research:{indexed:corpus.indexed,official:request=>runIndexedRetrieval(request.question.signal,
+        signal=>official({...request,question:{...request.question,signal}}),retrievalExpiresAt),
         // A complete bounded packet needs no separate model selection or
         // answerability verdict. The writer sees
         // every admitted provision; known retrieval gaps remain unresolved.
