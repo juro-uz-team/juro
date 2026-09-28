@@ -2,6 +2,7 @@ import { localDocumentConverter } from "./document-converter";
 import { localMalwareScanner } from "./scanner";
 import { operationalMetrics } from "./metrics";
 import { localEmailCapture } from "./email";
+import { createResendDelivery, emailDeliveryConfiguration } from "./email-delivery";
 import { localAssets } from "./assets";
 import { resolve } from "node:path";
 import { database } from "../storage/connection";
@@ -35,6 +36,7 @@ export function getSelfHostedRuntime(): Runtime {
   const catalog = database("legal");
   const root = resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects");
   const bucket = (name: string) => new LocalObjectStore(application.pool, root, name);
+  const email = emailDeliveryConfiguration(process.env);
   const env = { ...process.env, APP_ENV: "development", ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
     CRON_ENABLED: "true", LEGAL_LEX_INGESTION_ENABLED: "false", LEGAL_ADVICE_INGESTION_ENABLED: "false",
     LEGAL_LEX_RSS_DISCOVERY_ENABLED: "false", LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED: "false",
@@ -45,8 +47,8 @@ export function getSelfHostedRuntime(): Runtime {
     STAGING_LEGAL_EVALUATION_ENABLED: "false", STAGING_SYNTHETIC_PROBES_ENABLED: "false", PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
     LOCAL_AUTH_BYPASS: "false", ALLOW_PLATFORM_AUTH_HEADERS: "false",
     TURNSTILE_SECRET_KEY: "private-local", TURNSTILE_SITE_KEY: "private-local",
-    RESEND_API_KEY: "local-capture", EMAIL_FROM: "JURO <noreply@localhost>",
-    EMAIL_DELIVERY: localEmailCapture,
+    RESEND_API_KEY: email.apiKey, EMAIL_FROM: email.from,
+    EMAIL_DELIVERY: email.mode === "capture" ? localEmailCapture : createResendDelivery(email.apiKey),
     OCR: localDocumentConverter, MALWARE_SCANNER: localMalwareScanner, MALWARE_SCAN_ENABLED: "true",
     PLATFORM_ANALYTICS: operationalMetrics,
     ASSETS: localAssets(resolve("public")),

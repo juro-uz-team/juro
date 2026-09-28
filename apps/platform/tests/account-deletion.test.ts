@@ -722,7 +722,7 @@ test("account-deletion route sends the branded HTML and text bodies through Rese
   let providerHeaders = new Headers();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), "http://captured-email.local/emails");
+    assert.equal(String(input), "https://api.resend.com/emails");
     providerHeaders = new Headers(init?.headers);
     delivery = JSON.parse(String(init?.body)) as Delivery;
     return new Response(JSON.stringify({ id: "resend_deletion_test" }), {

@@ -1,4 +1,4 @@
-import { captureEmailRequest } from "../runtime/email";
+import { sendEmailRequest } from "../runtime/email";
 import { z } from "zod";
 
 
@@ -192,7 +192,7 @@ export async function executeOperationalAlertEmail(
   const copy = alertCopy(row);
   let response: Response | null = null;
   try {
-    response = await captureEmailRequest({
+    response = await sendEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,

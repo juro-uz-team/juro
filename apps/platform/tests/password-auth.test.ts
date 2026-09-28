@@ -199,7 +199,7 @@ test("new registration persists its pending account and sends one confirmation e
   });
   let emailRequests = 0;
   globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), "http://captured-email.local/emails");
+    assert.equal(String(input), "https://api.resend.com/emails");
     emailRequests += 1;
     const payload = JSON.parse(String(init?.body)) as {
       from?: string;
@@ -1235,7 +1235,7 @@ test("registration confirmation resend verifies the password without recreating 
   });
   const providerRecipients: string[] = [];
   globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), "http://captured-email.local/emails");
+    assert.equal(String(input), "https://api.resend.com/emails");
     const payload = JSON.parse(String(init?.body)) as { to?: string[] };
     providerRecipients.push(payload.to?.[0] ?? "");
     return Response.json({ id: "resend_registration_confirmation" });

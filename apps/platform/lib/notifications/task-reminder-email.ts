@@ -1,4 +1,4 @@
-import { captureEmailRequest } from "../runtime/email";
+import { sendEmailRequest } from "../runtime/email";
 import {
   createIdentityProtectionContext,
   userIdentityById,
@@ -137,7 +137,7 @@ export async function executeTaskReminderEmail(
   const copy = emailCopy(row);
   let response: Response | null = null;
   try {
-    response = await captureEmailRequest({
+    response = await sendEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,

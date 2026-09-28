@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { database } from "../storage/connection";
 import { getSelfHostedRuntime } from "./self-hosted";
 
-/** Capture complete messages locally so verification flows work without external delivery. */
-export async function captureEmailRequest(init: RequestInit): Promise<Response> {
+/** Use the configured delivery transport without changing caller retry/idempotency semantics. */
+export async function sendEmailRequest(init: RequestInit): Promise<Response> {
   const delivery = getSelfHostedRuntime().EMAIL_DELIVERY;
-  if (!delivery) throw new Error("Local email capture is unavailable");
-  return delivery.fetch("http://captured-email.local/emails", init);
+  if (!delivery) throw new Error("Email delivery is unavailable");
+  return delivery.fetch("https://api.resend.com/emails", init);
 }
 
 async function capture(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

@@ -1,4 +1,4 @@
-import { captureEmailRequest } from "../runtime/email";
+import { sendEmailRequest } from "../runtime/email";
 import { normalizeEmail } from "./crypto";
 import {
   parseIdentityKeyring,
@@ -302,7 +302,7 @@ export async function notifyPasswordChangedWithRetry(
   let response: Response | null = null;
   let providerMessageId: string | null = null;
   try {
-    response = await captureEmailRequest({
+    response = await sendEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${input.apiKey}`,
@@ -543,7 +543,7 @@ export async function executeSecurityEmailJob(
   const copy = emailCopy(row);
   let response: Response | null = null;
   try {
-    response = await captureEmailRequest({
+    response = await sendEmailRequest({
       method: "POST",
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,
