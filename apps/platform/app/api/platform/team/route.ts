@@ -16,6 +16,7 @@ import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/
 import { canManageTeam, isWorkspaceRole, requireTeamManager } from "../../../../lib/platform/permissions";
 import { isLocale, type PlatformLocale } from "../../../../lib/platform/routing";
 import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { sendEmailRequest } from "../../../../lib/runtime/email";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITABLE_ROLES = new Set(["admin", "lawyer", "employee", "viewer", "external"]);
@@ -284,7 +285,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
 
   let sent: Response | null = null;
   try {
-    sent = await fetch("https://api.resend.com/emails", {
+    sent = await sendEmailRequest({
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
       body: JSON.stringify({ from: env.EMAIL_FROM, to: [email], ...invitation }),
