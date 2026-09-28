@@ -11,9 +11,9 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 test("runtime refuses to publish an answer whose source freshness cannot be established",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  let monotonic=performance.now();
+  let monotonic=Math.floor(performance.now());
   context.mock.method(performance,"now",()=>monotonic);
-  const calls:string[]=[];const staged:CorpusStageInput[]=[];let searched:unknown;
+  const calls:string[]=[];const staged:CorpusStageInput[]=[];let searched:unknown,remainingBudget=Infinity;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));const schema=body.text.format.name;calls.push(schema);
     if(schema==="legal_question_research")monotonic+=6500;
@@ -38,12 +38,13 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
     service:{async openLegalResearch(){return {async stage(fragment){staged.push(fragment);},async search(input){
       searched=input.plan.formulations;
-      assert.ok(indexedRetrievalRemainingMs()<=3500,"Initial interpretation consumes the shared retrieval budget");
+      remainingBudget=indexedRetrievalRemainingMs();
       assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"],"Initial generated queries survive runtime composition unchanged");
       return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
   assert.equal(staged.length,1,"Initial interpretation starts indexed work before final research");
+  assert.ok(remainingBudget<=3500,`Initial interpretation consumes the shared retrieval budget: ${remainingBudget}`);
   assert.deepEqual(searched,staged.map(fragment=>fragment.formulation),"Runtime reuses exactly the initial streamed formulations");
   assert.deepEqual(calls,["legal_question_research","legal_answer"]);
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
