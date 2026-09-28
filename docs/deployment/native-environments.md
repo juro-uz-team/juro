@@ -12,6 +12,10 @@ Deployment builds an immutable clean release at the validated Git SHA, verifies 
 
 The backup and qualification commands are operator-installed executables. Critical migrations require a locally retained off-server recovery copy and restore verification; routine code deployment does not establish a daily backup schedule. Qualification must run the environment's user-flow probes. A successful build or root-page response does not establish account-email delivery or legal-retrieval acceptance. Production qualification must not create synthetic activity in real user accounts. Provider-dependent AI checks are deferred while credits are exhausted, as specified in ADR 0028; this does not authorize a new corpus selection or weakening its readiness checks. Any new selected corpus still requires qualification against the compiled product revision before use.
 
+Install `scripts/check-migration-recovery.mjs` as the backup gate. It permits code-only releases, rejects changed or removed applied migrations, and requires verified recovery evidence before new migrations. After creating and restoring an off-server recovery copy, the operator writes a root-owned, non-writable-by-group/others JSON receipt at `/etc/juro/recovery/ENVIRONMENT/REVISION.json`, containing `environment`, `revision`, `restoreVerified: true`, `offServerCopy: true`, an ISO `expiresAt`, and `pendingMigrations` (sorted `{name, sha256}` entries matching the release). Missing or expired evidence stops the deployment before migration. This receipt records completed recovery work; it does not create a backup.
+
+Install `scripts/qualify-native-release.mjs` as the qualification command. It starts candidate HTTP listeners on isolated ports, verifies canonical hosts, private-route authentication boundaries and website/status write restrictions, then stops every candidate listener. It does not start background jobs or send email or inference requests. Results remain under the release's ignored `.scratch/deployment/` directory. Initial public launch still requires the separately verified account, real-email, data-continuity and DNS/TLS checks; these HTTP probes alone do not replace them.
+
 Search usage reservations belong to the environment's private database alongside source observations; the shared catalog receives no reservation writes. Provision the existing authorized budget and its consumed balance before enabling retrieval. Moving or dividing an allowance between environments must not increase total authorized spending or reset previously consumed usage. A missing allowance continues to reject provider spending.
 
 To share the public legal corpus without duplicating its large indexes, set both `CORPUS_DATABASE_URL` and `CORPUS_OBJECT_STORAGE_PATH`. The database role must have SELECT access only to public corpus tables and records, with no access to application accounts, private uploads, queues or captured emails. Mount the public corpus object directory read-only for each service account. Runtime corpus connections also default to read-only transactions, and corpus object adapters reject writes before touching the filesystem. This is additional protection, not a substitute for database grants and filesystem permissions. Each environment retains its own writable source-observation cache in its private database's `legal` schema. If the corpus variables are absent, a private single-instance installation uses its normal database and object root. Corpus acceptance still requires qualification for the executing product revision.
@@ -21,11 +25,11 @@ For example, `/etc/juro/staging.json` has the following structure (the reference
 ```json
 {
   "root": "/srv/juro/staging",
-  "repository": "https://github.com/MoozUpus/juro.git",
+  "repository": "https://github.com/juro-uz-team/juro.git",
   "environmentFile": "/etc/juro/staging.env",
-  "backupCommand": "/usr/local/lib/juro/backup-staging",
-  "qualifyCommand": "/usr/local/lib/juro/qualify-staging",
-  "investorAssets": "/srv/juro/shared/public-investor-assets"
+  "backupCommand": "/usr/local/lib/juro/check-migration-recovery.mjs",
+  "qualifyCommand": "/usr/local/lib/juro/qualify-native-release.mjs",
+  "investorAssets": "/srv/juro/shared/investor-assets"
 }
 ```
 

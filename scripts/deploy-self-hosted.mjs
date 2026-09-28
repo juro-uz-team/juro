@@ -44,15 +44,14 @@ if (!settings.STATUS_URL || Number(settings.STATUS_PORT) !== requiredPorts[0] + 
 if (environment === "staging" && settings.EMAIL_DELIVERY_MODE !== "capture") {
   throw new Error("Staging deployments must capture email; live delivery checks use a separate operator configuration");
 }
-// Compare configured environments before allowing a staging deployment to touch storage.
+// Each account can read only its own secret file. The fixed database names and
+// object roots above enforce storage separation without opening the other file.
 const otherEnvironment = environment === "production" ? "staging" : "production";
 try {
   const other = JSON.parse(await readFile(`/etc/juro/${otherEnvironment}.json`, "utf8"));
-  const otherSettings = parseEnv(await readFile(other.environmentFile, "utf8"));
-  const databaseIdentity = value => { const url = new URL(value); return `${url.hostname}:${url.port || "5432"}${url.pathname}`; };
-  if (databaseIdentity(settings.DATABASE_URL) === databaseIdentity(otherSettings.DATABASE_URL)
-    || resolve(settings.OBJECT_STORAGE_PATH) === resolve(otherSettings.OBJECT_STORAGE_PATH)
-    || config.environmentFile === other.environmentFile) throw new Error("Staging and production storage must be separate");
+  if (other.root !== `/srv/juro/${otherEnvironment}` || config.environmentFile === other.environmentFile) {
+    throw new Error("Staging and production storage must be separate");
+  }
 } catch (error) { if (error.code !== "ENOENT") throw error; }
 
 function run(command, args, cwd, capture = false) {

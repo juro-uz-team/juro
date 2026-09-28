@@ -3,5 +3,8 @@ apps/platform/postgres/*.sql text eol=lf
 # These migrations were originally applied with CRLF bytes; preserve their checksums.
 apps/platform/postgres/0013-query-json-and-calendar.sql text eol=crlf
 apps/platform/postgres/0014-private-admin-origin.sql text eol=crlf
+apps/platform/postgres/0025-publisher-normalization-fingerprint.sql text eol=crlf
+apps/platform/postgres/0026-publisher-fingerprint-observation-binding.sql text eol=crlf
+apps/platform/postgres/0029-publisher-normalization-policy.sql text eol=crlf
 apps/platform/postgres/0038-application-history-continuity.sql text eol=crlf
 *.sh text eol=lf
