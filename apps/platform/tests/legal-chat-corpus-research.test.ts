@@ -370,8 +370,10 @@ test("publisher verification overlaps distinct documents and preserves admission
     assert.ok(result.observation);
     return {...result,observation:{...result.observation,officialUrl:source.officialCitation.url}};
   };
+  const readingFinished=Promise.withResolvers<void>();
+  services.referenceDiscovery=async()=>{readingFinished.resolve();return {candidates:[],unresolved:[]};};
   const pending=search(request);
-  try{await entered.promise;await new Promise(resolve=>setImmediate(resolve));
+  try{await entered.promise;await readingFinished.promise;await new Promise(resolve=>setImmediate(resolve));
     assert.ok(seen.includes("https://lex.uz/docs/778"));
     assert.ok(seen.includes("https://lex.uz/docs/779"));assert.equal(seen.length,3);
   }finally{release.resolve();}
@@ -398,8 +400,10 @@ test("publisher workers continue past a slow document without exceeding four che
       return {...result,observation:{...result.observation,officialUrl:source.officialCitation.url}};
     }finally{active--;}
   };
+  const readingFinished=Promise.withResolvers<void>();
+  services.referenceDiscovery=async()=>{readingFinished.resolve();return {candidates:[],unresolved:[]};};
   const pending=search(request);
-  try{await entered.promise;await new Promise(resolve=>setImmediate(resolve));
+  try{await entered.promise;await readingFinished.promise;await new Promise(resolve=>setImmediate(resolve));
     assert.equal(seen.length,6,"Later documents start while the first document remains pending");
     assert.ok(maximum<=4);assert.equal(active,1);
   }finally{release.resolve();}
@@ -626,7 +630,7 @@ test("a reference target already in the ranked pool retains priority before cont
 });
 
 
-test("publisher checks run only after deterministic context admission and never replace failed evidence",async()=>{
+test("overlapped publisher checks never change deterministic context admission or replace failed evidence",async()=>{
   const {services,search}=fixture();
   const candidates=parseRevalidatedCandidates(Array.from({length:3},(_,index)=>({...candidate,
     provisionRenditionId:`rendition:${index}`,candidate:{...candidate.candidate,itemKey:`item:${index}`,
@@ -642,7 +646,7 @@ test("publisher checks run only after deterministic context admission and never 
     return verify(source);
   };
   const packet=await search(request);
-  assert.deepEqual(checked,["rendition:0","rendition:1"]);
+  assert.deepEqual(checked,["rendition:0","rendition:1","rendition:2"]);
   assert.equal(packet.evidence.length,1);
   assert.ok(packet.evidence[0]!.text.startsWith("rendition:1"));
   assert.ok(packet.needs.some(need=>need.reason==="source_unavailable"));
@@ -710,4 +714,28 @@ test("cyclic and shared references enter once with their primary rule",async()=>
   const result=await search(request);
   assert.deepEqual(result.evidence.map(item=>item.source.article),["0","99","1"]);
   assert.deepEqual(result.needs,[]);
+});
+
+
+test("authenticated source checks start during reading and are reused at final admission",async()=>{
+  const {services,search}=fixture();
+  const started=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
+  const original=services.verifyCurrentSource;
+  let checks=0,startedBeforeReferences=false,settled=false;
+  services.verifyCurrentSource=async(...args)=>{checks++;started.resolve();await finish.promise;return original(...args);};
+  services.referenceDiscovery=async()=>{
+    // Flush the already-scheduled source check without waiting for its result.
+    await Promise.resolve();
+    startedBeforeReferences=checks===1;
+    return {candidates:[],unresolved:[]};
+  };
+  const result=search(request).then(value=>{settled=true;return value;});
+  await started.promise;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(settled,false,"No evidence escapes while source freshness is unresolved");
+  finish.resolve();
+  const packet=await result;
+  assert.equal(startedBeforeReferences,true,"Publisher I/O must overlap reference discovery");
+  assert.equal(checks,1,"Admission reuses the same authenticated source check");
+  assert.equal(packet.evidence.length,1);
 });

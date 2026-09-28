@@ -168,6 +168,34 @@ export function createCorpusResearch(input: {
     }
     let reads=0;
     let unreadCandidates=0;
+    // Start authenticated publication checks while complete reading continues.
+    // A request-local queue caps I/O; results never affect discovery or ordering.
+    // Repaired rounds refresh their observations rather than reuse old verdicts.
+    const sourceChecks=new Map<string,ReturnType<CurrentVerifier["verify"]>>();
+    const publicationChecks=new Map<string,Promise<unknown>>();
+    const waitingChecks:Array<()=>void>=[];
+    let activeChecks=0;
+    const checkCurrentSource=(id:string,publication:string,verifier:CurrentVerifier)=>{
+      const existing=sourceChecks.get(id);
+      if(existing)return existing;
+      const previous=publicationChecks.get(publication);
+      const pending=(async()=>{
+        if(previous)await previous;
+        if(activeChecks<4)activeChecks++;
+        else await new Promise<void>(resolve=>waitingChecks.push(resolve));
+        try {check();return await verifier.verify();}
+        finally {
+          const next=waitingChecks.shift();
+          if(next)next();else activeChecks--;
+        }
+      })();
+      sourceChecks.set(id,pending);
+      publicationChecks.set(publication,pending.catch(()=>undefined));
+      // A speculative read may be excluded by the context budget. Its failure
+      // is handled here; admitted sources still consume the rejecting promise.
+      void pending.catch(()=>undefined);
+      return pending;
+    };
     const prepareRead=(candidate:RevalidatedCandidate,index:number,reference=false):(()=>Promise<void>)=>{
       check();
       const {endpoint,release}=releases[index]!;
@@ -213,6 +241,8 @@ export function createCorpusResearch(input: {
         const item=articles.get(result.item.prepared.source.id)??result.item.prepared;
         if(!articles.has(item.source.id)&&result.item.verifier)currentVerifiers.set(item.source.id,result.item.verifier);
         articles.set(item.source.id,item);
+        const verifier=currentVerifiers.get(item.source.id);
+        if(verifier)checkCurrentSource(item.source.id,item.source.officialUrl,verifier);
         readEvidence.set(key,item);
         resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
         evidence.set(item.source.id,item);
@@ -348,19 +378,11 @@ export function createCorpusResearch(input: {
     // Selection is independent of publisher results. Every selected source must
     // pass; a failed current observation cannot be replaced by a lower-ranked hit.
     const answerEvidence:LegalEvidence[]=[];
-    // A bounded worker follows each publication through all its articles.
-    // Finished workers immediately pick another document instead of waiting
-    // for the slowest publication in a batch.
-    const byPublication=new Map<string,PreparedCorpusEvidence[]>();
-    for(const item of admitted){
-      const publication=byPublication.get(item.source.officialUrl)??[];
-      publication.push(item);byPublication.set(item.source.officialUrl,publication);
-    }
     const verifyItem=async(item:PreparedCorpusEvidence)=>{
         check();
         const verifier=currentVerifiers.get(item.source.id);
         try {
-          const currentSourceStatus=await verifier?.verify();
+          const currentSourceStatus=verifier?await checkCurrentSource(item.source.id,item.source.officialUrl,verifier):undefined;
           check();
           const verified=item.finalize({currentAt:new Date(now()).toISOString(),currentSourceStatus});
           const canonical=verifiedArticles.get(verified.source.id)??verified;
@@ -376,24 +398,18 @@ export function createCorpusResearch(input: {
           return {need,key:verifier?.key};
         }
     };
-    const publications=[...byPublication.values()];let nextPublication=0;
-    await Promise.all(Array.from({length:Math.min(4,publications.length)},async()=>{
-      while(nextPublication<publications.length){
-        check();const publication=publications[nextPublication++]!;
-        for(const item of publication){
-          const result=await verifyItem(item);
-          if(result.item)answerEvidence.push(result.item);
-          else {
-            needs.push(result.need);
-            if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
-              .map(value=>[JSON.stringify(value),value])).values()]);
-          }
-        }
+    // I/O is already queued independently. Finalize in admission order so
+    // completion timing cannot change citations or replace a failed source.
+    for(const item of admitted){
+      const result=await verifyItem(item);
+      if(result.item)answerEvidence.push(result.item);
+      else {
+        needs.push(result.need);
+        if(result.key)pendingReads.set(result.key,[...new Map([...(pendingReads.get(result.key)??[]),result.need]
+          .map(value=>[JSON.stringify(value),value])).values()]);
       }
-    }));
+    }
     check();
-    const admissionPositions=new Map(admitted.map((item,index)=>[item.source.id,index]));
-    answerEvidence.sort((left,right)=>admissionPositions.get(left.source.id)!-admissionPositions.get(right.source.id)!);
     return {evidence:answerEvidence,needs:[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()],
       observations,
       resolved:[...new Map(resolutions.filter(resolution=>resolution.sourceIds.every(id=>answerEvidence.some(item=>item.source.id===id)))
