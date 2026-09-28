@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import application from "./worker";
+import { nativeAdminOrigin, nativeAdminRequestUrl } from "../../../scripts/native-admin-http.mjs";
 
 if (process.env.PRIVATE_DEVELOPMENT !== "true" && !["production", "staging"].includes(process.env.DEPLOYMENT_ENVIRONMENT ?? "")) throw new Error("Admin requires an explicit native deployment");
 const port = Number(process.env.ADMIN_PORT ?? 3002);
+const adminOrigin = nativeAdminOrigin(process.env);
 const platformOrigin = process.env.PLATFORM_INTERNAL_ORIGIN ?? `http://localhost:${process.env.PORT ?? 3000}`;
 if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(platformOrigin)) throw new Error("Admin requires a local platform origin");
 const env = {
@@ -31,7 +33,7 @@ createServer(async (request, response) => {
     }
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) if (value) headers.set(name, Array.isArray(value) ? value.join(",") : value);
-    const result = await application.fetch(new Request(`http://${request.headers.host}${request.url}`, {
+    const result = await application.fetch(new Request(nativeAdminRequestUrl(adminOrigin, request.url), {
       method: request.method, headers,
       ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: Buffer.concat(chunks) }),
     }), env);

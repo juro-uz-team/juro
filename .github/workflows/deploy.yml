@@ -58,8 +58,8 @@ jobs:
           set -euo pipefail
           umask 077
           install -d -m 700 "$RUNNER_TEMP/juro-ssh"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/juro-ssh/key"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/juro-ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$RUNNER_TEMP/juro-ssh/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$RUNNER_TEMP/juro-ssh/known_hosts"
           ssh -i "$RUNNER_TEMP/juro-ssh/key" \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$RUNNER_TEMP/juro-ssh/known_hosts" \

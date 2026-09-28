@@ -22,6 +22,7 @@ import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
 import type { PlatformJobEnv } from "../../worker/platform-jobs";
 import { nativeHttpConfiguration } from "../../../../scripts/native-http.mjs";
+import { nativeAdminOrigin } from "../../../../scripts/native-admin-http.mjs";
 import { challengeSecretConfigured } from "../auth/native-challenge";
 import { parseIdentityKeyring } from "../auth/keyring";
 
@@ -73,7 +74,7 @@ export function getSelfHostedRuntime(): Runtime {
     ADVICE_UZ_INDEX: new PostgresVectorIndex(corpus.pool, "advice"),
     USER_DOCUMENTS_INDEX: new PostgresVectorIndex(application.pool, "user-documents"),
     APP_URL: process.env.APP_URL ?? "http://localhost:3000", PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL ?? "http://localhost:3001",
-    ADMIN_CONSOLE_ORIGIN: process.env.ADMIN_CONSOLE_ORIGIN ?? "http://localhost:3002",
+    ADMIN_CONSOLE_ORIGIN: nativeAdminOrigin(process.env),
     LEGAL_RETRIEVAL_ENVIRONMENT: "production",
   };
   const search = (configuration: typeof releases.current) => {

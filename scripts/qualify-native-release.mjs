@@ -18,7 +18,7 @@ assert.equal(settings.DEPLOYMENT_ENVIRONMENT, environment);
 const port = environment === "production" ? 3200 : 3300;
 const temporary = { ...process.env, ...settings, NODE_ENV: "production", PORT: String(port), WEBSITE_PORT: String(port + 1),
   ADMIN_PORT: String(port + 2), LAWYER_PORT: String(port + 3), STATUS_PORT: String(port + 4),
-  PLATFORM_INTERNAL_ORIGIN: `http://localhost:${port}`, ADMIN_CONSOLE_ORIGIN: `http://localhost:${port + 2}` };
+  PLATFORM_INTERNAL_ORIGIN: `http://localhost:${port}` };
 const services = [
   { name: "app", app: "platform", entry: "server/index.ts", port, host: new URL(settings.APP_URL).host, path: "/en/auth/login" },
   { name: "website", app: "website", entry: "server/index.ts", port: port + 1, host: new URL(settings.PUBLIC_SITE_URL).host, path: "/en" },

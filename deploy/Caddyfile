@@ -71,3 +71,20 @@ www.{$SITE_HOST} {
 	respond @public_admin 404
 	import native_proxy 127.0.0.1:3100
 }
+
+# These TLS listeners are reachable only through an operator's SSH tunnel.
+https://juro-admin.localhost:3443 {
+	bind 127.0.0.1
+	tls internal
+	reverse_proxy 127.0.0.1:3002 {
+		header_up Host localhost:3002
+	}
+}
+
+https://juro-staging-admin.localhost:3444 {
+	bind 127.0.0.1
+	tls internal
+	reverse_proxy 127.0.0.1:3102 {
+		header_up Host localhost:3102
+	}
+}
