@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {structuredResponse} from "./helpers/structured-response";
 import test from "node:test";
 import {env} from "./helpers/runtime-env";
 import {sqliteD1FixtureFromDirectory} from "./helpers/sqlite-d1";
@@ -16,8 +17,8 @@ test("guest clarifications retain every user turn, stay encrypted and replay wit
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     requests.push(String(init?.body));const body=JSON.parse(requests.at(-1)!);
     assert.equal(body.model,"gpt-5.6-terra");
-    return Response.json({id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
-      output:[{content:[{type:"output_text",text:JSON.stringify({topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]})}]}]});
+    return structuredResponse(body,{id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
+      output:[{content:[{type:"output_text",text:JSON.stringify({interpretation:{topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]}})}]}]});
   });
   const input:Parameters<typeof deliverGuestLegalChat>[0]={db:d1,keyring,session,settings:await resolveAiRuntimeSettings({env:{APP_ENV:"development"}}),
     configured:true,retrievalEnvironment:"development",service:{async openLegalResearch(){throw new Error("Clarification needs no research");}},

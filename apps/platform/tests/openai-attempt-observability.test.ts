@@ -27,10 +27,10 @@ test("question interpretation retains cached usage and observes invalid provider
   context.after(() => {env.OPENAI_API_KEY = previousKey;});
   let valid = true;
   context.mock.method(globalThis, "fetch", async () => Response.json({model: "gpt-5.6-terra", id: "question-response",
-    output: [{content: [{type: "output_text", text: JSON.stringify({
+    output: [{content: [{type: "output_text", text: JSON.stringify({interpretation:{
       topics: valid ? ["Applicable rules"] : [], facts: [], selectedMemoryIds: [],
       temporal: {kind: "current"}, questions: [],
-    })}]}], usage: {input_tokens: 100, output_tokens: 20, input_tokens_details: {cached_tokens: 50}}}));
+    }})}]}], usage: {input_tokens: 100, output_tokens: 20, input_tokens_details: {cached_tokens: 50}}}));
   const attempts: AiProviderAttemptObservation[] = [];
   const interpret = createQuestionInterpreter({mode: "deep", requestId: "question-cost", safetyIdentifier: "test",
     onAttemptFinished: event => {attempts.push(event);}});
