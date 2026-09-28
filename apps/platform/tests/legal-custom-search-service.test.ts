@@ -43,12 +43,13 @@ class MemoryR2 {
   }
 }
 
-for (const { oversizedPosting, physicalAlias } of [
-  { oversizedPosting: false, physicalAlias: false },
-  { oversizedPosting: true, physicalAlias: false },
-  { oversizedPosting: false, physicalAlias: true },
+for (const { oversizedPosting, physicalAlias, separateBudget } of [
+  { oversizedPosting: false, physicalAlias: false, separateBudget:false },
+  { oversizedPosting: true, physicalAlias: false, separateBudget:false },
+  { oversizedPosting: false, physicalAlias: true, separateBudget:false },
+  { oversizedPosting: false, physicalAlias: false, separateBudget:true },
 ]) {
-test(physicalAlias
+test(separateBudget ? "shared read-only catalog keeps search reservations in the private budget database" : physicalAlias
   ? "private custom search can reuse an immutable physical release behind a logical production release"
   : oversizedPosting
     ? "private custom search treats an oversized matched posting as a sparse stop word"
@@ -182,6 +183,19 @@ test(physicalAlias
     },
     DENSE: dense,
   } satisfies CustomSearchEnv;
+  if(separateBudget){
+    env.CATALOG_DB=new Proxy(database,{get(target,key,receiver){
+      if(key==="prepare")return (sql:string)=>{
+        assert.ok(!/\b(?:UPDATE|INSERT|DELETE)\b/i.test(sql),"Shared catalog must not receive writes");
+        return database.prepare(sql);
+      };
+      return Reflect.get(target,key,receiver);
+    }});
+    Object.assign(env,{BUDGET_DB:{...database,prepare(sql:string){
+      assert.match(sql,/legal_custom_query_(?:budget_periods|reservations)/);
+      return database.prepare(sql);
+    }}});
+  }
   const body = JSON.stringify({ releaseId: RELEASE_ID, instanceIds: [INSTANCE_ID], query: "work",
     currentAt: "2026-09-05T00:00:00.000Z",
     endpoint: { kind: "current" }, maxResults: 50, vectorThreshold: 0 });

@@ -86,7 +86,7 @@ export function getSelfHostedRuntime(): Runtime {
             process.env.VECTOR_CANDIDATE_URL ? createVectorCandidateReader(process.env.VECTOR_CANDIDATE_URL) : undefined);
           if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
           return handleCustomSearchRequest(new Request(input, init), {
-            ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,
+            ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog, BUDGET_DB: observations,
             ARTIFACTS: corpusBucket(configuration.artifactNamespace),
             RUNTIME_CACHE: cache,
             PREPARED_ORDINALS:createPreparedOrdinalReader(corpus.pool),

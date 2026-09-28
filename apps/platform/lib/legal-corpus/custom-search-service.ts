@@ -109,6 +109,7 @@ export type CustomSearchEnv = {
   SPARSE_TRAVERSAL_CONCURRENCY?: 1 | 2;
   PREPARED_ORDINALS?: PreparedOrdinalReader;
   CATALOG_DB: D1Database;
+  BUDGET_DB?: D1Database;
   CUSTOM_SEARCH_CAPABILITY: "current" | "history";
   CUSTOM_SEARCH_RELEASE_ID: string;
   CUSTOM_SEARCH_PHYSICAL_RELEASE_ID?: string;
@@ -129,7 +130,8 @@ async function reserveQueryBudget(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const reservation = QUERY_RESERVATION_USD_MICROS * queryCount;
-  const reserved = await env.CATALOG_DB.prepare(`UPDATE legal_custom_query_budget_periods
+  const database = env.BUDGET_DB ?? env.CATALOG_DB;
+  const reserved = await database.prepare(`UPDATE legal_custom_query_budget_periods
     SET reserved_usd_micros=reserved_usd_micros+?,reserved_requests=reserved_requests+?
     WHERE environment=? AND period=?
       AND reserved_usd_micros+?<=authorized_usd_micros
@@ -137,7 +139,7 @@ async function reserveQueryBudget(
     reservation, queryCount, environment, period, reservation,
   ).first<{ reservedUsdMicros: number }>();
   if (!reserved) throw new TypeError("CUSTOM_QUERY_BUDGET_EXHAUSTED");
-  await env.CATALOG_DB.prepare(`INSERT INTO legal_custom_query_reservations
+  await database.prepare(`INSERT INTO legal_custom_query_reservations
     (id,environment,period,release_id,reserved_usd_micros,created_at)
     VALUES (?,?,?,?,?,?)`).bind(
     id, environment, period, releaseId, reservation, now,
