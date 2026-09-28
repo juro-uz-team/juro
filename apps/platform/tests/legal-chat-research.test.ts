@@ -18,7 +18,7 @@ const question:ResearchQuestion={question:"How can I request a record?",topics:[
   locale:"en",mode:"deep",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
 
-for(const mode of ["fast","deep"] as const) test(`${mode} uses one acquisition pass and one assessment despite remaining gaps`,async()=>{
+for(const mode of ["fast","deep"] as const) test(`${mode} keeps admitted indexed evidence and gaps without repeating acquisition`,async()=>{
   const calls:string[]=[];
   const result=await researchLegalQuestion({...question,mode},{
     indexed:async input=>{assert.equal(input.round,0);calls.push("indexed");return {evidence:[evidence("first")],needs:[
@@ -26,9 +26,9 @@ for(const mode of ["fast","deep"] as const) test(`${mode} uses one acquisition p
       {reason:"ambiguous_revision",detail:"A current revision could not be confirmed."},
     ]};},
     official:async input=>{assert.equal(input.round,0);calls.push("official");return {evidence:[evidence("second")],needs:[]};},
-    assess:async input=>{calls.push("assess");assert.equal(input.evidence.length,2);return [missing];},
+    assess:async input=>{calls.push("assess");assert.equal(input.evidence.length,1);return [missing];},
   });
-  assert.deepEqual(calls,["indexed","official","assess"]);
+  assert.deepEqual(calls,["indexed","assess"]);
   assert.equal(result.rounds,1);
   assert.ok(result.needs.some(need=>need.reason==="ambiguous_revision"));
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
@@ -77,26 +77,18 @@ test("assessment resolution retains its complete supporting source when the sele
   assert.equal(result.rounds,1);
 });
 
-test("an oversized selection with resolution dependencies preserves the unresolved gap",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
-  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+test("a full indexed packet retains its unresolved gap without another acquisition",async()=>{
   const initial=Array.from({length:24},(_,index)=>evidence(`rule-${index}`));
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const input=JSON.parse(JSON.parse(String(init?.body)).input);
-    const hasDependency=input.evidence.some((item:{id:string})=>item.id==="eligibility");
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
-      selectedSourceIds:initial.map(item=>item.source.id),supportedAnswerAvailable:false,needs:[],queries:[],
-      resolved:hasDependency?[{needIndex:0,sourceIds:["eligibility"]}]:[],
-    })}]}]});
-  });
-  const model=createLegalResearchModel({requestId:"oversized-resolution-dependency"});
+  let officialCalls=0;
   const result=await researchLegalQuestion(question,{
     indexed:async()=>({evidence:initial,needs:[missing]}),
-    official:async()=>({evidence:[evidence("eligibility")],needs:[]}),assess:model.assess,
+    official:async()=>{officialCalls++;return {evidence:[evidence("eligibility")],needs:[]};},
+    assess:async()=>[],
   });
+  assert.equal(officialCalls,0);
   assert.deepEqual(result.evidence,initial);
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
-  assert.ok(result.needs.some(need=>need.reason==="context_budget"));
+  assert.ok(!result.needs.some(need=>need.reason==="context_budget"));
 });
 
 test("fast research preserves context and gaps after one acquisition pass",async()=>{
@@ -107,22 +99,22 @@ test("fast research preserves context and gaps after one acquisition pass",async
     assess:async()=>({needs:[],resolved:[],supportedAnswerAvailable:true,selectedSourceIds:["rule"]}),
   });
   assert.equal(result.rounds,1);
-  assert.equal(officialCalls,1);
+  assert.equal(officialCalls,0);
   assert.deepEqual(result.evidence,[evidence("rule")]);
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
   assert.ok(result.needs.some(need=>need.reason==="search_budget"));
 });
 
-test("fast research still tries official discovery when related context cannot support the requested decision",async()=>{
+test("related indexed context preserves the missing decision without another discovery pass",async()=>{
   let officialCalls=0;
   const result=await researchLegalQuestion({...question,mode:"fast"},{
     indexed:async()=>({evidence:[evidence("related")],needs:[missing]}),
     official:async()=>{officialCalls++;return {evidence:[evidence("useful")],needs:[]};},
     assess:async({evidence:items})=>({needs:[],resolved:[],supportedAnswerAvailable:items.some(item=>item.source.id==="useful"),selectedSourceIds:items.some(item=>item.source.id==="useful")?["useful"]:["related"]}),
   });
-  assert.equal(officialCalls,1);
+  assert.equal(officialCalls,0);
   assert.equal(result.rounds,1);
-  assert.deepEqual(result.evidence,[evidence("useful")]);
+  assert.deepEqual(result.evidence,[evidence("related")]);
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
 });
 
@@ -140,20 +132,6 @@ test("an unanswerable assessment records a gap without starting semantic recover
   assert.equal(officialCalls,0);
   assert.deepEqual(result.evidence,[evidence("related")]);
   assert.ok(result.needs.some(need=>need.reason==="missing_rule"));
-});
-
-test("assessment retains useful complete provisions and admits new repair evidence at capacity",async()=>{
-  const initial=Array.from({length:24},(_,index)=>evidence(`background-${index}`));
-  const repair=Array.from({length:24},(_,index)=>evidence(`repair-${index}`));
-  const result=await researchLegalQuestion(question,{
-    indexed:async()=>({evidence:initial,needs:[missing]}),
-    official:async()=>({evidence:repair,needs:[]}),
-    assess:async({evidence:items})=>items.some(item=>item.source.id==="repair-0")
-      ?{needs:[],resolved:[{need:missing,sourceIds:["repair-0"]}],selectedSourceIds:["background-0","repair-0"]}
-      :{needs:[],resolved:[],selectedSourceIds:["background-0"]},
-  });
-  assert.deepEqual(result.evidence,[initial[0],repair[0]]);
-  assert.deepEqual(result.needs,[]);
 });
 
 test("selection cannot resolve a gap using an excluded provision",async()=>{
@@ -181,7 +159,7 @@ test("selection rejects unknown or duplicate identities and preserves operationa
   assert.ok(result.needs.some(need=>need.detail===outage.detail));
 });
 
-test("discarded identities remain immutable and identical candidate sets are assessed once",async()=>{
+test("duplicate identities are rejected before selection and each packet is assessed once",async()=>{
   let assessments=0;
   const services={
     indexed:async()=>({evidence:[evidence("real"),evidence("background")],needs:[missing]}),
@@ -191,8 +169,8 @@ test("discarded identities remain immutable and identical candidate sets are ass
   await researchLegalQuestion(question,services);
   assert.equal(assessments,1);
   await assert.rejects(researchLegalQuestion(question,{...services,
-    official:async()=>({evidence:[evidence("background","Changed previously excluded text.")],needs:[]}),
-  }),/EVIDENCE_IDENTITY_CONFLICT/);
+    indexed:async()=>({evidence:[evidence("background"),evidence("background","Changed previously excluded text.")],needs:[]}),
+  }),/EVIDENCE_IDENTITY_INVALID/);
 });
 
 test("selection retains transitive references without importing another revision",async()=>{
@@ -208,12 +186,12 @@ test("selection retains transitive references without importing another revision
   assert.deepEqual(result.evidence,[one,two,three]);
 });
 
-test("a new referring provision restores a previously excluded dependency",async()=>{
+test("selection retains an indexed referring provision and its dependency",async()=>{
   const dependency={...evidence("dependency"),source:{...evidence("dependency").source,article:"2"}};
   const referring=evidence("referring","Eligibility is determined by article 2 of this Code.");
   const result=await researchLegalQuestion(question,{
-    indexed:async()=>({evidence:[evidence("general"),dependency],needs:[missing]}),
-    official:async()=>({evidence:[referring],needs:[]}),
+    indexed:async()=>({evidence:[evidence("general"),dependency,referring],needs:[missing]}),
+    official:async()=>assert.fail("Indexed evidence prevents repeated acquisition"),
     assess:async({evidence:items})=>items.some(item=>item.source.id==="referring")
       ?{needs:[],resolved:[{need:missing,sourceIds:["referring"]}],selectedSourceIds:["referring"]}
       :{needs:[],resolved:[],selectedSourceIds:["general"]},
@@ -293,16 +271,16 @@ test("repeated needs have a unique assessment inventory and duplicate valid reso
   assert.deepEqual(result.needs,[]);
 });
 
-test("official recovery follows corpus search and explicitly resolves a referenced rule",async()=>{
+test("official fallback follows empty corpus search and explicitly resolves a referenced rule",async()=>{
   const calls:string[]=[];
   const result=await researchLegalQuestion(question,{
-    indexed:async()=>{calls.push("indexed");return {evidence:[evidence("general")],needs:[missing]};},
+    indexed:async()=>{calls.push("indexed");return {evidence:[],needs:[missing]};},
     official:async request=>{calls.push("official");assert.deepEqual(request.needs,[missing]);
       return {evidence:[{...evidence("eligibility"),origin:"live"}],needs:[],resolved:[{need:missing,sourceIds:["eligibility"]}]};},
     assess:async()=>[],
   });
   assert.deepEqual(calls,["indexed","official"]);
-  assert.equal(result.evidence.length,2);
+  assert.equal(result.evidence.length,1);
   assert.deepEqual(result.needs,[]);
   assert.equal(result.rounds,1);
 });
@@ -332,19 +310,19 @@ test("a source outage stays distinct from missing law despite an optimistic asse
 test("evidence identity conflicts and forged resolutions fail before legal writing",async()=>{
   for(const forgedResolution of [false,true]) {
     await assert.rejects(researchLegalQuestion(question,{
-      indexed:async()=>({evidence:[evidence("rule")],needs:[missing]}),
+      indexed:async()=>({evidence:[],needs:[missing]}),
       official:async()=>forgedResolution?{evidence:[],needs:[],resolved:[{need:missing,sourceIds:["invented"]}]}:
-        {evidence:[evidence("rule","Different text under the same identity.")],needs:[]},
+        {evidence:[evidence("rule"),evidence("rule","Different text under the same identity.")],needs:[]},
       assess:async()=>[],
-    }),/RESEARCH_(EVIDENCE_IDENTITY_CONFLICT|RESOLUTION_EVIDENCE_MISSING)/);
+    }),forgedResolution?/RESEARCH_RESOLUTION_EVIDENCE_MISSING/:/EVIDENCE_IDENTITY_INVALID/);
   }
 });
 
 test("context limits report an unresolved whole provision instead of truncating it",async()=>{
   const first=evidence("one","A".repeat(32_000)),second=evidence("two","B".repeat(33_000));
   const result=await researchLegalQuestion(question,{
-    indexed:async()=>({evidence:[first],needs:[missing]}),
-    official:async()=>({evidence:[second],needs:[]}),assess:async()=>[],
+    indexed:async()=>({evidence:[first,second],needs:[missing]}),
+    official:async()=>({evidence:[first],needs:[]}),assess:async()=>[],
   });
   assert.deepEqual(result.evidence,[first]);
   assert.ok(result.needs.some(need=>need.reason==="context_budget"));

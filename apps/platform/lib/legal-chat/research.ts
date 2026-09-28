@@ -104,9 +104,9 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   // Keep the first bounded packet if combining complete provisions cannot
   // fit the final evidence budget. Never truncate either packet.
   evidence=pending;
-  // Structural retrieval gaps may use the official lane in this acquisition
-  // pass. Model-discovered gaps below remain explicit until a new request.
-  if(!pending.length || needs.length) {
+  // Use publisher discovery only when the indexed lane admitted no evidence.
+  // Gaps accompany the bounded packet; they do not trigger another search.
+  if(!pending.length) {
     await search("official",{...request,needs:[...needs]});
   }
   const assess=async()=>{
