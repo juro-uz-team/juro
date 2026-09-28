@@ -216,8 +216,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
   const t = copy[locale];
   const year = new Date().getFullYear();
   const productLinks = [
-    [t.ai, platformPersonalHref(locale, "/ai-lawyer/new")],
-    [t.document, platformPersonalHref(locale, "/document-analysis")],
+    [t.ai, `/${locale}/ai-lawyer`],
+    [t.document, `/${locale}/contract-review`],
     [t.plan, platformPersonalHref(locale, "/cases")],
     [t.lawyers, `/${locale}/lawyers`],
   ] as const;
@@ -233,7 +233,7 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           <a className={footerRailStyles.brandCta} href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={16} /></a>
         </div>
         <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.productLabel}</strong>{productLinks.map(([label, href]) => href.startsWith("/") ? <Link href={href} key={href}>{label}</Link> : <a href={href} key={href}>{label}</a>)}</div>
-        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.companyLabel}</strong><Link href={`/${locale}/trust`}>Trust Center</Link><Link href={`/${locale}/video`}>{t.video}</Link><Link href={`/${locale}/knowledge/contract-review-preparation`}>{t.knowledge}</Link></div>
+        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.companyLabel}</strong><Link href={`/${locale}/trust`}>Trust Center</Link><Link href={`/${locale}/video`}>{t.video}</Link><Link href={`/${locale}/knowledge`}>{t.knowledge}</Link></div>
         <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.legalLabel}</strong><Link href={`/${locale}/legal`}>{t.legal}</Link><Link href={`/${locale}/privacy-policy`}>{t.privacy}</Link><Link href={`/${locale}/terms`}>{t.terms}</Link><Link href={`/${locale}/personal-data-processing`}>{t.data}</Link><Link href={`/${locale}/ai-rules`}>{t.aiRules}</Link></div>
       </div>
       <address aria-label={t.contacts} className={`${footerContactStyles.contacts} ${footerRailStyles.contacts}`}>

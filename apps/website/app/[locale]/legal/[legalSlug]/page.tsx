@@ -18,6 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: document.title,
     description: document.description,
+    robots: legalConfig.mode === "PRE_INCORPORATION_PREVIEW" ? { index: false, follow: true, nocache: true } : { index: true, follow: true },
     alternates: { canonical, languages: { ru: `https://juro.uz${legalPath("ru", legalSlug)}`, uz: `https://juro.uz${legalPath("uz", legalSlug)}`, "x-default": `https://juro.uz${legalPath("ru", legalSlug)}` } },
   };
 }

@@ -80,6 +80,10 @@ test("scroll storytelling keeps layout reads out of the hot scroll path", () => 
 
 test("renders the production landing with localized canonical metadata and real actions", async () => {
   const worker = await createWorker();
+  const descriptions = {
+    ru: "JURO — AI-помощь, документы и юристы в одном сервисе.",
+    uz: "JURO — AI-yordam, hujjatlar va yuristlar bitta xizmatda.",
+  };
   for (const locale of ["ru", "uz"]) {
     const response = await worker.fetch(new Request(`http://localhost/${locale}`, { headers: { accept: "text/html", "user-agent": chromeUserAgent } }), runtime, context);
     assert.equal(response.status, 200, locale);
@@ -99,6 +103,11 @@ test("renders the production landing with localized canonical metadata and real 
     assert.match(head, /<meta name="robots" content="index, follow"/);
     assert.match(head, new RegExp(`<link rel="canonical" href="https://juro\\.uz/${locale}"`));
     assert.match(html, new RegExp(`http://localhost:3000/${locale}/auth/register\\?accountType=individual`));
+    const description = descriptions[locale];
+    assert.match(html, new RegExp(`<meta name="description" content="${description}"`));
+    assert.match(html, new RegExp(`<meta property="og:description" content="${description}"`));
+    assert.match(html, new RegExp(`<meta name="twitter:description" content="${description}"`));
+
     assert.doesNotMatch(html, /jurobek-avatar\.avif/);
     assert.match(html, /Контекст не теряется между инструментами|Kontekst vositalar o‘rtasida yo‘qolmaydi/);
     assert.doesNotMatch(html, /ГОЛОСОВОЙ AI-АВАТАР|OVOZLI AI-AVATAR/);
@@ -163,6 +172,10 @@ test("renders the complete English public landing and keeps product actions on E
   const html = await response.text();
   assert.match(html, /<html\b[^>]*\blang="en"/);
   assert.match(html, /<link rel="canonical" href="https:\/\/juro\.uz\/en"/);
+  for (const tag of ["description", "og:description", "twitter:description"]) {
+    const attribute = tag === "description" ? "name" : tag.startsWith("og:") ? "property" : "name";
+    assert.match(html, new RegExp(`<meta ${attribute}="${tag}" content="JURO — AI assistance, documents and legal professionals in one service\."`));
+  }
   assert.match(html, /Tell us/);
   assert.match(html, /Get a clear next step/);
   assert.match(html, /aria-label="Case stages"/);
@@ -170,6 +183,60 @@ test("renders the complete English public landing and keeps product actions on E
   assert.match(html, /http:\/\/localhost:3000\/en\/auth\/register\?accountType=individual/);
   assert.doesNotMatch(html, /http:\/\/localhost:3000\/ru\/auth/u);
   for (const route of ["/en/video", "/en/lawyers", "/en/legal", "/en/trust"]) assert.match(html, new RegExp(`href="${route}"`));
+});
+
+test("serves localized search landing pages and a crawlable knowledge hub", async () => {
+  const worker = await createWorker();
+  for (const locale of ["ru", "uz", "en"]) {
+    for (const slug of ["ai-lawyer", "online-lawyer", "contract-review", "knowledge"]) {
+      const route = `/${locale}/${slug}`;
+      const response = await worker.fetch(new Request(`http://localhost${route}`, { headers: { accept: "text/html" } }), runtime, context);
+      assert.equal(response.status, 200, route);
+      const html = await response.text();
+      assert.match(html, new RegExp(`<link rel="canonical" href="https://juro\\.uz${route}"`), route);
+      assert.match(html, /<meta property="og:description"/);
+      assert.match(html, /<meta name="twitter:description"/);
+      assert.match(html, /application\/ld\+json/);
+      if (slug === "ai-lawyer" || slug === "contract-review") {
+        const path = slug === "ai-lawyer" ? "ai-lawyer/new" : "document-analysis";
+        assert.ok(html.includes(`href="http://localhost:3000/${locale}/individual/${path}"`), route);
+      }
+    }
+  }
+});
+
+test("publishes the English lawyer catalogue with complete social metadata", async () => {
+  const worker = await createWorker();
+  const response = await worker.fetch(new Request("http://localhost/en/lawyers", { headers: { accept: "text/html" } }), runtime, context);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<link rel="canonical" href="https:\/\/juro\.uz\/en\/lawyers"/);
+  assert.match(html, /<meta property="og:description"/);
+  assert.match(html, /<meta name="twitter:description"/);
+  assert.match(html, /application\/ld\+json/);
+});
+
+test("keeps preview legal documents accessible but out of search indexing and the sitemap", async () => {
+  const worker = await createWorker();
+  for (const route of ["/ru/legal", "/uz/legal/user-agreement", "/en/legal/user-agreement"]) {
+    const response = await worker.fetch(new Request(`http://localhost${route}`, { headers: { accept: "text/html" } }), runtime, context);
+    assert.equal(response.status, 200, route);
+    assert.match(await response.text(), /<meta name="robots" content="[^"\n]*noindex[^"\n]*follow[^"\n]*"/);
+  }
+  const sitemap = await worker.fetch(new Request("http://localhost/sitemap.xml"), runtime, context);
+  assert.equal(sitemap.status, 200);
+  const xml = await sitemap.text();
+  assert.doesNotMatch(xml, /\/legal(?:\/|<)/);
+  for (const route of ["/ru/ai-lawyer", "/uz/online-lawyer", "/en/contract-review", "/ru/knowledge"]) assert.match(xml, new RegExp(route));
+});
+
+test("publishes consistent JURO Uzbekistan entity markup", async () => {
+  const worker = await createWorker();
+  const response = await worker.fetch(new Request("http://localhost/ru", { headers: { accept: "text/html" } }), runtime, context);
+  const html = await response.text();
+  assert.match(html, /"@type":"Organization"/);
+  assert.match(html, /"alternateName":"JURO Uzbekistan"/);
+  assert.match(html, /"@type":"WebSite"/);
 });
 
 test("removed landing test routes return not found", async () => {

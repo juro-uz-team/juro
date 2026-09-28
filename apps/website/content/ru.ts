@@ -3,7 +3,7 @@ import type { LandingContent } from "./types";
 export const ru: LandingContent = {
   meta: {
     title: "JURO — AI и живой юрист в одном защищённом пространстве",
-    description: "Опишите юридическую ситуацию, подтвердите факты, получите план или документ и при необходимости передайте подготовленный контекст живому юристу.",
+    description: "JURO — AI-помощь, документы и юристы в одном сервисе.",
   },
   nav: {
     capabilities: "Возможности",

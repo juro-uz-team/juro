@@ -22,7 +22,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const locale = localeOf((await params).locale);
   if (!locale) return {};
   const t = copy[locale];
-  return { title: t.title, description: t.description, robots: { index: true, follow: true }, alternates: { canonical: `https://juro.uz/${locale}/lawyers`, languages: { ru: "https://juro.uz/ru/lawyers", uz: "https://juro.uz/uz/lawyers", en: "https://juro.uz/en/lawyers", "x-default": "https://juro.uz/ru/lawyers" } } };
+  const canonical = `https://juro.uz/${locale}/lawyers`;
+  return {
+    title: t.title,
+    description: t.description,
+    robots: { index: true, follow: true },
+    alternates: { canonical, languages: { ru: "https://juro.uz/ru/lawyers", uz: "https://juro.uz/uz/lawyers", en: "https://juro.uz/en/lawyers", "x-default": "https://juro.uz/ru/lawyers" } },
+    openGraph: { title: t.title, description: t.description, url: canonical, siteName: "JURO", type: "website", images: [{ url: "/juro-og.png", width: 1681, height: 909, alt: "JURO" }] },
+    twitter: { card: "summary_large_image", title: t.title, description: t.description, images: ["/juro-og.png"] },
+  };
 }
 
 export default async function LawyersPage({ params, searchParams }: Props) {
@@ -44,7 +52,16 @@ export default async function LawyersPage({ params, searchParams }: Props) {
   });
   const approved = results.filter((lawyer) => lawyer.canReceiveRequests);
   const pending = results.filter((lawyer) => !lawyer.canReceiveRequests);
+  const canonical = `https://juro.uz/${locale}/lawyers`;
+  const structuredData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "CollectionPage", "@id": canonical, url: canonical, name: t.title, description: t.description, inLanguage: locale, isPartOf: { "@id": "https://juro.uz/#website" } },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "JURO", item: `https://juro.uz/${locale}` }, { "@type": "ListItem", position: 2, name: t.title, item: canonical }] },
+    ],
+  }).replaceAll("<", "\\u003c");
   return <div className={styles.page} lang={locale}>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />
     <SiteHeader languageHref="/ru/lawyers" locale={locale} tone="dark" />
     <main id="main-content">
       <section className={styles.hero}><span>{t.eyebrow}</span><h1>{t.heading}</h1><p>{t.lead}</p></section>

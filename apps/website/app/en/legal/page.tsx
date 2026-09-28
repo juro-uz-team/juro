@@ -19,6 +19,7 @@ const documentLabels: Record<string, string> = {
 export const metadata: Metadata = {
   title: "Legal Centre",
   description: "English navigation for JURO’s published legal documents, with links to the Russian and Uzbek originals.",
+  robots: { index: false, follow: true, nocache: true },
   alternates: { canonical: "https://juro.uz/en/legal", languages: { ru: "https://juro.uz/ru/legal", uz: "https://juro.uz/uz/legal", en: "https://juro.uz/en/legal", "x-default": "https://juro.uz/ru/legal" } },
 };
 

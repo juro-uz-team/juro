@@ -3,7 +3,7 @@ import type { LandingContent } from "./types";
 export const uz: LandingContent = {
   meta: {
     title: "JURO — AI va jonli yurist bitta himoyalangan makonda",
-    description: "Yuridik vaziyatni yozing, faktlarni tasdiqlang, reja yoki hujjat oling va zarur bo‘lsa tayyor kontekstni jonli yuristga topshiring.",
+    description: "JURO — AI-yordam, hujjatlar va yuristlar bitta xizmatda.",
   },
   nav: { capabilities: "Imkoniyatlar", how: "Qanday ishlaydi", pricing: "Tariflar", security: "Xavfsizlik", faq: "FAQ", login: "Kirish", start: "Bepul boshlash", menuOpen: "Menyuni ochish", menuClose: "Menyuni yopish", skip: "Asosiy mazmunga o‘tish" },
   hero: {

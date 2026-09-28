@@ -93,7 +93,7 @@ test("document review opens on the first clause and changes only by direct selec
 });
 
 test("public chrome exposes every primary public destination in all three locales", () => {
-  for (const route of ["/trust", "/video", "/lawyers", "/legal", "/knowledge/"]) {
+  for (const route of ["/trust", "/video", "/lawyers", "/legal", "/knowledge"]) {
     assert.match(chrome, new RegExp(route.replaceAll("/", "\\/")));
   }
   assert.match(chrome, /languageHref/);

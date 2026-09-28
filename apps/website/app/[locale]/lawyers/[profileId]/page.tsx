@@ -26,7 +26,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const lawyer = sourceLawyer && localizePublicLawyer(sourceLawyer, locale);
   if (!lawyer) return {};
   const pending = lawyer.marketplaceStatus === "pending_review";
-  return { title: lawyer.displayName, description: lawyer.bio || lawyer.specialties.join(", "), robots: { index: !pending, follow: true }, alternates: { canonical: `https://juro.uz/${locale}/lawyers/${lawyer.id}`, languages: { ru: `https://juro.uz/ru/lawyers/${lawyer.id}`, uz: `https://juro.uz/uz/lawyers/${lawyer.id}`, en: `https://juro.uz/en/lawyers/${lawyer.id}`, "x-default": `https://juro.uz/ru/lawyers/${lawyer.id}` } } };
+  const description = lawyer.bio || lawyer.specialties.join(", ");
+  const canonical = `https://juro.uz/${locale}/lawyers/${lawyer.id}`;
+  const photo = publicPhotoUrl(lawyer.profilePhotoUrl);
+  const images = photo ? [{ url: photo, alt: lawyer.displayName }] : [];
+  return {
+    title: lawyer.displayName,
+    description,
+    robots: { index: !pending, follow: true },
+    alternates: { canonical, languages: { ru: `https://juro.uz/ru/lawyers/${lawyer.id}`, uz: `https://juro.uz/uz/lawyers/${lawyer.id}`, en: `https://juro.uz/en/lawyers/${lawyer.id}`, "x-default": `https://juro.uz/ru/lawyers/${lawyer.id}` } },
+    openGraph: { title: lawyer.displayName, description, url: canonical, siteName: "JURO", type: "profile", images },
+    twitter: { card: "summary", title: lawyer.displayName, description, images: photo ? [photo] : [] },
+  };
 }
 
 export default async function LawyerProfilePage({ params }: Props) {
@@ -39,7 +50,17 @@ export default async function LawyerProfilePage({ params }: Props) {
   const t = copy[locale];
   const pending = lawyer.marketplaceStatus === "pending_review";
   const photo = publicPhotoUrl(lawyer.profilePhotoUrl);
-  return <div className={styles.page} lang={locale}><SiteHeader languageHref={`/ru/lawyers/${profileId}`} locale={locale} /><main id="main-content"><article className={styles.profile}>
+  const canonical = `https://juro.uz/${locale}/lawyers/${lawyer.id}`;
+  const structuredData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    "@id": canonical,
+    url: canonical,
+    name: lawyer.displayName,
+    inLanguage: locale,
+    mainEntity: { "@type": "Person", name: lawyer.displayName, image: photo || undefined, jobTitle: lawyer.specialties.join(", "), knowsLanguage: lawyer.languages },
+  }).replaceAll("<", "\\u003c");
+  return <div className={styles.page} lang={locale}><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} /><SiteHeader languageHref={`/ru/lawyers/${profileId}`} locale={locale} /><main id="main-content"><article className={styles.profile}>
     <Link className={styles.back} href={`/${locale}/lawyers`}>← {t.back}</Link>
     <div className={styles.profileHead}><LawyerAvatar className={styles.profilePhoto} fallbackClassName={styles.profileInitials} initials={lawyer.displayName.slice(0, 1)} size={144} src={photo} /><div><span className={pending ? styles.pending : styles.approved}>{pending ? t.pending : t.approved}</span><h1>{lawyer.displayName}</h1><p>{lawyer.firmName || t.independent}</p><p className={styles.specialties}>{lawyer.specialties.join(" · ")}</p></div></div>
     {pending && <aside className={styles.reviewNotice}>{t.pendingNotice}</aside>}

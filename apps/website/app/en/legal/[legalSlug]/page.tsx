@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { legalSlug } = await params;
   const document = getLegalDocument("ru", legalSlug);
   if (!document) return {};
-  return { title: `${document.title} — English guide`, description: "English orientation for a JURO legal document, with the published Russian and Uzbek originals.", alternates: { canonical: `https://juro.uz/en/legal/${legalSlug}`, languages: { ru: `https://juro.uz/ru/legal/${legalSlug}`, uz: `https://juro.uz/uz/legal/${legalSlug}`, en: `https://juro.uz/en/legal/${legalSlug}`, "x-default": `https://juro.uz/ru/legal/${legalSlug}` } } };
+  return { title: `${document.title} — English guide`, description: "English orientation for a JURO legal document, with the published Russian and Uzbek originals.", robots: { index: false, follow: true, nocache: true }, alternates: { canonical: `https://juro.uz/en/legal/${legalSlug}` } };
 }
 
 export default async function EnglishLegalDocumentGuide({ params }: Props) {

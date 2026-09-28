@@ -16,6 +16,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: ru ? "Юридический центр" : "Yuridik markaz",
     description: ru ? "Все юридические документы JURO в одном каталоге." : "JUROning barcha yuridik hujjatlari bitta katalogda.",
+    robots: legalConfig.mode === "PRE_INCORPORATION_PREVIEW" ? { index: false, follow: true, nocache: true } : { index: true, follow: true },
     alternates: { canonical, languages: { ru: "https://juro.uz/ru/legal", uz: "https://juro.uz/uz/legal", "x-default": "https://juro.uz/ru/legal" } },
   };
 }

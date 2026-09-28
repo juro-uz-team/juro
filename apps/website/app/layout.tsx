@@ -12,7 +12,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://juro.uz"),
-  title: { default: "JURO — Юрист в кармане", template: "%s — JURO" },
+  title: { default: "JURO — AI-юрист и юридическая помощь в Узбекистане", template: "%s — JURO" },
   description: "Цифровая юридическая платформа: AI-помощь, документы и живые юристы в одном сервисе.",
   robots: { index: true, follow: true },
   category: "Legal technology",
@@ -26,6 +26,13 @@ export default async function RootLayout({
 }>) {
   const requestPath = (await headers()).get("x-juro-request-path") ?? "";
   const locale = /^\/uz(?:\/|$)/.test(requestPath) ? "uz" : /^\/en(?:\/|$)/.test(requestPath) ? "en" : "ru";
+  const structuredData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "Organization", "@id": "https://juro.uz/#organization", name: "JURO", alternateName: "JURO Uzbekistan", url: "https://juro.uz", logo: { "@type": "ImageObject", url: "https://juro.uz/juro-logo-primary.png" }, description: "JURO is a LegalTech platform for legal tasks in Uzbekistan.", areaServed: { "@type": "Country", name: "Uzbekistan" }, email: "admin@juro.uz", telephone: "+998974022292", address: { "@type": "PostalAddress", addressLocality: "Tashkent", addressCountry: "UZ" } },
+      { "@type": "WebSite", "@id": "https://juro.uz/#website", url: "https://juro.uz", name: "JURO", alternateName: "JURO Uzbekistan", inLanguage: ["ru", "uz", "en"], publisher: { "@id": "https://juro.uz/#organization" } },
+    ],
+  }).replaceAll("<", "\\u003c");
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
@@ -35,6 +42,7 @@ export default async function RootLayout({
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />
         {children}
       </body>
     </html>

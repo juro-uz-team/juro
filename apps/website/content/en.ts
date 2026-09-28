@@ -11,7 +11,7 @@ export const en: LandingContent = {
   ...ru,
   meta: {
     title: "JURO — legal clarity, from question to next step",
-    description: "A digital legal platform for Uzbekistan: AI-assisted preparation, documents and access to legal professionals.",
+    description: "JURO — AI assistance, documents and legal professionals in one service.",
   },
   hero: {
     ...ru.hero,
