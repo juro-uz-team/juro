@@ -446,7 +446,7 @@ test("compact indexed plans cannot seed public discovery without private-name cl
   assert.deepEqual(indexed.formulations[0]!.privateNameSpans,[]);
   assert.deepEqual(publicPlan.formulations[0]!.privateNameSpans,["Alice Example"]);
   const initialModel=createLegalResearchModel({requestId:"separate-initial-discovery"});
-  const initialRequest={...request,question:{...request.question,mode:"fast" as const,
+  const initialRequest={...request,needs:[],question:{...request.question,mode:"fast" as const,
     initialQueries:[{...query,text:"Alice Example record access",privateNameSpans:[],legalTitleSpans:[]}]}};
   const initial=await initialModel.formulateIndexed(initialRequest);
   assert.equal(initial.formulations[0]!.text,"Alice Example record access");
