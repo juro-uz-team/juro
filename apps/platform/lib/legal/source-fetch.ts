@@ -197,8 +197,8 @@ export function classifyLegalSourceUrl(value: string): LegalSourceReference {
     url.password !== "" ||
     url.hash !== "" ||
     // Advice search result cards currently retain a harmless `keyword` query.
-    // It is stripped before any source fetch. Lex document URLs do not permit
-    // a query string at all.
+    // It is stripped before any source fetch. Lex document URLs permit only
+    // a validated revision-date query, which remains part of their identity.
     (url.search !== ""
       && (sourceKind === "lex"
         ? !allowedLexRevisionQuery(url)

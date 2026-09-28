@@ -4,6 +4,7 @@ import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCit
 import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/environment";
 import { parsePrivateDocumentLocator } from "../../../../../../lib/document-analysis/private-document-locator";
 import { normalizeArticleNumber } from "../../../../../../lib/legal/legal-language";
+import { classifyLegalSourceUrl } from "../../../../../../lib/legal/source-fetch";
 import {legalChatOwner} from "../../../../../../lib/legal-chat/http-owner";
 
 type Context = { params: Promise<{ messageId: string }> };
@@ -50,12 +51,7 @@ function response(body: unknown, status = 200) {
 
 function officialLexUrl(value: string): boolean {
   try {
-    const url = new URL(value);
-    return url.protocol === "https:"
-      && !url.username && !url.password && !url.port && !url.hash
-      && (url.hostname === "lex.uz" || url.hostname === "www.lex.uz")
-      && /^(?:\/(?:ru|uz|uzc|en))?\/docs\/-?\d+\/?$/u.test(url.pathname)
-      && url.search === "";
+    return classifyLegalSourceUrl(value).sourceKind === "lex";
   } catch {
     return false;
   }

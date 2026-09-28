@@ -66,8 +66,8 @@ function seed(evidenceReceiptJson: string | null) {
   serviceResponse = successfulServiceResponse;
   expectedReceipt = receipt;
 }
-const get = (article: string | null = "7", sourceId?: string) => {
-  const query=new URLSearchParams({sourceUrl:officialUrl});
+const get = (article: string | null = "7", sourceId?: string, sourceUrl=officialUrl) => {
+  const query=new URLSearchParams({sourceUrl});
   if(article)query.set("article",article);
   if(sourceId)query.set("sourceId",sourceId);
   return GET(new Request(`https://example.com/api/citation?${query}`),{params:Promise.resolve({messageId})});
@@ -86,6 +86,37 @@ async function assertSavedFragment() {
 }
 
 try {
+  await test("historical citations reopen their exact saved revision and reject other dates", async () => {
+    const historicalUrl=officialUrl+"?ONDATE=30.10.2021";
+    const historicalReceipt: CitationEvidenceReceipt={...receipt,capability:"history",officialUrl:historicalUrl};
+    seed(JSON.stringify(historicalReceipt));
+    sqlite.prepare("UPDATE legal_source_references SET canonical_url=?").run(historicalUrl);
+    expectedReceipt=historicalReceipt;
+    const response=await get("7","source-7",historicalUrl);
+    assert.equal(response.status,200);
+    const body=responseSchema.parse(await response.json());
+    assert.equal(body.text,fullText);
+    assert.equal(body.officialUrl,historicalUrl);
+    assert.equal(body.evidenceIdentity?.textSha256,hash(fullText));
+    assert.equal(serviceCalls,1);
+    for(const url of [officialUrl,officialUrl+"?ONDATE=31.10.2021"]){
+      assert.equal((await get("7","source-7",url)).status,404);
+      assert.equal(serviceCalls,1,"A different revision cannot fetch the saved receipt");
+    }
+    userId="other";
+    assert.equal((await get("7","source-7",historicalUrl)).status,404);
+    assert.equal(serviceCalls,1);
+  });
+  await test("unsupported or invalid revision queries cannot reopen even a matching saved citation", async () => {
+    for(const query of ["?ONDATE=31.02.2021","?ONDATE=30.10.2021&ONDATE=31.10.2021",
+      "?ONDATE=30.10.2021&redirect=https://example.com","?ondate=30.10.2021","?search=leave"]){
+      const url=officialUrl+query;
+      seed(JSON.stringify({...receipt,capability:"history",officialUrl:url}));
+      sqlite.prepare("UPDATE legal_source_references SET canonical_url=?").run(url);
+      assert.equal((await get("7","source-7",url)).status,404);
+      assert.equal(serviceCalls,0);
+    }
+  });
   await test("source identity selects the exact saved provision when URL and article collide", async () => {
     for(const article of ["7",null]) {
       seed(JSON.stringify({...receipt,articleNumber:article}));

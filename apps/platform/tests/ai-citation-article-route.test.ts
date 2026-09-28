@@ -22,7 +22,7 @@ test("citation endpoint is private, ownership-scoped and revalidates Lex or priv
   assert.match(route, /citation_validation_status='validated'/);
   assert.match(route, /searchParams\.get\("article"\)/);
   assert.match(route, /normalizedArticle\(candidate\.articleReference\) === requestedArticle/);
-  assert.match(route, /hostname === "lex\.uz" \|\| url\.hostname === "www\.lex\.uz"/);
+  assert.match(route, /classifyLegalSourceUrl\(value\)\.sourceKind === "lex"/);
   assert.doesNotMatch(route, /legal_corpus_variants/);
   assert.match(route, /assertCitationEvidenceIdentity/);
   assert.match(route, /fetchCitationEvidence/);
