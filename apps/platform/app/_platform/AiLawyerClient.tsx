@@ -631,6 +631,7 @@ function LegalSourceCard({
     setLoading(true);
     try {
       const query=new URLSearchParams({sourceUrl:source.originalUrl});if(source.article)query.set("article", source.article);
+      if(source.sourceId)query.set("sourceId",source.sourceId);
       const response=await fetch(`/api/platform/ai/citations/${encodeURIComponent(messageId)}?${query}`,{headers:{"x-juro-workspace-id":workspaceId},cache:"no-store",signal:controller.signal});
       if(!response.ok)throw new Error("CITATION_UNAVAILABLE");
       const value=await response.json() as ArticleDetails;

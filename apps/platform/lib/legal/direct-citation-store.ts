@@ -92,8 +92,8 @@ export function legalCitationStatements(input: {
         id,ai_run_id,guest_run_id,conversation_id,message_id,source_kind,source_locale,
         canonical_id,source_url,canonical_url,title,act_identifier,article_reference,
         excerpt,document_status,effective_date,retrieved_at,validated_at,content_sha256,
-        fetch_status,citation_validation_status,source_access_mode,created_at,evidence_receipt_json
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        fetch_status,citation_validation_status,source_access_mode,created_at,evidence_receipt_json,answer_source_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       crypto.randomUUID(),
       input.aiRunId ?? null,
@@ -120,6 +120,7 @@ export function legalCitationStatements(input: {
       input.now,
       source.citationEvidenceReceipt
         ? JSON.stringify(citationEvidenceReceiptSchema.parse(source.citationEvidenceReceipt)) : null,
+      source.id,
     )];
   });
 }

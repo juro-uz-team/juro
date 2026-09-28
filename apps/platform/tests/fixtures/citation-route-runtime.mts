@@ -14,7 +14,7 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const receipt: CitationEvidenceReceipt = {version: 1, capability: "current", kind: "normalized-article",
   r2Key: "corpus/normalized/sealed.json", byteCount: 123, sha256: hash("immutable snapshot"),
   officialUrl, languageTag: "ru", articleNumber: "7", textSha256: hash(fullText)};
-const responseSchema = z.object({text: z.string(), fullArticle: z.boolean(), articleNumber: z.string(),
+const responseSchema = z.object({text: z.string(), fullArticle: z.boolean(), articleNumber: z.string().nullable(),
   officialUrl: z.string(), evidenceUnavailable: z.boolean().optional(),
   evidenceIdentity: z.object({textSha256: z.string()}).passthrough().optional()}).passthrough();
 const sqlite = new DatabaseSync(":memory:");
@@ -22,7 +22,7 @@ sqlite.exec(`CREATE TABLE conversations(id TEXT, workspace_id TEXT, owner_user_i
   CREATE TABLE legal_source_references(conversation_id TEXT, message_id TEXT, canonical_url TEXT,
     citation_validation_status TEXT, title TEXT, article_reference TEXT, excerpt TEXT,
     document_status TEXT, effective_date TEXT, source_locale TEXT, validated_at TEXT,
-    source_kind TEXT, content_sha256 TEXT, evidence_receipt_json TEXT, created_at TEXT);
+    source_kind TEXT, content_sha256 TEXT, evidence_receipt_json TEXT, created_at TEXT, answer_source_id TEXT);
   INSERT INTO conversations VALUES ('conversation', 'workspace', 'owner');`);
 let userId = "owner";
 let workspaceId = "workspace";
@@ -30,9 +30,10 @@ let serviceCalls = 0;
 const successfulServiceResponse = () => Response.json({text: fullText, fullArticle: true, truncated: false},
   {headers: {"x-juro-citation-evidence-contract": "1"}});
 let serviceResponse = successfulServiceResponse;
+let expectedReceipt: CitationEvidenceReceipt = receipt;
 const service = {async fetch(_url: string, init: RequestInit) {
   serviceCalls++;
-  assert.deepEqual(JSON.parse(String(init.body)), receipt);
+  assert.deepEqual(JSON.parse(String(init.body)), expectedReceipt);
   return serviceResponse();
 }};
 type RouteContext = {params: Promise<{messageId: string}>};
@@ -55,17 +56,22 @@ const {GET} = await import("../../app/api/platform/ai/citations/[messageId]/rout
 
 function seed(evidenceReceiptJson: string | null) {
   sqlite.exec("DELETE FROM legal_source_references");
-  sqlite.prepare("INSERT INTO legal_source_references VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+  sqlite.prepare("INSERT INTO legal_source_references VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .run("conversation", messageId, officialUrl, "validated", "Official provision", "7", savedFragment,
       "current", "2026-01-01", "ru", "2026-08-15T00:00:00.000Z", "lex", receipt.sha256,
-      evidenceReceiptJson, "2026-08-15T00:00:00.000Z");
+      evidenceReceiptJson, "2026-08-15T00:00:00.000Z", "source-7");
   userId = "owner";
   workspaceId = "workspace";
   serviceCalls = 0;
   serviceResponse = successfulServiceResponse;
+  expectedReceipt = receipt;
 }
-const get = (article = "7") => GET(new Request(`https://example.com/api/citation?${new URLSearchParams({sourceUrl: officialUrl, article})}`),
-  {params: Promise.resolve({messageId})});
+const get = (article: string | null = "7", sourceId?: string) => {
+  const query=new URLSearchParams({sourceUrl:officialUrl});
+  if(article)query.set("article",article);
+  if(sourceId)query.set("sourceId",sourceId);
+  return GET(new Request(`https://example.com/api/citation?${query}`),{params:Promise.resolve({messageId})});
+};
 async function assertSavedFragment() {
   const response = await get();
   assert.equal(response.status, 200);
@@ -80,6 +86,31 @@ async function assertSavedFragment() {
 }
 
 try {
+  await test("source identity selects the exact saved provision when URL and article collide", async () => {
+    for(const article of ["7",null]) {
+      seed(JSON.stringify({...receipt,articleNumber:article}));
+      sqlite.prepare("UPDATE legal_source_references SET article_reference=?").run(article);
+      sqlite.exec("INSERT INTO legal_source_references SELECT * FROM legal_source_references");
+      const secondText="The second immutable provision.",secondReceipt: CitationEvidenceReceipt={...receipt,articleNumber:article,
+        kind:article===null?"provision":"normalized-article",
+        textSha256:hash(secondText),sha256:hash("second snapshot"),r2Key:"corpus/second.json"};
+      sqlite.prepare("UPDATE legal_source_references SET answer_source_id=?,evidence_receipt_json=?,content_sha256=? WHERE rowid=2")
+        .run("second-source",JSON.stringify(secondReceipt),secondReceipt.sha256);
+      expectedReceipt=secondReceipt;
+      serviceResponse=()=>Response.json({text:secondText,fullArticle:article!==null,truncated:false},
+        {headers:{"x-juro-citation-evidence-contract":"1"}});
+      const selected=await get(article,"second-source"),body=responseSchema.parse(await selected.json());
+      assert.equal(selected.status,200);assert.equal(body.text,secondText);
+      assert.equal(body.evidenceIdentity?.textSha256,secondReceipt.textSha256);
+      assert.equal((await get(article,"unknown-source")).status,404);
+      assert.equal((await get(article)).status,404,"Ambiguous legacy locators must not choose the first row");
+    }
+  });
+  await test("an unambiguous legacy citation remains accessible without a saved source ID", async () => {
+    seed(JSON.stringify(receipt));sqlite.exec("UPDATE legal_source_references SET answer_source_id=NULL");
+    const opened=responseSchema.parse(await (await get("7","legacy-source")).json());
+    assert.equal(opened.text,fullText);
+  });
   await test("the citation route opens and reloads the same complete pinned text", async () => {
     seed(JSON.stringify(receipt));
     const first = await get();

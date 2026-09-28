@@ -9,6 +9,7 @@ import {legalChatOwner} from "../../../../../../lib/legal-chat/http-owner";
 type Context = { params: Promise<{ messageId: string }> };
 
 type CitationRow = {
+  answerSourceId: string | null;
   evidenceReceiptJson?: string | null;
   title: string;
   articleReference: string | null;
@@ -85,18 +86,20 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
   const searchParams = new URL(request.url).searchParams;
   const sourceUrl = searchParams.get("sourceUrl") ?? "";
   const requestedArticleRaw = searchParams.get("article");
+  const requestedSourceId = searchParams.get("sourceId");
   const requestedArticle = normalizedArticle(requestedArticleRaw);
   const privateVectorId = parsePrivateDocumentLocator(sourceUrl);
   if (
     !UUID.test(messageId)
     || sourceUrl.length > 2_000
+    || (requestedSourceId !== null && (!requestedSourceId.trim() || requestedSourceId.length > 160))
     || (requestedArticleRaw !== null && (requestedArticleRaw.length > 160 || !requestedArticle))
     || (!officialLexUrl(sourceUrl) && !privateVectorId)
   ) {
     return response({ code: "CITATION_UNAVAILABLE" }, 404);
   }
   const db = owner.db;
-  const citations = await db.prepare(`SELECT reference.title,
+  const citations = await db.prepare(`SELECT reference.title,reference.answer_source_id AS answerSourceId,
       reference.article_reference AS articleReference,reference.excerpt,
       reference.document_status AS documentStatus,reference.effective_date AS effectiveDate,
       reference.canonical_url AS canonicalUrl,reference.source_locale AS sourceLocale,
@@ -110,9 +113,16 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
     ORDER BY reference.created_at ASC LIMIT 64`).bind(
     messageId, sourceUrl, owner.workspaceId, owner.userId,
   ).all<CitationRow>();
-  const citation = requestedArticle
-    ? citations.results.find((candidate) => normalizedArticle(candidate.articleReference) === requestedArticle)
-    : citations.results[0];
+  const candidates = requestedArticle
+    ? citations.results.filter((candidate) => normalizedArticle(candidate.articleReference) === requestedArticle)
+    : citations.results;
+  // URL/article pairs can collide across sections and captured revisions.
+  // Legacy rows may fall back only when the saved locator is unambiguous.
+  const legacy = candidates.length === 1 ? candidates[0] : undefined;
+  const citation = requestedSourceId
+    ? candidates.find(candidate => candidate.answerSourceId === requestedSourceId)
+      ?? (legacy?.answerSourceId == null ? legacy : undefined)
+    : legacy;
   if (!citation) return response({ code: "CITATION_UNAVAILABLE" }, 404);
 
   if (privateVectorId) {

@@ -2690,6 +2690,7 @@ export const conversationSources = pgTable("conversation_sources", {
 // Query-scoped metadata only. Do not use this table as an owned Lex/Advice corpus.
 export const legalSourceReferences = pgTable("legal_source_references", {
   evidenceReceiptJson: text("evidence_receipt_json"),
+  answerSourceId: text("answer_source_id"),
   id: text("id").primaryKey(),
   aiRunId: text("ai_run_id").references(() => aiRuns.id, { onDelete: "cascade" }),
   guestRunId: text("guest_run_id").references(() => guestAiRuns.id, { onDelete: "cascade" }),

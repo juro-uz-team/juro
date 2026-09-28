@@ -62,6 +62,7 @@ test("citation persistence accepts only an exact validated span excerpt", () => 
     sourceAccessMode: "direct",
   });
   assert.equal(statements.length, 1);
+  assert.equal(bindings[0]?.[24],source.id,"Persist the answer source identity independently of the URL");
   assert.equal(bindings[0]?.[13], "Статья 7. Точное проверенное правило.");
 
   bindings.length = 0;
