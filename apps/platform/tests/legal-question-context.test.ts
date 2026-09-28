@@ -93,7 +93,6 @@ test("case-fact quotations preserve whole words, amounts and dates",async()=>{
     ["The balance is +500.","500"],
     ["The amount is 10 500."," 500"],
     ["The amount is 10 500.","10 "],
-    ["I am 27.","I am 27!"],
   ]) assert.equal((await interpret(question!,quotation!)).kind,"unavailable",`${quotation} is not a complete exact span`);
   for(const [question,quotation] of [
     ["I am unemployed. My spouse is employed.","employed"],
@@ -105,6 +104,30 @@ test("case-fact quotations preserve whole words, amounts and dates",async()=>{
     ["The amount is 10 500 and unchanged."," 10 500 "],
     ["Мне 27 лет.","Мне 27 лет."],
   ]) assert.equal((await interpret(question!,quotation!)).kind,"ready",`${quotation} remains an exact quotation`);
+});
+
+test("case facts resolve sentence punctuation to an exact user clause without changing its words",async()=>{
+  const interpret=async(question:string,quotation:string)=>interpretLegalQuestion({...input,question,priorTurns:[]},async()=>({
+    topics:["Requested rights"],facts:[{turn:0,quotation}],temporal:{kind:"current"},questions:[],
+  }));
+  for(const [question,quotation,expected] of [
+    ["The notice arrived yesterday, but I have not supplied it.","The notice arrived yesterday.","The notice arrived yesterday"],
+    ["I am 27.","I am 27!","I am 27"],
+    ["Мне сообщили вчера, но документ я не предоставил.","Мне сообщили вчера.","Мне сообщили вчера"],
+  ]) {
+    const result=await interpret(question!,quotation!);
+    assert.equal(result.kind,"ready");
+    if(result.kind!=="ready")throw Error("Expected exact clause");
+    assert.deepEqual(result.caseFacts,[expected]);
+    assert.equal(result.question,question,"The complete original question retains every qualification");
+    assert(question!.includes(result.caseFacts[0]!));
+  }
+  for(const [question,quotation] of [
+    ["The notice did not arrive yesterday.","The notice arrived yesterday."],
+    ["The amount is 10,500.","The amount is 10!"],
+    ["The date was 2020-01-01.","The date was 2020!"],
+    ["The notice arrived yesterday.","The notice arrived today."],
+  ]) assert.equal((await interpret(question!,quotation!)).kind,"unavailable");
 });
 
 test("unresolved temporal intent and interpretation failures remain explicit", async () => {

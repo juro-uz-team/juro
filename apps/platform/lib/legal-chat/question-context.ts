@@ -1,6 +1,6 @@
 import type {LegalUserContext} from "./user-context";
 import type {LegalDocumentContext} from "./document-context";
-import {containsExactQuotation} from "./quoted-text";
+import {resolveExactQuotation} from "./quoted-text";
 import { z } from "zod";
 import { parseLegalApplicabilityDate } from "../legal/applicability-date";
 import { aiText } from "../ai/localization";
@@ -63,7 +63,8 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
     }
     const userContext=input.userContext?{...input.userContext,memories:input.userContext.memories.filter(memory=>selectedIds.has(memory.id))}:undefined;
     const userMessages=[...input.priorTurns.map(turn=>turn.question),input.question];
-    if(value.facts.some(fact=>!containsExactQuotation(userMessages[fact.turn],fact.quotation))) {
+    const facts=value.facts.map(fact=>({...fact,quotation:resolveExactQuotation(userMessages[fact.turn],fact.quotation)}));
+    if(facts.some(fact=>fact.quotation===null)) {
       return {kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"};
     }
     if(value.temporal.kind==="unresolved") return value.questions.length
@@ -86,7 +87,7 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
       temporalScope=endpoint;
     }
     return {kind:"ready",question:input.question,topics:value.topics,
-      caseFacts:[...new Set(value.facts.filter(fact=>fact.turn===input.priorTurns.length).map(fact=>fact.quotation))],
+      caseFacts:[...new Set(facts.flatMap(fact=>fact.turn===input.priorTurns.length&&fact.quotation!==null?[fact.quotation]:[]))],
       priorTurns:input.priorTurns,temporalScope,questions:value.questions,userContext,documents,
       ...(initialQueries?{initialQueries}:{})};
   } catch { return {kind:"unavailable",errorCode:input.signal?.aborted?"AI_CANCELLED":"QUESTION_INTERPRETATION_UNAVAILABLE"}; }

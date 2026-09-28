@@ -17,3 +17,11 @@ export function containsExactQuotation(body:string|undefined,quotation:string):b
   }
   return false;
 }
+
+/** A model may terminate a copied clause as a sentence. Keep only a literal
+ * source excerpt; never repair words, internal punctuation or numeric tokens. */
+export function resolveExactQuotation(body:string|undefined,quotation:string):string|null {
+  if(containsExactQuotation(body,quotation))return quotation;
+  const clause=quotation.trimEnd().replace(/[.;,:!?]+$/u,"");
+  return clause!==quotation&&containsExactQuotation(body,clause)?clause:null;
+}
