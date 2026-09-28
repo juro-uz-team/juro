@@ -23,6 +23,7 @@ export function createRemoteCorpusResearch(input:{
   requestId:string;
   environment:CorpusSessionInput["environment"];
   formulate:ResearchFormulator;
+  retrievalExpiresAt?:number;
 }) {
   let opening:Promise<RemoteSession>|undefined;
   let session:RemoteSession|undefined;
@@ -91,7 +92,7 @@ export function createRemoteCorpusResearch(input:{
           if(staged)await Promise.resolve(session?.discard?.(request.round)).catch(()=>undefined);
           throw error;
         }finally{attemptSignal.removeEventListener("abort",cancelAttempt);}
-      });
+      },input.retrievalExpiresAt);
     },
     close,
   };

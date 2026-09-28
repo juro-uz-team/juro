@@ -3,14 +3,18 @@ import {createHash} from "node:crypto";
 import test from "node:test";
 import {env} from "./helpers/runtime-env";
 import {executeRuntimeLegalChat} from "../lib/legal-chat/runtime-execution";
+import {indexedRetrievalRemainingMs} from "../lib/runtime/indexed-retrieval";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 test("runtime refuses to publish an answer whose source freshness cannot be established",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  let monotonic=performance.now();
+  context.mock.method(performance,"now",()=>monotonic);
   const calls:string[]=[];
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));const schema=body.text.format.name;calls.push(schema);
+    if(schema==="legal_question_research")monotonic+=6500;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
     assert.ok(!["legal_research_coverage","legal_research_answer","legal_issue_verification","legal_verification"].includes(schema),"Bounded evidence goes directly to writing and programmatic checks");
     if(schema==="legal_answer"||schema==="legal_issue_verification") {
@@ -31,6 +35,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
   const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode:"fast",answerMode:"short",
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
     service:{async openLegalResearch(){return {async search(input){
+      assert.ok(indexedRetrievalRemainingMs()<=3500,"Initial interpretation consumes the shared retrieval budget");
       assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"],"Initial generated queries survive runtime composition unchanged");
       return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},

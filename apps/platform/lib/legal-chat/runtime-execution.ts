@@ -9,6 +9,7 @@ import type {CorpusSessionInput} from "./corpus-session";
 import type {AiProviderAttemptObservation} from "../document-builder/ai/openai";
 import type {AiResponseTone} from "../ai/runtime-settings";
 import {observeCurrentLexDocument} from "../legal/lex-document-status";
+import {INDEXED_RETRIEVAL_TIMEOUT_MS} from "../runtime/indexed-retrieval";
 import {fitsLegalEvidenceBudget} from "../legal/legal-evidence-budget";
 
 /** Production composition owns all request-local model and research state.
@@ -23,14 +24,18 @@ export async function executeRuntimeLegalChat<Saved>(input:
     onAttempt?:(input:{model:string})=>void|Promise<void>;
     onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
   }):Promise<Saved> {
+  // Interpretation, formulation and indexed reading share one deadline.
+  // Writing retains the separate execution budget.
+  const retrievalExpiresAt=performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS;
+  const interpretationDeadlineAt=Date.now()+INDEXED_RETRIEVAL_TIMEOUT_MS;
   const options={requestId:input.requestId,deadlineAt:Date.now()+LEGAL_CHAT_EXECUTION_TIMEOUT_MS,
     safetyIdentifier:input.safetyIdentifier,onAttempt:input.onAttempt,onAttemptFinished:input.onAttemptFinished};
   const model=createLegalResearchModel({...options,responseTone:input.responseTone});
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
-    requestId:input.requestId,formulate:model.formulateIndexed});
+    requestId:input.requestId,formulate:model.formulateIndexed,retrievalExpiresAt});
   try {
     return await executeLegalChat({...input,
-      interpret:createQuestionInterpreter({...options,mode:input.mode}),
+      interpret:createQuestionInterpreter({...options,mode:input.mode,deadlineAt:interpretationDeadlineAt}),
       research:{indexed:corpus.indexed,official:createOfficialResearch({formulate:model.formulate}),
         // A complete bounded packet needs no separate model selection or
         // answerability verdict. The writer sees

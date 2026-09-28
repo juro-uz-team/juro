@@ -4,7 +4,7 @@ import {createRemoteCorpusResearch,type CorpusResearchService} from "../lib/lega
 import type {ResearchRequest} from "../lib/legal-chat/research";
 import type {CorpusSearchInput,CorpusSessionInput} from "../lib/legal-chat/corpus-session";
 import {createCorpusSession} from "../lib/legal-chat/corpus-session";
-import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
+import {runIndexedRetrieval,indexedRetrievalRemainingMs} from "../lib/runtime/indexed-retrieval";
 
 const request:ResearchRequest={round:0,needs:[],question:{question:"Private case narrative",topics:["procedure"],
   caseFacts:["Private facts"],priorTurns:[{question:"Private history",answer:"Old answer"}],
@@ -155,4 +155,26 @@ test("formulation and native search share one deadline without resetting the bud
     assert.equal(attempt?.aborted,true);
     assert.equal(nested?.aborted,true);
   }finally{formulated.resolve();finish.resolve();await pending;await remote.close();}
+});
+
+
+test("remote retrieval inherits time already spent interpreting instead of resetting its deadline",async()=>{
+  const expiresAt=performance.now()+3500;
+  const remote=createRemoteCorpusResearch({requestId:"budget",environment:"staging",retrievalExpiresAt:expiresAt,
+    formulate:async()=>{assert.ok(indexedRetrievalRemainingMs()<=3500);return plan;},
+    service:{async openLegalResearch(){
+      assert.ok(indexedRetrievalRemainingMs()<=3500);
+      return {async search(){return runIndexedRetrieval(undefined,async()=>{
+        assert.ok(indexedRetrievalRemainingMs()<=3500,"Native nesting cannot restore consumed budget");
+        return {evidence:[],needs:[]};
+      });},async cancel(){},[Symbol.dispose](){}};
+    }}});
+  try{await remote.indexed(request);}finally{await remote.close();}
+});
+
+test("expired interpretation budget starts no corpus session or formulation",async()=>{
+  const remote=createRemoteCorpusResearch({requestId:"expired",environment:"staging",retrievalExpiresAt:performance.now()-1,
+    formulate:async()=>assert.fail("No formulation after deadline"),
+    service:{async openLegalResearch(){return assert.fail("No corpus I/O after deadline");}}});
+  try{await assert.rejects(remote.indexed(request),{name:"TimeoutError"});}finally{await remote.close();}
 });

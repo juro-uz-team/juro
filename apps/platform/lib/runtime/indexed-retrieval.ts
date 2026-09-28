@@ -1,5 +1,7 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 
+export const INDEXED_RETRIEVAL_TIMEOUT_MS=10_000;
+
 type RetrievalScope = {controller:AbortController;expiresAt:number};
 const scopes=new AsyncLocalStorage<RetrievalScope>();
 const timeout=()=>new DOMException("Indexed retrieval deadline exceeded", "TimeoutError");
@@ -16,7 +18,7 @@ export function indexedRetrievalSignal():AbortSignal|undefined {
 export function indexedRetrievalRemainingMs():number {
   indexedRetrievalSignal();
   const scope=scopes.getStore();
-  return scope?Math.max(0,Math.min(10_000,scope.expiresAt-performance.now())):10_000;
+  return scope?Math.max(0,Math.min(INDEXED_RETRIEVAL_TIMEOUT_MS,scope.expiresAt-performance.now())):INDEXED_RETRIEVAL_TIMEOUT_MS;
 }
 
 export function awaitIndexedRetrieval<T>(operation:Promise<T>,signal=indexedRetrievalSignal()):Promise<T> {
@@ -34,6 +36,7 @@ export function awaitIndexedRetrieval<T>(operation:Promise<T>,signal=indexedRetr
 
 async function runWithDeadline<T>(milliseconds:number,parent:AbortSignal|undefined,operation:(signal:AbortSignal)=>Promise<T>):Promise<T> {
   parent?.throwIfAborted();
+  if(milliseconds<=0)throw timeout();
   const controller=new AbortController();
   const abort=()=>controller.abort(parent!.reason);
   parent?.addEventListener("abort",abort,{once:true});
@@ -51,10 +54,13 @@ async function runWithDeadline<T>(milliseconds:number,parent:AbortSignal|undefin
   }
 }
 
-export function runIndexedRetrieval<T>(parent:AbortSignal|undefined,operation:(signal:AbortSignal)=>Promise<T>):Promise<T> {
+/** expiresAt is a monotonic deadline from request interpretation, when available. */
+export function runIndexedRetrieval<T>(parent:AbortSignal|undefined,operation:(signal:AbortSignal)=>Promise<T>,
+  expiresAt?:number):Promise<T> {
   const enclosing=scopes.getStore();
   const signal=enclosing?AbortSignal.any([enclosing.controller.signal,...(parent?[parent]:[])]):parent;
-  const remaining=enclosing?Math.min(10_000,Math.max(0,enclosing.expiresAt-performance.now())):10_000;
+  const remaining=Math.max(0,Math.min(INDEXED_RETRIEVAL_TIMEOUT_MS,
+    (enclosing?.expiresAt??Infinity)-performance.now(),(expiresAt??Infinity)-performance.now()));
   return runWithDeadline(remaining,signal,operation);
 }
 
