@@ -31,3 +31,5 @@ The owner clarified that Fast and Deep must differ only by model: Fast uses GPT-
 Both modes now use the same combined interpretation and indexed planning, streamed query staging, task-specific reasoning effort, prompts, source selection, context limits, retry policy, deadlines and programmatic checks. Short versus detailed remains a separate answer-format setting. The mode is not supplied as a writing or research instruction; it only selects the provider model. Corpus sessions carry the selected mode so native discovery also uses the correct model. Legacy callers without a mode retain Fast as their default. A research session cannot change modes after opening.
 
 No separate retrieval-speed target blocks chat completion when usable total response time meets the accepted target. Deadline failures, answer quality, persistence and citation behavior remain qualification requirements.
+
+Initial planning uses low reasoning effort in both modes, as does writing. Discovery query formulation uses none and oversized-evidence assessment uses medium. These task settings are identical across model choices; legal quality remains a separate qualification requirement.
