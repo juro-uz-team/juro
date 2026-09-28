@@ -29,6 +29,40 @@ const approval = {
   complete: true, gaps: [], questions: [],
 };
 
+test("a separately verified substantive Main Point survives withheld detailed issues",async()=>{
+  const {decodeSavedLegalAnswer}=await import("../lib/legal-chat/saved-answer");
+  const candidate={...draft,ruleBindings:[{findingId:"finding:0",actionIds:["action:0"]}]};
+  for(const mainPointAnswersQuestion of [true,false,undefined]) {
+    const outcome=await answerFromEvidence(question,{write:async()=>candidate,verify:async()=>({...approval,
+      mainPointAnswersQuestion,complete:false,claims:approval.claims.map(claim=>claim.id==="finding:0"?{...claim,supported:false}:claim),
+    })},{correction:"never"});
+    assert.equal(outcome.kind,mainPointAnswersQuestion?"partial":"insufficient_evidence");
+    if(mainPointAnswersQuestion) {
+      assert.equal(outcome.result.summary,draft.mainPoint.text);
+      assert.deepEqual(outcome.result.summarySourceIds,["official-fixture"]);
+      assert.deepEqual(outcome.result.confirmedFindings,[]);
+      assert.deepEqual(outcome.result.actionPlan,[],"The rejected rule's dependent action stays withheld");
+      assert.equal(outcome.result.sources.length,1);
+      assert.equal(outcome.result.coverageStatus,"partial_coverage");
+      assert.deepEqual(decodeSavedLegalAnswer(JSON.stringify(outcome.result)),outcome.result);
+    }
+  }
+});
+
+test("Main Point answerability cannot bypass its support verdict or citation admission",async()=>{
+  for(const invalid of ["rejected","uncited","invented-source"]) {
+    const candidate={...draft,actions:[],mainPoint:{...draft.mainPoint,sourceIds:invalid==="uncited"?[]:
+      invalid==="invented-source"?["invented"]:draft.mainPoint.sourceIds}};
+    const outcome=await answerFromEvidence(question,{write:async()=>candidate,verify:async()=>({...approval,
+      mainPointAnswersQuestion:true,claims:approval.claims.map(claim=>({...claim,
+        supported:claim.id==="mainPoint"&&invalid!=="rejected"})),
+    })},{correction:"never"});
+    assert.notEqual(outcome.kind,"partial");
+    assert.notEqual(outcome.kind,"complete");
+    assert.notEqual(outcome.result.summary,draft.mainPoint.text);
+  }
+});
+
 test("published issues retain explicit membership after unsupported claims are removed and reload", async () => {
   const {decodeSavedLegalAnswer}=await import("../lib/legal-chat/saved-answer");
   const candidate={...draft,findings:[{...draft.findings[0]!,title:"Unsupported issue"},...draft.findings],

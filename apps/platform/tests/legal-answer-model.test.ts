@@ -22,6 +22,7 @@ test("issue verification audits every source without a paragraph matrix and reje
     actions:[{title:"Check registration",description:"Check your registration before applying.",sourceIds:[]}],
     ruleBindings:[{findingId:"finding:0",actionIds:["action:0"]}],risks:[],questions:[],unresolved:[]});
   let omit=false;
+  let mainPointAnswersQuestion:boolean|undefined=undefined;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
     assert.deepEqual(input.issues,[{findingId:"finding:0",actionIds:["action:0"]}]);
@@ -30,12 +31,17 @@ test("issue verification audits every source without a paragraph matrix and reje
     const claims=Object.fromEntries(legalDraftClaims(draft).map(({id})=>[id,{supported:false,reason:"No evidence",dependsOn:[]}]));
     if(omit)delete claims["action:0"];
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({claims,sources:{},
-      coverage:[],complete:false,gaps:[],questions:[]})}]}]});
+      mainPointAnswersQuestion,coverage:[],complete:false,gaps:[],questions:[]})}]}]});
   });
   const model=createLegalAnswerModel({requestId:"issue-audit"});
   const result=legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
   assert.equal(result.claims.length,3);
   assert.ok(result.claims.every(claim=>!claim.supported));
+  assert.equal(result.mainPointAnswersQuestion,false);
+  mainPointAnswersQuestion=true;
+  const substantive=legalVerificationSchema.parse(await model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
+  assert.equal(substantive.mainPointAnswersQuestion,true);
+  assert.ok(substantive.claims.every(claim=>!claim.supported),"Answerability cannot change support verdicts");
   omit=true;
   await assert.rejects(model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
 });

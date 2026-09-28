@@ -130,7 +130,8 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
   const verificationGaps = verification.gaps.length || hasSourceGaps || verification.coverage.some(item=>item.gaps.length)
     ? [incompleteMessage,...limitationLabels] : limitationLabels;
   const findings = draft.findings.filter((_, index) => accepted.has(legalClaimId("finding",index)));
-  if (!findings.length) return { kind: "insufficient_evidence", verification, result: {
+  const hasSubstantiveMainPoint=verification.mainPointAnswersQuestion===true&&accepted.has("mainPoint");
+  if (!findings.length&&!hasSubstantiveMainPoint) return { kind: "insufficient_evidence", verification, result: {
     ...emptyLegalAnswer(input), coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps])],
     clarificationQuestions: questions,
   } };
@@ -178,14 +179,14 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Часть официальных источников временно недоступна; полнота ответа не подтверждена.",
     "Ayrim rasmiy manbalar vaqtincha mavjud emas; javobning to‘liqligi tasdiqlanmagan.",
     "Some official sources are temporarily unavailable; the answer's completeness is not confirmed.")] : [];
-  const complete = verification.complete && legalDraftClaims(draft).every(item => accepted.has(item.id))
+  const complete = findings.length>0 && verification.complete && legalDraftClaims(draft).every(item => accepted.has(item.id))
     && !draft.unresolved.length && !verification.gaps.length && !hasSourceGaps && !input.unresolved.length
     && !input.sourceUnavailable && !missingTime && completeCoverage;
   const partialSummary = aiText(input.locale, "Ниже — подтвержденная часть ответа; остальные вопросы требуют проверки.",
     "Quyida javobning tasdiqlangan qismi; qolgan masalalar tekshiruv talab qiladi.",
     "The supported parts are explained below; the remaining issues need verification.");
   const result = legalChatResponseSchema.parse({ ...emptyLegalAnswer(input),
-    responseKind: findings.length ? "answer" : "clarification_required",
+    responseKind: "answer",
     summary: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
     summarySourceIds: accepted.has("mainPoint") ? draft.mainPoint.sourceIds : [],
     answer: accepted.has("mainPoint") ? draft.mainPoint.text : partialSummary,
@@ -193,7 +194,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     clarificationQuestions: questions,
     coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps,
       ...identityGaps, ...coverageGaps, ...outageGaps])],
-    evidenceMode: findings.length ? "official" : "none", coverageStatus: complete ? "good_coverage" : findings.length ? "partial_coverage" : "no_coverage",
+    evidenceMode: "official", coverageStatus: complete ? "good_coverage" : "partial_coverage",
     legalDatabaseAsOf: input.evidence.map(item => item.source.verifiedAt).sort()[0] ?? "unavailable",
     sourceAccessMode: input.evidence.every(item => item.origin === "indexed") ? "approved_package"
       : input.evidence.every(item => item.origin === "live") ? "direct" : "mixed",

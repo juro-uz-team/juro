@@ -15,6 +15,7 @@ export function issueVerificationContract(draft:LegalDraft,claims:ReturnType<typ
   }
   const refs=(ids:string[])=>ids.length?z.array(z.enum(ids)).max(16):z.array(z.string()).max(0);
   const schema=z.object({
+    mainPointAnswersQuestion:legalVerificationSchema.shape.mainPointAnswersQuestion.unwrap().default(false),
     claims:z.object(Object.fromEntries(claims.map(claim=>[claim.id,z.object({
       supported:z.boolean(),
       reason:z.string().min(1).max(1500).nullable().describe("Null for supported claims; precise defect for a rejection."),
@@ -61,5 +62,7 @@ Read EVERY source in full, including sources no claim cites. Return its required
 Coverage: independently identify all material issues for the user's decision, including issues the writer omitted. Bind them to actual supported finding and action IDs. actionRequired is false when explanation is sufficient and no material practical step is needed; otherwise require usable guidance read with its bound rule. Report every material deficit on the first review. A narrow value lookup does not require a survey of unrelated categories. A concrete case still requires fact-triggered protections. Do not demand optional future workflows, unrelated legal routes, or hypothetical exceptions absent from the evidence. Unknown facts may be handled with supported alternatives and focused questions; missing governing law must remain unresolved.
 
 Questions and gaps are also claims: reject unsupported premises, irrelevant law gaps and attempts to replace an answerable question with clarification. Prior claims are context for detecting lost material during correction, never an alternative publishable answer. Review only the exact current answer.
+
+Set mainPointAnswersQuestion true only if MainPoint itself provides a useful substantive legal conclusion for at least one requested decision, including its decisive qualifications. A signpost, refusal, evidence-gap description or request for facts is false. This judgment is separate from its supported verdict, which must also pass. A substantive approved MainPoint can remain a visibly partial answer if detailed issues are withheld; it never supplies approval for those issues or their actions.
 
 complete is true only when the MainPoint gives a supported governing conclusion (when evidence allows one), every material requested issue has supported explanation and useful guidance where needed, and no material omissions, unsupported claims or unresolved law remain. gaps records additional cross-issue or missing-evidence problems, without duplicating source omissions. Neither audit gaps nor questions are automatically published. Internal reasons and gap descriptions use concise English; judge the original-language text without rewriting it.`;

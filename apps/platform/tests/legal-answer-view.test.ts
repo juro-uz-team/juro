@@ -61,6 +61,19 @@ test("issue cards display each rule beside its explicitly paired guidance",()=>{
   assert.doesNotMatch(html,/id="[^"]*-next"/);
 });
 
+test("a saved partial Main Point renders its citation without inventing an issue card",()=>{
+  const saved=JSON.parse(JSON.stringify(result({summary:"File within ten days after delivery.",
+    answer:"File within ten days after delivery.",summarySourceIds:["labor-code-163"],confirmedFindings:[],
+    issues:[],actionPlan:[],risks:[],assumptions:[],deadlines:[],requiredDocuments:[],referenceNotes:[],urgency:"normal",coverageStatus:"partial_coverage",
+    coverageGaps:["Additional details remain unverified."]})));
+  const html=renderToStaticMarkup(createElement(LegalAnswerView,{locale:"en",result:saved}));
+  assert.match(html,/File within ten days after delivery/);
+  assert.match(html,/href="https:\/\/lex\.uz\/ru\/docs\/6257288"/);
+  assert.match(html,/This answer is incomplete/);
+  assert.match(html,/Additional details remain unverified/);
+  assert.doesNotMatch(html,/data-answer-kind="insufficient-evidence"|data-answer-issue=/);
+});
+
 test("Russian Legal Answer uses the product-owned structure and delegates section Markdown", () => {
   const value = result({
     clarificationQuestions: ["Когда вы получили приказ?"],
