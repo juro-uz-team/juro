@@ -114,7 +114,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "high"]);
   assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
   assert.deepEqual(payloads.map(body=>body.reasoning),[
-    {effort:"none",mode:"standard"},{effort:"max",mode:"pro"},
+    {effort:"low",mode:"standard"},{effort:"max",mode:"pro"},
   ]);
   assert.equal(observations.length, 2);
   for (const body of payloads) {
