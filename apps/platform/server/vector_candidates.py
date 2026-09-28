@@ -4,13 +4,11 @@ Only candidate digests leave this process. PostgreSQL owns source fences,
 original identities, eligibility and final scores. Run on loopback only.
 """
 import argparse
-from concurrent.futures import Future
 from decimal import Decimal
 import hashlib
 import json
 import math
 import os
-import queue
 from pathlib import Path
 import re
 import select
@@ -107,8 +105,7 @@ class Generation:
         self.lower_closed = np.array([r[3] for r in self.intervals], dtype=bool)
         self.upper_closed = np.array([r[4] for r in self.intervals], dtype=bool)
 
-    def prepare_query(self, values, instant, check):
-        check()
+    def query(self, values, instant, check):
         vector = np.asarray(values, dtype=np.float32)
         if vector.shape != (1536,) or not np.isfinite(vector).all() or (np.abs(vector) > 65504).any():
             raise ValueError("Invalid query vector")
@@ -127,9 +124,14 @@ class Generation:
                 if (lower < exact_instant or (lower == exact_instant and lower_closed)) and (
                     upper > exact_instant or (upper == exact_instant and upper_closed)):
                     eligible[index] = True
-        return vector, norm, eligible
-
-    def select_candidates(self, scores, norm, eligible):
+        scores = np.full(len(eligible), -np.inf, dtype=np.float64)
+        for start in range(0, len(scores), 8192):
+            check()
+            end = min(start + 8192, len(scores))
+            if not eligible[start:end].any():
+                continue
+            scores[start:end] = (self.matrix[start:end] @ vector).astype(np.float64) / (self.norms[start:end] * norm)
+        check()
         scores[~eligible] = -np.inf
         count = min(250, int(eligible.sum()))
         if count == 0:
@@ -149,110 +151,6 @@ class Generation:
             raise ValueError("Candidate tie set exceeds bounded transport")
         return [self.metadata[int(index)]["digest"] for index in selected]
 
-    def query_batch(self, queries):
-        """Share matrix reads; invalid or expired columns fail independently."""
-        if not 1 <= len(queries) <= 16:
-            raise ValueError("Invalid candidate batch size")
-        results = [None] * len(queries)
-        prepared = {}
-        for index, (values, instant, check) in enumerate(queries):
-            try:
-                prepared[index] = self.prepare_query(values, instant, check)
-            except Exception as error:
-                results[index] = error
-        scores = np.full((len(self.metadata), len(queries)), -np.inf, dtype=np.float64)
-        for start in range(0, len(scores), 8192):
-            for index in list(prepared):
-                try:
-                    queries[index][2]()
-                except Exception as error:
-                    results[index] = error
-                    del prepared[index]
-            if not prepared:
-                break
-            end = min(start + 8192, len(scores))
-            active = [i for i, (_, _, eligible) in prepared.items() if eligible[start:end].any()]
-            if not active:
-                continue
-            vectors = np.column_stack([prepared[i][0] for i in active])
-            norms = np.array([prepared[i][1] for i in active])
-            scores[start:end, active] = (self.matrix[start:end] @ vectors).astype(np.float64) / (
-                self.norms[start:end, None] * norms)
-        for index, (_, norm, eligible) in prepared.items():
-            try:
-                queries[index][2]()
-                results[index] = self.select_candidates(scores[:, index], norm, eligible)
-            except Exception as error:
-                results[index] = error
-        return results
-
-    def query(self, values, instant, check):
-        result = self.query_batch([(values, instant, check)])[0]
-        if isinstance(result, Exception):
-            raise result
-        return result
-
-
-class CandidateBatcher:
-    """A bounded queue with one compute owner and a four-millisecond gather window."""
-    def __init__(self):
-        self.pending = queue.Queue(maxsize=16)
-        self.worker = threading.Thread(target=self.run, daemon=True)
-        self.worker.start()
-
-    def query(self, generation, values, instant, check):
-        check()
-        future = Future()
-        self.pending.put_nowait((generation, (values, instant, check), future))
-        while not future.done():
-            check()
-            try:
-                return future.result(timeout=0.02)
-            except TimeoutError:
-                if future.done():
-                    return future.result()
-        return future.result()
-
-    def run(self):
-        stopping = False
-        while not stopping:
-            first = self.pending.get()
-            if first is None:
-                return
-            batch = [first]
-            until = time.monotonic() + 0.004
-            while len(batch) < 16:
-                remaining = until - time.monotonic()
-                if remaining <= 0:
-                    break
-                try:
-                    item = self.pending.get(timeout=remaining)
-                except queue.Empty:
-                    break
-                if item is None:
-                    stopping = True
-                    break
-                batch.append(item)
-            groups = {}
-            for generation, query, future in batch:
-                groups.setdefault(generation, []).append((query, future))
-            for generation, items in groups.items():
-                try:
-                    results = generation.query_batch([query for query, _ in items])
-                    if len(results) != len(items):
-                        raise ValueError("Candidate batch result mismatch")
-                except Exception as error:
-                    results = [error] * len(items)
-                for (_, future), result in zip(items, results):
-                    if isinstance(result, Exception):
-                        future.set_exception(result)
-                    else:
-                        future.set_result(result)
-
-    def close(self):
-        self.pending.put(None)
-        self.worker.join()
-
 
 def serve(manifests, port):
     generations = {}
@@ -262,7 +160,7 @@ def serve(manifests, port):
         if key in generations:
             raise ValueError("Multiple selected generations for a collection")
         generations[key] = generation
-    compute = CandidateBatcher()
+    compute = threading.BoundedSemaphore(1)
     admission = threading.BoundedSemaphore(16)
 
     class Handler(BaseHTTPRequestHandler):
@@ -271,6 +169,7 @@ def serve(manifests, port):
 
         def do_POST(self):
             admitted = admission.acquire(blocking=False)
+            acquired = False
             try:
                 if not admitted:
                     raise ValueError("Candidate queue full")
@@ -296,7 +195,10 @@ def serve(manifests, port):
                 instant = request.get("instant")
                 if instant is not None and (not isinstance(instant, int) or abs(instant) > 2**53 - 1):
                     raise ValueError("Invalid temporal instant")
-                groups = compute.query(generation, request["values"], instant, check)
+                while not acquired:
+                    check()
+                    acquired = compute.acquire(timeout=min(0.02, max(0, deadline - time.monotonic())))
+                groups = generation.query(request["values"], instant, check)
                 check()
                 body = json.dumps({"collection":request["collection"], "generation":generation.state["id"],
                                    "sourceRevision":str(generation.state["sourceRevision"]), "groups":groups}).encode()
@@ -305,6 +207,8 @@ def serve(manifests, port):
                 body = b'{"error":"VECTOR_CANDIDATES_UNAVAILABLE"}'
                 self.send_response(503)
             finally:
+                if acquired:
+                    compute.release()
                 if admitted:
                     admission.release()
             self.send_header("Content-Type", "application/json")
@@ -316,10 +220,7 @@ def serve(manifests, port):
                 pass
 
     print(json.dumps({"phase":"ready", "collections":list(generations)}), flush=True)
-    try:
-        ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
-    finally:
-        compute.close()
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
