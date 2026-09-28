@@ -16,6 +16,7 @@ Return priority with only the IDs whose headings plausibly govern a requested de
  * not fall back or start further work. No conversation enters this interface. */
 export function createDiscoveryPrioritizer(options:{
   requestId:string;
+  mode?:"fast"|"deep";
   readMetadata:MetadataReader;
   onAttemptFinished?:(observation:AiProviderAttemptObservation)=>void|Promise<void>;
 }):CandidatePrioritizer {
@@ -55,7 +56,7 @@ export function createDiscoveryPrioritizer(options:{
       const result=await callOpenAiStructured({instructions:useCompact
         ? instructions+titleReferenceInstructions
         :instructions,input:useCompact?compact:payload,schemaName:"legal_discovery_priority",
-        schema:z.toJSONSchema(schema),parse:value=>schema.parse(value),...legalChatModelProfile("fast","formulating"),
+        schema:z.toJSONSchema(schema),parse:value=>schema.parse(value),...legalChatModelProfile(options.mode??"fast","formulating"),
         timeoutMs:Math.min(5000,indexedRetrievalRemainingMs()),signal:input.signal,maxAttempts:1,
         textVerbosity:"low",promptCacheMode:"explicit",requestId:options.requestId,onAttemptFinished:options.onAttemptFinished});
       check();

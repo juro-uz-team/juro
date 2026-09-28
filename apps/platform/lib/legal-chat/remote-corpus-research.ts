@@ -53,7 +53,7 @@ export function createRemoteCorpusResearch(input:{
   const open=(request:ResearchRequest)=>{
     request.question.signal?.throwIfAborted();
     if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
-    const identity=JSON.stringify([request.question.question,request.question.topics,
+    const identity=JSON.stringify([request.question.question,request.question.topics,request.question.mode,
       request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,
       documentModelContext(request.question.documents)]);
     if(owner!==undefined&&owner!==identity)throw new Error("CORPUS_RESEARCH_REQUEST_MISMATCH");
@@ -63,7 +63,7 @@ export function createRemoteCorpusResearch(input:{
       signal=request.question.signal;
       signal?.addEventListener("abort",abort,{once:true});
       opening=Promise.resolve(input.service.openLegalResearch({requestId:input.requestId,
-        environment:input.environment,temporalScope:request.question.temporalScope})).then(value=>{
+        environment:input.environment,mode:request.question.mode,temporalScope:request.question.temporalScope})).then(value=>{
         if(closed||generation!==openingGeneration){value[Symbol.dispose]();throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");}
         session=value;
         return value;

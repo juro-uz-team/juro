@@ -1,17 +1,12 @@
-import {openAiChatModel,OPENAI_DEEP_CHAT_MODEL} from "../ai/provider-models";
-import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS} from "./execution-limits";
+import {openAiChatModel} from "../ai/provider-models";
 
 type ChatModelStage="interpreting"|"formulating"|"assessing"|"writing";
 
-/** Execution cost differs by task; all drafts receive programmatic checks. */
+/** Mode selects only the model; each task has the same effort and deadline in both modes. */
 export function legalChatModelProfile(mode:"fast"|"deep",stage:ChatModelStage) {
-  if(mode==="fast"&&stage==="interpreting")return {model:OPENAI_DEEP_CHAT_MODEL,
-    reasoningMode:"standard" as const,reasoningEffort:"medium" as const,timeoutMs:15_000};
   const model=openAiChatModel(mode);
-  if(mode==="deep")return {model,timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,
-    ...(stage === "writing"?{reasoningEffort:"max" as const,reasoningMode:"pro" as const}:{})};
   return {model,reasoningMode:"standard" as const,
-    // Fast assessments use changing evidence/schema prefixes.
+    // Assessments use changing evidence/schema prefixes.
     // Avoid automatic cache writes for this usually one-use request context.
     ...(stage === "assessing"?{promptCacheMode:"explicit" as const}:{}),
     reasoningEffort:stage==="writing"?"low" as const:stage==="formulating"?"none" as const:"medium" as const,

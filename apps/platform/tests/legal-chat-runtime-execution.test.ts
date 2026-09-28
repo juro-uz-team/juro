@@ -8,7 +8,8 @@ import type {CorpusStageInput} from "../lib/legal-chat/corpus-session";
 import {indexedRetrievalRemainingMs} from "../lib/runtime/indexed-retrieval";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
-test("runtime refuses to publish an answer whose source freshness cannot be established",async context=>{
+for(const mode of ["fast","deep"] as const) {
+test(`${mode} reuses streamed planning and refuses publication without source freshness`,async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   let monotonic=Math.floor(performance.now());
@@ -34,9 +35,9 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
     return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
   const stale={...evidence,source:{...evidence.source,verifiedAt:new Date(Date.now()-600_000).toISOString()}};
-  const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode:"fast",answerMode:"short",
+  const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode,answerMode:"short",
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
-    service:{async openLegalResearch(){return {async stage(fragment){staged.push(fragment);},async search(input){
+    service:{async openLegalResearch(scope){assert.equal(scope.mode,mode);return {async stage(fragment){staged.push(fragment);},async search(input){
       searched=input.plan.formulations;
       remainingBudget=indexedRetrievalRemainingMs();
       assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"],"Initial generated queries survive runtime composition unchanged");
@@ -51,6 +52,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
   assert.equal(result.result.failureReason,"official_research_unavailable");
   assert.deepEqual(result.result.confirmedFindings,[]);
 });
+}
 
 const text="Synthetic rule: applicants may request a record.";
 
@@ -90,9 +92,9 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));models.push(body.model);const schema=body.text.format.name;
     const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
-    const output=schema==="legal_question_context"
-      ?{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}
-      :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
+    const output=schema==="legal_question_research"
+      ?{interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
+        research:{directQueries:[{text:query.text,topicIndices:query.topicIndices}],underlyingRuleQueries:[]}}
       :null;
     if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
     return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
@@ -103,7 +105,9 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
     service:{async openLegalResearch(input){
       opened++;assert.equal(input.environment,"staging");
-      return {async search(input){reads++;assert.equal(input.round,0);return {evidence:[evidence],needs:[]};},
+      return {async search(input){reads++;assert.equal(input.round,0);
+        assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"]);
+        return {evidence:[evidence],needs:[]};},
         async cancel(){},[Symbol.dispose](){disposed++;}};
     }},
     renew:async()=>{renewed++;return true;},

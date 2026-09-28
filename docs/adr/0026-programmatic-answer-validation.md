@@ -23,3 +23,11 @@ Fast combined interpretation and initial research planning uses GPT-5.6 Terra in
 For disputed conduct, the initial plan also researches the requested consequence when an asserted legal basis is absent, invalid or no longer effective. This remains a generic discovery instruction, never an assumed outcome or a domain-specific query route. Three repeated low-effort planning controls with this instruction admitted both the missing general rule and its exception; answer controls used those provisions while retaining the missing-contract qualification. Runtime still acquires evidence once and uses no model verification.
 
 Fast initial planning now uses Terra standard/medium, and its single writer uses Luna standard/low. Three repeated live planning controls recovered the missing general mechanism and its exception in every rental packet; replaying those exact writer contexts with low effort retained the general rule in every substantive answer. This replaces the lower-effort profiles above, without adding calls, query routes or a verification model. Full workload quality and latency remain independent release gates.
+
+## Chat mode selects the model only
+
+The owner clarified that Fast and Deep must differ only by model: Fast uses GPT-6 Luna and Deep uses GPT-5.6 Terra. This supersedes the earlier Terra override for Fast planning and the separate Deep interpretation, pro/max writing profile, longer writer timeout and higher detailed-output verbosity.
+
+Both modes now use the same combined interpretation and indexed planning, streamed query staging, task-specific reasoning effort, prompts, source selection, context limits, retry policy, deadlines and programmatic checks. Short versus detailed remains a separate answer-format setting. The mode is not supplied as a writing or research instruction; it only selects the provider model. Corpus sessions carry the selected mode so native discovery also uses the correct model. Legacy callers without a mode retain Fast as their default. A research session cannot change modes after opening.
+
+No separate retrieval-speed target blocks chat completion when usable total response time meets the accepted target. Deadline failures, answer quality, persistence and citation behavior remain qualification requirements.

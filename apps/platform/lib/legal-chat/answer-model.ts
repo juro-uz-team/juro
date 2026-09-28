@@ -161,7 +161,7 @@ const userContextPolicy="User context contains personal memories and separately 
 
 function modelContext(question: AnswerQuestion) {
   return {
-    question: question.question, locale: question.locale, mode:question.mode, answerMode: question.answerMode,
+    question: question.question, locale: question.locale, answerMode: question.answerMode,
     topics: question.topics ?? [],
     temporalScope: question.temporalScope, caseFacts: question.caseFacts ?? [], priorTurns: question.priorTurns ?? [],
     userContext:question.userContext??null,privateDocuments:documentModelContext(question.documents),
@@ -194,7 +194,7 @@ export function createLegalAnswerModel(options: {
         ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`)+`\n${languageInstruction}`,
       input, schemaName, schema: z.toJSONSchema(providerSchema??schema, {reused:"ref"}), parse: value => schema.parse(decode?decode(value):value),
       requestId: options.requestId, ...legalChatModelProfile(question.mode,"writing"), maxAttempts: 1,
-      textVerbosity: question.answerMode === "short" ? "low" : question.mode === "deep" ? "high" : "medium",
+      textVerbosity: question.answerMode === "short" ? "low" : "medium",
       deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
       onProgress: options.onProgress,
       onAttempt: ({ model }) => options.onAttempt?.({ stage, model }),

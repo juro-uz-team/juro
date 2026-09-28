@@ -72,7 +72,7 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
         customArtifactBucket:artifactReader as unknown as R2Bucket,preparedMembership:createPreparedMembershipReader(input.pool,membershipPins),
         sharedSourceObservationsEnabled:true},candidateIndex,
       {resolve:async endpoint=>pinned(endpoint),resolveComparison:async(left,right)=>({left:pinned(left),right:pinned(right)})});
-    const prioritize=createDiscoveryPrioritizer({requestId:scope.requestId,
+    const prioritize=createDiscoveryPrioritizer({requestId:scope.requestId,mode:scope.mode,
       readMetadata:services.evidenceResolver.readDiscoveryMetadata,
       onAttemptFinished:observation=>{console.info(JSON.stringify({event:"legal.discovery_priority_attempt",requestId:scope.requestId,...observation}));},
     });

@@ -73,7 +73,7 @@ test("a stalled answer provider is cancelled by the selected chat mode watchdog"
   const previousKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=previousKey;});
   context.mock.timers.enable({apis:["setTimeout"]});
-  for(const [mode,limit] of [["fast",60_000],["deep",120_000]] as const) {
+  for(const [mode,limit] of [["fast",60_000],["deep",60_000]] as const) {
     const started=Promise.withResolvers<void>();
     let providerSignal:AbortSignal|undefined;
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
@@ -132,10 +132,11 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.ok(!("sourceReview" in draft));
   }
   assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
-  assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "high"]);
+  assert.deepEqual(payloads.map(body => body.text.verbosity), ["medium", "medium"]);
+  assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Mode changes only the provider model");
   assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
   assert.deepEqual(payloads.map(body=>body.reasoning),[
-    {effort:"low",mode:"standard"},{effort:"max",mode:"pro"},
+    {effort:"low",mode:"standard"},{effort:"low",mode:"standard"},
   ]);
   assert.equal(observations.length, 2);
   for (const body of payloads) {

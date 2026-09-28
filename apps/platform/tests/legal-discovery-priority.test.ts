@@ -12,6 +12,23 @@ const release=parsePinnedCandidateRelease({id:"release:current",environment:"dev
 const input={renditionIds:["rendition:a","rendition:b","rendition:c"],formulations:["Synthetic record procedure"],
   endpoint:{kind:"current" as const},release,currentAt:"2026-06-01T00:00:00.000Z"};
 
+test("discovery modes differ only by provider model",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const requests:Record<string,unknown>[]=[];
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({priority:["c1"]})}]}]});
+  });
+  for(const mode of ["fast","deep"] as const){
+    const prioritize=createDiscoveryPrioritizer({requestId:"mode-parity",mode,readMetadata:async id=>({
+      actTitle:"Synthetic rules",articleTitle:id,languageTag:"en",
+    })});
+    assert.deepEqual(await prioritize(input),["rendition:b"]);
+  }
+  assert.deepEqual(requests.map(body=>body.model),["gpt-6-luna","gpt-5.6-terra"]);
+  assert.deepEqual({...requests[0],model:requests[1]!.model},requests[1]);
+});
+
 test("discovery maps bounded heading hints to authenticated identities without transporting case context",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{

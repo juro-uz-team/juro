@@ -103,11 +103,12 @@ test("one remote capability carries unchanged formulations without the separate 
     };}}});
   await remote.indexed(request);
   assert.equal(opened.length,1);
-  assert.deepEqual(opened[0],{requestId:"one",environment:"staging",temporalScope:{kind:"current"}});
+  assert.deepEqual(opened[0],{requestId:"one",environment:"staging",mode:"deep",temporalScope:{kind:"current"}});
   assert.doesNotMatch(JSON.stringify(searches),/Private case|Private facts|Private history|Old answer/);
   assert.deepEqual(searches.map(item=>item.plan),[plan]);
   assert.deepEqual(searches.map(item=>item.round),[0]);
   await assert.rejects(remote.indexed({...request,question:{...request.question,question:"another"}}),/MISMATCH/);
+  await assert.rejects(remote.indexed({...request,question:{...request.question,mode:"fast"}}),/MISMATCH/);
   await remote.close();await remote.close();
   assert.equal(disposed,1);
   await assert.rejects(remote.indexed(request),/CLOSED/);

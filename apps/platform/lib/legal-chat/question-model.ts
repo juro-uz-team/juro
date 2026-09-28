@@ -59,12 +59,11 @@ export function createQuestionInterpreter(options:{
   onAttemptFinished?: (input:AiProviderAttemptObservation)=>void|Promise<void>;
 }):(input:QuestionContextInput)=>Promise<unknown> {
   return async input => {
-    const combined=options.mode==="fast";
     let streamedInterpretation:string|undefined,discarded=false,stagingAttempted=false;
     let emitted:InitialResearchQueries=[];
     let streamedContext:Extract<QuestionContext,{kind:"ready"}>|undefined;
     const discard=async()=>{discarded=true;if(stagingAttempted)await options.initialResearch?.discard();};
-    const onOutputTextBuffer=combined&&options.initialResearch?async({text}:{text:string})=>{
+    const onOutputTextBuffer=options.initialResearch?async({text}:{text:string})=>{
       if(discarded)return;
       try {
         const partial=completedInitialResearch(text);
@@ -88,13 +87,13 @@ export function createQuestionInterpreter(options:{
         }
       }catch {await discard();}
     }:undefined;
-    const result=await callOpenAiStructured({instructions:(combined?`${instructions}\nResearch formulation policy:\n${indexedResearchInstructions}\n${privateDocumentPolicy}\nCombined response: interpretation contains the complete question interpretation. Then research contains the initial search formulations for that interpretation. Resolve the research scope from your generated topics, selected relevant context, exact user facts and temporal intent. Each query topicIndices value refers to the zero-based index in interpretation.topics; cover every topic. The raw input is the original question and context, not an already interpreted question. Research queries are discovery proposals, never established law or an answer. There is no supplied legal evidence, prior formulation or unresolved research need yet. Preserve ambiguity by researching plausible governing mechanisms without assuming one applies. Do not invent authority titles or numbers; only use them when supplied in the original context.`:instructions)+`\n${topicScopeInstructions}`+(combined?`\n${initialResearchScopeInstructions}`:""),
+    const result=await callOpenAiStructured({instructions:`${instructions}\nResearch formulation policy:\n${indexedResearchInstructions}\n${privateDocumentPolicy}\nCombined response: interpretation contains the complete question interpretation. Then research contains the initial search formulations for that interpretation. Resolve the research scope from your generated topics, selected relevant context, exact user facts and temporal intent. Each query topicIndices value refers to the zero-based index in interpretation.topics; cover every topic. The raw input is the original question and context, not an already interpreted question. Research queries are discovery proposals, never established law or an answer. There is no supplied legal evidence, prior formulation or unresolved research need yet. Preserve ambiguity by researching plausible governing mechanisms without assuming one applies. Do not invent authority titles or numbers; only use them when supplied in the original context.`+`\n${topicScopeInstructions}\n${initialResearchScopeInstructions}`,
       input:{question:input.question,locale:input.locale,
       priorTurns:input.priorTurns,userContext:input.userContext??null,privateDocuments:documentModelContext(input.documents),legalContextDate:input.legalContextDate??null,
-      now:(input.now??new Date()).toISOString()},schemaName:combined?"legal_question_research":"legal_question_context",schema:z.toJSONSchema(combined?initialDiscoverySchema:questionContextSchema),
-      parse:value=>combined?parseCombinedInterpretation(value):questionContextSchema.parse(value),
+      now:(input.now??new Date()).toISOString()},schemaName:"legal_question_research",schema:z.toJSONSchema(initialDiscoverySchema),
+      parse:parseCombinedInterpretation,
       ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
-      ...legalChatModelProfile(options.mode,"interpreting"),...(combined?{textVerbosity:"low" as const}:{}),maxAttempts:1,
+      ...legalChatModelProfile(options.mode,"interpreting"),textVerbosity:"low",maxAttempts:1,
       requestId:options.requestId,
       deadlineAt:options.deadlineAt,safetyIdentifier:options.safetyIdentifier,signal:input.signal,
       onAttempt:options.onAttempt,onAttemptFinished:options.onAttemptFinished});

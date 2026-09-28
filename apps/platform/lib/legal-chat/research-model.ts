@@ -102,7 +102,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     owner=identity;
   };
   const context=(request:ResearchRequest,evidence:readonly LegalEvidence[]=[])=>({
-    question:request.question.question,topics:request.question.topics,locale:request.question.locale,mode:request.question.mode,answerMode:request.question.answerMode,
+    question:request.question.question,topics:request.question.topics,locale:request.question.locale,answerMode:request.question.answerMode,
     temporalScope:request.question.temporalScope,caseFacts:request.question.caseFacts??[],
     priorTurns:request.question.priorTurns??[],userContext:request.question.userContext??null,priorFormulations,
     privateDocuments:documentModelContext(request.question.documents),needs:request.needs.map((need,index)=>({index,...need})),
@@ -171,7 +171,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
       bind(request);
       // Initial plans stay indexed-only. Public discovery independently
       // formulates and authenticates its private-name and legal-title handling.
-      const initial=request.question.mode==="fast"&&request.round===0&&!request.needs.length&&request.question.initialQueries;
+      const initial=request.round===0&&!request.needs.length&&request.question.initialQueries;
       const seed=!nextQueries?(initial?validateInitialResearchQueries(initial,request.question.topics):standaloneQueries(request)):null;
       return seed?issued(request,interpretation(request,seed),"indexed"):formulateQueries(request,onFormulation,true);
     },
@@ -203,7 +203,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
       const payload={...context(request,wireEvidence),observations:request.observations??[]};
       let wireResult:z.infer<typeof assessmentSchema>;
       let provisionalDraft:ResearchAssessment["provisionalDraft"];
-      if(options.draftDuringAssessment && request.question.mode==="fast" && request.evidence.length
+      if(options.draftDuringAssessment && request.evidence.length
         && fitsLegalEvidenceBudget(request.evidence.map(item=>item.text))) {
         const format=createLegalDraftFormat({...request.question,evidence:request.evidence,unresolved:request.needs.map(need=>need.detail)});
         const schema=z.object({assessment:providerSchema,draft:format.schema.nullable()}).strict();

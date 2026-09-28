@@ -129,7 +129,7 @@ test("compact coverage references normalize repeated identities after decoding",
   let duplicate=false;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
-    assert.equal(input.mode,"fast");
+    assert.equal(input.mode,undefined,"Mode is a model selection, not a different research instruction");
     assert.deepEqual(body.prompt_cache_options,{mode:"explicit"},"Unique assessment inputs must not incur unused automatic cache writes");
     assert.deepEqual(input.evidence.map((item:{id:string})=>item.id),["s0","s1"]);
     assert.equal(input.evidence[1].text,sources[1]!.text);
@@ -333,7 +333,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));payloads.push(body);
     const assessment=JSON.parse(body.input).evidence.length>0;
-    assert.deepEqual(body.reasoning,body.model==="gpt-6-luna"?{effort:assessment?"medium":"none",mode:"standard"}:undefined);
+    assert.deepEqual(body.reasoning,{effort:assessment?"medium":"none",mode:"standard"});
     const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
       queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
     return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
@@ -349,6 +349,8 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
   assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual({...payloads[0],model:payloads[2]!.model},payloads[2],"Query planning differs only by model");
+  assert.deepEqual({...payloads[1],model:payloads[3]!.model},payloads[3],"Evidence selection differs only by model");
   for(const payload of payloads) {
     assert.ok(!payload.input.includes("private-parent-hash"));
     assert.ok(!payload.input.includes("private-text-hash"));

@@ -13,6 +13,7 @@ const endpoint=z.discriminatedUnion("kind",[
 export const corpusSessionSchema=z.object({
   requestId:legalIdentifierSchema,
   environment:legalEnvironmentSchema,
+  mode:z.enum(["fast","deep"]).optional(),
   temporalScope:z.union([endpoint,z.object({kind:z.literal("comparison"),left:endpoint,right:endpoint}).strict()]),
 }).strict();
 export type CorpusSessionInput=z.infer<typeof corpusSessionSchema>;
@@ -60,7 +61,7 @@ export function createCorpusSession(input:CorpusSessionInput,
     void complete.promise.catch(()=>undefined);
     const result=Promise.resolve().then(()=>read({round,needs:[],question:{
       question:scope.requestId,topics:[scope.requestId],temporalScope:scope.temporalScope,
-      locale:"ru",mode:"fast",answerMode:"detailed",signal:controller.signal,
+      locale:"ru",mode:scope.mode??"fast",answerMode:"detailed",signal:controller.signal,
     }})).then(packet=>{controller.signal.throwIfAborted();return packet;});
     void result.catch(()=>undefined);
     active={round,complete,result,finalized:false,fragments:[],emitted:0,draining:Promise.resolve()};
