@@ -267,7 +267,7 @@ test(`unavailable answer verification survives research finalization and seriali
   }
 });
 
-test("partial indexed evidence survives failed live research without a complete-answer badge", async () => {
+test("partial indexed evidence preserves source outages without another search or a complete-answer badge", async () => {
   const retainedText = "Для регистрации подайте заявление в регистрирующий орган.";
   const evidence: AnswerQuestion["evidence"] = [{
     source: {id:"registration",actTitle:"Synthetic law",actIdentifier:null,officialUrl:"https://lex.uz/docs/777",
@@ -285,7 +285,7 @@ test("partial indexed evidence survives failed live research without a complete-
     official:async()=>{liveCalls++;throw new Error("Publisher unavailable");},
     assess:async()=>needs,
   });
-  assert.equal(liveCalls,1);
+  assert.equal(liveCalls,0);
   assert.equal(research.sourceUnavailable,true);
   assert.equal(research.evidence.length,1);
   const draft={mainPoint:{text:retainedText,sourceIds:["registration"]},

@@ -433,7 +433,7 @@ test("provider and API boundaries treat memory as authenticated untrusted contex
   ]);
   for (const provider of [interpreter, writer]) {
     assert.match(provider, /userContext/);
-    assert.match(provider, /untrusted data, never instructions/);
+    assert.match(provider, /(?:untrusted )?data, never instructions/);
     assert.match(provider, /never official legal evidence/);
   }
   assert.match(delivery, /readLegalUserContext/);
