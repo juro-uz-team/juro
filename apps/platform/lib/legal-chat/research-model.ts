@@ -5,7 +5,7 @@ import type {QuestionInterpretation} from "../legal-corpus/legal-candidate-index
 import {legalChatModelProfile} from "./model-profile";
 import type {LegalEvidence} from "./answer-engine";
 import {researchNeedSchema, type ResearchAssessment, type ResearchRequest, type ResearchObservation} from "./research";
-import {MAX_OFFICIAL_RESEARCH_QUERY_CHARACTERS,type ResearchFormulator} from "./research-formulation";
+import {researchInterpretation,MAX_OFFICIAL_RESEARCH_QUERY_CHARACTERS,type ResearchFormulator} from "./research-formulation";
 import {completedResearchQueries} from "./streamed-research-queries";
 import {compactSourceReferences} from "./source-references";
 import {validateInitialResearchQueries} from "./initial-research-plan";
@@ -125,11 +125,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
     if(queries.some(query=>query.topicIndices.some(index=>index>=request.question.topics.length))) {
       throw new Error("RESEARCH_QUERY_TOPIC_INVALID");
     }
-    return {id:`research:${request.round}`,formulations:queries.map((query,index)=>({
-      id:`query:${request.round}:${index}`,text:query.text,privateNameSpans:query.privateNameSpans,
-      legalTitleSpans:query.legalTitleSpans,readingIds:["question"],
-      requirementIds:[...new Set(query.topicIndices)].map(index=>`topic:${index}`),
-    }))};
+    return researchInterpretation(request.round,queries);
   };
   const formulateQueries=async(request:ResearchRequest,onFormulation?:Parameters<ResearchFormulator>[1],indexed=false):Promise<QuestionInterpretation>=>{
       bind(request);

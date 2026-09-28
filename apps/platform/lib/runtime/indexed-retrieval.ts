@@ -69,3 +69,32 @@ export function runIndexedRetrieval<T>(parent:AbortSignal|undefined,operation:(s
 export function finishIndexedRetrievalCleanup<T>(operation:()=>Promise<T>):Promise<T> {
   return scopes.getStore()?runWithDeadline(2000,undefined,operation):operation();
 }
+
+
+/** One explicit lifetime for speculative discovery across provider callbacks.
+ * Closing a callback does not close the scope; its owner must close it after
+ * final indexed reading, discarded interpretation, or request cancellation. */
+export function openIndexedRetrievalScope(parent:AbortSignal|undefined,expiresAt:number) {
+  parent?.throwIfAborted();
+  const enclosing=scopes.getStore();
+  const deadline=Math.min(expiresAt,enclosing?.expiresAt??Infinity,performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS);
+  if(deadline<=performance.now())throw timeout();
+  const controller=new AbortController();
+  const signal=enclosing?AbortSignal.any([enclosing.controller.signal,...(parent?[parent]:[])]):parent;
+  const abort=()=>controller.abort(signal!.reason);
+  signal?.addEventListener("abort",abort,{once:true});
+  if(signal?.aborted)abort();
+  const timer=setTimeout(()=>controller.abort(timeout()),Math.max(0,deadline-performance.now()));
+  const scope={controller,expiresAt:deadline};
+  return {
+    async run<T>(operation:()=>Promise<T>):Promise<T> {
+      return scopes.run(scope,async()=>{
+        indexedRetrievalSignal();
+        const value=await awaitIndexedRetrieval(operation(),controller.signal);
+        indexedRetrievalSignal();return value;
+      });
+    },
+    close(){clearTimeout(timer);signal?.removeEventListener("abort",abort);
+      controller.abort(new DOMException("Indexed retrieval finished","AbortError"));},
+  };
+}

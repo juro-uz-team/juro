@@ -1,3 +1,4 @@
+import {structuredResponse} from "./helpers/structured-response";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {env} from "./helpers/runtime-env";
@@ -35,7 +36,7 @@ test("signed-in clarification persists, accounts once, and replays without anoth
     assert.deepEqual(JSON.parse(body.input).privateDocuments,[{id:privateDocumentContext().source.id,
       title:"Uploaded agreement",text:privateDocumentContext().text}]);
     assert.doesNotMatch(body.input,/juro-private:|private-object-checksum/);
-    return Response.json({id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
+    return structuredResponse(body,{id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
       output:[{content:[{type:"output_text",text:JSON.stringify({
         interpretation:{topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]},
         research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules",topicIndices:[0]}]},

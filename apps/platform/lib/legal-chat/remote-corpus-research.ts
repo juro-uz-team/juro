@@ -1,8 +1,8 @@
 import type {CorpusSessionInput, CorpusSearchInput,CorpusStageInput} from "./corpus-session";
-import type {ResearchFormulator} from "./research-formulation";
+import type {ResearchFormulator,ResearchFormulation} from "./research-formulation";
 import {documentModelContext} from "./document-context";
 import type {ResearchPacket,ResearchRequest} from "./research";
-import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
+import {runIndexedRetrieval,openIndexedRetrievalScope,INDEXED_RETRIEVAL_TIMEOUT_MS} from "../runtime/indexed-retrieval";
 
 type RemoteSession={
   search(input:CorpusSearchInput):PromiseLike<ResearchPacket>;
@@ -25,9 +25,11 @@ export function createRemoteCorpusResearch(input:{
   formulate:ResearchFormulator;
   retrievalExpiresAt?:number;
 }) {
+  let stagingScope:ReturnType<typeof openIndexedRetrievalScope>|undefined;
   let opening:Promise<RemoteSession>|undefined;
   let session:RemoteSession|undefined;
   let closed=false;
+  let generation=0;
   let owner:string|undefined;
   let signal:AbortSignal|undefined;
   let closing:Promise<void>|undefined;
@@ -35,6 +37,8 @@ export function createRemoteCorpusResearch(input:{
   const close=()=>{
     if(closing)return closing;
     closed=true;
+    generation++;
+    stagingScope?.close();stagingScope=undefined;
     signal?.removeEventListener("abort",abort);
     const active=session;
     session=undefined;
@@ -46,35 +50,38 @@ export function createRemoteCorpusResearch(input:{
     })();
     return closing;
   };
-  return {
-    async indexed(request:ResearchRequest):Promise<ResearchPacket> {
+  const open=(request:ResearchRequest)=>{
+    request.question.signal?.throwIfAborted();
+    if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
+    const identity=JSON.stringify([request.question.question,request.question.topics,
+      request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,
+      documentModelContext(request.question.documents)]);
+    if(owner!==undefined&&owner!==identity)throw new Error("CORPUS_RESEARCH_REQUEST_MISMATCH");
+    owner=identity;
+    if(!opening){
+      const openingGeneration=generation;
+      signal=request.question.signal;
+      signal?.addEventListener("abort",abort,{once:true});
+      opening=Promise.resolve(input.service.openLegalResearch({requestId:input.requestId,
+        environment:input.environment,temporalScope:request.question.temporalScope})).then(value=>{
+        if(closed||generation!==openingGeneration){value[Symbol.dispose]();throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");}
+        session=value;
+        return value;
+      });
+      // Opening is read-only and has not spent a search round. A transient
+      // binding failure may recover on the next bounded coordinator round.
+      const pending=opening;
+      void pending.catch(()=>{if(opening===pending&&!session)opening=undefined;});
+    }
+    return opening!;
+  };
+  const indexed=async(request:ResearchRequest):Promise<ResearchPacket>=>{
       return runIndexedRetrieval(request.question.signal,async attemptSignal=>{
         let staged=false;
         const cancelAttempt=()=>{void close();};
         attemptSignal.addEventListener("abort",cancelAttempt,{once:true});
         try {
-          request.question.signal?.throwIfAborted();
-          if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
-          const identity=JSON.stringify([request.question.question,request.question.topics,
-            request.question.temporalScope,request.question.priorTurns??[],request.question.caseFacts??[],request.question.userContext??null,
-            documentModelContext(request.question.documents)]);
-          if(owner!==undefined&&owner!==identity)throw new Error("CORPUS_RESEARCH_REQUEST_MISMATCH");
-          owner=identity;
-          if(!opening){
-            signal=request.question.signal;
-            signal?.addEventListener("abort",abort,{once:true});
-            opening=Promise.resolve(input.service.openLegalResearch({requestId:input.requestId,
-              environment:input.environment,temporalScope:request.question.temporalScope})).then(value=>{
-              if(closed){value[Symbol.dispose]();throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");}
-              session=value;
-              return value;
-            });
-            // Opening is read-only and has not spent a search round. A transient
-            // binding failure may recover on the next bounded coordinator round.
-            const pending=opening;
-            void pending.catch(()=>{if(opening===pending&&!session)opening=undefined;});
-          }
-          const pendingSession=opening;
+          const pendingSession=open(request);
           const [active,plan]=await Promise.all([pendingSession,input.formulate(
             {...request,question:{...request.question,signal:attemptSignal}},async fragment=>{
               const capability=await pendingSession;
@@ -93,6 +100,28 @@ export function createRemoteCorpusResearch(input:{
           throw error;
         }finally{attemptSignal.removeEventListener("abort",cancelAttempt);}
       },input.retrievalExpiresAt);
+  };
+  return {
+    async discardInitial():Promise<void> {
+      await close();
+      // Invalid speculative work must not disable authoritative research.
+      // The original absolute deadline still bounds the replacement session.
+      opening=undefined;session=undefined;owner=undefined;signal=undefined;
+      closing=undefined;closed=false;
+    },
+    async stage(request:ResearchRequest,fragment:ResearchFormulation):Promise<void> {
+      if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
+      stagingScope??=openIndexedRetrievalScope(request.question.signal,
+        input.retrievalExpiresAt??performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS);
+      await stagingScope.run(async()=>{
+        const active=await open(request);
+        request.question.signal?.throwIfAborted();
+        await active.stage?.({round:request.round,...fragment});
+      });
+    },
+    async indexed(request:ResearchRequest):Promise<ResearchPacket> {
+      try{return await (stagingScope?stagingScope.run(()=>indexed(request)):indexed(request));}
+      finally{stagingScope?.close();stagingScope=undefined;}
     },
     close,
   };

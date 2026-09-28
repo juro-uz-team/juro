@@ -1,8 +1,10 @@
+import {structuredResponse} from "./helpers/structured-response";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import test from "node:test";
 import {env} from "./helpers/runtime-env";
 import {executeRuntimeLegalChat} from "../lib/legal-chat/runtime-execution";
+import type {CorpusStageInput} from "../lib/legal-chat/corpus-session";
 import {indexedRetrievalRemainingMs} from "../lib/runtime/indexed-retrieval";
 import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
@@ -11,7 +13,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   let monotonic=performance.now();
   context.mock.method(performance,"now",()=>monotonic);
-  const calls:string[]=[];
+  const calls:string[]=[];const staged:CorpusStageInput[]=[];let searched:unknown;
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));const schema=body.text.format.name;calls.push(schema);
     if(schema==="legal_question_research")monotonic+=6500;
@@ -21,7 +23,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
       assert.equal(JSON.parse(body.input).context.evidence[0].passages[0].text,text);
     }
     const output=schema==="legal_question_research"?{
-      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{underlyingRuleQueries:[],directQueries:[query]}}
+      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{directQueries:[query],underlyingRuleQueries:[]}}
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
@@ -29,17 +31,20 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
         claims:Object.fromEntries(["mainPoint","finding:0","action:0"].map(id=>[id,{supported:true,reason:null,dependsOn:[]}])),
         coverage:[{issue:"Record access",actionRequired:true,findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
         complete:true,gaps:[],questions:[]};
-    return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+    return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
   const stale={...evidence,source:{...evidence.source,verifiedAt:new Date(Date.now()-600_000).toISOString()}};
   const result=await executeRuntimeLegalChat({requestId:"stale",environment:"staging",mode:"fast",answerMode:"short",
     context:{question:"May I request my record?",locale:"en",priorTurns:[]},
-    service:{async openLegalResearch(){return {async search(input){
+    service:{async openLegalResearch(){return {async stage(fragment){staged.push(fragment);},async search(input){
+      searched=input.plan.formulations;
       assert.ok(indexedRetrievalRemainingMs()<=3500,"Initial interpretation consumes the shared retrieval budget");
       assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"],"Initial generated queries survive runtime composition unchanged");
       return {evidence:[stale],needs:[]};},async cancel(){},[Symbol.dispose](){}};}},
     renew:async()=>true,commit:async(terminal,sources)=>{assert.deepEqual(sources,[]);return terminal;},release:async()=>{},
   });
+  assert.equal(staged.length,1,"Initial interpretation starts indexed work before final research");
+  assert.deepEqual(searched,staged.map(fragment=>fragment.formulation),"Runtime reuses exactly the initial streamed formulations");
   assert.deepEqual(calls,["legal_question_research","legal_answer"]);
   assert.equal(result.kind,"unavailable");assert.ok("result" in result);
   assert.equal(result.result.failureReason,"official_research_unavailable");
@@ -65,7 +70,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
       :schema==="legal_research_coverage"?{needs:[],resolved:null,queries:[query]}
       :null;
     if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
-    return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
+    return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
   });
   let disposed=0,opened=0,reads=0,renewed=0,released=0;
   await assert.rejects(executeRuntimeLegalChat({

@@ -1,3 +1,4 @@
+import {structuredResponse} from "./helpers/structured-response";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -62,7 +63,7 @@ for(const stage of ["interpreting","writing"] as const) {
     const stalled=Promise.withResolvers<void>();
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
       calls++;
-      if(stage==="writing"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
+      if(stage==="writing"&&calls===1)return structuredResponse(JSON.parse(String(init?.body)),{id:"context",output:[{content:[{type:"output_text",
         text:JSON.stringify({interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
           research:{underlyingRuleQueries:[],directQueries:[{text:"record access",topicIndices:[0]}]}})}]}]});
       return new Promise<Response>((_resolve,reject)=>{

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { callOpenAiStructured, type AiProviderAttemptObservation } from "../document-builder/ai/openai";
 import { legalChatModelProfile } from "./model-profile";
-import { questionContextSchema,questionResearchSchema, type QuestionContextInput } from "./question-context";
+import { interpretLegalQuestion,questionContextSchema,questionResearchSchema, type QuestionContext, type QuestionContextInput } from "./question-context";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
 import {indexedResearchInstructions} from "./research-model";
-import {initialResearchPlanSchema,validateInitialResearchQueries} from "./initial-research-plan";
+import {completedInitialResearch} from "./streamed-initial-research";
+import {initialResearchPlanSchema,validateInitialResearchQueries,type InitialResearchQueries} from "./initial-research-plan";
 
 // Initial formulations never seed public-site discovery; that adapter produces
 // its own privacy annotations. Keep the indexed wire limited to search inputs.
@@ -50,20 +51,58 @@ Put the specific relationship queries in research.directQueries. Put general leg
 
 export function createQuestionInterpreter(options:{
   mode:"fast"|"deep";requestId:string;deadlineAt?:number;safetyIdentifier?:string;
+  initialResearch?:{
+    stage:(input:{context:Extract<QuestionContext,{kind:"ready"}>;queries:InitialResearchQueries;signal?:AbortSignal})=>Promise<void>;
+    discard:()=>Promise<void>;
+  };
   onAttempt?: (input:{model:string})=>void|Promise<void>;
   onAttemptFinished?: (input:AiProviderAttemptObservation)=>void|Promise<void>;
 }):(input:QuestionContextInput)=>Promise<unknown> {
   return async input => {
     const combined=options.mode==="fast";
+    let streamedInterpretation:string|undefined,discarded=false,stagingAttempted=false;
+    let emitted:InitialResearchQueries=[];
+    let streamedContext:Extract<QuestionContext,{kind:"ready"}>|undefined;
+    const discard=async()=>{discarded=true;if(stagingAttempted)await options.initialResearch?.discard();};
+    const onOutputTextBuffer=combined&&options.initialResearch?async({text}:{text:string})=>{
+      if(discarded)return;
+      try {
+        const partial=completedInitialResearch(text);
+        if(!partial||!partial.queries.length)return;
+        const interpretation=questionContextSchema.parse(partial.interpretation);
+        const identity=JSON.stringify(interpretation);
+        if(streamedInterpretation!==undefined&&streamedInterpretation!==identity)throw new Error("INITIAL_RESEARCH_STREAM_CHANGED");
+        const queries=z.array(initialIndexedQuerySchema).max(20).parse(partial.queries)
+          .map(query=>({...query,privateNameSpans:[],legalTitleSpans:[]}));
+        if(queries.some(query=>query.topicIndices.some(index=>index>=interpretation.topics.length))
+          ||emitted.some((query,index)=>JSON.stringify(query)!==JSON.stringify(queries[index])))throw new Error("INITIAL_RESEARCH_STREAM_CHANGED");
+        if(!streamedContext){
+          const context=await interpretLegalQuestion(input,async()=>interpretation);
+          if(context.kind!=="ready")return;
+          streamedContext=context;streamedInterpretation=identity;
+        }
+        if(queries.length>emitted.length){
+          stagingAttempted=true;
+          await options.initialResearch!.stage({context:streamedContext,queries,signal:input.signal});
+          emitted=queries;
+        }
+      }catch {await discard();}
+    }:undefined;
     const result=await callOpenAiStructured({instructions:(combined?`${instructions}\nResearch formulation policy:\n${indexedResearchInstructions}\n${privateDocumentPolicy}\nCombined response: interpretation contains the complete question interpretation. Then research contains the initial search formulations for that interpretation. Resolve the research scope from your generated topics, selected relevant context, exact user facts and temporal intent. Each query topicIndices value refers to the zero-based index in interpretation.topics; cover every topic. The raw input is the original question and context, not an already interpreted question. Research queries are discovery proposals, never established law or an answer. There is no supplied legal evidence, prior formulation or unresolved research need yet. Preserve ambiguity by researching plausible governing mechanisms without assuming one applies. Do not invent authority titles or numbers; only use them when supplied in the original context.`:instructions)+`\n${topicScopeInstructions}`+(combined?`\n${initialResearchScopeInstructions}`:""),
       input:{question:input.question,locale:input.locale,
       priorTurns:input.priorTurns,userContext:input.userContext??null,privateDocuments:documentModelContext(input.documents),legalContextDate:input.legalContextDate??null,
       now:(input.now??new Date()).toISOString()},schemaName:combined?"legal_question_research":"legal_question_context",schema:z.toJSONSchema(combined?initialDiscoverySchema:questionContextSchema),
       parse:value=>combined?parseCombinedInterpretation(value):questionContextSchema.parse(value),
+      ...(onOutputTextBuffer?{onProgress:()=>undefined,onOutputTextBuffer}:{}),
       ...legalChatModelProfile(options.mode,"interpreting"),...(combined?{textVerbosity:"low" as const}:{}),maxAttempts:1,
       requestId:options.requestId,
       deadlineAt:options.deadlineAt,safetyIdentifier:options.safetyIdentifier,signal:input.signal,
       onAttempt:options.onAttempt,onAttemptFinished:options.onAttemptFinished});
+    if(streamedInterpretation!==undefined&&!discarded){
+      const final=questionResearchSchema.safeParse(result.data);
+      if(!final.success||JSON.stringify(final.data.interpretation)!==streamedInterpretation
+        ||emitted.some((query,index)=>JSON.stringify(query)!==JSON.stringify(final.data.research.queries[index])))await discard();
+    }
     return result.data;
   };
 }

@@ -91,3 +91,55 @@ test("discarded research proposals cannot bypass fact, selection or temporal val
   interpretation={...base,temporal:{kind:"unresolved"},questions:["Which date applies?"]};
   assert.deepEqual(await run(),{kind:"clarification_required",questions:["Which date applies?"]});
 });
+
+
+test("combined interpretation stages closed queries before the final provider response",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const interpretation={topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]};
+  const first={text:"record access",topicIndices:[0]},second={text:"review procedure",topicIndices:[0]};
+  const firstStaged=Promise.withResolvers<void>();let completed=false;
+  const prefix=JSON.stringify({interpretation}).slice(0,-1)+',"research":{"directQueries":['+JSON.stringify(first)+',';
+  const tail=JSON.stringify(second)+'],"underlyingRuleQueries":[]}}';
+  const encoder=new TextEncoder();
+  const event=(type:string,value:object)=>encoder.encode(`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`);
+  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+    assert.equal(JSON.parse(String(init?.body)).stream,true);
+    return new Response(new ReadableStream({start(controller){
+      controller.enqueue(event("response.output_text.delta",{delta:prefix}));
+      void firstStaged.promise.then(()=>{
+        controller.enqueue(event("response.output_text.delta",{delta:tail}));completed=true;
+        controller.enqueue(event("response.completed",{response:{id:"response",status:"completed",
+          output:[{content:[{type:"output_text",text:prefix+tail}]}]}}));controller.close();
+      });
+    }}),{headers:{"content-type":"text/event-stream"}});
+  });
+  const sizes:number[]=[];
+  const result=await interpretLegalQuestion({question:"Can I request a record?",locale:"en",priorTurns:[]},
+    createQuestionInterpreter({mode:"fast",requestId:"stream",initialResearch:{discard:async()=>assert.fail("Valid plan discarded"),
+      stage:async({context,queries})=>{assert.equal(context.kind,"ready");sizes.push(queries.length);
+        if(queries.length===1){assert.equal(completed,false);firstStaged.resolve();}}}}));
+  assert.deepEqual(sizes,[1,2]);assert.equal(result.kind,"ready");
+  if(result.kind==="ready")assert.deepEqual(result.initialQueries?.map(query=>query.text),[first.text,second.text]);
+});
+
+test("changed final interpretation or query discards speculative work but retains validated final intent",async context=>{
+  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
+  const interpretation={topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]};
+  const first={text:"record access",topicIndices:[0]};
+  let change:"interpretation"|"query"="interpretation",discarded=0,staged=0;
+  context.mock.method(globalThis,"fetch",async()=>{
+    const initial={interpretation,research:{directQueries:[first],underlyingRuleQueries:[]}};
+    const final=change==="interpretation"?{...initial,interpretation:{...interpretation,topics:["Review procedure"]}}
+      :{...initial,research:{...initial.research,directQueries:[{...first,text:"changed query"}]}};
+    const event=(type:string,value:object)=>`event: ${type}\ndata: ${JSON.stringify({type,...value})}\n\n`;
+    return new Response(event("response.output_text.delta",{delta:JSON.stringify(initial)})+
+      event("response.completed",{response:{id:"response",status:"completed",output:[{content:[{type:"output_text",text:JSON.stringify(final)}]}]}}),
+      {headers:{"content-type":"text/event-stream"}});
+  });
+  for(change of ["interpretation","query"] as const){
+    const result=await interpretLegalQuestion({question:"May I request review?",locale:"en",priorTurns:[]},
+      createQuestionInterpreter({mode:"fast",requestId:change,initialResearch:{stage:async()=>{staged++;},discard:async()=>{discarded++;}}}));
+    assert.equal(result.kind,"ready");
+  }
+  assert.equal(staged,2);assert.equal(discarded,2);
+});

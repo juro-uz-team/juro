@@ -1,3 +1,4 @@
+import {researchInterpretation} from "./research-formulation";
 import {executeLegalChat} from "./execution";
 import {createQuestionInterpreter} from "./question-model";
 import {createLegalAnswerModel} from "./answer-model";
@@ -33,9 +34,19 @@ export async function executeRuntimeLegalChat<Saved>(input:
   const model=createLegalResearchModel({...options,responseTone:input.responseTone});
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
     requestId:input.requestId,formulate:model.formulateIndexed,retrievalExpiresAt});
+  let stagedQueries=0;
   try {
     return await executeLegalChat({...input,
-      interpret:createQuestionInterpreter({...options,mode:input.mode,deadlineAt:interpretationDeadlineAt}),
+      interpret:createQuestionInterpreter({...options,mode:input.mode,deadlineAt:interpretationDeadlineAt,
+        initialResearch:{discard:corpus.discardInitial,stage:async({context,queries,signal})=>{
+          const plan=researchInterpretation(0,queries);
+          const request={round:0,needs:[],question:{question:context.question,topics:context.topics,
+            locale:input.context.locale,mode:input.mode,answerMode:input.answerMode,temporalScope:context.temporalScope,
+            caseFacts:context.caseFacts,userContext:context.userContext,documents:context.documents,priorTurns:context.priorTurns,signal}};
+          for(;stagedQueries<plan.formulations.length;stagedQueries++){
+            await corpus.stage(request,{interpretationId:plan.id,formulation:plan.formulations[stagedQueries]!});
+          }
+        }}}),
       research:{indexed:corpus.indexed,official:createOfficialResearch({formulate:model.formulate}),
         // A complete bounded packet needs no separate model selection or
         // answerability verdict. The writer sees

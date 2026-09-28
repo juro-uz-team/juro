@@ -4,13 +4,54 @@ import {createRemoteCorpusResearch,type CorpusResearchService} from "../lib/lega
 import type {ResearchRequest} from "../lib/legal-chat/research";
 import type {CorpusSearchInput,CorpusSessionInput} from "../lib/legal-chat/corpus-session";
 import {createCorpusSession} from "../lib/legal-chat/corpus-session";
-import {runIndexedRetrieval,indexedRetrievalRemainingMs} from "../lib/runtime/indexed-retrieval";
+import {runIndexedRetrieval,indexedRetrievalRemainingMs,indexedRetrievalSignal} from "../lib/runtime/indexed-retrieval";
 
 const request:ResearchRequest={round:0,needs:[],question:{question:"Private case narrative",topics:["procedure"],
   caseFacts:["Private facts"],priorTurns:[{question:"Private history",answer:"Old answer"}],
   temporalScope:{kind:"current"},locale:"en",mode:"deep",answerMode:"detailed"}};
 const plan={id:"plan",formulations:[{id:"query",text:"statutory procedure contact private@example.com",
   privateNameSpans:[],readingIds:["topic"],requirementIds:["topic"]}]};
+
+test("discarding initial work reopens authoritative research within the original deadline",async context=>{
+  let now=1000,opens=0,disposed=0;
+  const searched:number[]=[];
+  context.mock.method(performance,"now",()=>now);
+  const remote=createRemoteCorpusResearch({requestId:"discard-initial",environment:"staging",
+    retrievalExpiresAt:11000,formulate:async()=>plan,
+    service:{async openLegalResearch(){const id=++opens;return {
+      async stage(){},async search(){searched.push(id);assert.ok(indexedRetrievalRemainingMs()<=2000);return {evidence:[],needs:[]};},
+      async cancel(){},[Symbol.dispose](){disposed++;},
+    };}}});
+  try{
+    await remote.stage(request,{interpretationId:plan.id,formulation:plan.formulations[0]!});
+    now=9000;
+    await remote.discardInitial();
+    await remote.indexed({...request,question:{...request.question,question:"Authoritative interpretation"}});
+    assert.deepEqual(searched,[2]);assert.equal(disposed,1);
+    await remote.discardInitial();now=11001;
+    await assert.rejects(remote.indexed(request),{name:"TimeoutError"});
+    assert.equal(opens,2);
+  }finally{await remote.close();}
+});
+
+test("a discarded late opening cannot replace the new authoritative session",async()=>{
+  const late=Promise.withResolvers<Awaited<ReturnType<CorpusResearchService["openLegalResearch"]>>>();
+  let opens=0,lateDisposed=0,searches=0;
+  const remote=createRemoteCorpusResearch({requestId:"late-discard",environment:"staging",formulate:async()=>plan,
+    service:{openLegalResearch(){if(++opens===1)return late.promise;return Promise.resolve({
+      async search(){searches++;return {evidence:[],needs:[]};},async cancel(){},[Symbol.dispose](){},
+    });}}});
+  const staged=remote.stage(request,{interpretationId:plan.id,formulation:plan.formulations[0]!});
+  const rejected=assert.rejects(staged);
+  await remote.discardInitial();
+  await remote.indexed(request);
+  late.resolve({async search(){assert.fail("Discarded session must never search");},async cancel(){},
+    [Symbol.dispose](){lateDisposed++;}});
+  await rejected;await new Promise<void>(resolve=>setImmediate(resolve));
+  await remote.indexed(request);
+  assert.equal(opens,2);assert.equal(searches,2);assert.equal(lateDisposed,1);
+  await remote.close();
+});
 
 test("a failed streamed plan discards its pending work and consumes the single research round",async()=>{
   const rounds:number[]=[];
@@ -177,4 +218,39 @@ test("expired interpretation budget starts no corpus session or formulation",asy
     formulate:async()=>assert.fail("No formulation after deadline"),
     service:{async openLegalResearch(){return assert.fail("No corpus I/O after deadline");}}});
   try{await assert.rejects(remote.indexed(request),{name:"TimeoutError"});}finally{await remote.close();}
+});
+
+
+test("initial staging keeps native retrieval alive between callbacks and reuses one session",async()=>{
+  let opened=0,finished=false;
+  let nativeSignal:AbortSignal|undefined;
+  const remote=createRemoteCorpusResearch({requestId:"initial-stream",environment:"staging",
+    retrievalExpiresAt:performance.now()+3500,formulate:async()=>plan,
+    service:{async openLegalResearch(input){
+      opened++;
+      const session=createCorpusSession(input,formulate=>async request=>runIndexedRetrieval(request.question.signal,async()=>{
+        await formulate(request,async()=>{nativeSignal=indexedRetrievalSignal();});
+        finished=true;return {evidence:[],needs:[]};
+      }));
+      return {stage:session.stage,search:session.search,async cancel(){session.close();},[Symbol.dispose]:session.close};
+    }}});
+  try {
+    await remote.stage(request,{interpretationId:plan.id,formulation:plan.formulations[0]!});
+    assert.ok(nativeSignal);assert.equal(nativeSignal.aborted,false,"Returning a stream callback must not cancel native work");
+    assert.equal(finished,false,"No packet is available until the full plan validates");
+    await remote.indexed(request);
+    assert.equal(opened,1);assert.equal(finished,true);
+  }finally{await remote.close();}
+});
+
+test("cancelling between initial fragments prevents final search and disposes the staged session",async()=>{
+  const controller=new AbortController();let disposed=0,searches=0;
+  const remote=createRemoteCorpusResearch({requestId:"cancel-stream",environment:"staging",formulate:async()=>plan,
+    service:{async openLegalResearch(){return {async stage(){},async search(){searches++;return {evidence:[],needs:[]};},
+      async cancel(){},[Symbol.dispose](){disposed++;}};}}});
+  const input={...request,question:{...request.question,signal:controller.signal}};
+  await remote.stage(input,{interpretationId:plan.id,formulation:plan.formulations[0]!});
+  controller.abort(new DOMException("User cancelled","AbortError"));
+  await assert.rejects(remote.indexed(input),{name:"AbortError"});
+  await remote.close();assert.equal(disposed,1);assert.equal(searches,0);
 });
