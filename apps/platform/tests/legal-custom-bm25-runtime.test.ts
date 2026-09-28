@@ -32,17 +32,40 @@ class MemoryR2 {
 async function streamSearchFixture() {
   const built=await buildCustomBm25Artifacts(Array.from({length:20},(_,index)=>({
     segmentId:"base",itemKey:`record-${index}`,language:"en",documentType:"law",validFromEpoch:1,validToEpoch:null,
-    fields:{title:"Employment contract",hierarchy:"Rights",article:String(index+1),text:"employment contract annual leave notice"},
+    fields:{title:"Employment contract",hierarchy:"Rights",article:String(index+1),
+      text:"employment contract annual leave notice "+(index<10?"firstgroup":"secondgroup")},
   })),{analyzer:"word-v1"});
   const runtime=await buildCustomBm25RuntimeArtifacts({releaseId:"release:test:concurrent-cache",
     sparseManifestSha256:"a".repeat(64),manifest:built.manifest});
   const bucket=new MemoryR2();
   bucket.objects.set(runtime.documentsReference.key,runtime.documentsBytes);
   for(const artifact of built.artifacts)bucket.objects.set(artifact.key,artifact.bytes);
-  const search=(cache:CustomRuntimeCache)=>queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
-    runtime.descriptor,[{text:"employment annual leave",atEpoch:2,topK:10}],cache);
+  const search=(cache:CustomRuntimeCache,text="employment annual leave")=>queryCustomBm25RuntimeBatch(bucket as unknown as R2Bucket,
+    runtime.descriptor,[{text,atEpoch:2,topK:10}],cache);
   return {bucket,runtime,search};
 }
+
+test("concurrent cold searches share one authenticated document table load",async context=>{
+  const {bucket,runtime,search}=await streamSearchFixture();
+  const expected=await Promise.all(["firstgroup","secondgroup"].map(text=>search(new CustomRuntimeCache(),text)));
+  assert.notDeepEqual(expected[0],expected[1],"Queries select different document ordinals");
+  bucket.reads.clear();
+  const cache=new CustomRuntimeCache();
+  const get=bucket.get.bind(bucket),entered=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+  context.mock.method(bucket,"get",async(...args:Parameters<typeof get>)=>{
+    const object=await get(...args);
+    if(args[0]===runtime.documentsReference.key){entered.resolve();await release.promise;}
+    return object;
+  });
+  const first=search(cache,"firstgroup");
+  await entered.promise;
+  const second=search(cache,"secondgroup");
+  await new Promise(resolve=>setTimeout(resolve,100));
+  release.resolve();
+  const results=await Promise.all([first,second]);
+  assert.deepEqual(results,expected);
+  assert.equal(bucket.reads.get(runtime.documentsReference.key),1);
+});
 
 test("cancelling a search closes its pending document stream and permits a clean retry",async context=>{
   const {bucket,runtime,search}=await streamSearchFixture();
@@ -65,6 +88,39 @@ test("cancelling a search closes its pending document stream and permits a clean
   assert.equal(cancelled,true);
   context.mock.restoreAll();
   assert.equal((await search(cache))[0]!.length,10);
+});
+
+for(const cancelled of ["owner","waiter"] as const)test(`shared document loading isolates ${cancelled} cancellation`,async context=>{
+  const {bucket,runtime,search}=await streamSearchFixture(),cache=new CustomRuntimeCache();
+  const get=bucket.get.bind(bucket),entered=Promise.withResolvers<void>();
+  let stream:ReadableStreamDefaultController<Uint8Array>|undefined,attempts=0,closed=false;
+  context.mock.method(bucket,"get",async(...args:Parameters<typeof get>)=>{
+    const object=await get(...args);
+    if(!object||args[0]!==runtime.documentsReference.key||++attempts!==1)return object;
+    return {...object,body:new ReadableStream<Uint8Array>({
+      start(controller){stream=controller;},pull(){entered.resolve();},cancel(){closed=true;},
+    })};
+  });
+  const owner=new AbortController(),waiter=new AbortController(),reason=new Error("Cancelled "+cancelled);
+  const first=runIndexedRetrieval(owner.signal,()=>search(cache));
+  await entered.promise;
+  const second=runIndexedRetrieval(waiter.signal,()=>search(cache));
+  let waiterFinished=false;
+  void second.then(()=>{waiterFinished=true;},()=>{waiterFinished=true;});
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(waiterFinished,false,"A second search must await authentication before using the table");
+  if(cancelled==="owner"){
+    const rejected=assert.rejects(first,error=>error===reason);
+    owner.abort(reason);await rejected;
+    assert.equal((await second)[0]!.length,10,"The live waiter retries under its own retrieval scope");
+    assert.equal(attempts,2);assert.equal(closed,true);
+  }else{
+    const rejected=assert.rejects(second,error=>error===reason);
+    waiter.abort(reason);await rejected;
+    assert.equal(owner.signal.aborted,false);assert.equal(closed,false);
+    stream!.enqueue(runtime.documentsBytes);stream!.close();
+    assert.equal((await first)[0]!.length,10);assert.equal(attempts,1);
+  }
 });
 
 test("native ordinal lookup caches compact identities only after authenticating the pinned page",async()=>{

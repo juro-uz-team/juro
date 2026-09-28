@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import {indexedRetrievalSignal} from "../runtime/indexed-retrieval";
+import {awaitIndexedRetrieval,indexedRetrievalSignal} from "../runtime/indexed-retrieval";
 import type {CustomRuntimeCache} from "./custom-runtime-cache";
 import { z } from "zod";
 import { detectArticleNumbers } from "../legal/legal-language";
@@ -475,7 +475,25 @@ function findBinaryOrdinal(bytes:Uint8Array,ordinal:number,header:number,stride:
   throw new TypeError("CUSTOM_BM25_RUNTIME_ORDINAL_MISSING");
 }
 
+const documentLoads=new WeakMap<CustomRuntimeCache,Map<string,Promise<void>>>();
+
 async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocumentReference,
+  requested: ReadonlySet<number>,cache?:CustomRuntimeCache): Promise<Map<number, RuntimeDocument>> {
+  if(!cache||reference.sizeBytes>64*1024*1024||!cache.canRetain(reference.sizeBytes))return loadRuntimeDocuments(bucket,reference,requested,cache);
+  const identity=`documents:${reference.key}:${reference.sha256}:${reference.sizeBytes}`;
+  const pending=documentLoads.get(cache)??new Map<string,Promise<void>>();
+  documentLoads.set(cache,pending);
+  // Join only the immutable table load, never another question's selected rows.
+  // A cancelled/failed owner leaves no cached bytes; a live waiter retries using
+  // its own retrieval scope. Cancelling a waiter does not cancel the owner.
+  while(pending.has(identity))await awaitIndexedRetrieval(pending.get(identity)!);
+  indexedRetrievalSignal();
+  const loading=loadRuntimeDocuments(bucket,reference,requested,cache);
+  pending.set(identity,loading.then(()=>undefined,()=>undefined));
+  try{return await loading;}finally{pending.delete(identity);}
+}
+
+async function loadRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocumentReference,
   requested: ReadonlySet<number>,cache?:CustomRuntimeCache): Promise<Map<number, RuntimeDocument>> {
   const identity=`documents:${reference.key}:${reference.sha256}:${reference.sizeBytes}`;
   const cached=cache?.get(identity);
@@ -484,7 +502,7 @@ async function readRuntimeDocuments(bucket: R2Bucket, reference: RuntimeDocument
     const offset=findBinaryOrdinal(cached,ordinal,HEADER_SIZE,RECORD_SIZE);
     return [ordinal,decodeRuntimeDocument(new DataView(cached.buffer,cached.byteOffset+offset,RECORD_SIZE))];
   }));
-  const retained=cache&&reference.sizeBytes<=64*1024*1024?new Uint8Array(reference.sizeBytes):undefined;
+  const retained=cache?.canRetain(reference.sizeBytes)&&reference.sizeBytes<=64*1024*1024?new Uint8Array(reference.sizeBytes):undefined;
   const object = await bucket.get(reference.key);
   if (!object || object.size !== reference.sizeBytes || !object.body) {
     throw new TypeError("CUSTOM_BM25_RUNTIME_DOCUMENTS_CORRUPT");

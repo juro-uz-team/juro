@@ -5,6 +5,8 @@ export class CustomRuntimeCache {
   private bytes=0;
   constructor(private readonly limit=256*1024*1024) {}
 
+  canRetain(byteLength:number):boolean {return byteLength<=this.limit;}
+
   get(key:string):Uint8Array|undefined {
     const value=this.entries.get(key);
     if(value){this.entries.delete(key);this.entries.set(key,value);}
@@ -12,7 +14,7 @@ export class CustomRuntimeCache {
   }
 
   put(key:string,value:Uint8Array):void {
-    if(value.byteLength>this.limit)return;
+    if(!this.canRetain(value.byteLength))return;
     const previous=this.entries.get(key);
     if(previous){this.bytes-=previous.byteLength;this.entries.delete(key);}
     while(this.bytes+value.byteLength>this.limit) {
