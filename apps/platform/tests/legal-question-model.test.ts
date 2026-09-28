@@ -9,7 +9,7 @@ test("invalid speculative research does not discard a valid question interpretat
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const interpretation={topics:["Access to a private agreement"],facts:[],temporal:{kind:"current"},
     questions:["Please provide the agreement."]};
-  let text="x".repeat(101);
+  let text="x".repeat(901);
   let omitResearch=false;
   context.mock.method(globalThis,"fetch",async()=>Response.json({output:[{content:[{type:"output_text",
     text:JSON.stringify({interpretation,...(omitResearch?{}:{research:{directQueries:[{text,topicIndices:[0]}],underlyingRuleQueries:[]}})})}]}]}));
@@ -23,6 +23,13 @@ test("invalid speculative research does not discard a valid question interpretat
   const valid=await interpretLegalQuestion(input,createQuestionInterpreter({mode:"fast",requestId:"valid-plan"}));
   assert.equal(valid.kind,"ready");
   if(valid.kind==="ready")assert.equal(valid.initialQueries?.[0]?.text,text);
+  for(const length of [102,900]) {
+    text="private agreement access ".padEnd(length,"x");
+    const indexed=await interpretLegalQuestion(input,createQuestionInterpreter({mode:"fast",requestId:"indexed-plan"}));
+    assert.equal(indexed.kind,"ready");
+    if(indexed.kind==="ready")assert.equal(indexed.initialQueries?.[0]?.text,text,
+      "Indexed queries must survive unchanged beyond the public publisher's 100-character limit");
+  }
   omitResearch=true;
   const missing=await interpretLegalQuestion(input,createQuestionInterpreter({mode:"fast",requestId:"missing-plan"}));
   assert.equal(missing.kind,"ready");
@@ -99,7 +106,7 @@ test("discarded research proposals cannot bypass fact, selection or temporal val
 test("combined interpretation stages closed queries before the final provider response",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const interpretation={topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]};
-  const first={text:"record access",topicIndices:[0]},second={text:"review procedure",topicIndices:[0]};
+  const first={text:"record access ".padEnd(102,"x"),topicIndices:[0]},second={text:"review procedure",topicIndices:[0]};
   const firstStaged=Promise.withResolvers<void>();let completed=false;
   const prefix=JSON.stringify({interpretation}).slice(0,-1)+',"research":{"directQueries":['+JSON.stringify(first)+',';
   const tail=JSON.stringify(second)+'],"underlyingRuleQueries":[]}}';
