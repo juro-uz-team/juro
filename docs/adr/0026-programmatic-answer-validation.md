@@ -13,3 +13,5 @@ These checks cannot establish entailment, correct interpretation, substantive an
 The internal legacy verification contract remains compatible with stored/test data; its `supported` field means structurally admissible when the method is programmatic. It must not be presented as semantic approval. A Main Point without any admissible finding is withheld because code cannot establish its substantive answerability.
 
 Correctness and usable-answer latency remain release qualification requirements. Removing a provider call is not evidence that either target has been met.
+
+Search formulation and evidence assessment receive separate instructions. Query generation must not receive the assessment directive to return no further queries, evidence-selection fields or semantic approval language. The single writer uses concise general instructions covering every requested decision in its substantive issues, preserving operative qualifications and practical steps. Correction-only instructions are supplied only to callers explicitly requesting correction; runtime programmatic delivery remains one pass.

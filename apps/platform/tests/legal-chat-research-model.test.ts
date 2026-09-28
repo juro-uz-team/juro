@@ -199,6 +199,8 @@ test("sufficient evidence needs no speculative repair queries and an empty plan 
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     const stage=body.text.format.name;stages.push(stage);
+    if(stage==="legal_research_coverage")assert.match(body.instructions,/When assessing evidence/);
+    else assert.doesNotMatch(body.instructions,/When assessing evidence|supportedAnswerAvailable/);
     assert.equal(body.text.verbosity,"low");
     const result=stage==="legal_research_coverage"?{needs:[],resolved:null,queries:[]}:{queries:[query]};
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(result)}]}]});

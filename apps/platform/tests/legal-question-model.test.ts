@@ -39,6 +39,8 @@ test("Fast plans research with interpretation while Deep retains its existing in
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     requests.push({model:body.model,reasoning:body.reasoning,schema:body.text.format.name});
+    assert.doesNotMatch(body.instructions,/When assessing evidence|selectedSourceIds|supportedAnswerAvailable|Return queries: \[\]/,
+      "Question planning must not receive the evidence assessment contract");
     assert.deepEqual(JSON.parse(body.input),{question:input.question,locale:"en",priorTurns:[],userContext:null,
       privateDocuments:[],legalContextDate:null,now:input.now.toISOString()});
     const output=body.text.format.name==="legal_question_research"?{interpretation,research:{queries}}:interpretation;
