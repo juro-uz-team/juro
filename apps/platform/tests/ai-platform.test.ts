@@ -1,3 +1,4 @@
+import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS,LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
 import {aiDatabase} from "./helpers/ai-run-database";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -393,7 +394,7 @@ test("AI reservations remain active through a provider window and recover after 
   assert.equal(reserved.kind, "reserved");
   if (reserved.kind !== "reserved") return;
 
-  const providerWindowStart = new Date(Date.now() - 15 * 60 * 1_000).toISOString();
+  const providerWindowStart = new Date(Date.now() - LEGAL_CHAT_PROVIDER_TIMEOUT_MS).toISOString();
   sqlite.prepare("UPDATE idempotency_keys SET updated_at=? WHERE key=?")
     .run(providerWindowStart, "legal-chat:workspace-1:user-1:interactive-stale-window");
   sqlite.prepare("UPDATE ai_runs SET updated_at=? WHERE id=?")
@@ -401,7 +402,7 @@ test("AI reservations remain active through a provider window and recover after 
   const active = await reserveAiRun(reservationInput(d1, "interactive-stale-window", 1));
   assert.equal(active.kind, "processing");
 
-  const staleAt = new Date(Date.now() - (16 * 60 * 1_000 + 1_000)).toISOString();
+  const staleAt = new Date(Date.now() - (LEGAL_CHAT_RESERVATION_TTL_MS + 1_000)).toISOString();
   sqlite.prepare("UPDATE idempotency_keys SET updated_at=? WHERE key=?")
     .run(staleAt, "legal-chat:workspace-1:user-1:interactive-stale-window");
   sqlite.prepare("UPDATE ai_runs SET updated_at=? WHERE id=?")

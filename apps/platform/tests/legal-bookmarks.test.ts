@@ -128,8 +128,8 @@ test("bookmark routes and RU/UZ controls preserve server scope and user agency",
   assert.doesNotMatch(collectionRoute, /workspaceId:\s*parsed\.data|userId:\s*parsed\.data/);
   assert.match(itemRoute, /assertSafeWrite\(request\)/);
   assert.match(aiClient, /SourceBookmarkControl/);
-  assert.match(aiClient, /Сохранить проверенную версию/);
-  assert.match(aiClient, /Tekshirilgan versiyani saqlash/);
+  assert.match(aiClient, /Сохранить ответ/);
+  assert.match(aiClient, /Javobni saqlash/);
   assert.match(aiClient, /aria-live="polite"/);
   assert.match(caseClient, /CaseSourcesPanel/);
   assert.match(caseClient, /сохранённая историческая версия/);

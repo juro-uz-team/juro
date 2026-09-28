@@ -12,7 +12,7 @@ const request:ResearchRequest={round:0,needs:[],question:{question:"Private case
 const plan={id:"plan",formulations:[{id:"query",text:"statutory procedure contact private@example.com",
   privateNameSpans:[],readingIds:["topic"],requirementIds:["topic"]}]};
 
-test("a failed streamed plan discards its pending round and permits the next bounded round",async()=>{
+test("a failed streamed plan discards its pending work and consumes the single research round",async()=>{
   const rounds:number[]=[];
   const remote=createRemoteCorpusResearch({requestId:"streamed",environment:"staging",
     formulate:async(request,emit)=>{
@@ -28,12 +28,13 @@ test("a failed streamed plan discards its pending round and permits the next bou
         async cancel(){session.close();},[Symbol.dispose]:session.close};
     }}});
   await assert.rejects(remote.indexed(request),/incomplete planning/);
-  await remote.indexed({...request,round:1});
-  assert.deepEqual(rounds,[1]);
+  await assert.rejects(remote.indexed(request),/ROUND_MISMATCH/);
+  await assert.rejects(remote.indexed({...request,round:1}));
+  assert.deepEqual(rounds,[]);
   await remote.close();
 });
 
-test("a failed local formulation does not strand subsequent bounded research rounds",async()=>{
+test("a failed local formulation leaves the unstarted research round available",async()=>{
   const rounds:number[]=[];
   let attempts=0;
   const remote=createRemoteCorpusResearch({requestId:"one",environment:"staging",
@@ -43,10 +44,10 @@ test("a failed local formulation does not strand subsequent bounded research rou
       return {search:session.search,async cancel(){session.close();},[Symbol.dispose]:session.close};
     }}});
   await assert.rejects(remote.indexed(request),/formulation unavailable/);
-  await remote.indexed({...request,round:1});
-  await remote.indexed({...request,round:2});
-  await assert.rejects(remote.indexed({...request,round:1}),/ROUND_MISMATCH/);
-  assert.deepEqual(rounds,[1,2]);
+  await remote.indexed(request);
+  await assert.rejects(remote.indexed(request),/ROUND_MISMATCH/);
+  await assert.rejects(remote.indexed({...request,round:1}));
+  assert.deepEqual(rounds,[0]);
   await remote.close();
 });
 
@@ -60,12 +61,11 @@ test("one remote capability carries unchanged formulations without the separate 
       async cancel(){},[Symbol.dispose](){disposed++;},
     };}}});
   await remote.indexed(request);
-  await remote.indexed({...request,round:1});
   assert.equal(opened.length,1);
   assert.deepEqual(opened[0],{requestId:"one",environment:"staging",temporalScope:{kind:"current"}});
   assert.doesNotMatch(JSON.stringify(searches),/Private case|Private facts|Private history|Old answer/);
-  assert.deepEqual(searches.map(item=>item.plan),[plan,plan]);
-  assert.deepEqual(searches.map(item=>item.round),[0,1]);
+  assert.deepEqual(searches.map(item=>item.plan),[plan]);
+  assert.deepEqual(searches.map(item=>item.round),[0]);
   await assert.rejects(remote.indexed({...request,question:{...request.question,question:"another"}}),/MISMATCH/);
   await remote.close();await remote.close();
   assert.equal(disposed,1);
@@ -97,10 +97,10 @@ test("a failed service opening can recover without restarting a successful sessi
       return {search:session.search,async cancel(){session.close();},[Symbol.dispose]:session.close};
     }}});
   await assert.rejects(remote.indexed(request),/binding unavailable/);
-  await remote.indexed({...request,round:1});
-  await remote.indexed({...request,round:2});
+  await remote.indexed(request);
+  await assert.rejects(remote.indexed(request),/ROUND_MISMATCH/);
   assert.equal(opens,2);
-  assert.deepEqual(rounds,[1,2]);
+  assert.deepEqual(rounds,[0]);
   await remote.close();
 });
 

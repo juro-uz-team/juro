@@ -1,3 +1,4 @@
+import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS,LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -236,16 +237,16 @@ test("guest lease renewal fences wrong owners and expired runs without consuming
     assert.equal(reserved.kind,"created");
     if(reserved.kind!=="created")throw Error("Reservation required");
     const owner={db:d1,session:created.session,runId:reserved.run.id};
-    const now=Date.parse(NOW)+15*60_000;
+    const now=Date.parse(NOW)+LEGAL_CHAT_PROVIDER_TIMEOUT_MS;
     assert.equal(await renewGuestAiReservation({...owner,session:{...created.session,tokenHmac:"wrong"},now}),false);
     assert.equal(await renewGuestAiReservation({...owner,now}),true);
-    assert.deepEqual(await purgeExpiredGuestAiSessions({db:d1,now:"2026-08-03T12:17:00.000Z"}),
+    assert.deepEqual(await purgeExpiredGuestAiSessions({db:d1,now:new Date(now+LEGAL_CHAT_RESERVATION_TTL_MS-1000).toISOString()}),
       {eligible:0,purged:0,reservationsReleased:0});
-    assert.equal(await renewGuestAiReservation({...owner,now:Date.parse(NOW)+32*60_000}),false);
+    assert.equal(await renewGuestAiReservation({...owner,now:now+LEGAL_CHAT_RESERVATION_TTL_MS+1}),false);
     sqlite.exec("CREATE TABLE saved_lease_marker(value TEXT)");
     await assert.rejects(completeGuestAiRun({db:d1,keyring:identityKeyring,run:reserved.run,
       resultJson:JSON.stringify({summary:"Late result"}),responseKind:"answer",provider:"openai",model:"synthetic-model",
-      inputTokens:0,outputTokens:0,cachedInputTokens:0,attempts:1,latencyMs:0,now:"2026-08-03T12:32:00.000Z",
+      inputTokens:0,outputTokens:0,cachedInputTokens:0,attempts:1,latencyMs:0,now:new Date(now+LEGAL_CHAT_RESERVATION_TTL_MS+1).toISOString(),
       additionalStatements:[d1.prepare("INSERT INTO saved_lease_marker VALUES ('late')")]}));
     assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM saved_lease_marker").get()?.count,0);
     assert.equal(sqlite.prepare("SELECT answer_count FROM guest_ai_sessions WHERE id=?").get(created.session.id)?.answer_count,0);

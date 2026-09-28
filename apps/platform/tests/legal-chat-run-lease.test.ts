@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {aiDatabase} from "./helpers/ai-run-database";
 import {reserveAiRun,renewAiRunReservation,beginAiRunFinalization,completeAiRunStatements} from "../lib/ai/run-store";
-import {LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
+import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS,LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
 
 test("renewal preserves a long running reservation and cannot revive expired or foreign work",async()=>{
   const {sqlite,d1}=aiDatabase();
@@ -16,7 +16,7 @@ test("renewal preserves a long running reservation and cannot revive expired or 
     if(reserved.kind!=="reserved")throw Error("Reservation required");
     const owner={db:d1,runId:reserved.runId,workspaceId:input.workspaceId,userId:input.userId};
     const now=Date.now();
-    const activeAt=new Date(now-15*60_000).toISOString();
+    const activeAt=new Date(now-LEGAL_CHAT_PROVIDER_TIMEOUT_MS).toISOString();
     sqlite.prepare("UPDATE ai_runs SET updated_at=? WHERE id=?").run(activeAt,reserved.runId);
     sqlite.prepare("UPDATE idempotency_keys SET updated_at=?").run(activeAt);
     assert.equal((await reserveAiRun(input)).kind,"processing");
