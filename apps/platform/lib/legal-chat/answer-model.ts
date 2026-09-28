@@ -333,12 +333,11 @@ export function createLegalAnswerModel(options: {
     },
     verify: async ({ question, draft, claims, previous }) => {
       const transport=sourceTransport(question);
-      if(draft.ruleBindings.length) {
-        const sourceInventory=(input:AnswerQuestion)=>input.evidence.map(item=>({
-          source:item.source,passages:sourcePassages(item.text),
-        }));
-        const contract=issueVerificationContract(draft,claims,sourceInventory(question));
-        const provider=issueVerificationContract(draft,transport.claims(claims),sourceInventory(transport.question));
+      // Current writer output always carries issue membership, including an
+      // empty issue list. Unbound historical/internal drafts retain decoding.
+      if(draft.ruleBindings.length || (!draft.findings.length&&!draft.actions.length)) {
+        const contract=issueVerificationContract(draft,claims);
+        const provider=issueVerificationContract(draft,transport.claims(claims));
         const response=await run(question,"verifying",`${evidenceRules}\n${issueVerificationInstructions}`,{
           context:modelContext(transport.question),claims:transport.claims(claims),issues:draft.ruleBindings,
           previousClaims:previous?transport.claims(legalDraftClaims(previous.draft).filter(claim=>

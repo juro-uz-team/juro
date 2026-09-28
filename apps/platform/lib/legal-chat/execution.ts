@@ -54,7 +54,7 @@ export function executeLegalChat<Saved>(input:{
       const observe=input.observeSource;
       const answer=await answerFromEvidence({...question,evidence:research.evidence,unresolved,
         sourceUnavailable:research.sourceUnavailable,researchNeeds:research.needs,onStage:input.onStage},input.model,
-        {initialDraft:research.provisionalDraft,correction:input.mode==="fast"?"never":"once",onFailure:input.onAnswerFailure,...(observe?{validateSources:async evidence=>{
+        {initialDraft:research.provisionalDraft,correction:"never",onFailure:input.onAnswerFailure,...(observe?{validateSources:async evidence=>{
           validated=await validateAnswerSources({evidence,observe,signal});
           sourceUnavailable ||= validated.size!==evidence.length;
           return validated;

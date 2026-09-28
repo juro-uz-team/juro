@@ -3,7 +3,6 @@ import type { AnswerQuestion, LegalEvidence } from "./answer-engine";
 import { assertAnswerEvidence } from "./evidence-boundary";
 import { fitsLegalEvidenceBudget } from "../legal/legal-evidence-budget";
 import {selectResearchEvidence} from "./research-evidence";
-import { LEGAL_CHAT_MAX_RESEARCH_ROUNDS } from "./execution-limits";
 import type {InitialResearchQueries} from "./initial-research-plan";
 import {legalDraftSchema,legalDraftClaims,type LegalDraft} from "./answer-contract";
 
@@ -44,31 +43,21 @@ export type LegalResearchResult = ResearchPacket & {
 
 /** Retrieval discovers evidence; assessment identifies unresolved coverage.
  * Neither a top-k result nor an empty candidate list establishes completeness.
- * All gap repair shares the same initial-plus-two-round budget. */
+ * One acquisition pass precedes one assessment; semantic gaps never restart it. */
 export async function researchLegalQuestion(question:ResearchQuestion, services:LegalResearchServices):Promise<LegalResearchResult> {
   let evidence:LegalEvidence[]=[];
   let needs:ResearchNeed[]=[];
   let sourceUnavailable=false;
-  let rounds=0;
   let pending:LegalEvidence[]=[];
   let packetResolutions:NonNullable<ResearchPacket["resolved"]>=[];
   const known=new Map<string,LegalEvidence>();
-  let supportedAnswerAvailable=false;
   let provisionalDraft:LegalDraft|undefined;
-  const selections=new Map<string,{sourceIds:readonly string[];supportedAnswerAvailable:boolean|undefined}>();
-  const signature=(items:readonly LegalEvidence[])=>JSON.stringify(items.map(item=>item.source.id).sort());
-  let stalled=false;
   const observations:ResearchObservation[]=[];
   // Structural readers may report one failure per bounded source read. Their
   // inventory is not the model's 40-item response schema; preserve these gaps
   // without discarding otherwise authenticated, useful evidence.
   const parseNeeds=(value:readonly ResearchNeed[])=>z.array(researchNeedSchema).parse(value);
   const checkCancellation=()=>question.signal?.throwIfAborted();
-  const finishFastResearch=()=>{
-    if(question.mode!=="fast"||!supportedAnswerAvailable||!evidence.length||!needs.length)return false;
-    needs.push({reason:"search_budget",detail:"Fast research retained the available relevant evidence; unresolved coverage requires further research."});
-    return true;
-  };
   const merge=async(packet:ResearchPacket)=>{
     checkCancellation();
     const incoming=parseNeeds(packet.needs);
@@ -81,7 +70,7 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
     }
     // Authenticate before accepting, deduplicating or assessing any legal text.
     await assertAnswerEvidence({...question,evidence:packet.evidence,unresolved:[]});
-    const combined=new Map(evidence.map(item=>[item.source.id,item]));
+    const combined=new Map(pending.map(item=>[item.source.id,item]));
     for(const item of packet.evidence) {
       const previous=known.get(item.source.id);
       if(previous && JSON.stringify(previous)!==JSON.stringify(item)) throw new Error("RESEARCH_EVIDENCE_IDENTITY_CONFLICT");
@@ -89,7 +78,7 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
       known.set(item.source.id,item);
     }
     pending=[...combined.values()];
-    packetResolutions=packet.resolved??[];
+    packetResolutions=[...packetResolutions,...packet.resolved??[]];
     for(const resolution of packetResolutions) {
       researchNeedSchema.parse(resolution.need);
       if(!resolution.sourceIds.length||resolution.sourceIds.some(id=>!combined.has(id))) {
@@ -100,9 +89,6 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
   };
   const search=async(lane:"indexed"|"official",request:ResearchRequest)=>{
     checkCancellation();
-    // Any further research invalidates the earlier answer proposal, including
-    // an outage that changes the known coverage without adding a source.
-    provisionalDraft=undefined;
     let packet:ResearchPacket;
     try {packet=await services[lane](request);}
     catch {
@@ -113,93 +99,72 @@ export async function researchLegalQuestion(question:ResearchQuestion, services:
     }
     await merge(packet);
   };
-  for(let round=0;round<LEGAL_CHAT_MAX_RESEARCH_ROUNDS;round++) {
-    checkCancellation();
-    rounds=round+1;
-    const initialKnownCount=known.size;
-    const request={question,needs:[...needs],round};
-    await search("indexed",request);
-    const assess=async()=>{
-      checkCancellation();
-      const candidates=pending;
-      const key=signature(candidates);
-      needs=[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()];
-      let assessment:ResearchAssessment={needs:[],resolved:[]};
-      const cached=selections.get(key);
-      if(!cached) {
-        const result=await services.assess({...request,needs:[...needs],evidence:candidates,observations:[...observations]});
-        checkCancellation();
-        assessment=Array.isArray(result)?{needs:parseNeeds(result),resolved:[]}:result as ResearchAssessment;
-      }
-      const next=parseNeeds(assessment.needs);
-      const selected=selectResearchEvidence(candidates,cached?.sourceIds??assessment.selectedSourceIds??candidates.map(item=>item.source.id),[...known.values()]);
-      if(!fitsLegalEvidenceBudget(selected.map(item=>item.text))) {
-        // The assessor sees at most two authenticated bounded packets. If the
-        // relevant complete provisions still do not fit, keep the prior set.
-        pending=evidence;packetResolutions=[];
-        return [...next,{reason:"context_budget" as const,detail:"Complete retrieved provisions exceed the evidence context budget."}];
-      }
-      for(const resolution of assessment.resolved) {
-        researchNeedSchema.parse(resolution.need);
-        // Coverage assessment cannot certify operational failures, nor resolve
-        // a gap using text excluded from the evidence sent to the writer.
-        if(!["missing_rule","unresolved_reference"].includes(resolution.need.reason)
-          || !needs.some(need=>need.reason===resolution.need.reason&&need.detail===resolution.need.detail)
-          || !resolution.sourceIds.length || resolution.sourceIds.some(id=>!selected.some(item=>item.source.id===id))) {
-          throw new Error("RESEARCH_ASSESSMENT_RESOLUTION_INVALID");
-        }
-      }
-      const retainedPacketResolutions=packetResolutions.filter(resolution=>
-        resolution.sourceIds.every(id=>selected.some(item=>item.source.id===id)));
-      needs=needs.filter(need=>![...assessment.resolved,...retainedPacketResolutions].some(resolution=>
-        need.reason===resolution.need.reason&&need.detail===resolution.need.detail));
-      evidence=selected;pending=selected;packetResolutions=[];
-      const answerable=cached?cached.supportedAnswerAvailable:assessment.supportedAnswerAvailable;
-      supportedAnswerAvailable=answerable===true;
-      if(assessment.provisionalDraft && supportedAnswerAvailable
-        && fitsLegalEvidenceBudget(candidates.map(item=>item.text))) {
-        const candidate=legalDraftSchema.parse(assessment.provisionalDraft);
-        const selectedIds=new Set(selected.map(item=>item.source.id));
-        // Dependency restoration can introduce evidence the assessor did not
-        // see. A removed citation or new provision requires a fresh writer.
-        if(candidate.findings.length && selected.every(item=>candidates.some(source=>source.source.id===item.source.id))
-          && legalDraftClaims(candidate).every(claim=>
-            (["question","gap"].includes(claim.kind)||claim.sourceIds.length>0)
-            && claim.sourceIds.every(id=>selectedIds.has(id)))) {
-          provisionalDraft=candidate;
-        }
-      }
-      // A negative answerability verdict is itself an unresolved coverage fact.
-      // Missing prose must not turn related evidence into successful research.
-      if(answerable===false&&!needs.length&&!next.length)next.push({reason:"missing_rule",
-        detail:"The selected evidence does not yet support a substantive answer to the requested decision."});
-      selections.set(key,{sourceIds:selected.filter(item=>candidates.some(candidate=>candidate.source.id===item.source.id)).map(item=>item.source.id),supportedAnswerAvailable:answerable});
-      selections.set(signature(selected),{sourceIds:selected.map(item=>item.source.id),supportedAnswerAvailable:answerable});
-      return next;
-    };
-    let assessed=await assess();
-    needs=[...needs,...assessed];
-    // Partial publication still requires the whole draft's independent audit.
-    // Preserve every gap rather than spending Fast latency on repair rounds.
-    if(finishFastResearch())break;
-    if(!evidence.length || needs.length || assessed.length) {
-      await search("official",{...request,needs:[...needs]});
-      assessed=await assess();
-    }
-    // No known gap disappears merely because a later assessment omits it.
-    // Resolution must explicitly identify the need and authenticated evidence.
-    needs=[...needs,...assessed];
-    needs=[...new Map(needs.map(need=>[`${need.reason}:${need.detail}`,need])).values()];
-    if(!needs.length && evidence.length) break;
-    if(finishFastResearch())break;
-    // Keep one recovery round for transient article or publisher read failures,
-    // including when the initial attempt admitted no evidence at all.
-    if(round>0 && known.size===initialKnownCount) {stalled=true;break;}
+  const request={question,needs:[],round:0};
+  await search("indexed",request);
+  // Keep the first bounded packet if combining complete provisions cannot
+  // fit the final evidence budget. Never truncate either packet.
+  evidence=pending;
+  // Structural retrieval gaps may use the official lane in this acquisition
+  // pass. Model-discovered gaps below remain explicit until a new request.
+  if(!pending.length || needs.length) {
+    await search("official",{...request,needs:[...needs]});
   }
+  const assess=async()=>{
+    checkCancellation();
+    const candidates=pending;
+    needs=[...new Map(needs.map(need=>[JSON.stringify(need),need])).values()];
+    const result=await services.assess({...request,needs:[...needs],evidence:candidates,observations:[...observations]});
+    checkCancellation();
+    const assessment:ResearchAssessment=Array.isArray(result)?{needs:parseNeeds(result),resolved:[]} : result as ResearchAssessment;
+    const next=parseNeeds(assessment.needs);
+    const selected=selectResearchEvidence(candidates,assessment.selectedSourceIds??candidates.map(item=>item.source.id),[...known.values()]);
+    if(!fitsLegalEvidenceBudget(selected.map(item=>item.text))) {
+      // The assessor sees at most two authenticated bounded packets. If the
+      // relevant complete provisions still do not fit, keep the prior set.
+      pending=evidence;packetResolutions=[];
+      return [...next,{reason:"context_budget" as const,detail:"Complete retrieved provisions exceed the evidence context budget."}];
+    }
+    for(const resolution of assessment.resolved) {
+      researchNeedSchema.parse(resolution.need);
+      // Coverage assessment cannot certify operational failures, nor resolve
+      // a gap using text excluded from the evidence sent to the writer.
+      if(!["missing_rule","unresolved_reference"].includes(resolution.need.reason)
+        || !needs.some(need=>need.reason===resolution.need.reason&&need.detail===resolution.need.detail)
+        || !resolution.sourceIds.length || resolution.sourceIds.some(id=>!selected.some(item=>item.source.id===id))) {
+        throw new Error("RESEARCH_ASSESSMENT_RESOLUTION_INVALID");
+      }
+    }
+    const retainedPacketResolutions=packetResolutions.filter(resolution=>
+      resolution.sourceIds.every(id=>selected.some(item=>item.source.id===id)));
+    needs=needs.filter(need=>![...assessment.resolved,...retainedPacketResolutions].some(resolution=>
+      need.reason===resolution.need.reason&&need.detail===resolution.need.detail));
+    evidence=selected;pending=selected;packetResolutions=[];
+    const answerable=assessment.supportedAnswerAvailable;
+    if(assessment.provisionalDraft && answerable===true
+      && fitsLegalEvidenceBudget(candidates.map(item=>item.text))) {
+      const candidate=legalDraftSchema.parse(assessment.provisionalDraft);
+      const selectedIds=new Set(selected.map(item=>item.source.id));
+      // Dependency restoration can introduce evidence the assessor did not
+      // see. A removed citation or new provision requires a fresh writer.
+      if(candidate.findings.length && selected.every(item=>candidates.some(source=>source.source.id===item.source.id))
+        && legalDraftClaims(candidate).every(claim=>
+          (["question","gap"].includes(claim.kind)||claim.sourceIds.length>0)
+          && claim.sourceIds.every(id=>selectedIds.has(id)))) {
+        provisionalDraft=candidate;
+      }
+    }
+    // A negative answerability verdict is itself an unresolved coverage fact.
+    // Missing prose must not turn related evidence into successful research.
+    if(answerable===false&&!needs.length&&!next.length)next.push({reason:"missing_rule",
+      detail:"The selected evidence does not yet support a substantive answer to the requested decision."});
+    return next;
+  };
+  const assessed=await assess();
+  needs=[...needs,...assessed];
+  needs=[...new Map(needs.map(need=>[`${need.reason}:${need.detail}`,need])).values()];
   checkCancellation();
   if(!evidence.length && !needs.length) needs.push({reason:"missing_rule",detail:"No authenticated official evidence was found for the question."});
-  if(rounds===LEGAL_CHAT_MAX_RESEARCH_ROUNDS && needs.length) needs.push({reason:"search_budget",detail:"The bounded official research rounds are exhausted; unresolved coverage remains."});
-  else if(stalled && needs.length) needs.push({reason:"search_budget",detail:"Research stopped after both search lanes added no authenticated evidence; unresolved coverage remains."});
+  if(needs.length) needs.push({reason:"search_budget",detail:"The research pass is complete; unresolved coverage requires a further request."});
   sourceUnavailable ||= needs.some(need=>need.reason==="source_unavailable");
-  return {evidence,needs,sourceUnavailable,rounds,observations,...(provisionalDraft?{provisionalDraft}:{})};
+  return {evidence,needs,sourceUnavailable,rounds:1,observations,...(provisionalDraft?{provisionalDraft}:{})};
 }

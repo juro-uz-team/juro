@@ -13,7 +13,7 @@ type ProviderSchemaNode = {
   properties?: Record<string, ProviderSchemaNode>; items?: ProviderSchemaNode;
 };
 
-test("issue verification audits every source without a paragraph matrix and rejects incomplete inventories",async context=>{
+test("focused verification rejects incomplete claim inventories",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const question:AnswerQuestion={question:"Explain eligibility",locale:"en",mode:"fast",answerMode:"short",
     temporalScope:{kind:"current"},unresolved:[],evidence:[]};
@@ -30,7 +30,7 @@ test("issue verification audits every source without a paragraph matrix and reje
     assert.ok(!body.text.format.schema.properties.sourceAudit);
     const claims=Object.fromEntries(legalDraftClaims(draft).map(({id})=>[id,{supported:false,reason:"No evidence",dependsOn:[]}]));
     if(omit)delete claims["action:0"];
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({claims,sources:{},
+    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({claims,
       mainPointAnswersQuestion,coverage:[],complete:false,gaps:[],questions:[]})}]}]});
   });
   const model=createLegalAnswerModel({requestId:"issue-audit"});
@@ -46,7 +46,7 @@ test("issue verification audits every source without a paragraph matrix and reje
   await assert.rejects(model.verify({question,draft,claims:legalDraftClaims(draft),previous:null}));
 });
 
-test("issue review preserves uncited source omissions and rejects missing or invented source reviews",async context=>{
+test("focused review receives complete uncited restrictions without a passage audit inventory",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const question:AnswerQuestion={question:"Who qualifies?",locale:"en",mode:"fast",answerMode:"short",
     temporalScope:{kind:"current"},unresolved:[],evidence:[{source:{id:"official-exception-with-authenticated-long-identity",actTitle:"Fixture",
@@ -56,23 +56,22 @@ test("issue review preserves uncited source omissions and rejects missing or inv
   const draft=legalDraftSchema.parse({mainPoint:{text:"Applicants qualify.",sourceIds:[]},
     findings:[{title:"Eligibility",explanation:"Applicants qualify.",sourceIds:[]}],actions:[],risks:[],questions:[],unresolved:[],
     ruleBindings:[{findingId:"finding:0",actionIds:[]}]});
-  let mode="valid";
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body)),input=JSON.parse(body.input);
     assert.deepEqual(input.context.evidence[0].passages,[{id:"p0",text:"Registered applicants qualify."},
       {id:"p1",text:"Suspended registrations do not qualify."}]);
-    const sources=mode==="missing"?{}:{[mode==="invented"?"s99":"s0"]:[{
-      passageId:mode==="bad-passage"?"p99":"p1",missingContent:"Suspended registrations excluded"}]};
+    assert.ok(!body.text.format.schema.properties.sources);
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
       claims:Object.fromEntries(legalDraftClaims(draft).map(({id})=>[id,{supported:false,reason:"Eligibility overbroad",dependsOn:[]}])),
-      sources,coverage:[{issue:"Eligibility",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[]}],
-      complete:false,gaps:[],questions:[],
+      coverage:[{issue:"Eligibility",findingIds:["finding:0"],actionIds:[],actionRequired:false,gaps:[]}],
+      complete:false,gaps:["Eligibility remains unsupported."],questions:[],
     })}]}]});
   });
   const verify=()=>createLegalAnswerModel({requestId:"uncited-exception"}).verify({question,draft,claims:legalDraftClaims(draft),previous:null});
   const verified=legalVerificationSchema.parse(await verify());
-  assert.deepEqual(verified.sourceGaps,[{sourceId:"official-exception-with-authenticated-long-identity",passages:[{id:"p1",missingContent:["Suspended registrations excluded"]}]}]);
-  for(mode of ["missing","invented","bad-passage"])await assert.rejects(verify());
+  assert.deepEqual(verified.sourceGaps,[]);
+  assert.ok(verified.claims.every(claim=>!claim.supported));
+  assert.deepEqual(verified.gaps,["Eligibility remains unsupported."]);
 });
 
 function assertStrictProviderObjects(value: unknown): void {
@@ -413,7 +412,7 @@ test("a fabricated citation is rejected before a draft can reach verification", 
     (error:unknown)=>error instanceof Error && "code" in error && error.code==="INVALID_AI_OUTPUT");
 });
 
-test("verification cannot discard a material omission found in its source audit", async context => {
+test("legacy unbound drafts retain material source-audit omissions", async context => {
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
@@ -434,7 +433,7 @@ test("verification cannot discard a material omission found in its source audit"
       verificationState:"verified",verifiedAt:"2026-09-14",contentSha256:"parent"},
       text:"Review requires a written application.",textSha256:"text",endpoint:{kind:"current"},origin:"indexed"}],
   };
-  const draft=legalDraftSchema.parse({mainPoint:{text:"Request review",sourceIds:["source"]},findings:[],actions:[],risks:[],questions:[],unresolved:[]});
+  const draft=legalDraftSchema.parse({mainPoint:{text:"Request review",sourceIds:["source"]},findings:[{title:"Review",explanation:"Request review.",sourceIds:["source"]}],actions:[],risks:[],questions:[],unresolved:[]});
   const checked=legalVerificationSchema.parse(await createLegalAnswerModel({requestId:"audit-gap"}).verify({question,draft,claims:[],previous:null}));
   assert.equal(checked.complete,false);
   assert.equal(checked.gaps.length,30);

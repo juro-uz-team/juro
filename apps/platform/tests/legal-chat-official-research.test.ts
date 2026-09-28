@@ -69,12 +69,15 @@ test("a changed article identity is withheld and explicitly unresolved",async()=
   assert.ok(packet.needs.every(need=>!need.detail.includes("https://")));
 });
 
-test("recovered complete live article resolves its original gap without accepting discovery fragments",async()=>{
+test("a further request recovers a complete live article without accepting discovery fragments",async()=>{
   const {dependencies}=fixture();const fetchArticle=dependencies.fetchArticle!;let attempts=0;
   dependencies.fetchArticle=async(...args)=>{if(attempts++===0)throw Error("LEGAL_SOURCE_PROVISION_INCOMPLETE");return fetchArticle(...args);};
-  const result=await researchLegalQuestion(request.question,{indexed:async()=>({evidence:[],needs:[]}),
-    official:createOfficialResearch(dependencies),assess:async()=>[]});
-  assert.equal(result.rounds,2);
+  const research={indexed:async()=>({evidence:[],needs:[]}),official:createOfficialResearch(dependencies),assess:async()=>[]};
+  const first=await researchLegalQuestion(request.question,research);
+  assert.equal(attempts,1);
+  assert.equal(first.evidence.length,0);
+  const result=await researchLegalQuestion(request.question,research);
+  assert.equal(result.rounds,1);
   assert.deepEqual(result.needs,[]);
   assert.equal(result.evidence[0]!.text,fullText);
 });

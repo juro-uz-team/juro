@@ -490,26 +490,29 @@ test("rediscovering the same article preserves canonical metadata and unresolved
     time+=1000;return search(input);
   },official:async()=>({evidence:[],needs:[]}),assess:async()=>[gap]});
   assert.equal(result.evidence.length,1);
-  assert.equal(result.rounds,2);
+  assert.equal(result.rounds,1);
   assert.equal(result.evidence[0]!.source.verifiedAt,new Date(Date.parse(instant)+1000).toISOString());
   assert.ok(result.needs.some(need=>need.detail===gap.detail));
 });
 
-test("a retried authenticated article read closes its original gap through the research coordinator",async()=>{
+test("a further request can recover an authenticated article without an automatic retry",async()=>{
   const {services,search}=fixture();
   let reads=0;
   services.evidenceResolver.resolveControlling=async id=>{
     const resolution=articleResolution(id);
     return ++reads===1?{...resolution,articleContext:undefined}:resolution;
   };
-  const result=await researchLegalQuestion(request.question,{indexed:search,
-    official:async()=>({evidence:[],needs:[]}),assess:async()=>[]});
-  assert.equal(result.rounds,2);
+  const research={indexed:search,official:async()=>({evidence:[],needs:[]}),assess:async()=>[]};
+  const first=await researchLegalQuestion(request.question,research);
+  assert.equal(first.rounds,1);
+  assert.ok(first.needs.length>0);
+  const result=await researchLegalQuestion(request.question,research);
+  assert.equal(result.rounds,1);
   assert.equal(result.evidence.length,1);
   assert.deepEqual(result.needs,[]);
 });
 
-test("recovered explicit reference clears only the matching revision, language and endpoint gap",async()=>{
+test("a further request can resolve a previously missing explicit reference",async()=>{
   const {services,search}=fixture();
   let calls=0;
   services.evidenceResolver.resolveControlling=async id=>{
@@ -520,9 +523,12 @@ test("recovered explicit reference clears only the matching revision, language a
   services.referenceDiscovery=async()=>++calls===1?{candidates:[],unresolved:[{reason:"reference_not_found",
     query:{article:"12",textRevisionId:controlling.textRevisionId,languageTag:"en"}}]}:
     {candidates:[anotherCandidate("rendition:reference")],unresolved:[]};
-  const result=await researchLegalQuestion(request.question,{indexed:search,
-    official:async()=>({evidence:[],needs:[]}),assess:async()=>[]});
-  assert.equal(result.rounds,2);
+  const research={indexed:search,official:async()=>({evidence:[],needs:[]}),assess:async()=>[]};
+  const first=await researchLegalQuestion(request.question,research);
+  assert.equal(first.rounds,1);
+  assert.ok(first.needs.length>0);
+  const result=await researchLegalQuestion(request.question,research);
+  assert.equal(result.rounds,1);
   assert.equal(result.evidence.length,2);
   assert.deepEqual(result.needs,[]);
 });

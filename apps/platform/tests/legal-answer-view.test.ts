@@ -281,11 +281,11 @@ test("partial indexed evidence survives failed live research without a complete-
   const needs=[{reason:"missing_rule" as const,detail:"The separate permit conditions are missing."}];
   let liveCalls=0;
   const research=await researchLegalQuestion(question,{
-    indexed:async()=>({evidence,needs}),
+    indexed:async()=>({evidence,needs:[...needs,{reason:"source_unavailable",detail:"A separate source read failed."}]}),
     official:async()=>{liveCalls++;throw new Error("Publisher unavailable");},
     assess:async()=>needs,
   });
-  assert.ok(liveCalls>0&&liveCalls<=3);
+  assert.equal(liveCalls,1);
   assert.equal(research.sourceUnavailable,true);
   assert.equal(research.evidence.length,1);
   const draft={mainPoint:{text:retainedText,sourceIds:["registration"]},

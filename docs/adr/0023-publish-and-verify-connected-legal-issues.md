@@ -1,5 +1,7 @@
 # Publish and verify connected legal issues
 
+The exhaustive source-omission inventory is superseded by ADR 0025's focused correctness review; connected issue membership and qualification checks remain.
+
 Status: accepted for implementation; runtime qualification remains required.
 
 Publish each complete Qualified Rule beside its explicitly paired practical steps, retaining that membership in saved answers and follow-up context; legacy answers keep their separate sections without inferred pairing. This revises ADR 0015's separate-section qualification requirement: actions may rely on the adjacent rule, while the Main Point remains self-contained and unsupported rules withhold their dependent actions.

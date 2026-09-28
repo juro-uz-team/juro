@@ -120,7 +120,7 @@ test("repair assessment receives earlier formulations without treating unissued 
   assert.deepEqual(histories,[seeded,seeded,[...seeded,{round:1,lane:"indexed",queries:[query.text]}],[]]);
 });
 
-test("compact coverage references preserve canonical evidence and reject decoded duplicates",async context=>{
+test("compact coverage references normalize repeated identities after decoding",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=oldKey;});
   const canonical="corpus:"+"a".repeat(64);
@@ -135,7 +135,7 @@ test("compact coverage references preserve canonical evidence and reject decoded
     assert.equal(input.evidence[1].text,sources[1]!.text);
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
       needs:[],queries:[],supportedAnswerAvailable:true,
-      selectedSourceIds:duplicate?["s1",canonical]:["s0","s1"],
+      selectedSourceIds:duplicate?["s1",canonical,"s1"]:["s0","s1"],
       resolved:[{needIndex:0,sourceIds:["s1"]}],
     })}]}]});
   });
@@ -144,7 +144,7 @@ test("compact coverage references preserve canonical evidence and reject decoded
   assert.deepEqual(result.selectedSourceIds,["s0",canonical]);
   assert.deepEqual(result.resolved,[{need:request.needs[0],sourceIds:[canonical]}]);
   duplicate=true;
-  await assert.rejects(assess(),/SELECTION_EVIDENCE_INVALID/);
+  assert.deepEqual((await assess()).selectedSourceIds,[canonical]);
 });
 
 test("coverage selection is constrained to the authenticated inventory",async context=>{

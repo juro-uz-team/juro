@@ -21,7 +21,7 @@ test("runtime refuses to publish a model-approved answer whose source freshness 
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}
-      :{sources:{source:[]},
+      :{
         claims:Object.fromEntries(["mainPoint","finding:0","action:0"].map(id=>[id,{supported:true,reason:null,dependsOn:[]}])),
         coverage:[{issue:"Record access",actionRequired:true,findingIds:["finding:0"],actionIds:["action:0"],gaps:[]}],
         complete:true,gaps:[],questions:[]};

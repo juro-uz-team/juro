@@ -2,6 +2,8 @@
 
 Status: accepted for implementation; runtime qualification remains required
 
+Research recovery rounds and Deep correction below are superseded by ADR 0025's single acquisition pass and no automatic correction policy.
+
 Fast chat uses one whole-answer draft and a separate verification. It publishes
 only supported claims, with unresolved coverage and factual questions preserved,
 and does not automatically rewrite an independently verified partial answer.

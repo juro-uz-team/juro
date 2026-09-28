@@ -18,6 +18,22 @@ const question:ResearchQuestion={question:"How can I request a record?",topics:[
   locale:"en",mode:"deep",answerMode:"detailed",temporalScope:{kind:"current"}};
 const missing:ResearchNeed={reason:"unresolved_reference",detail:"The rule refers to eligibility in another provision."};
 
+for(const mode of ["fast","deep"] as const) test(`${mode} uses one acquisition pass and one assessment despite remaining gaps`,async()=>{
+  const calls:string[]=[];
+  const result=await researchLegalQuestion({...question,mode},{
+    indexed:async input=>{assert.equal(input.round,0);calls.push("indexed");return {evidence:[evidence("first")],needs:[
+      {reason:"missing_rule",detail:"A complete article could not be read."},
+      {reason:"ambiguous_revision",detail:"A current revision could not be confirmed."},
+    ]};},
+    official:async input=>{assert.equal(input.round,0);calls.push("official");return {evidence:[evidence("second")],needs:[]};},
+    assess:async input=>{calls.push("assess");assert.equal(input.evidence.length,2);return [missing];},
+  });
+  assert.deepEqual(calls,["indexed","official","assess"]);
+  assert.equal(result.rounds,1);
+  assert.ok(result.needs.some(need=>need.reason==="ambiguous_revision"));
+  assert.ok(result.needs.some(need=>need.detail===missing.detail));
+});
+
 test("research discards a provisional draft when selection removes its cited evidence",async()=>{
   const draft=legalDraftSchema.parse({mainPoint:{text:"An applicant may request a record.",sourceIds:["removed"]},
     findings:[{title:"Access",explanation:"An applicant may request a record.",sourceIds:["removed"]}],
@@ -54,7 +70,7 @@ test("assessment resolution retains its complete supporting source when the sele
   const model=createLegalResearchModel({requestId:"resolution-dependency"});
   const result=await researchLegalQuestion({...question,mode:"fast"},{
     indexed:async()=>({evidence:sources,needs:[missing]}),
-    official:async()=>{throw new Error("No further search is required");},assess:model.assess,
+    official:async()=>({evidence:[],needs:[]}),assess:model.assess,
   });
   assert.deepEqual(result.evidence,[sources[0],sources[1]]);
   assert.deepEqual(result.needs,[]);
@@ -83,7 +99,7 @@ test("an oversized selection with resolution dependencies preserves the unresolv
   assert.ok(result.needs.some(need=>need.reason==="context_budget"));
 });
 
-test("fast research preserves initial supported context and gaps for independent partial-answer verification",async()=>{
+test("fast research preserves context and gaps after one acquisition pass",async()=>{
   let officialCalls=0;
   const result=await researchLegalQuestion({...question,mode:"fast"},{
     indexed:async()=>({evidence:[evidence("rule")],needs:[missing]}),
@@ -91,7 +107,7 @@ test("fast research preserves initial supported context and gaps for independent
     assess:async()=>({needs:[],resolved:[],supportedAnswerAvailable:true,selectedSourceIds:["rule"]}),
   });
   assert.equal(result.rounds,1);
-  assert.equal(officialCalls,0);
+  assert.equal(officialCalls,1);
   assert.deepEqual(result.evidence,[evidence("rule")]);
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
   assert.ok(result.needs.some(need=>need.reason==="search_budget"));
@@ -110,7 +126,7 @@ test("fast research still tries official discovery when related context cannot s
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
 });
 
-test("an explicit unanswerable assessment cannot skip recovery by omitting its gap description",async()=>{
+test("an unanswerable assessment records a gap without starting semantic recovery",async()=>{
   let officialCalls=0;
   const result=await researchLegalQuestion({...question,mode:"fast"},{
     indexed:async()=>({evidence:[evidence("related")],needs:[]}),
@@ -121,9 +137,9 @@ test("an explicit unanswerable assessment cannot skip recovery by omitting its g
         supportedAnswerAvailable:useful,selectedSourceIds:useful?["useful"]:["related"]};
     },
   });
-  assert.equal(officialCalls,1);
-  assert.deepEqual(result.evidence,[evidence("useful")]);
-  assert.deepEqual(result.needs,[]);
+  assert.equal(officialCalls,0);
+  assert.deepEqual(result.evidence,[evidence("related")]);
+  assert.ok(result.needs.some(need=>need.reason==="missing_rule"));
 });
 
 test("assessment retains useful complete provisions and admits new repair evidence at capacity",async()=>{
@@ -213,27 +229,27 @@ test("fruitless repair preserves gaps without repeatedly assessing the same evid
     assess:async()=>{assessments++;return [];},
   });
   assert.equal(assessments,1);
-  assert.equal(result.rounds,2);
+  assert.equal(result.rounds,1);
   assert.deepEqual(result.evidence,[evidence("general")]);
   assert.ok(result.needs.some(need=>need.detail===missing.detail));
   assert.ok(result.needs.some(need=>need.reason==="search_budget"));
 });
 
-test("productive repair can use the final round to resolve a material gap",async()=>{
+test("even productive candidates cannot start a second research round",async()=>{
   const result=await researchLegalQuestion(question,{
     indexed:async({round})=>({evidence:[evidence(`rule-${round}`)],needs:[missing]}),
     official:async()=>({evidence:[],needs:[]}),
     assess:async({round})=>round===2?{needs:[],resolved:[{need:missing,sourceIds:["rule-2"]}]}:[],
   });
-  assert.equal(result.rounds,3);
-  assert.equal(result.evidence.length,3);
-  assert.deepEqual(result.needs,[]);
+  assert.equal(result.rounds,1);
+  assert.equal(result.evidence.length,1);
+  assert.ok(result.needs.some(need=>need.detail===missing.detail));
 });
 
 test("assessment can explicitly close a known substantive gap using admitted evidence",async()=>{
   const result=await researchLegalQuestion(question,{
     indexed:async()=>({evidence:[evidence("eligibility")],needs:[missing]}),
-    official:async()=>{throw Error("Should not run");},
+    official:async()=>({evidence:[],needs:[]}),
     assess:async()=>({needs:[],resolved:[{need:missing,sourceIds:["eligibility"]}]}),
   });
   assert.deepEqual(result.needs,[]);
@@ -264,17 +280,16 @@ test("many distinct bounded source failures preserve every gap and the useful ad
 });
 
 test("repeated needs have a unique assessment inventory and duplicate valid resolutions apply atomically",async()=>{
-  let assessment=0;
   const result=await researchLegalQuestion(question,{
     indexed:async({round})=>({evidence:[evidence(round?"eligibility":"rule")],needs:[missing,missing]}),
     official:async()=>({evidence:[],needs:[missing]}),
     assess:async input=>{
       assert.deepEqual(input.needs,[missing]);
-      return ++assessment<2?[]:{needs:[],resolved:[
+      return {needs:[],resolved:[
         {need:missing,sourceIds:["rule"]},{need:missing,sourceIds:["rule"]}]};
     },
   });
-  assert.equal(result.rounds,2);
+  assert.equal(result.rounds,1);
   assert.deepEqual(result.needs,[]);
 });
 
@@ -298,8 +313,8 @@ test("search exhaustion and empty results cannot masquerade as complete evidence
     indexed:async()=>{searches++;return {evidence:[],needs:[missing]};},
     official:async()=>{searches++;return {evidence:[],needs:[]};},assess:async()=>[],
   });
-  assert.equal(searches,4);
-  assert.equal(result.rounds,2);
+  assert.equal(searches,2);
+  assert.equal(result.rounds,1);
   assert.ok(result.needs.some(need=>need.reason==="unresolved_reference"));
   assert.ok(result.needs.some(need=>need.reason==="search_budget"));
 });

@@ -35,12 +35,12 @@ test("an admitted research draft skips rewriting but still requires independent 
   });
   assert.equal(result.kind,"complete");
 });
-for(const failedStage of ["writing","verifying","correcting"] as const) {
+for(const failedStage of ["writing","verifying"] as const) {
 test(`answer ${failedStage} failures remain observable without leaking into the saved answer`,async()=>{
   const failure=new Error("Invalid source passage: private diagnostic detail");
   const failures:unknown[]=[];
   let writes=0;
-  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:failedStage==="correcting"?"deep":"fast",answerMode:"short",
+  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
     interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
     research:{indexed:async()=>({evidence:[evidence],needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
     model:{write:async()=>{if(failedStage==="writing"||writes++>0)throw failure;return draft;},
@@ -49,7 +49,7 @@ test(`answer ${failedStage} failures remain observable without leaking into the 
     renew:async()=>true,commit:async terminal=>terminal,release:async()=>{},
   });
   assert.deepEqual(failures,[{stage:failedStage,error:failure}]);
-  assert.equal(result.kind,failedStage==="correcting"?"partial":"unavailable");
+  assert.equal(result.kind,"unavailable");
   assert.doesNotMatch(JSON.stringify(result),/private diagnostic detail|Diagnostic sink/);
 });
 }
@@ -82,9 +82,9 @@ for(const stage of ["interpreting","researching"] as const) {
   });
 }
 
-test("fast chat publishes independently verified partial findings without another rewrite",async()=>{
+for(const mode of ["fast","deep"] as const) test(`${mode} chat publishes independently verified partial findings without another rewrite`,async()=>{
   let writes=0,verifications=0;
-  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
+  const result=await executeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode,answerMode:"short",
     interpret:async()=>({topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]}),
     research:{indexed:async()=>({evidence:[evidence],needs:[]}),official:async()=>({evidence:[],needs:[]}),assess:async()=>[]},
     model:{write:async()=>{writes++;return draft;},verify:async()=>{verifications++;return {...review,complete:false,gaps:["Eligibility remains unresolved."]};}},

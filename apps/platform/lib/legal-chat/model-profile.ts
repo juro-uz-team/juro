@@ -1,11 +1,12 @@
 import {openAiChatModel} from "../ai/provider-models";
+import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS} from "./execution-limits";
 
 type ChatModelStage="interpreting"|"formulating"|"assessing"|"writing"|"verifying";
 
 /** Execution cost differs by task; all drafts still require verification. */
 export function legalChatModelProfile(mode:"fast"|"deep",stage:ChatModelStage) {
   const model=openAiChatModel(mode);
-  if(mode==="deep")return {model,timeoutMs:120_000,
+  if(mode==="deep")return {model,timeoutMs:LEGAL_CHAT_PROVIDER_TIMEOUT_MS,
     ...(["writing","verifying"].includes(stage)?{reasoningEffort:"max" as const,reasoningMode:"pro" as const}:{})};
   return {model,reasoningMode:"standard" as const,
     // Fast audits and assessments use changing evidence/schema prefixes.

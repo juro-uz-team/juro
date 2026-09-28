@@ -34,13 +34,13 @@ test("streamed rounds reject duplicate fragments, changed final text and late wo
   await assert.rejects(session.stage(fragment),/FRAGMENT_INVALID/);
   await assert.rejects(session.search({round:0,plan:{...plan,formulations:[{...plan.formulations[0]!,text:"Changed query"}]}}),/FRAGMENT_INVALID/);
   assert.equal(admitted,0);
-  await session.stage({...fragment,round:1});
+  await assert.rejects(session.stage({...fragment,round:1}));
   session.close();
   await assert.rejects(session.search({round:1,plan}),{name:"AbortError"});
   await assert.rejects(session.stage({...fragment,round:1}),{name:"AbortError"});
 });
 
-test("one reader owns all bounded rounds and receives no conversation payload",async()=>{
+test("one reader owns the single acquisition pass and receives no conversation payload",async()=>{
   let instances=0;
   const requests:ResearchRequest[]=[];
   const session=createCorpusSession(input,formulate=>{
@@ -51,14 +51,14 @@ test("one reader owns all bounded rounds and receives no conversation payload",a
       return {evidence:[],needs:[]};
     };
   });
-  for(let round=0;round<3;round++)await session.search({round,plan});
-  await assert.rejects(session.search({round:2,plan}),/ROUND_MISMATCH/);
-  await assert.rejects(session.search({round:3,plan}));
+  await session.search({round:0,plan});
+  await assert.rejects(session.search({round:0,plan}),/ROUND_MISMATCH/);
+  await assert.rejects(session.search({round:1,plan}));
   assert.equal(instances,1);
-  assert.deepEqual(requests.map(request=>request.round),[0,1,2]);
+  assert.deepEqual(requests.map(request=>request.round),[0]);
   assert.equal(requests[0]!.question.priorTurns,undefined);
   assert.equal(requests[0]!.question.caseFacts,undefined);
-  assert.equal(requests[0]!.question.signal,requests[2]!.question.signal);
+  assert.ok(requests[0]!.question.signal);
 });
 
 test("failed reads consume their round, invalid plans do not",async()=>{
@@ -68,8 +68,8 @@ test("failed reads consume their round, invalid plans do not",async()=>{
   assert.equal(calls,0);
   await assert.rejects(session.search({round:0,plan}),/reader unavailable/);
   await assert.rejects(session.search({round:0,plan}),/ROUND_MISMATCH/);
-  await assert.rejects(session.search({round:1,plan}),/reader unavailable/);
-  assert.equal(calls,2);
+  await assert.rejects(session.search({round:1,plan}));
+  assert.equal(calls,1);
 });
 
 test("concurrent reads cannot replace the active plan; closing discards late results",async()=>{
@@ -82,7 +82,7 @@ test("concurrent reads cannot replace the active plan; closing discards late res
     return {evidence:[],needs:[]};
   });
   const pending=session.search({round:0,plan});
-  await assert.rejects(session.search({round:1,plan:{...plan,id:"replacement"}}),/IN_PROGRESS/);
+  await assert.rejects(session.search({round:0,plan:{...plan,id:"replacement"}}),/IN_PROGRESS/);
   ready.resolve();
   await pending;
   session.close();
