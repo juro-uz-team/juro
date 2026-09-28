@@ -38,19 +38,22 @@ try {
     const resolver = new Resolver({ timeout: 3000, tries: 1 }); resolver.setServers([server]); return resolver;
   });
   const hosts = config.probes.map(probe => probe.host);
+  let state; try { state = JSON.parse(await readFile(`${directory}/state.json`, "utf8")); } catch {}
   if (!await publicDnsReady(hosts, config.addresses, resolvers)) {
-    await record("waiting_for_dns");
+    await record("waiting_for_dns", { loadedConfiguration: state?.loadedConfiguration });
   } else {
     const candidate = await operatorFile(readyPath);
     const digest = createHash("sha256").update(candidate).digest("hex");
     if (candidate !== await operatorFile(livePath)) {
-      run("/usr/local/bin/caddy", ["validate", "--config", readyPath, "--adapter", "caddyfile"]);
+      // Provision the internal CA using the same identity and storage as the proxy.
+      run("/usr/sbin/runuser", ["-u", "caddy", "--preserve-environment", "--", "/usr/bin/env",
+        "HOME=/var/lib/caddy", "XDG_DATA_HOME=/var/lib/caddy/.local/share", "XDG_CONFIG_HOME=/var/lib/caddy/.config",
+        "/usr/local/bin/caddy", "validate", "--config", readyPath, "--adapter", "caddyfile"]);
       await writeFile(`${livePath}.next`, candidate, { mode: 0o644 });
       await chmod(`${livePath}.next`, 0o644);
       await rename(`${livePath}.next`, livePath);
     }
     // Resume a failed reload safely even if the configuration was already replaced.
-    let state; try { state = JSON.parse(await readFile(`${directory}/state.json`, "utf8")); } catch {}
     if (state?.loadedConfiguration !== digest) {
       run("systemctl", ["reload", "juro-caddy.service"]);
       await record("waiting_for_certificates", { loadedConfiguration: digest });

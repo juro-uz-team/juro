@@ -13,5 +13,4 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/etc/caddy /var/lib/juro-public-https /etc/systemd/system
-
+ReadWritePaths=/etc/caddy /var/lib/caddy /var/lib/juro-public-https /etc/systemd/system
