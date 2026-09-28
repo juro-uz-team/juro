@@ -45,7 +45,7 @@ docs/codemie/
 /.scratch/
 
 # Self-hosted media is restored from the verified server archive.
-/apps/website/public/investor/
+/apps/website/public/investor
 .env.self-hosted
 .data/
 __pycache__/

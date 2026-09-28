@@ -35,8 +35,14 @@ function probe(service, path = service.path, method = "GET", host = service.host
   return new Promise((resolve, reject) => {
     const call = request({ hostname: "127.0.0.1", port: service.port, path, method,
       headers: { host, "x-real-ip": "203.0.113.42" }, signal: AbortSignal.timeout(5000) }, response => {
-      response.resume(); response.on("error", reject);
-      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers }));
+      const chunks = []; let bytes = 0;
+      response.on("data", chunk => {
+        bytes += chunk.length;
+        if (bytes > 8 * 1024 * 1024) response.destroy(Error("Qualification response exceeded its bound"));
+        else chunks.push(chunk);
+      });
+      response.on("error", reject);
+      response.on("end", () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString("utf8") }));
     });
     call.on("error", reject); call.end();
   });
@@ -70,6 +76,11 @@ try {
   assert.equal((await probe(services[0], "/api/platform/profile")).status, 401);
   report.checks.push("private profile rejects unauthenticated access");
   const website = services.find(service => service.name === "website");
+  const homepage = await probe(website);
+  assert.ok(homepage.body.includes(`${settings.APP_URL}/en/auth/login`), "Website login link does not use its environment's application origin");
+  assert.ok(homepage.body.includes(`${settings.APP_URL}/en/auth/register`), "Website registration link does not use its environment's application origin");
+  assert.ok(!homepage.body.includes("http://localhost:3000"), "Website contains a development application link");
+  report.checks.push("rendered website login and registration links use the canonical application origin");
   assert.equal((await probe(website, "/en", "POST")).status, 405);
   report.checks.push("website rejects writes");
   const status = services.find(service => service.name === "status");

@@ -89,7 +89,11 @@ try {
   run("npm", ["ci", "--prefix", "apps/website"], release);
   run("npm", ["run", "type-check"], release);
   run("npm", ["run", "build"], release);
-  if (run("git", ["status", "--porcelain"], release, true)) throw new Error("Build modified the release source");
+  const sourceChanges = run("git", ["status", "--porcelain"], release, true);
+  if (sourceChanges) {
+    console.error(sourceChanges);
+    throw new Error("Build modified the release source");
+  }
   if (tip() !== revision) throw new Error("A newer branch revision superseded this build");
   // Commands receive explicit environment/release arguments and are never shell-evaluated.
   run(config.backupCommand, [environment, revision, release], root);
