@@ -51,7 +51,7 @@ jobs:
       - name: Platform tests
         run: npm test --prefix apps/platform
       - name: Native HTTP boundary tests
-        run: node --test scripts/native-http.test.mjs scripts/native-readiness.test.mjs
+        run: node --test scripts/native-http.test.mjs scripts/native-readiness.test.mjs scripts/deployment-gateway.test.mjs
       - name: Website tests
         working-directory: apps/website
         run: node --test tests/*.test.mjs
