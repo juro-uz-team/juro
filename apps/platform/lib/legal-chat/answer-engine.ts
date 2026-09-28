@@ -35,7 +35,7 @@ export type AnswerQuestion = {
   onStage?: (stage: "writing" | "verifying" | "correcting") => void;
 };
 export type AnswerOutcome = {
-  kind: "complete" | "partial" | "insufficient_evidence" | "unavailable";
+  kind: "answered" | "complete" | "partial" | "insufficient_evidence" | "unavailable";
   result: LegalChatResponse;
   errorCode?: string;
   verification?: LegalVerification;
@@ -170,7 +170,8 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Не для каждого запрошенного периода подтверждена правовая часть ответа.",
     "So‘ralgan har bir davr uchun javobning huquqiy qismi tasdiqlanmagan.",
     "The answer does not have supported legal findings for every requested time period.")] : [];
-  const completeCoverage = verification.coverage.length > 0 && incompleteIssues.length === 0;
+  const programmatic = verification.validationMethod === "programmatic";
+  const completeCoverage = programmatic || (verification.coverage.length > 0 && incompleteIssues.length === 0);
   const coverageGaps = completeCoverage ? [] : [aiText(input.locale,
     "Не для каждого существенного вопроса подтверждены правовое объяснение и практические шаги.",
     "Har bir muhim masala uchun huquqiy tushuntirish va amaliy qadamlar tasdiqlanmagan.",
@@ -179,7 +180,7 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     "Часть официальных источников временно недоступна; полнота ответа не подтверждена.",
     "Ayrim rasmiy manbalar vaqtincha mavjud emas; javobning to‘liqligi tasdiqlanmagan.",
     "Some official sources are temporarily unavailable; the answer's completeness is not confirmed.")] : [];
-  const complete = findings.length>0 && verification.complete && legalDraftClaims(draft).every(item => accepted.has(item.id))
+  const complete = findings.length>0 && (programmatic || verification.complete) && legalDraftClaims(draft).every(item => accepted.has(item.id))
     && !draft.unresolved.length && !verification.gaps.length && !hasSourceGaps && !input.unresolved.length
     && !input.sourceUnavailable && !missingTime && completeCoverage;
   const partialSummary = aiText(input.locale, "Ниже — подтвержденная часть ответа; остальные вопросы требуют проверки.",
@@ -194,13 +195,16 @@ function projectVerifiedAnswer(input: AnswerQuestion, draft: LegalDraft, verific
     clarificationQuestions: questions,
     coverageGaps: [...new Set([...input.unresolved, ...reviewedGaps, ...verificationGaps,
       ...identityGaps, ...coverageGaps, ...outageGaps])],
-    evidenceMode: "official", coverageStatus: complete ? "good_coverage" : "partial_coverage",
+    evidenceMode: "official",
+    ...(programmatic ? {validationMethod: "programmatic"} : {}),
+    coverageStatus: complete ? (programmatic ? undefined : "good_coverage") : "partial_coverage",
     legalDatabaseAsOf: input.evidence.map(item => item.source.verifiedAt).sort()[0] ?? "unavailable",
     sourceAccessMode: input.evidence.every(item => item.origin === "indexed") ? "approved_package"
       : input.evidence.every(item => item.origin === "live") ? "direct" : "mixed",
     sourceValidationStatus: "validated",
   });
-  return { kind: complete ? "complete" : "partial", result, verification };
+  if (programmatic && complete) delete result.coverageStatus;
+  return { kind: complete ? (programmatic ? "answered" : "complete") : "partial", result, verification };
 }
 
 function unavailableAnswer(input: AnswerQuestion, errorCode: string): AnswerOutcome {
@@ -259,7 +263,7 @@ export async function answerFromEvidence(input: AnswerQuestion, model: AnswerMod
   } catch(error) { observeFailure(error); return unavailableAnswer(input, input.signal?.aborted ? "AI_CANCELLED" : "ANSWER_PROVIDER_UNAVAILABLE"); }
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   const first = projectVerifiedAnswer(input, draft, verification);
-  if (first.kind === "complete" || options?.correction === "never") return finalize(draft,verification);
+  if (verification.validationMethod === "programmatic" || first.kind === "complete" || options?.correction === "never") return finalize(draft,verification);
   if (input.signal?.aborted) return unavailableAnswer(input, "AI_CANCELLED");
   try {
     stage="correcting";

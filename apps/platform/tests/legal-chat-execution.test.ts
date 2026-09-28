@@ -54,7 +54,7 @@ test(`answer ${failedStage} failures remain observable without leaking into the 
 });
 }
 
-for(const stage of ["interpreting","researching"] as const) {
+for(const stage of ["interpreting","writing"] as const) {
   test(`runtime ${stage} timeout cannot publish a supported answer`,async context=>{
     const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
     context.mock.timers.enable({apis:["setTimeout","setInterval"]});
@@ -62,7 +62,7 @@ for(const stage of ["interpreting","researching"] as const) {
     const stalled=Promise.withResolvers<void>();
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
       calls++;
-      if(stage==="researching"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
+      if(stage==="writing"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
         text:JSON.stringify({interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
           research:{queries:[{text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]}})}]}]});
       return new Promise<Response>((_resolve,reject)=>{
@@ -75,9 +75,13 @@ for(const stage of ["interpreting","researching"] as const) {
       commit:async terminal=>{saved=true;return terminal;},release:async reason=>{released=reason;}});
     const outcome=stage==="interpreting"?pending.then(terminal=>{
       assert.deepEqual(terminal,{kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"});
-    }):assert.rejects(pending,(error:unknown)=>error instanceof Error&&"code" in error&&error.code==="PROVIDER_TIMEOUT");
-    await stalled.promise;context.mock.timers.tick(stage==="interpreting"?15_000:45_000);await outcome;
-    assert.equal(saved,stage==="interpreting");assert.equal(released,stage==="interpreting"?undefined:"failed");
+    }):pending.then(terminal=>{
+      assert.equal(terminal.kind,"unavailable");
+      assert.ok("result" in terminal);
+      assert.equal(terminal.result.failureReason,"answer_verification_unavailable");
+    });
+    await stalled.promise;context.mock.timers.tick(stage==="interpreting"?15_000:60_000);await outcome;
+    assert.equal(saved,true);assert.equal(released,undefined);
     assert.equal(calls,stage==="interpreting"?1:2);
   });
 }

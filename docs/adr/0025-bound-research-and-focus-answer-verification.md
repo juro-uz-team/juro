@@ -1,6 +1,6 @@
 # Bound research and focus answer verification
 
-Status: accepted for implementation; quality and latency qualification remains required.
+Status: research bounds retained; model verification and bounded-packet assessment superseded by [programmatic answer validation](0026-programmatic-answer-validation.md). Quality and latency qualification remains required.
 
 Both chat modes use one research acquisition pass followed by one assessment and independent answer verification. Indexed retrieval runs once; absent evidence or structural source/reference failures may invoke official retrieval once before assessment. Gaps discovered by assessment remain explicit in a Supported Partial Answer or Insufficient-Evidence Result until a further user request. Automatic semantic research recovery and answer correction loops are removed, superseding those parts of ADR 0020; targeted official fallback in ADR 0013 remains within this bounded pass.
 

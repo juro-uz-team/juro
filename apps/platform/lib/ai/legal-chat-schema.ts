@@ -134,6 +134,7 @@ export const legalChatResponseSchema = z.object({
   sourceAccessMode: z.enum(["direct", "approved_package", "mixed"]).optional(),
   evidenceMode: z.enum(["official", "mixed", "secondary_only", "private_only", "none"]).optional(),
   sourcesRetrievedAt: z.string().max(64).nullable().optional(),
+  validationMethod: z.literal("programmatic").optional(),
   sourceValidationStatus: z.enum(["validated", "unavailable"]).optional(),
   coverageStatus: z.enum(["good_coverage", "partial_coverage", "weak_coverage", "no_coverage"]).optional(),
   referenceNotes: z.array(legalReferenceNoteSchema).max(8).optional(),

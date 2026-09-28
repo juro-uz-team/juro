@@ -28,7 +28,7 @@ const source:LegalSourceContext={id:"source",actTitle:"Synthetic rule",actIdenti
   spans:[{id:"span",article:"7",paragraph:null,text:sourceText,textSha256:hash,quality:"high"}],
   citationEvidenceReceipt:{version:1,kind:"provision",capability:"current",r2Key:"exact/provision",byteCount:Buffer.byteLength(sourceText),
     sha256:hash,textSha256:hash,officialUrl:"https://lex.uz/docs/777",languageTag:"ru",articleNumber:"7"}};
-const result=legalChatResponseSchema.parse({responseKind:"answer",summary:"You may request a record.",answer:"You may request a record.",
+const result=legalChatResponseSchema.parse({validationMethod:"programmatic",responseKind:"answer",summary:"You may request a record.",answer:"You may request a record.",
   language:"en",jurisdiction:"UZ",answerMode:"detailed",reasoningMode:"fast",clarificationQuestions:[],
   confirmedFindings:[{title:"Record access",explanation:"You may request a record.",sourceIds:["source"]}],
   assumptions:[],risks:[],sources:[{sourceId:"source",actTitle:"Synthetic rule",actIdentifier:null,article:"7",

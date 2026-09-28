@@ -43,6 +43,7 @@ export type LegalAnswerViewResult = {
   referenceNotes?: Array<{ title: string; note: string; sourceIds: string[] }>;
   conditionalBranches?: Array<{ condition: string; outcome: string; sourceIds: string[] }>;
   coverageGaps?: string[];
+  validationMethod?: "programmatic";
   coverageStatus?: "good_coverage" | "partial_coverage" | "weak_coverage" | "no_coverage";
   failureReason?: LegalAnswerFailureReason;
 };
@@ -61,6 +62,7 @@ type AnswerCopy = {
   checked: string;
   checkedBody: string;
   partial: string;
+  programmatic: string;
   missing: string;
   authority: Record<NonNullable<LegalAnswerViewResult["evidenceMode"]>, string>;
   citationLabel: string;
@@ -84,6 +86,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Пока нельзя подтвердить ответ",
     checked: "Что удалось проверить",
     checkedBody: "Доступных подтверждений недостаточно для полного правового вывода.",
+    programmatic: "Ответ ИИ на основе официальных источников. Правовая интерпретация не проверялась независимо.",
     partial: "Ответ неполный: остаются неподтверждённые вопросы",
     missing: "Нужны дополнительные факты или подтверждённая применимая норма. JURO не заменяет их предположением из общих знаний модели.",
     authority: {
@@ -112,6 +115,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Javobni hozircha tasdiqlab bo‘lmaydi",
     checked: "Nimalar tekshirildi",
     checkedBody: "Mavjud tasdiqlar to‘liq huquqiy xulosa uchun yetarli emas.",
+    programmatic: "Rasmiy manbalarga asoslangan AI javobi. Huquqiy talqin mustaqil tekshirilmagan.",
     partial: "Javob to‘liq emas: tasdiqlanmagan masalalar qolmoqda",
     missing: "Qo‘shimcha faktlar yoki tasdiqlangan amaldagi norma kerak. JURO ularning o‘rniga modelning umumiy bilimiga asoslangan taxmin bermaydi.",
     authority: {
@@ -140,6 +144,7 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "The answer cannot yet be verified",
     checked: "What was checked",
     checkedBody: "The available evidence is insufficient for a complete legal conclusion.",
+    programmatic: "AI answer based on official sources. The legal interpretation has not been independently reviewed.",
     partial: "This answer is incomplete: some issues remain unverified",
     missing: "Additional facts or a verified applicable rule are required. JURO will not replace them with an assumption based on a model's general knowledge.",
     authority: {
@@ -304,7 +309,7 @@ export function LegalAnswerView({
   ].flatMap((sourceIds) => sourceIds ?? []))];
   return <article className={rootClass} data-answer-kind="legal-answer">
     {internetNotice}
-    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{incomplete ? copy.partial : copy.authority[mode]}</p>
+    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{result.validationMethod === "programmatic" ? copy.programmatic : incomplete ? copy.partial : copy.authority[mode]}</p>
     <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
       <CitationList sourceIds={mainSourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />

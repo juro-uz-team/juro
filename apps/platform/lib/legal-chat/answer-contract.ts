@@ -34,6 +34,7 @@ export const legalSourceGapsSchema = z.array(z.object({
 }).strict()).max(24);
 
 export const legalVerificationSchema = z.object({
+  validationMethod: z.literal("programmatic").optional(),
   // Separate from truth: a supported signpost is not a substantive answer.
   mainPointAnswersQuestion:z.boolean().default(false),
   claims: z.array(z.object({
