@@ -15,7 +15,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));const schema=body.text.format.name;calls.push(schema);
     if(schema==="legal_question_research")monotonic+=6500;
-    const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
+    const query={text:"record access",topicIndices:[0]};
     assert.ok(!["legal_research_coverage","legal_research_answer","legal_issue_verification","legal_verification"].includes(schema),"Bounded evidence goes directly to writing and programmatic checks");
     if(schema==="legal_answer"||schema==="legal_issue_verification") {
       assert.equal(JSON.parse(body.input).context.evidence[0].passages[0].text,text);

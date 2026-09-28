@@ -3,13 +3,16 @@ import { callOpenAiStructured, type AiProviderAttemptObservation } from "../docu
 import { legalChatModelProfile } from "./model-profile";
 import { questionContextSchema,questionResearchSchema, type QuestionContextInput } from "./question-context";
 import {documentModelContext,privateDocumentPolicy} from "./document-context";
-import {legalResearchInstructions} from "./research-model";
+import {indexedResearchInstructions} from "./research-model";
 import {initialResearchPlanSchema,validateInitialResearchQueries} from "./initial-research-plan";
 
+// Initial formulations never seed public-site discovery; that adapter produces
+// its own privacy annotations. Keep the indexed wire limited to search inputs.
+const initialIndexedQuerySchema=initialResearchPlanSchema.shape.queries.element.pick({text:true,topicIndices:true});
 const initialDiscoverySchema=questionResearchSchema.extend({research:z.object({
-  directQueries:initialResearchPlanSchema.shape.queries.max(12)
+  directQueries:z.array(initialIndexedQuerySchema).min(1).max(12)
     .describe("Search the question's specific relationship, rule or procedure."),
-  underlyingRuleQueries:z.array(initialResearchPlanSchema.shape.queries.element).max(8)
+  underlyingRuleQueries:z.array(initialIndexedQuerySchema).max(8)
     .describe("For disputed conduct, search the general requested legal consequence if the asserted agreement or legal basis is absent, invalid or ended. Omit transaction labels; use the general legal mechanism. For a narrow statutory lookup, use an empty array."),
 }).strict()});
 
@@ -19,7 +22,8 @@ function parseCombinedInterpretation(value:unknown) {
   const envelope=z.object({interpretation:questionContextSchema,research:z.unknown().optional()}).strict().parse(value);
   const discovery=initialDiscoverySchema.safeParse(envelope);
   const combined=discovery.success?questionResearchSchema.safeParse({interpretation:discovery.data.interpretation,
-    research:{queries:[...discovery.data.research.directQueries,...discovery.data.research.underlyingRuleQueries]}}):discovery;
+    research:{queries:[...discovery.data.research.directQueries,...discovery.data.research.underlyingRuleQueries]
+      .map(query=>({...query,privateNameSpans:[],legalTitleSpans:[]}))}}):discovery;
   if(combined.success) {
     try {
       validateInitialResearchQueries(combined.data.research.queries,envelope.interpretation.topics);
@@ -51,7 +55,7 @@ export function createQuestionInterpreter(options:{
 }):(input:QuestionContextInput)=>Promise<unknown> {
   return async input => {
     const combined=options.mode==="fast";
-    const result=await callOpenAiStructured({instructions:(combined?`${instructions}\nResearch formulation policy:\n${legalResearchInstructions}\n${privateDocumentPolicy}\nCombined response: interpretation contains the complete question interpretation. Then research contains the initial search formulations for that interpretation. Resolve the research scope from your generated topics, selected relevant context, exact user facts and temporal intent. Each query topicIndices value refers to the zero-based index in interpretation.topics; cover every topic. The raw input is the original question and context, not an already interpreted question. Research queries are discovery proposals, never established law or an answer. There is no supplied legal evidence, prior formulation or unresolved research need yet. Preserve ambiguity by researching plausible governing mechanisms without assuming one applies. Do not invent authority titles or numbers; only use them when supplied in the original context.`:instructions)+`\n${topicScopeInstructions}`+(combined?`\n${initialResearchScopeInstructions}`:""),
+    const result=await callOpenAiStructured({instructions:(combined?`${instructions}\nResearch formulation policy:\n${indexedResearchInstructions}\n${privateDocumentPolicy}\nCombined response: interpretation contains the complete question interpretation. Then research contains the initial search formulations for that interpretation. Resolve the research scope from your generated topics, selected relevant context, exact user facts and temporal intent. Each query topicIndices value refers to the zero-based index in interpretation.topics; cover every topic. The raw input is the original question and context, not an already interpreted question. Research queries are discovery proposals, never established law or an answer. There is no supplied legal evidence, prior formulation or unresolved research need yet. Preserve ambiguity by researching plausible governing mechanisms without assuming one applies. Do not invent authority titles or numbers; only use them when supplied in the original context.`:instructions)+`\n${topicScopeInstructions}`+(combined?`\n${initialResearchScopeInstructions}`:""),
       input:{question:input.question,locale:input.locale,
       priorTurns:input.priorTurns,userContext:input.userContext??null,privateDocuments:documentModelContext(input.documents),legalContextDate:input.legalContextDate??null,
       now:(input.now??new Date()).toISOString()},schemaName:combined?"legal_question_research":"legal_question_context",schema:z.toJSONSchema(combined?initialDiscoverySchema:questionContextSchema),

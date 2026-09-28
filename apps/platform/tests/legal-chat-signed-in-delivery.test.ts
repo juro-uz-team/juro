@@ -38,7 +38,7 @@ test("signed-in clarification persists, accounts once, and replays without anoth
     return Response.json({id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
       output:[{content:[{type:"output_text",text:JSON.stringify({
         interpretation:{topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]},
-        research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]},
+        research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules",topicIndices:[0]}]},
       })}]}]});
   });
   const stages:string[]=[];

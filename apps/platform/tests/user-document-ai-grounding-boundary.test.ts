@@ -19,7 +19,7 @@ test("question interpretation and research label private excerpts as untrusted c
     const interpretation = {topics: ["Agreement enforceability"], facts: [], temporal: {kind: "current"}, questions: [],
       selectedDocumentIds: [document.source.id], selectedMemoryIds: []};
     const research = {queries: [{text: "agreement enforceability", topicIndices: [0], privateNameSpans: [], legalTitleSpans: []}]};
-    const output = body.text.format.name === "legal_question_research"?{interpretation,research:{directQueries:research.queries,underlyingRuleQueries:[]}}
+    const output = body.text.format.name === "legal_question_research"?{interpretation,research:{directQueries:research.queries.map(({text,topicIndices})=>({text,topicIndices})),underlyingRuleQueries:[]}}
       :body.text.format.name === "legal_question_context"?interpretation:research;
     return Response.json({id: "response", output: [{content: [{type: "output_text", text: JSON.stringify(output)}]}]});
   });
