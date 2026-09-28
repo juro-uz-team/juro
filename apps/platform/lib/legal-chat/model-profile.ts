@@ -6,6 +6,7 @@ type ChatModelStage="interpreting"|"formulating"|"assessing"|"writing";
 export function legalChatModelProfile(mode:"fast"|"deep",stage:ChatModelStage) {
   const model=openAiChatModel(mode);
   return {model,reasoningMode:"standard" as const,
+    ...(stage === "writing"?{responseHeadersTimeoutMs:5_000}:{}),
     // Assessments use changing evidence/schema prefixes.
     // Avoid automatic cache writes for this usually one-use request context.
     ...(stage === "assessing"?{promptCacheMode:"explicit" as const}:{}),

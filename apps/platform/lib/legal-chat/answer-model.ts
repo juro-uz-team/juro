@@ -189,14 +189,16 @@ export function createLegalAnswerModel(options: {
     instructions: string, input: unknown, schema: z.ZodType<T>, schemaName: string,providerSchema?:z.ZodType,decode?:(value:unknown)=>unknown): Promise<T> {
     const language=question.locale==="en"?"English":question.locale==="uz"?"Uzbek using the Latin script":"Russian";
     const languageInstruction=`The required output language for THIS answer is ${language}. Write all original prose in ${language}, regardless of the language used by the sources. Preserve exact identifiers and clearly marked quotations. This language requirement is supplied by the application.`;
+    const profile=legalChatModelProfile(question.mode,"writing");
     const result = await callOpenAiStructured({
       instructions:(options.responseTone
         ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`)+`\n${languageInstruction}`,
       input, schemaName, schema: z.toJSONSchema(providerSchema??schema, {reused:"ref"}), parse: value => schema.parse(decode?decode(value):value),
-      requestId: options.requestId, ...legalChatModelProfile(question.mode,"writing"), maxAttempts: 1,
+      requestId: options.requestId, ...profile, maxAttempts: 2,retryOnlyOnHeadersTimeout:true,
       textVerbosity: question.answerMode === "short" ? "low" : "medium",
-      deadlineAt: options.deadlineAt, signal: question.signal, safetyIdentifier: options.safetyIdentifier,
-      onProgress: options.onProgress,
+      deadlineAt: Math.min(options.deadlineAt??Infinity,Date.now()+profile.timeoutMs), signal: question.signal, safetyIdentifier: options.safetyIdentifier,
+      // Receive headers independently of generation; draft deltas remain internal.
+      onProgress: options.onProgress??(()=>undefined),
       onAttempt: ({ model }) => options.onAttempt?.({ stage, model }),
       onAttemptFinished: observation => options.onAttemptFinished?.({ ...observation, stage }),
     });

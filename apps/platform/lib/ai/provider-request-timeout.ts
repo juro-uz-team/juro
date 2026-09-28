@@ -1,5 +1,6 @@
 export type ProviderRequestAbortReason =
   | "caller"
+  | "response_headers_timeout"
   | "first_byte_timeout"
   | "total_response_timeout"
   | "absolute_deadline_exceeded";
@@ -60,6 +61,8 @@ export type ProviderRequestConsumeContext = {
  * primary and fallback providers to share one deadline.
  */
 export async function runProviderRequestWithTimeouts<T>(input: {
+  /** Optional connection deadline, cleared on headers even for streaming calls. */
+  responseHeadersTimeoutMs?: number;
   firstByteTimeoutMs: number;
   totalResponseTimeoutMs: number;
   /**
@@ -80,6 +83,8 @@ export async function runProviderRequestWithTimeouts<T>(input: {
 }): Promise<T> {
   const firstByteTimeoutMs = positiveTimeout(input.firstByteTimeoutMs, "firstByteTimeoutMs");
   const totalResponseTimeoutMs = positiveTimeout(input.totalResponseTimeoutMs, "totalResponseTimeoutMs");
+  const headersTimeout=input.responseHeadersTimeoutMs===undefined?undefined
+    :positiveTimeout(input.responseHeadersTimeoutMs,"responseHeadersTimeoutMs");
   const deadlineAt = input.deadlineAt === undefined ? undefined : finiteTimestamp(input.deadlineAt, "deadlineAt");
   const now = input.now ?? Date.now;
   const startedAt = now();
@@ -104,6 +109,7 @@ export async function runProviderRequestWithTimeouts<T>(input: {
 
   const firstByteTimer = setTimeout(() => abort("first_byte_timeout"), firstByteTimeoutMs);
   const totalResponseTimer = setTimeout(() => abort("total_response_timeout"), totalResponseTimeoutMs);
+  const headersTimer=headersTimeout===undefined?undefined:setTimeout(()=>abort("response_headers_timeout"),headersTimeout);
   const absoluteDeadlineTimer = deadlineAt === undefined
     ? undefined
     : setTimeout(() => abort("absolute_deadline_exceeded"), Math.max(0, deadlineAt - startedAt));
@@ -127,8 +133,12 @@ export async function runProviderRequestWithTimeouts<T>(input: {
   };
   try {
     const response = await input.start(controller.signal);
+    if(headersTimer!==undefined)clearTimeout(headersTimer);
+    controller.signal.throwIfAborted();
     if (!input.requireFirstContent) clearTimeout(firstByteTimer);
-    return await input.consume(response, controller.signal, context);
+    const result=await input.consume(response, controller.signal, context);
+    controller.signal.throwIfAborted();
+    return result;
   } catch (error) {
     if (abortReason || (error instanceof Error && error.name === "AbortError" && controller.signal.aborted)) {
       throw new ProviderRequestAbortError(abortReason ?? "total_response_timeout");
@@ -137,6 +147,7 @@ export async function runProviderRequestWithTimeouts<T>(input: {
   } finally {
     clearTimeout(firstByteTimer);
     clearTimeout(totalResponseTimer);
+    if(headersTimer!==undefined)clearTimeout(headersTimer);
     if (absoluteDeadlineTimer !== undefined) clearTimeout(absoluteDeadlineTimer);
     input.callerSignal?.removeEventListener("abort", cancelFromCaller);
   }

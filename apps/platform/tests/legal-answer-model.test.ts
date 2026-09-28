@@ -1,3 +1,4 @@
+import {structuredResponse} from "./helpers/structured-response";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {privateDocumentContext} from "./helpers/private-document-context";
@@ -19,8 +20,9 @@ test("writer receives the selected output language as application policy in both
   let expectedLanguage="";
   context.mock.method(globalThis,"fetch",async (_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
+    assert.equal(body.stream,true,"Writing always streams internally, even without a progress observer");
     assert.ok(body.instructions.includes(`The required output language for THIS answer is ${expectedLanguage}.`));
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+    return structuredResponse({stream:true},{output:[{content:[{type:"output_text",text:JSON.stringify({
       answer:{mainPoint:{text:"Synthetic answer",sourceIds:[]},issues:[],risks:[],questions:[],unresolved:[]},
     })}]}]});
   });
@@ -58,7 +60,7 @@ test("writer produces the answer without redundant planning references and cites
       "Every source still reaches the writer");
     const mainPoint=resolve(resolve(schema.properties.answer).properties!.mainPoint!);
     assert.deepEqual(resolve(resolve(mainPoint.properties!.sourceIds!).items!).enum,wireIds);
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
+    return structuredResponse({stream:true},{output:[{content:[{type:"output_text",text:JSON.stringify({
       answer:{mainPoint:{text:"The applicant may request a copy. [s1, s2] Keep [the original], [s3], [s0] and [s1](https://example.com).",sourceIds:[wireIds[1],wireIds[2]]},
         issues:[],risks:[],questions:[],unresolved:[]},
     })}]}]});
@@ -69,27 +71,52 @@ test("writer produces the answer without redundant planning references and cites
     "Remove redundant declared transport citations only; preserve ordinary brackets, undeclared aliases, canonical IDs and links");
 });
 
-test("a stalled answer provider is cancelled by the selected chat mode watchdog",async context=>{
+test("both writers bound connection stalls to two identical five-second attempts",async context=>{
   const previousKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
   context.after(()=>{env.OPENAI_API_KEY=previousKey;});
-  context.mock.timers.enable({apis:["setTimeout"]});
-  for(const [mode,limit] of [["fast",60_000],["deep",60_000]] as const) {
-    const started=Promise.withResolvers<void>();
-    let providerSignal:AbortSignal|undefined;
+  context.mock.timers.enable({apis:["setTimeout","Date"],now:1000});
+  for(const mode of ["fast","deep"] as const) {
+    const starts=[Promise.withResolvers<void>(),Promise.withResolvers<void>()];
+    const signals:AbortSignal[]=[],bodies:string[]=[];
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
-      providerSignal=init!.signal!;
+      signals.push(init!.signal!);bodies.push(String(init!.body));
       init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});
-      started.resolve();
+      starts[signals.length-1]!.resolve();
     }));
     const question:AnswerQuestion={question:"What applies?",locale:"en",mode,answerMode:"short",
       temporalScope:{kind:"current"},unresolved:[],evidence:[]};
     const pending=createLegalAnswerModel({requestId:"stalled-answer"}).write({question,correction:null});
-    const rejected=assert.rejects(pending,(error:unknown)=>error instanceof Error&&"code" in error&&error.code==="PROVIDER_TIMEOUT");
-    await started.promise;
-    context.mock.timers.tick(limit-1);
-    assert.equal(providerSignal?.aborted,false);
-    context.mock.timers.tick(1);
-    await rejected;
+    const rejected=assert.rejects(pending,{code:"PROVIDER_TIMEOUT",providerErrorType:"response_headers_timeout"});
+    for(let attempt=0;attempt<2;attempt++){
+      await starts[attempt]!.promise;
+      context.mock.timers.tick(4999);assert.equal(signals[attempt]!.aborted,false);
+      context.mock.timers.tick(1);
+    }
+    await rejected;assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
+  }
+});
+
+test("connection recovery does not restart the writer's overall generation deadline",async context=>{
+  const previous=env.OPENAI_API_KEY;env.OPENAI_API_KEY="offline-key";context.after(()=>{env.OPENAI_API_KEY=previous;});
+  context.mock.timers.enable({apis:["setTimeout","Date"],now:1000});
+  for(const mode of ["fast","deep"] as const){
+    const starts=[Promise.withResolvers<void>(),Promise.withResolvers<void>()];
+    const signals:AbortSignal[]=[];
+    context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
+      const signal=init!.signal!;signals.push(signal);starts[signals.length-1]!.resolve();
+      if(signals.length===1)return new Promise<Response>((_resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));
+      return new Response(new ReadableStream({start(controller){
+        signal.addEventListener("abort",()=>controller.error(signal.reason),{once:true});
+      }}),{headers:{"content-type":"text/event-stream"}});
+    });
+    const question:AnswerQuestion={question:"What applies?",locale:"en",mode,answerMode:"short",
+      temporalScope:{kind:"current"},unresolved:[],evidence:[]};
+    const pending=createLegalAnswerModel({requestId:"shared-writing-budget",onProgress:()=>undefined}).write({question,correction:null});
+    const rejected=assert.rejects(pending,{code:"PROVIDER_TIMEOUT",providerErrorType:"total_stream_timeout"});
+    await starts[0]!.promise;context.mock.timers.tick(5000);await starts[1]!.promise;
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    context.mock.timers.tick(54999);assert.equal(signals[1]!.aborted,false);
+    context.mock.timers.tick(1);await rejected;assert.equal(signals.length,2);
   }
 });
 
@@ -104,7 +131,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     const body = JSON.parse(String(init?.body));
     assertStrictProviderObjects(body.text.format.schema);
     payloads.push(body);
-    return Response.json({ id: "response", model: body.model,
+    return structuredResponse({stream:true},{ id: "response", model: body.model,
       output: [{ content: [{ type: "output_text", text: JSON.stringify({
         answer: {
         mainPoint: { text: "Supported result", sourceIds: ["source"] },
@@ -159,7 +186,7 @@ test("a fabricated citation is rejected before a draft can reach verification", 
   const previousKey = env.OPENAI_API_KEY;
   env.OPENAI_API_KEY = "test-key";
   context.after(() => { env.OPENAI_API_KEY = previousKey; });
-  context.mock.method(globalThis, "fetch", async () => Response.json({
+  context.mock.method(globalThis, "fetch", async () => structuredResponse({stream:true},{
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
       answer: {mainPoint:{text:"Pay the penalty",sourceIds:["fabricated-source"]}, issues:[],risks:[],questions:[],unresolved:[]},
     }) }] }], usage: {input_tokens:10,output_tokens:10},
@@ -201,7 +228,7 @@ test("one whole correction can reuse approved claims without rewriting their con
   });
   let findingReuse = "finding:0";
   let actionSource = "source";
-  context.mock.method(globalThis, "fetch", async () => Response.json({
+  context.mock.method(globalThis, "fetch", async () => structuredResponse({stream:true},{
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
       answer: { mainPoint: { reuse: "mainPoint" },
         issues: [{ finding: { reuse: findingReuse }, actions: [{ title: "Request review",
@@ -257,7 +284,7 @@ test("qualified issues preserve action membership without duplicating explanator
   let instructionSources = ["rule", "procedure"];
   let reuseAction = false;
   let hasAction = true;
-  context.mock.method(globalThis, "fetch", async () => Response.json({
+  context.mock.method(globalThis, "fetch", async () => structuredResponse({stream:true},{
     id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
       answer: {
         mainPoint: { text: "Application guidance", sourceIds: [] },

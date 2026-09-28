@@ -58,16 +58,16 @@ test(`answer ${failedStage} failures remain observable without leaking into the 
 for(const stage of ["interpreting","writing"] as const) {
   test(`runtime ${stage} timeout cannot publish a supported answer`,async context=>{
     const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-    context.mock.timers.enable({apis:["setTimeout","setInterval"]});
+    context.mock.timers.enable({apis:["setTimeout","setInterval","Date"],now:Date.now()});
     let calls=0,saved=false,released:string|undefined;
-    const stalled=Promise.withResolvers<void>();
+    const stalled=[Promise.withResolvers<void>(),Promise.withResolvers<void>()];let stalls=0;
     context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
       calls++;
       if(stage==="writing"&&calls===1)return structuredResponse(JSON.parse(String(init?.body)),{id:"context",output:[{content:[{type:"output_text",
         text:JSON.stringify({interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
           research:{underlyingRuleQueries:[],directQueries:[{text:"record access",topicIndices:[0]}]}})}]}]});
       return new Promise<Response>((_resolve,reject)=>{
-        init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});stalled.resolve();
+        init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});stalled[stalls++]!.resolve();
       });
     });
     const pending=executeRuntimeLegalChat({context:{question:"What applies?",locale:"en",priorTurns:[]},mode:"fast",answerMode:"short",
@@ -81,9 +81,11 @@ for(const stage of ["interpreting","writing"] as const) {
       assert.ok("result" in terminal);
       assert.equal(terminal.result.failureReason,"answer_verification_unavailable");
     });
-    await stalled.promise;context.mock.timers.tick(stage==="interpreting"?15_000:60_000);await outcome;
+    await stalled[0]!.promise;context.mock.timers.tick(stage==="interpreting"?15_000:5_000);
+    if(stage==="writing"){await stalled[1]!.promise;context.mock.timers.tick(5_000);}
+    await outcome;
     assert.equal(saved,true);assert.equal(released,undefined);
-    assert.equal(calls,stage==="interpreting"?1:2);
+    assert.equal(calls,stage==="interpreting"?1:3);
   });
 }
 

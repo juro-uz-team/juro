@@ -128,6 +128,9 @@ export async function callOpenAiJson<T>(options: {
   timeoutMs?: number;
   firstByteTimeoutMs?: number;
   totalResponseTimeoutMs?: number;
+  responseHeadersTimeoutMs?: number;
+  /** Recover only a connection that received no HTTP response. Never regenerate rejected output. */
+  retryOnlyOnHeadersTimeout?: boolean;
   /** Absolute request deadline shared with caller orchestration. */
   deadlineAt?: number;
   rawInput?: boolean;
@@ -148,6 +151,9 @@ export async function callOpenAiStructured<T>(options: {
   timeoutMs?: number;
   firstByteTimeoutMs?: number;
   totalResponseTimeoutMs?: number;
+  responseHeadersTimeoutMs?: number;
+  /** Only a missing HTTP response may trigger recovery; received output is never retried. */
+  retryOnlyOnHeadersTimeout?: boolean;
   /** Absolute request deadline shared with caller orchestration. */
   deadlineAt?: number;
   rawInput?: boolean;
@@ -198,6 +204,8 @@ export async function callOpenAiStructured<T>(options: {
   const totalResponseTimeoutMs = options.totalResponseTimeoutMs ?? legacyTimeoutMs;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const canRetry=(reason?:ProviderRequestAbortError["reason"])=>attempt<maxAttempts
+      &&(!options.retryOnlyOnHeadersTimeout||reason==="response_headers_timeout");
     if (options.signal?.aborted) {
       throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
     }
@@ -213,6 +221,7 @@ export async function callOpenAiStructured<T>(options: {
     try {
       await options.onProgress?.({ stage: "provider_started", provider: "openai", model });
       const { response, payload } = await runProviderRequestWithTimeouts({
+        responseHeadersTimeoutMs:options.responseHeadersTimeoutMs,
         firstByteTimeoutMs,
         totalResponseTimeoutMs,
         deadlineAt: options.deadlineAt,
@@ -293,7 +302,7 @@ export async function callOpenAiStructured<T>(options: {
 
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
-        if (retryable && attempt < maxAttempts) continue;
+        if (retryable && canRetry()) continue;
         throw new AiUnavailableError(
           `AI-проверка недоступна: ${payload.error?.message || `HTTP ${response.status}`}`,
           "PROVIDER_UNAVAILABLE",
@@ -328,7 +337,7 @@ export async function callOpenAiStructured<T>(options: {
       const text = answerContent.find((item) => item.type === "output_text" && item.text)?.text;
       if (!text) {
         attemptErrorCode = "INVALID_AI_OUTPUT";
-        if (attempt < maxAttempts) continue;
+        if (canRetry()) continue;
         throw new AiUnavailableError(
           "AI-проверка не вернула структурированный результат.",
           "INVALID_AI_OUTPUT",
@@ -342,7 +351,7 @@ export async function callOpenAiStructured<T>(options: {
         decoded = JSON.parse(text);
       } catch {
         attemptErrorCode = "INVALID_AI_OUTPUT";
-        if (attempt < maxAttempts) continue;
+        if (canRetry()) continue;
         throw new AiUnavailableError(
           "AI-проверка вернула некорректный JSON.",
           "INVALID_AI_OUTPUT",
@@ -383,7 +392,7 @@ export async function callOpenAiStructured<T>(options: {
         };
       } catch {
         attemptErrorCode = "INVALID_AI_OUTPUT";
-        if (attempt < maxAttempts) continue;
+        if (canRetry()) continue;
         throw new AiUnavailableError(
           "AI-проверка вернула результат, не соответствующий контракту.",
           "INVALID_AI_OUTPUT",
@@ -395,7 +404,7 @@ export async function callOpenAiStructured<T>(options: {
     } catch (error) {
       if (error instanceof AiUnavailableError) {
         attemptErrorCode = error.code;
-        if (error.retryable && attempt < maxAttempts) continue;
+        if (error.retryable && canRetry()) continue;
         throw error;
       }
       if (error instanceof ProviderRequestAbortError) {
@@ -403,12 +412,13 @@ export async function callOpenAiStructured<T>(options: {
         if (error.reason === "caller") {
           throw new AiUnavailableError("AI-запрос отменён пользователем.", "AI_CANCELLED", false);
         }
-        if (attempt < maxAttempts) continue;
-        const providerErrorType = error.reason === "first_byte_timeout"
-          ? "first_byte_timeout"
+        if (canRetry(error.reason)) continue;
+        const earlyTimeout=error.reason === "first_byte_timeout"||error.reason === "response_headers_timeout";
+        const providerErrorType = earlyTimeout
+          ? error.reason
           : options.onProgress ? "total_stream_timeout" : "total_response_timeout";
         throw new AiUnavailableError(
-          error.reason === "first_byte_timeout"
+          earlyTimeout
             ? "AI-провайдер не начал ответ в допустимое время."
             : "AI-проверка превысила допустимое полное время ответа.",
           "PROVIDER_TIMEOUT",
@@ -417,7 +427,7 @@ export async function callOpenAiStructured<T>(options: {
           providerErrorType,
         );
       }
-      if (attempt >= maxAttempts) {
+      if (!canRetry()) {
         throw new AiUnavailableError("AI-проверка временно недоступна.", "PROVIDER_UNAVAILABLE", true);
       }
     } finally {
