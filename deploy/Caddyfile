@@ -73,7 +73,7 @@ www.{$SITE_HOST} {
 }
 
 # These TLS listeners are reachable only through an operator's SSH tunnel.
-https://juro-admin.localhost:3443 {
+https://admin.juro.uz:3443 {
 	bind 127.0.0.1
 	tls internal
 	reverse_proxy 127.0.0.1:3002 {
@@ -81,7 +81,7 @@ https://juro-admin.localhost:3443 {
 	}
 }
 
-https://juro-staging-admin.localhost:3444 {
+https://admin.staging.juro.uz:3444 {
 	bind 127.0.0.1
 	tls internal
 	reverse_proxy 127.0.0.1:3102 {

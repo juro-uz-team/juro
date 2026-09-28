@@ -8,3 +8,4 @@ apps/platform/postgres/0026-publisher-fingerprint-observation-binding.sql text e
 apps/platform/postgres/0029-publisher-normalization-policy.sql text eol=crlf
 apps/platform/postgres/0038-application-history-continuity.sql text eol=crlf
 *.sh text eol=lf
+scripts/*.mjs text eol=lf
