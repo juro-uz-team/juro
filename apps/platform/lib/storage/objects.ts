@@ -35,7 +35,7 @@ const headerNames = { contentType: "content-type", contentLanguage: "content-lan
 export class LocalObjectStore {
   readonly root: string;
   private readonly pendingReads = new Map<AbortSignal | undefined, PendingRead[]>();
-  constructor(readonly pool: Pool, root: string, readonly bucket: string) { this.root = resolve(root); }
+  constructor(readonly pool: Pool, root: string, readonly bucket: string, readonly readOnly = false) { this.root = resolve(root); }
 
   private path(digest: string) {
     if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid stored object digest");
@@ -149,6 +149,7 @@ export class LocalObjectStore {
   }
 
   async put(key: string, value: string | ArrayBuffer | ArrayBufferView | Blob | ReadableStream | null, options: PutOptions = {}) {
+    if (this.readOnly) throw new Error("Public corpus objects are read-only");
     if (!key || Buffer.byteLength(key) > 1024) throw new Error("Invalid object key");
     await mkdir(this.root, { recursive: true });
     const temporary = join(this.root, `.write-${randomUUID()}`);
@@ -229,6 +230,7 @@ export class LocalObjectStore {
   }
 
   async delete(keys: string | string[]) {
+    if (this.readOnly) throw new Error("Public corpus objects are read-only");
     const client = await this.pool.connect();
     let digests: string[] = [];
     try {

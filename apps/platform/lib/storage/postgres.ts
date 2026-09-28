@@ -73,11 +73,11 @@ export class PostgresStatement {
 export class PostgresDatabase {
   readonly pool: Pool;
 
-  constructor(connectionString: string, schema = "public") {
+  constructor(connectionString: string, schema = "public", readOnly = false) {
     if (!connectionString) throw new Error("DATABASE_URL is required");
     if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error("Invalid database schema");
     this.pool = new Pool({ connectionString, max: 8, connectionTimeoutMillis: 10_000,
-      idleTimeoutMillis: 30_000, options: `-c search_path=${schema},public`,
+      idleTimeoutMillis: 30_000, options: `-c search_path=${schema},public${readOnly ? " -c default_transaction_read_only=on" : ""}`,
       types: { getTypeParser(oid, format) {
         if (oid === 20 && format !== "binary") return (value: string) => {
           const number = Number(value);

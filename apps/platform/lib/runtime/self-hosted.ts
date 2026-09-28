@@ -5,7 +5,7 @@ import { localEmailCapture } from "./email";
 import { createResendDelivery, emailDeliveryConfiguration } from "./email-delivery";
 import { localAssets } from "./assets";
 import { resolve } from "node:path";
-import { database } from "../storage/connection";
+import { database, corpusDatabase } from "../storage/connection";
 import { LocalObjectStore } from "../storage/objects";
 import { PostgresVectorIndex } from "../storage/vectors";
 import {createVectorCandidateReader} from "../storage/vector-candidates";
@@ -42,9 +42,14 @@ export function getSelfHostedRuntime(): Runtime {
   }
   const appEnvironment = config.privateMode ? "development" : process.env.DEPLOYMENT_ENVIRONMENT!;
   const application = database("app");
-  const catalog = database("legal");
+  if (Boolean(process.env.CORPUS_DATABASE_URL) !== Boolean(process.env.CORPUS_OBJECT_STORAGE_PATH)) throw new Error("Shared corpus database and object path must be configured together");
+  const corpus = corpusDatabase("app");
+  const catalog = corpusDatabase("legal");
+  const observations = database("legal");
   const root = resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects");
   const bucket = (name: string) => new LocalObjectStore(application.pool, root, name);
+  const corpusRoot = resolve(process.env.CORPUS_OBJECT_STORAGE_PATH ?? root);
+  const corpusBucket = (name: string) => new LocalObjectStore(corpus.pool, corpusRoot, name, true);
   const email = emailDeliveryConfiguration(process.env);
   const env = { ...process.env, APP_ENV: appEnvironment, ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
     CRON_ENABLED: "true", LEGAL_LEX_INGESTION_ENABLED: "false", LEGAL_ADVICE_INGESTION_ENABLED: "false",
@@ -63,8 +68,8 @@ export function getSelfHostedRuntime(): Runtime {
     PLATFORM_ANALYTICS: operationalMetrics,
     ASSETS: localAssets(resolve("public")),
     DB: application, BUCKET: bucket("application"), QUARANTINE_BUCKET: bucket("quarantine"),
-    LEX_UZ_INDEX: new PostgresVectorIndex(application.pool, "lex"),
-    ADVICE_UZ_INDEX: new PostgresVectorIndex(application.pool, "advice"),
+    LEX_UZ_INDEX: new PostgresVectorIndex(corpus.pool, "lex"),
+    ADVICE_UZ_INDEX: new PostgresVectorIndex(corpus.pool, "advice"),
     USER_DOCUMENTS_INDEX: new PostgresVectorIndex(application.pool, "user-documents"),
     APP_URL: process.env.APP_URL ?? "http://localhost:3000", PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL ?? "http://localhost:3001",
     ADMIN_CONSOLE_ORIGIN: process.env.ADMIN_CONSOLE_ORIGIN ?? "http://localhost:3002",
@@ -76,31 +81,31 @@ export function getSelfHostedRuntime(): Runtime {
       const cache = new CustomRuntimeCache(512*1024*1024);
       return {
         async fetch(input: RequestInfo | URL, init?: RequestInit) {
-          const index = new PostgresVectorIndex(application.pool, configuration.vectorCollection,
+          const index = new PostgresVectorIndex(corpus.pool, configuration.vectorCollection,
             process.env.VECTOR_CANDIDATE_URL ? createVectorCandidateReader(process.env.VECTOR_CANDIDATE_URL) : undefined);
           if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
           return handleCustomSearchRequest(new Request(input, init), {
             ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog,
-            ARTIFACTS: bucket(configuration.artifactNamespace),
+            ARTIFACTS: corpusBucket(configuration.artifactNamespace),
             RUNTIME_CACHE: cache,
-            PREPARED_ORDINALS:createPreparedOrdinalReader(application.pool),
+            PREPARED_ORDINALS:createPreparedOrdinalReader(corpus.pool),
             DENSE: index,
           } as unknown as CustomSearchEnv);
         },
       };
   };
   const legal = new LegalCorpusService({
-    LEGAL_PREPARED_MEMBERSHIP:createPreparedMembershipReader(application.pool),
-    ...releases.catalog, LEGAL_DB: catalog, LEGAL_SOURCE_OBSERVATIONS_ENABLED:"true",
-    LEGAL_EVIDENCE_BUCKET: bucket(releases.evidenceNamespace),
-    LEGAL_HISTORY_EVIDENCE_BUCKET: bucket(releases.historyEvidenceNamespace),
-    LEGAL_CUSTOM_ARTIFACT_BUCKET: bucket(releases.current.artifactNamespace),
+    LEGAL_PREPARED_MEMBERSHIP:createPreparedMembershipReader(corpus.pool),
+    ...releases.catalog, LEGAL_DB: catalog, LEGAL_OBSERVATION_DB: observations, LEGAL_SOURCE_OBSERVATIONS_ENABLED:"true",
+    LEGAL_EVIDENCE_BUCKET: corpusBucket(releases.evidenceNamespace),
+    LEGAL_HISTORY_EVIDENCE_BUCKET: corpusBucket(releases.historyEvidenceNamespace),
+    LEGAL_CUSTOM_ARTIFACT_BUCKET: corpusBucket(releases.current.artifactNamespace),
     LEGAL_CUSTOM_SEARCH_SERVICE: search(releases.current), LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE: search(releases.history),
     LEGAL_CORPUS_REASONING_SERVICE: { fetch: (input: RequestInfo | URL, init?: RequestInit) => handleTargetReasoningServiceRequest(new Request(input, init), env as unknown as Parameters<typeof handleTargetReasoningServiceRequest>[1]) },
   } as unknown as ConstructorParameters<typeof LegalCorpusService>[0]);
   const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, appEnvironment))]));
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
-  const retrieval=createNativeCorpusService({pool:application.pool,catalog,objectRoot:root,
+  const retrieval=createNativeCorpusService({pool:corpus.pool,catalog,observations,objectRoot:corpusRoot,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
     productRevision,fallback:legal});
   state.juroRuntimeProductRevision=productRevision;

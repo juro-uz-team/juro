@@ -65,7 +65,10 @@ for (const [name, port, path] of [
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://localhost:${port}${path}`, { redirect: "manual", signal: AbortSignal.timeout(1000) });
+      const publicOrigin = name === "platform" ? configuration.APP_URL : configuration.PUBLIC_SITE_URL;
+      const headers = configuration.PRIVATE_DEVELOPMENT !== "true" && name !== "admin"
+        ? { host: new URL(publicOrigin).host, "x-real-ip": "127.0.0.1" } : {};
+      const response = await fetch(`http://localhost:${port}${path}`, { headers, redirect: "manual", signal: AbortSignal.timeout(1000) });
       await response.body?.cancel();
       if (response.status >= 200 && response.status < 400) { ready = true; break; }
     } catch { /* The newly started HTTP listener may not be ready yet. */ }
@@ -73,4 +76,4 @@ for (const [name, port, path] of [
   }
   if (!ready) throw new Error(`${name} did not become HTTP-ready; inspect its user service journal`);
 }
-console.log(`Installed private ${production ? "production" : "development"} services from ${root}`);
+console.log(`Installed ${deploymentEnvironment ?? "private"} ${production ? "production" : "development"} services from ${root}`);

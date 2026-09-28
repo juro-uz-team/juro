@@ -15,7 +15,7 @@ import {createCorpusResearch} from "../legal-chat/corpus-research";
 import {createDiscoveryPrioritizer} from "../legal-chat/discovery-priority";
 import {corpusSessionSchema,type CorpusSessionInput} from "../legal-chat/corpus-session";
 
-type Dependencies={pool:Pool;catalog:PostgresDatabase;objectRoot:string;candidateUrl:string;apiKey:string};
+type Dependencies={pool:Pool;catalog:PostgresDatabase;observations?:PostgresDatabase;objectRoot:string;candidateUrl:string;apiKey:string};
 type Configuration=Omit<NativeCorpusAcceptance,"proofs">;
 
 /** Shared native composition. Qualification is an explicit operator mode,
@@ -25,7 +25,7 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
 }) {
   const config=input.configuration;
   const membershipPins=new Map([config.current,config.history].map(release=>[release.releaseId,release.membership]));
-  const bucket=(name:string)=>new LocalObjectStore(input.pool,input.objectRoot,name);
+  const bucket=(name:string)=>new LocalObjectStore(input.pool,input.objectRoot,name,true);
   const providers=new Map<string,LegalCandidateProvider>();
   const releases=new Map<string,ReturnType<typeof parsePinnedCandidateRelease>>();
   const artifactStores=new Map<string,LocalObjectStore>();
@@ -69,6 +69,7 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
     const scope=corpusSessionSchema.parse(sessionInput);
     if(scope.environment!==config.environment)throw Error("CORPUS_RESEARCH_ENVIRONMENT_MISMATCH");
     const services=createRuntimeEvidenceServices({environment:config.environment,db:input.catalog as unknown as D1Database,
+        observationDb: (input.observations ?? input.catalog) as unknown as D1Database,
         evidenceBucket:bucket(config.evidenceNamespace),historyEvidenceBucket:bucket(config.historyEvidenceNamespace),
         customArtifactBucket:artifactReader as unknown as R2Bucket,preparedMembership:createPreparedMembershipReader(input.pool,membershipPins),
         sharedSourceObservationsEnabled:true},candidateIndex,

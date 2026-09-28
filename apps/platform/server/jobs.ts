@@ -2,7 +2,7 @@ import "../lib/runtime/node-globals";
 import { setTimeout as pause } from "node:timers/promises";
 import { resolve } from "node:path";
 import { reclaimObjects } from "../lib/storage/object-reclamation";
-import { database } from "../lib/storage/connection";
+import { database, closeRuntimeDatabases } from "../lib/storage/connection";
 import { PostgresQueue } from "../lib/storage/queue";
 import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
 import { JOB_KINDS, expectedQueueName, handleQueue } from "../worker/platform-jobs";
@@ -67,4 +67,4 @@ while (!stopping) {
     await pause(5000);
   }
 }
-await Promise.all([database("app").close(), database("legal").close()]);
+await closeRuntimeDatabases();

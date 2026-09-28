@@ -61,6 +61,7 @@ export type TargetRetrievalRuntimeEnv = {
   LEGAL_RUNTIME_BUILD_ID?: string;
   CANDIDATE_MEMBERSHIP_PROOFS_ENABLED?: string;
   LEGAL_SOURCE_OBSERVATIONS_ENABLED?: string;
+  LEGAL_OBSERVATION_DB?: D1Database;
   LEGAL_CORPUS_SHADOW_MODE?: string;
   LEGAL_DB?: D1Database;
   LEGAL_EVIDENCE_BUCKET?: Pick<LegalEvidenceBucket, "get">;
@@ -79,6 +80,7 @@ type RuntimeDependencies = {
   environment: z.infer<typeof environmentSchema>;
   membershipProofsEnabled?: boolean;
   sharedSourceObservationsEnabled?: boolean;
+  observationDb?: D1Database;
   db: D1Database;
   evidenceBucket: Pick<LegalEvidenceBucket, "get">;
   historyEvidenceBucket?: Pick<LegalEvidenceBucket, "get">;
@@ -621,7 +623,7 @@ export function createRuntimeEvidenceServices(
   const currentDocumentContext = createNormalizedDocumentEvidenceReader(evidenceBucket, readCurrentParent);
   const historicalDocumentContext = createNormalizedDocumentEvidenceReader(historyEvidenceBucket ?? evidenceBucket, readHistoryParent);
   const observeCurrent=dependencies.sharedSourceObservationsEnabled
-    ? createSharedLexDocumentObservationReader(db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
+    ? createSharedLexDocumentObservationReader(dependencies.observationDb ?? db,(url,previous)=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal(),previous}))
     : createSourceObservationReader({readPublisher:url=>readNativePublisherObservation(url,{signal:indexedRetrievalSignal()})});
   const readDiscoveryMetadata=createDiscoveryMetadataReader({observeCurrent,signal:indexedRetrievalSignal});
   const candidateCatalog = createRuntimeCandidateCatalog(db, customArtifactBucket ?? evidenceBucket, r2IdentityByRendition,
@@ -693,6 +695,7 @@ export function createRuntimeLegalEvidenceServices(
   const db = env.LEGAL_DB;
   const evidenceBucket = env.LEGAL_EVIDENCE_BUCKET;
   const dependencies = { environment, db, evidenceBucket, onReleaseResolved: observation.onReleaseResolved,
+    observationDb: env.LEGAL_OBSERVATION_DB,
     preparedMembership:env.LEGAL_PREPARED_MEMBERSHIP,
     membershipProofsEnabled: env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED === "true",
     sharedSourceObservationsEnabled: env.LEGAL_SOURCE_OBSERVATIONS_ENABLED === "true",
@@ -876,6 +879,7 @@ export async function createRuntimeEvaluationEvidenceServices(input: {
     historyReconciliationRunId:selected.historyReconciliationRunId,historyReportSha256:selected.historyReportSha256,resolutions:[]};
   const pinned=(endpoint:TemporalEndpoint)=>structuredClone(releases.get(endpoint.kind==="current"?"current":"history")!);
   const services=createRuntimeEvidenceServices({environment:"staging",db:env.LEGAL_DB,
+    observationDb:env.LEGAL_OBSERVATION_DB,
     evidenceBucket:env.LEGAL_EVIDENCE_BUCKET,historyEvidenceBucket:env.LEGAL_HISTORY_EVIDENCE_BUCKET,
     customArtifactBucket:env.LEGAL_CUSTOM_ARTIFACT_BUCKET,
     membershipProofsEnabled:env.CANDIDATE_MEMBERSHIP_PROOFS_ENABLED==="true",
