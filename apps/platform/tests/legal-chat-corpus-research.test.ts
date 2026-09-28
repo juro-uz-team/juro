@@ -104,6 +104,35 @@ test("the indexed corpus receives the exact request-local formulation without co
   assert.deepEqual(received,plan);
 });
 
+test("comparison overlaps candidate selection and retains endpoint order despite reverse completion",async()=>{
+  const {services,calls}=fixture();
+  const releaseHistory=Promise.withResolvers<void>(),currentSelected=Promise.withResolvers<void>();
+  const revalidate=services.candidateCatalog.revalidate;
+  services.candidateCatalog.revalidate=async(...args)=>{
+    if(args[1].kind==="timestamp")await releaseHistory.promise;
+    return revalidate(...args);
+  };
+  const search=createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant),
+    prioritize:async input=>{
+      if(input.endpoint.kind==="current")currentSelected.resolve();
+      return input.renditionIds;
+    }});
+  const pending=search({...request,question:{...request.question,temporalScope:{kind:"comparison",
+    left:{kind:"timestamp",instant:"2025-01-01T00:00:00.000Z"},right:{kind:"current"}}}});
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try {
+    await Promise.race([currentSelected.promise,new Promise((_,reject)=>{
+      timer=setTimeout(()=>reject(new Error("Current selection waited for historical metadata")),1000);
+    })]);
+    assert.equal(calls.reads,0,"No evidence is read until both endpoint selections complete");
+  } finally {
+    clearTimeout(timer);releaseHistory.resolve();
+    await pending;
+  }
+  const result=await pending;
+  assert.deepEqual(result.evidence.map(item=>item.endpoint.kind),["timestamp","current"]);
+});
+
 test("comparison resolves its release pair atomically and retains evidence at both endpoints",async()=>{
   const {search,calls}=fixture();
   const result=await search({...request,question:{...request.question,temporalScope:{kind:"comparison",

@@ -112,7 +112,9 @@ export function createCorpusResearch(input: {
           ??input.services.candidateIndex.retrieve({id:interpretation.id,formulations:[formulation]},endpoint,release,{currentAt}))))
       :input.services.candidateIndex.retrieve(interpretation,endpoint,release,{currentAt}));
     for(const packet of candidatePackets)void packet.catch(()=>undefined);
-    for(const [releaseIndex,{endpoint,release}] of releases.entries()) {
+    // Metadata validation and selection are independent for each endpoint too.
+    // Preserve the pinned endpoint order when merging, not completion order.
+    const selections=await Promise.all(releases.map(async({endpoint,release},releaseIndex)=>{
       check();
       if((release.capability==="current")!==(endpoint.kind==="current")) {
         throw new Error("CORPUS_RELEASE_TEMPORAL_MISMATCH");
@@ -158,13 +160,17 @@ export function createCorpusResearch(input: {
         // Empty selection retains deterministic fallback discovery. Selection
         // never establishes legal support or completeness.
         const prioritized=new Set(priority);
-        queues.push(prioritized.size?[...prioritized].map(id=>ordered.get(id)!):[...ordered.values()]);
-        if(prioritized.size)discoveryOmitted+=ordered.size-prioritized.size;
+        return {queue:prioritized.size?[...prioritized].map(id=>ordered.get(id)!):[...ordered.values()],
+          omitted:prioritized.size?ordered.size-prioritized.size:0};
       } catch {
         check();
-        queues.push([]);
-        needs.push({reason:"source_unavailable",detail:`Indexed search was incomplete for ${timeIdentity(endpoint)}.`});
+        return {queue:[],omitted:0,
+          need:{reason:"source_unavailable" as const,detail:`Indexed search was incomplete for ${timeIdentity(endpoint)}.`}};
       }
+    }));
+    for(const selection of selections){
+      queues.push(selection.queue);discoveryOmitted+=selection.omitted;
+      if(selection.need)needs.push(selection.need);
     }
     let reads=0;
     let unreadCandidates=0;
