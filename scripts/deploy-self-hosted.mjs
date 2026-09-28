@@ -36,6 +36,11 @@ const requiredPorts = environment === "production" ? [3000, 3001, 3002] : [3100,
 if (["PORT", "WEBSITE_PORT", "ADMIN_PORT"].some((name, index) => Number(settings[name]) !== requiredPorts[index])) {
   throw new Error("Environment listener ports are not isolated");
 }
+if (!settings.STATUS_URL || Number(settings.STATUS_PORT) !== requiredPorts[0] + 4
+  || (environment === "production" && (!settings.LAWYER_URL || Number(settings.LAWYER_PORT) !== 3003))
+  || (environment === "staging" && settings.LAWYER_URL)) {
+  throw new Error("Domain listeners require isolated production lawyer and environment-specific status ports");
+}
 if (environment === "staging" && settings.EMAIL_DELIVERY_MODE !== "capture") {
   throw new Error("Staging deployments must capture email; live delivery checks use a separate operator configuration");
 }

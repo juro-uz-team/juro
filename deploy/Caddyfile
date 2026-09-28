@@ -40,6 +40,26 @@ www.{$SITE_HOST} {
 	import native_proxy 127.0.0.1:3101
 }
 
+{$LAWYER_HOST} {
+	@public_admin {
+		path /api/internal/* /api/platform/admin /api/platform/admin/* /ru/admin /ru/admin/* /uz/admin /uz/admin/* /en/admin /en/admin/*
+		not remote_ip 127.0.0.1 ::1
+	}
+	respond @public_admin 404
+	import native_proxy 127.0.0.1:3003
+}
+
+{$STATUS_HOST} {
+	import native_proxy 127.0.0.1:3004
+}
+
+{$STAGING_STATUS_HOST} {
+	basic_auth {
+		{$STAGING_ACCESS_USER} {$STAGING_ACCESS_HASH}
+	}
+	import native_proxy 127.0.0.1:3104
+}
+
 {$STAGING_APP_HOST} {
 	basic_auth {
 		{$STAGING_ACCESS_USER} {$STAGING_ACCESS_HASH}

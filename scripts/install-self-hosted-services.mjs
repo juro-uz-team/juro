@@ -28,6 +28,10 @@ const services = [
   ["website", "apps/website", "server/index.ts"],
   ["admin", "apps/admin", "src/server.ts"],
 ];
+if (configuration.PRIVATE_DEVELOPMENT !== "true") {
+  if (configuration.LAWYER_URL) services.push(["lawyer", "apps/platform", "server/index.ts"]);
+  if (configuration.STATUS_URL) services.push(["status", "apps/platform", "server/index.ts"]);
+}
 for (const [name, path, entry] of services) {
   const unit = `[Unit]
 Description=JURO ${deploymentEnvironment ?? "private self-hosted"} ${name}
@@ -39,6 +43,7 @@ WorkingDirectory=${resolve(root, path).replaceAll("%", "%%")}
 ExecStart=${quote(process.execPath)} ${quote(resolve(root, "scripts/with-private-env.mjs"))} --import ${quote(resolve(root, "apps/platform/node_modules/tsx/dist/loader.mjs"))} ${entry}
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=NODE_ENV=${production ? "production" : "development"}
+Environment=PLATFORM_HOST_ROLE=${["lawyer", "status"].includes(name) ? name : "app"}
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=180
@@ -60,12 +65,14 @@ for (const [name, port, path] of [
   ["platform", configuration.PORT ?? 3000, "/robots.txt"],
   ["website", configuration.WEBSITE_PORT ?? 3001, "/robots.txt"],
   ["admin", configuration.ADMIN_PORT ?? 3002, "/"],
+  ...(services.some(([name]) => name === "lawyer") ? [["lawyer", configuration.LAWYER_PORT ?? 3003, "/favicon.png"]] : []),
+  ...(services.some(([name]) => name === "status") ? [["status", configuration.STATUS_PORT ?? 3004, "/favicon.png"]] : []),
 ]) {
   let ready = false;
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     try {
-      const publicOrigin = name === "platform" ? configuration.APP_URL : configuration.PUBLIC_SITE_URL;
+      const publicOrigin = name === "platform" ? configuration.APP_URL : name === "lawyer" ? configuration.LAWYER_URL : name === "status" ? configuration.STATUS_URL : configuration.PUBLIC_SITE_URL;
       const headers = configuration.PRIVATE_DEVELOPMENT !== "true" && name !== "admin"
         ? { host: new URL(publicOrigin).host, "x-real-ip": "127.0.0.1" } : {};
       const response = await fetch(`http://localhost:${port}${path}`, { headers, redirect: "manual", signal: AbortSignal.timeout(1000) });

@@ -9,9 +9,9 @@ export async function GET(request: Request) {
   const secret = process.env.AUTH_CHALLENGE_SECRET;
   if (process.env.PRIVATE_DEVELOPMENT === "true" || !challengeSecretConfigured(secret)) return new Response(null, { status: 503, headers });
   const url = new URL(request.url);
-  const origin = new URL(process.env.APP_URL!);
+  const allowedOrigins = [process.env.APP_URL, process.env.LAWYER_URL].filter(Boolean);
   const action = url.searchParams.get("action") ?? "";
-  if (url.hostname !== origin.hostname || !(nativeChallengeActions as readonly string[]).includes(action)) return new Response(null, { status: 400, headers });
+  if (!allowedOrigins.some(origin => new URL(origin!).origin === url.origin) || !(nativeChallengeActions as readonly string[]).includes(action)) return new Response(null, { status: 400, headers });
   const ip = request.headers.get("x-juro-client-ip");
   if (!ip) return new Response(null, { status: 400, headers });
   const now = Date.now();
@@ -20,5 +20,5 @@ export async function GET(request: Request) {
   const entry = requests.get(key) ?? { count: 0, until: now + 60_000 };
   if (entry.count >= 30 || (!requests.has(key) && requests.size >= 10_000)) return new Response(null, { status: 429, headers: { ...headers, "Retry-After": "60" } });
   entry.count++; requests.set(key, entry);
-  return Response.json(await issueNativeChallenge(secret, origin.hostname, action), { headers });
+  return Response.json(await issueNativeChallenge(secret, url.hostname, action), { headers });
 }

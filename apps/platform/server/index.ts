@@ -8,11 +8,13 @@ import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
 import { handleInternalAdminRequest } from "../lib/auth/admin-internal-api";
 import { INTERNAL_REQUEST_PATH_HEADER, isAuthenticatedPlatformPathReady } from "../lib/platform/routing";
 import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
+import { routeNativeDomain } from "../lib/runtime/domain-routing";
 
 const config = nativeHttpConfiguration(process.env, "platform");
 const { port } = config;
-const internalConfig = nativeHttpConfiguration({ ...process.env, PRIVATE_DEVELOPMENT: "true" }, "platform");
-// Next uses this port to construct route-handler URLs; the TCP listener below remains private.
+const internalConfig = nativeHttpConfiguration({ ...process.env, PRIVATE_DEVELOPMENT: "true", PLATFORM_HOST_ROLE: "app", PORT: String(port) }, "platform");
+// Each domain has its own loopback listener so Next constructs the correct
+// origin for CSRF checks, authentication and server-rendered request URLs.
 const app = next({ dev: process.env.NODE_ENV !== "production", hostname: new URL(config.origin).hostname, port: config.privateMode ? port : 443 });
 await app.prepare();
 const handle = app.getRequestHandler();
@@ -53,7 +55,7 @@ createServer(async (request, response) => {
   secureResponse(response);
   const privateAdminRequest = !config.privateMode && internalConfig.hosts.includes(request.headers.host ?? "")
     && (request.url ?? "").startsWith("/api/internal/admin/");
-  const url = normalizeNativeRequest(request, privateAdminRequest ? internalConfig : config);
+  let url = normalizeNativeRequest(request, privateAdminRequest ? internalConfig : config);
   if (!url) {
     response.writeHead(400); response.end(); return;
   }
@@ -63,12 +65,21 @@ createServer(async (request, response) => {
   if (!privateAccess && (decodedPath.startsWith("/api/internal/") || /^\/api\/platform\/admin(?:\/|$)/.test(decodedPath) || /^\/(?:ru|uz|en)\/admin(?:\/|$)/.test(decodedPath))) {
     response.writeHead(404); response.end(); return;
   }
+  const domain = routeNativeDomain(url, request.method ?? "GET", config);
+  if (domain.status) {
+    if (domain.status === 405) response.setHeader("Allow", "GET, HEAD");
+    response.writeHead(domain.status); response.end(); return;
+  }
+  url = domain.url;
+  request.url = `${url.pathname}${url.search}`;
   if (!isAuthenticatedPlatformPathReady(url.pathname)) { response.writeHead(404); response.end(); return; }
   if (!boundedBody(request, response, publicApiRequestBodyLimit(url.pathname, request.method ?? "GET") ?? 50 * 1024 * 1024)) return;
   for (const name of Object.keys(request.headers)) {
     if (name === STATUS_ORIGIN_HEADER || name === LAWYER_HOST_REQUEST_HEADER || name === INTERNAL_REQUEST_PATH_HEADER) delete request.headers[name];
   }
   request.headers[INTERNAL_REQUEST_PATH_HEADER] = `${url.pathname}${url.search}`;
+  if (domain.lawyerHost) request.headers[LAWYER_HOST_REQUEST_HEADER] = "1";
+  if (domain.statusHost) request.headers[STATUS_ORIGIN_HEADER] = url.origin;
   try {
     if (url.pathname.startsWith("/api/internal/admin/")) {
       const headers = new Headers();

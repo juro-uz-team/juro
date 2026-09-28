@@ -25,3 +25,20 @@ test("private SSH mode retains localhost access and rejects a public hostname", 
   assert.equal(normalizeNativeRequest(request(),local),null);
   assert.equal(normalizeNativeRequest(request({host:"localhost:3000","x-real-ip":undefined}),local)?.origin,"http://localhost:3000");
 });
+
+test("additional platform hosts keep their own origin and require explicit configuration", () => {
+  for (const host of ["lawyer.juro.uz", "status.juro.uz"]) {
+    const multiple = nativeHttpConfiguration({...environment, LAWYER_URL:"https://lawyer.juro.uz", STATUS_URL:"https://status.juro.uz", PLATFORM_HOST_ROLE:host.split(".")[0]}, "platform");
+    assert.equal(normalizeNativeRequest(request({host}), multiple)?.origin, `https://${host}`);
+    assert.equal(normalizeNativeRequest(request({host}), config), null);
+    assert.equal(normalizeNativeRequest(request(), multiple), null);
+    assert.equal(multiple.port, host.startsWith("lawyer") ? 3003 : 3004);
+  }
+  assert.equal(nativeHttpConfiguration({...environment, DEPLOYMENT_ENVIRONMENT:"staging", STATUS_URL:"https://status.staging.juro.uz", PLATFORM_HOST_ROLE:"status", STATUS_PORT:"3104"},"platform").port,3104);
+  for (const extra of [{PLATFORM_HOST_ROLE:"status"}, {PLATFORM_HOST_ROLE:"unknown"}, {PRIVATE_DEVELOPMENT:"true",PLATFORM_HOST_ROLE:"lawyer"}]) {
+    assert.throws(() => nativeHttpConfiguration({...environment,...extra},"platform"));
+  }
+  for (const extra of [{LAWYER_URL:environment.APP_URL},{STATUS_URL:"http://status.juro.uz"},{LAWYER_URL:"https://evil.example/path"}]) {
+    assert.throws(() => nativeHttpConfiguration({...environment,...extra},"platform"));
+  }
+});
