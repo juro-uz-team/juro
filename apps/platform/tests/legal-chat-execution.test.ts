@@ -64,7 +64,7 @@ for(const stage of ["interpreting","writing"] as const) {
       calls++;
       if(stage==="writing"&&calls===1)return Response.json({id:"context",output:[{content:[{type:"output_text",
         text:JSON.stringify({interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
-          research:{queries:[{text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]}})}]}]});
+          research:{underlyingRuleQueries:[],directQueries:[{text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]}})}]}]});
       return new Promise<Response>((_resolve,reject)=>{
         init!.signal!.addEventListener("abort",()=>reject(init!.signal!.reason),{once:true});stalled.resolve();
       });

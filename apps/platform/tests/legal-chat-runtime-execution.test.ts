@@ -17,7 +17,7 @@ test("runtime refuses to publish an answer whose source freshness cannot be esta
       assert.equal(JSON.parse(body.input).context.evidence[0].passages[0].text,text);
     }
     const output=schema==="legal_question_research"?{
-      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{queries:[query]}}
+      interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},research:{underlyingRuleQueries:[],directQueries:[query]}}
       :schema==="legal_answer"?{
         answer:{mainPoint:{text,sourceIds:["source"]},issues:[{finding:{title:"Access",explanation:text,sourceIds:["source"]},
           actions:[{title:"Request",instruction:text,sourceIds:["source"]}]}],risks:[],questions:[],unresolved:[]}}

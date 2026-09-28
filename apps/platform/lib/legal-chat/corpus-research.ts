@@ -100,6 +100,7 @@ export function createCorpusResearch(input: {
     const seen=new Set<string>();
     const resolved:SelectionCandidate[][]=releases.map(()=>[]);
     const queues:RevalidatedCandidate[][]=[];
+    let discoveryOmitted=0;
     // Both comparison endpoints share the deadline. Start their independent
     // candidate searches together, then preserve endpoint order for admission.
     for(const {endpoint,release} of releases) {
@@ -153,11 +154,12 @@ export function createCorpusResearch(input: {
           formulations:interpretation.formulations.map(formulation=>formulation.text),endpoint,release,currentAt,signal})??[];
         check();
         if(priority.some(id=>!ordered.has(id)))throw new Error("CORPUS_DISCOVERY_PRIORITY_INVALID");
-        // A discovery hint changes order only. Keep original authenticated
-        // objects and every unprioritized candidate in its original order.
+        // Read the discovery selection and then its explicit references.
+        // Empty selection retains deterministic fallback discovery. Selection
+        // never establishes legal support or completeness.
         const prioritized=new Set(priority);
-        queues.push([...prioritized].map(id=>ordered.get(id)!).concat(
-          [...ordered.values()].filter(candidate=>!prioritized.has(candidate.provisionRenditionId))));
+        queues.push(prioritized.size?[...prioritized].map(id=>ordered.get(id)!):[...ordered.values()]);
+        if(prioritized.size)discoveryOmitted+=ordered.size-prioritized.size;
       } catch {
         check();
         queues.push([]);
@@ -340,6 +342,7 @@ export function createCorpusResearch(input: {
       }
     }
     const observations:ResearchObservation[]=[];
+    if(discoveryOmitted)observations.push({kind:"candidate_discovery_selection",lane:"indexed",omitted:discoveryOmitted});
     if(unreadCandidates)observations.push({kind:"candidate_read_limit",lane:"indexed",omitted:unreadCandidates});
     if(excludedCandidates)observations.push({kind:"candidate_context_limit",lane:"indexed",omitted:excludedCandidates});
     // Selection is independent of publisher results. Every selected source must

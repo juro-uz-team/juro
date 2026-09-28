@@ -123,7 +123,7 @@ test("text chat reads manual memory independently of the account identity migrat
     providerInputs.push(JSON.parse(payload.input));
     return Response.json({id:"offline",model:payload.model,output:[{content:[{type:"output_text",text:JSON.stringify({
       interpretation:{topics:["Applicable law at the event date"],facts:[],temporal:{kind:"unresolved"},questions:["Which event date applies?"],selectedMemoryIds:[]},
-      research:{queries:[{text:"applicable rules at the event date",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]},
+      research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules at the event date",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}]},
     })}]}],usage:{input_tokens:0,output_tokens:0}});
   });
   const chatRequest=(key:string)=>new Request("https://app.example/api/platform/ai",{method:"POST",headers:request().headers,

@@ -12,7 +12,7 @@ export const researchNeedSchema = z.object({
 }).strict();
 export type ResearchNeed = z.infer<typeof researchNeedSchema>;
 export const researchObservationSchema=z.object({
-  kind:z.enum(["candidate_read_limit","candidate_context_limit","search_query_limit","historical_live_unavailable"]),
+  kind:z.enum(["candidate_discovery_selection","candidate_read_limit","candidate_context_limit","search_query_limit","historical_live_unavailable"]),
   lane:z.enum(["indexed","official"]),omitted:z.number().int().positive(),
 }).strict();
 export type ResearchObservation=z.infer<typeof researchObservationSchema>;

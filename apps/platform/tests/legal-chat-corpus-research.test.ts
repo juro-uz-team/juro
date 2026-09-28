@@ -574,10 +574,11 @@ test("a required reference denied the bounded read allowance remains an explicit
   assert.ok(!result.evidence.some(item=>item.source.article==="62"));
 });
 
-test("discovery priority brings a later provision and its reference into complete answer evidence",async()=>{
+test("discovery selection reads a later provision and its reference without unrelated background",async()=>{
   const {services}=fixture();
+  const reads:string[]=[];
   services.candidateCatalog.revalidate=async()=>Array.from({length:40},(_,index)=>anotherCandidate(`rendition:${index}`));
-  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id.split(":")[1]!);
+  services.evidenceResolver.resolveControlling=async id=>{reads.push(id);return articleResolution(id,id.split(":")[1]!);};
   services.referenceDiscovery=async sources=>({candidates:sources.some(source=>source.candidate.provisionRenditionId==="rendition:39")
     ?[{...anotherCandidate("rendition:99"),candidate:{...candidate.candidate,referenceOrigin:{
       itemKey:anotherCandidate("rendition:39").candidate.itemKey,article:"99",
@@ -592,7 +593,22 @@ test("discovery priority brings a later provision and its reference into complet
   })(request);
   assert.equal(packet.evidence[0]?.source.article,"39");
   assert.ok(packet.evidence.some(item=>item.source.article==="99"));
-  assert.equal(packet.evidence.length,24);
+  assert.deepEqual(reads,["rendition:39","rendition:99"]);
+  assert.equal(packet.evidence.length,2);
+  assert.ok(packet.observations?.some(item=>item.kind==="candidate_discovery_selection"&&item.omitted===39));
+});
+
+test("empty discovery selection keeps fallback reads while invented identities admit no evidence",async()=>{
+  for(const selection of [[],["invented"]]) {
+    const {services}=fixture();const reads:string[]=[];
+    services.candidateCatalog.revalidate=async()=>[anotherCandidate("rendition:1"),anotherCandidate("rendition:2")];
+    services.evidenceResolver.resolveControlling=async id=>{reads.push(id);return articleResolution(id,id.split(":")[1]!);};
+    const packet=await createCorpusResearch({services,formulate:async()=>interpretation,
+      prioritize:async()=>selection,now:()=>Date.parse(instant)})(request);
+    assert.deepEqual(reads,selection.length?[]:["rendition:1","rendition:2"]);
+    assert.equal(packet.evidence.length,selection.length?0:2);
+    if(selection.length)assert.ok(packet.needs.some(need=>need.reason==="source_unavailable"));
+  }
 });
 
 test("a reference target already in the ranked pool retains priority before context admission",async()=>{
