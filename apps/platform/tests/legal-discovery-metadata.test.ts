@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import test from "node:test";
-import {readR2NativeDiscoveryMetadata,resolveR2NativeCustomEvidence} from "../lib/legal-corpus/target-evidence";
+import {readR2NativeDiscoveryMetadata,resolveR2NativeCustomEvidence,createR2NativeProvisionReader} from "../lib/legal-corpus/target-evidence";
 import {customRuntimeLegalIdentitySchema} from "../lib/legal-corpus/custom-bm25-runtime";
 import {MemoryEvidenceBucket,representativeProvision} from "./helpers/legal-target";
 import {createDiscoveryMetadataReader} from "../lib/legal-corpus/discovery-metadata";
@@ -32,6 +32,37 @@ function fixture(fields:Record<string,unknown>={}) {
   });
   return {bucket,identity};
 }
+
+test("one research reader shares authenticated provision reads across discovery and resolution",async context=>{
+  const {bucket,identity}=fixture(),get=bucket.get.bind(bucket);
+  let reads=0;
+  context.mock.method(bucket,"get",async(...args:Parameters<typeof bucket.get>)=>{reads++;return get(...args);});
+  const dependencies={bucket,currentAt:"2026-06-01T00:00:00.000Z",readProvision:createR2NativeProvisionReader()};
+  const [metadata,evidence]=await Promise.all([
+    readR2NativeDiscoveryMetadata(dependencies,identity,{kind:"current"}),
+    resolveR2NativeCustomEvidence(dependencies,identity,{kind:"current"}),
+  ]);
+  assert.equal(reads,1);
+  assert.equal(evidence.controlling.provisionText,representativeProvision.provisionText);
+  metadata!.actTitle="Changed caller hint";
+  assert.equal((await readR2NativeDiscoveryMetadata(dependencies,identity,{kind:"current"}))!.actTitle,representativeProvision.actTitle);
+  await assert.rejects(readR2NativeDiscoveryMetadata(dependencies,{...identity,languageTag:"uz-Latn"},{kind:"current"}));
+  await assert.rejects(readR2NativeDiscoveryMetadata({...dependencies,currentAt:"2025-01-01T00:00:00.000Z"},identity,{kind:"current"}));
+  await assert.rejects(readR2NativeDiscoveryMetadata(dependencies,identity,{kind:"timestamp",instant:"2025-01-01T00:00:00.000Z"}));
+  const foreign=fixture();foreign.bucket.objects.get("provision")!.bytes[0]=0;
+  await assert.rejects(readR2NativeDiscoveryMetadata({...dependencies,bucket:foreign.bucket},identity,{kind:"current"}));
+  bucket.objects.get("provision")!.bytes[0]=0;
+  await assert.rejects(readR2NativeDiscoveryMetadata({...dependencies,readProvision:createR2NativeProvisionReader()},identity,{kind:"current"}));
+});
+
+test("a failed authenticated provision read can recover within the same request",async()=>{
+  const {bucket,identity}=fixture(),object=bucket.objects.get("provision")!;
+  const dependencies={bucket,currentAt:"2026-06-01T00:00:00.000Z",readProvision:createR2NativeProvisionReader()};
+  bucket.objects.delete("provision");
+  await assert.rejects(readR2NativeDiscoveryMetadata(dependencies,identity,{kind:"current"}));
+  bucket.objects.set("provision",object);
+  assert.ok(await readR2NativeDiscoveryMetadata(dependencies,identity,{kind:"current"}));
+});
 
 test("authenticated discovery starts one publisher observation without waiting for its result",async()=>{
   const {bucket,identity}=fixture();

@@ -1559,6 +1559,34 @@ export async function resolveCompleteCorpusEvidence(
     materialCitation: evidence.officialCitation });
 }
 
+/** One reader per research session; immutable reads are shared between heading
+ * discovery and complete evidence resolution. No freshness verdict is cached. */
+export function createR2NativeProvisionReader():typeof readR2NativeProvision {
+  const buckets=new WeakMap<object,number>();
+  const entries=new Map<string,{pending:ReturnType<typeof readR2NativeProvision>;bytes:number}>();
+  let nextBucket=0,retainedBytes=0;
+  return (dependencies,identity,endpoint)=>{
+    let bucketId=buckets.get(dependencies.bucket);
+    if(bucketId===undefined){bucketId=nextBucket++;buckets.set(dependencies.bucket,bucketId);}
+    const key=JSON.stringify([bucketId,identity,endpoint,dependencies.currentAt]);
+    const cached=entries.get(key);
+    if(cached)return cached.pending;
+    const pending=readR2NativeProvision(dependencies,identity,endpoint);
+    // Allow for UTF-16 strings and the small parsed containers. Large objects
+    // still authenticate normally; they simply do not displace the whole cache.
+    const bytes=identity.evidence.byteCount*2+key.length*2+1024;
+    if(bytes<=16_000_000){
+      while(entries.size>=256||retainedBytes+bytes>16_000_000){
+        const [oldKey,oldEntry]=entries.entries().next().value!;
+        entries.delete(oldKey);retainedBytes-=oldEntry.bytes;
+      }
+      entries.set(key,{pending,bytes});retainedBytes+=bytes;
+      void pending.catch(()=>{if(entries.get(key)?.pending===pending){entries.delete(key);retainedBytes-=bytes;}});
+    }
+    return pending;
+  };
+}
+
 async function readR2NativeProvision(
   dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string },
   identity: CustomRuntimeLegalIdentity,
@@ -1616,16 +1644,18 @@ export type DiscoveryMetadata = {
 };
 
 export async function readR2NativeDiscoveryMetadata(
-  dependencies: {bucket: Pick<LegalEvidenceBucket,"get">;currentAt:string},
+  dependencies: {bucket: Pick<LegalEvidenceBucket,"get">;currentAt:string;readProvision?:typeof readR2NativeProvision},
   identity: CustomRuntimeLegalIdentity,
   endpoint: TemporalEndpoint,
 ): Promise<DiscoveryMetadata | null> {
-  return (await readR2NativeProvision(dependencies,identity,endpoint)).metadata;
+  const metadata=(await (dependencies.readProvision??readR2NativeProvision)(dependencies,identity,endpoint)).metadata;
+  return metadata?{...metadata}:null;
 }
 
 /** Resolves immutable evidence through the body-free R2-native runtime mapping. */
 export async function resolveR2NativeCustomEvidence(
   dependencies: { bucket: Pick<LegalEvidenceBucket, "get">; currentAt: string;
+    readProvision?:typeof readR2NativeProvision;
     readArticleContext?: (original: ResolvedOfficialEvidence, article: string,
       sourceRevisionId: string) => Promise<ResolvedOfficialEvidence | null>;
     readDocumentContext?: (original: ResolvedOfficialEvidence,
@@ -1634,7 +1664,7 @@ export async function resolveR2NativeCustomEvidence(
   untrustedEndpoint: TemporalEndpoint,
 ): Promise<ControllingEvidenceResolution> {
   const {provisionText,officialCitation,articleNumber,sourceRevisionId} =
-    await readR2NativeProvision(dependencies,identity,untrustedEndpoint);
+    await (dependencies.readProvision??readR2NativeProvision)(dependencies,identity,untrustedEndpoint);
   const evidence = resolvedEvidenceSchema.parse({
     legalInstrumentId: identity.legalInstrumentId,
     officialExpressionId: identity.officialExpressionId,

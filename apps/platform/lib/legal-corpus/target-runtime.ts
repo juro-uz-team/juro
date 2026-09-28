@@ -29,7 +29,7 @@ import { resolveCustomTrustedLegalTitles } from "./custom-search-trusted-titles"
 import { createCustomMembershipLookupReader } from "./custom-membership-lookup";
 import {loadCandidateMembershipProjection, readCandidateMembershipProofs, verifyProjectedCandidateMembership} from "./candidate-membership-projection";
 import { assertCompleteCorpusCurrentInterval, resolveCompleteCorpusEvidence, resolveControllingEvidence,
-  resolveR2NativeCustomEvidence,
+  resolveR2NativeCustomEvidence,createR2NativeProvisionReader,
   type LegalEvidenceBucket } from "./target-evidence";
 import { resolveProvisionLineage } from "./target-lineage";
 import { createNormalizedArticleEvidenceReader, createNormalizedDocumentEvidenceReader } from "./normalized-article-evidence";
@@ -613,6 +613,7 @@ export function createRuntimeEvidenceServices(
   const { environment, db, evidenceBucket, historyEvidenceBucket,
     customArtifactBucket } = dependencies;
   const r2IdentityByRendition = new Map<string, CustomRuntimeLegalIdentity>();
+  const readProvision=createR2NativeProvisionReader();
   const readCurrentParent = createNormalizedSourceReader(evidenceBucket);
   const currentArticleContext = createNormalizedArticleEvidenceReader(evidenceBucket, readCurrentParent);
   const readHistoryParent = historyEvidenceBucket ? createNormalizedSourceReader(historyEvidenceBucket) : readCurrentParent;
@@ -642,7 +643,7 @@ evidenceResolver: {
         const identity=r2IdentityByRendition.get(provisionRenditionId);
         if(!identity)return null;
         return readDiscoveryMetadata({
-          bucket:selectRuntimeEvidenceBucket(context.release.capability,evidenceBucket,historyEvidenceBucket),currentAt:context.currentAt,
+          bucket:selectRuntimeEvidenceBucket(context.release.capability,evidenceBucket,historyEvidenceBucket),currentAt:context.currentAt,readProvision,
         },identity,endpoint);
       },
       async resolveControlling(provisionRenditionId: string, endpoint: TemporalEndpoint, context: {release: PinnedCandidateRelease; currentAt: string}) {
@@ -656,7 +657,7 @@ evidenceResolver: {
           );
           const r2Identity = r2IdentityByRendition.get(provisionRenditionId);
           if (r2Identity) return resolveR2NativeCustomEvidence(
-            { bucket: releaseEvidenceBucket, currentAt: context.currentAt,
+            { bucket: releaseEvidenceBucket, currentAt: context.currentAt,readProvision,
               readArticleContext: context.release.capability === "history" ? historicalArticleContext : currentArticleContext,
               readDocumentContext: context.release.capability === "history" ? historicalDocumentContext : currentDocumentContext },
             r2Identity, endpoint,
