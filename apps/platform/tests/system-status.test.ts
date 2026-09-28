@@ -280,7 +280,8 @@ test("status routes use a fresh-MFA operations boundary and a narrow public host
   assert.match(publicApi, /STATUS_TEMPORARILY_UNAVAILABLE/);
   assert.match(publicApi, /isLocale\(requestedLocale\)/);
   assert.match(publicApi, /s-maxage=30/);
-  assert.match(worker, /PRIVATE_DEVELOPMENT !== "true"/);
+  assert.match(worker, /nativeHttpConfiguration\(process\.env, "platform"\)/);
+  assert.match(worker, /normalizeNativeRequest\(request, privateAdminRequest \? internalConfig : config\)/);
   assert.match(worker, /listen\(port, "127\.0\.0\.1"/);
   assert.doesNotMatch(ui + publicUi, /dangerouslySetInnerHTML|transition:\s*all|window\.confirm/);
   assert.match(ui, /aria-live="polite"/);

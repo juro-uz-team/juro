@@ -49,9 +49,11 @@ test("private native servers preserve authentication and loopback boundaries", a
   assert.match(auth, /ALLOW_PLATFORM_AUTH_HEADERS === "true"/u);
   assert.match(auth, /env\.APP_ENV !== "production"/u);
   for (const runtime of [server, admin]) {
-    assert.match(runtime, /PRIVATE_DEVELOPMENT !== "true"/u);
     assert.match(runtime, /listen\(port, "127\.0\.0\.1"/u);
   }
+  assert.match(server, /nativeHttpConfiguration\(process\.env, "platform"\)/u);
+  assert.match(server, /normalizeNativeRequest\(request, privateAdminRequest \? internalConfig : config\)/u);
+  assert.match(admin, /PRIVATE_DEVELOPMENT !== "true"/u);
 });
 
 test("multipart upload routes enforce a declared aggregate bound before form-data parsing", async () => {

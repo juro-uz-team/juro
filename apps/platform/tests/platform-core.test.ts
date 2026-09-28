@@ -797,7 +797,8 @@ test("email change binds both address proofs to one fresh local session", async 
   assert.match(route, /recentEmailChangeSession/);
   assert.match(route, /hasActiveMfa/);
   assert.match(route, /while \(newCode === currentCode\)/);
-  assert.match(route, /https:\/\/api\.resend\.com\/emails\/batch/);
+  assert.match(route, /response = await sendEmailRequest\(/);
+  assert.match(route, /signal: AbortSignal\.timeout\(8_000\),\s*\}, true\)/);
   assert.match(route, /"idempotency-key"/);
   assert.match(route, /markEmailChangeCodesQueued/);
   assert.match(route, /sessionTokenFromCookie/);

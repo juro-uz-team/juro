@@ -153,8 +153,8 @@ test("English auth routing and supporting controls are complete", () => {
 test("private authentication challenge clears tokens on reset without loading a provider script", () => {
   const challenge = source("app/_auth/TurnstileWidget.tsx");
   assert.match(challenge, /siteKey === "private-local"/);
-  assert.match(challenge, /return \(\) => callback\.current\(""\)/);
-  assert.match(challenge, /\[siteKey, resetSignal\]/);
+  assert.match(challenge, /return \(\) => \{[^}]*active = false;[^}]*widget\?\.remove\(\); callback\.current\(""\)/);
+  assert.match(challenge, /\[siteKey, action, locale, resetSignal\]/);
   assert.doesNotMatch(challenge, /challenges\.cloudflare|createElement\("script"/);
 });
 
