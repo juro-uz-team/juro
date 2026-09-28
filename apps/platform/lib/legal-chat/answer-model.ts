@@ -8,11 +8,13 @@ import {aiResponseToneInstruction,type AiResponseTone} from "../ai/runtime-setti
 import {compactSourceReferences} from "./source-references";
 import {checkLegalDraft} from "./answer-checks";
 
-// Both modes use whole-answer writing and programmatic validation. Their
-// provider execution profiles differ; evidence and publication checks do not.
+// Both modes use the same writing profile and programmatic validation;
+// only the provider model differs.
 
 const draftResponseSchema = z.object({
   answer: z.object({
+    // Draft the conclusion first so the detailed issues have it in context.
+    mainPoint: legalDraftSchema.shape.mainPoint,
     issues: z.array(z.object({
       finding: legalDraftSchema.shape.findings.element,
       actions: z.array(legalDraftSchema.shape.actions.element).max(4),
@@ -20,7 +22,6 @@ const draftResponseSchema = z.object({
     risks: legalDraftSchema.shape.risks,
     questions: legalDraftSchema.shape.questions,
     unresolved: legalDraftSchema.shape.unresolved,
-    mainPoint: legalDraftSchema.shape.mainPoint,
   }).strict(),
 }).strict();
 
