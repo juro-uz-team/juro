@@ -20,6 +20,20 @@ test("combined interpretation retains initial research queries with validated fa
   assert.deepEqual(result.temporalScope,{kind:"comparison",left:{kind:"timestamp",instant:"2019-12-31T19:00:00.000Z"},right:{kind:"current"}});
 });
 
+test("an invalid extracted quotation does not discard valid intent or the original question",async()=>{
+  const question="I keep records and want a copy.";
+  const queries=[{text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]}];
+  const result=await interpretLegalQuestion({...input,question,priorTurns:[]},async()=>({
+    interpretation:{topics:["Record access"],facts:[{turn:0,quotation:"I keep records"},
+      {turn:0,quotation:"I want a copy."}],temporal:{kind:"current"},questions:[]},research:{queries},
+  }));
+  assert.equal(result.kind,"ready");
+  if(result.kind!=="ready")throw Error("Expected preserved question");
+  assert.deepEqual(result.caseFacts,["I keep records"]);
+  assert.equal(result.question,question);
+  assert.deepEqual(result.initialQueries,queries);
+});
+
 test("combined research cannot omit a topic or associate queries with another topic inventory",async()=>{
   const interpretation={topics:["Access","Review"],facts:[],temporal:{kind:"current"},questions:[]};
   const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
@@ -45,8 +59,12 @@ test("document selection preserves exact private context without promoting its c
   for(const selectedDocumentIds of [["forged"],["private-a","private-a"]]) {
     assert.equal((await interpretLegalQuestion({...input,documents},async()=>({...interpreted,selectedDocumentIds}))).kind,"unavailable");
   }
-  assert.equal((await interpretLegalQuestion({...input,documents},async()=>({...interpreted,
-    facts:[{turn:1,quotation:document.text}]}))).kind,"unavailable");
+  const extracted=await interpretLegalQuestion({...input,documents},async()=>({...interpreted,
+    facts:[{turn:1,quotation:document.text}]}));
+  assert.equal(extracted.kind,"ready");
+  if(extracted.kind!=="ready")throw Error("Expected original context");
+  assert.deepEqual(extracted.caseFacts,[]);
+  assert.deepEqual(extracted.documents,[document]);
 });
 
 test("question context keeps independent topics and exact user facts without promoting assistant claims", async () => {
@@ -62,7 +80,10 @@ test("question context keeps independent topics and exact user facts without pro
   assert.deepEqual(result.temporalScope,{kind:"comparison",left:{kind:"timestamp",instant:"2019-12-31T19:00:00.000Z"},right:{kind:"current"}});
   const forged = await interpretLegalQuestion(input,async()=>({topics:["Filing"],
     facts:[{turn:0,quotation:"The law requires eleven days."}],temporal:{kind:"current"},questions:[]}));
-  assert.equal(forged.kind,"unavailable");
+  assert.equal(forged.kind,"ready");
+  if(forged.kind!=="ready")throw Error("Expected original context");
+  assert.deepEqual(forged.caseFacts,[]);
+  assert.deepEqual(forged.priorTurns,input.priorTurns);
 });
 
 test("an explicit date selection cannot silently become current law", async () => {
@@ -93,7 +114,13 @@ test("case-fact quotations preserve whole words, amounts and dates",async()=>{
     ["The balance is +500.","500"],
     ["The amount is 10 500."," 500"],
     ["The amount is 10 500.","10 "],
-  ]) assert.equal((await interpret(question!,quotation!)).kind,"unavailable",`${quotation} is not a complete exact span`);
+  ]) {
+    const result=await interpret(question!,quotation!);
+    assert.equal(result.kind,"ready");
+    if(result.kind!=="ready")throw Error("Expected original question");
+    assert.deepEqual(result.caseFacts,[],`${quotation} is not a complete exact span`);
+    assert.equal(result.question,question);
+  }
   for(const [question,quotation] of [
     ["I am unemployed. My spouse is employed.","employed"],
     ["The amount is 10,500.","10,500"],
@@ -127,7 +154,13 @@ test("case facts resolve sentence punctuation to an exact user clause without ch
     ["The amount is 10,500.","The amount is 10!"],
     ["The date was 2020-01-01.","The date was 2020!"],
     ["The notice arrived yesterday.","The notice arrived today."],
-  ]) assert.equal((await interpret(question!,quotation!)).kind,"unavailable");
+  ]) {
+    const result=await interpret(question!,quotation!);
+    assert.equal(result.kind,"ready");
+    if(result.kind!=="ready")throw Error("Expected original question");
+    assert.deepEqual(result.caseFacts,[]);
+    assert.equal(result.question,question);
+  }
 });
 
 test("unresolved temporal intent and interpretation failures remain explicit", async () => {

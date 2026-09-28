@@ -89,8 +89,13 @@ test("discarded research proposals cannot bypass fact, selection or temporal val
     assert.deepEqual(result.topics,base.topics);
     assert.equal(result.initialQueries,undefined,"a plan missing a topic must be reformulated in full");
   }
+  interpretation={...base,facts:[{turn:0,quotation:"I received a refusal."}]};
+  const unmatched=await run();
+  assert.equal(unmatched.kind,"ready");
+  if(unmatched.kind!=="ready")throw Error("Expected original question");
+  assert.deepEqual(unmatched.caseFacts,[]);
+  assert.equal(unmatched.question,input.question);
   for(const invalid of [
-    {...base,facts:[{turn:0,quotation:"I received a refusal."}]},
     {...base,selectedDocumentIds:["invented"]},
     {...base,selectedMemoryIds:["invented"]},
     {...base,temporal:{kind:"invented"}},

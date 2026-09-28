@@ -64,9 +64,8 @@ export async function interpretLegalQuestion(input:QuestionContextInput,
     const userContext=input.userContext?{...input.userContext,memories:input.userContext.memories.filter(memory=>selectedIds.has(memory.id))}:undefined;
     const userMessages=[...input.priorTurns.map(turn=>turn.question),input.question];
     const facts=value.facts.map(fact=>({...fact,quotation:resolveExactQuotation(userMessages[fact.turn],fact.quotation)}));
-    if(facts.some(fact=>fact.quotation===null)) {
-      return {kind:"unavailable",errorCode:"QUESTION_INTERPRETATION_UNAVAILABLE"};
-    }
+    // Fact extraction is optional enrichment. Unmatched quotations are omitted
+    // below; the complete original question and prior turns remain available.
     if(value.temporal.kind==="unresolved") return value.questions.length
       ? {kind:"clarification_required",questions:value.questions} : clarify();
     const time=(value:string):LegalTime|null => {
