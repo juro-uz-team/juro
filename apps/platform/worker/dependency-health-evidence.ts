@@ -70,13 +70,14 @@ async function recentlyRecordedOperationalEvidence(
 ): Promise<boolean> {
   if (minimumIntervalMs <= 0) return false;
   const row = await env.DB.prepare(
-    `SELECT checked_at AS checkedAt
+    `SELECT checked_at AS checkedAt,state
      FROM dependency_health_checks
-     WHERE environment=? AND dependency_key=? AND state='operational'
+     WHERE environment=? AND dependency_key=?
      ORDER BY checked_at DESC,id DESC
      LIMIT 1`,
-  ).bind(environment, key).first<{ checkedAt: string }>();
-  if (!row?.checkedAt) return false;
+  ).bind(environment, key).first<{ checkedAt: string; state: string }>();
+  // Throttle repeated successes, never recovery from a more recent failure.
+  if (!row?.checkedAt || row.state !== "operational") return false;
   const lastCheckedAt = Date.parse(row.checkedAt);
   return Number.isFinite(lastCheckedAt) && now.getTime() - lastCheckedAt < minimumIntervalMs;
 }

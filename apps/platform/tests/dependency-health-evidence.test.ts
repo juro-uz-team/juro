@@ -172,3 +172,19 @@ test("real-flow routes emit evidence only after their successful D1 commit", asy
   const invocation = accessGrant.slice(evidence, accessGrant.indexOf("}, startedAt);", evidence) + "}, startedAt);".length);
   assert.doesNotMatch(invocation, /requestId|caseId|lawyerUserId|grantId/);
 });
+
+test("successful recovery is not suppressed by older operational evidence", async () => {
+  const { sqlite, d1 } = sqliteD1Fixture();
+  try {
+    const env = { APP_ENV: "production", DB: d1 };
+    const base = Date.parse("2026-09-29T00:00:00Z");
+    const success = { key: "legal_source_sync" as const, state: "operational" as const,
+      evidenceKind: "synthetic_probe" as const, startedAt: base, minimumOperationalIntervalMs: 20 * 60 * 60_000 };
+    await recordDependencyHealthEvidence(env, success, new Date(base));
+    await recordDependencyHealthEvidence(env, { key: "legal_source_sync", state: "degraded", safeErrorCode: "LEGAL_SYNC_FAILED",
+      evidenceKind: "synthetic_probe", startedAt: base + 60_000 }, new Date(base + 60_000));
+    assert.equal(await recordDependencyHealthEvidence(env, success, new Date(base + 120_000)), true);
+    const health = await readDependencyHealth({ db: d1, environment: "production", now: new Date(base + 120_000) });
+    assert.equal(health.find(row => row.key === "legal_source_sync")?.state, "operational");
+  } finally { sqlite.close(); }
+});
