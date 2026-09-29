@@ -10,6 +10,6 @@ export function legalChatModelProfile(mode:"fast"|"deep",stage:ChatModelStage) {
     // Assessments use changing evidence/schema prefixes.
     // Avoid automatic cache writes for this usually one-use request context.
     ...(stage === "assessing"?{promptCacheMode:"explicit" as const}:{}),
-    reasoningEffort:stage==="assessing"?"medium" as const:stage==="writing"?"low" as const:"none" as const,
+    reasoningEffort:stage==="assessing"||stage==="writing"?"medium" as const:"none" as const,
     timeoutMs:({interpreting:15_000,formulating:45_000,assessing:45_000,writing:60_000})[stage]};
 }

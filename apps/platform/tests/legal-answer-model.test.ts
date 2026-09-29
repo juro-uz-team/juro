@@ -163,7 +163,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
   assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Mode changes only the provider model");
   assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
   assert.deepEqual(payloads.map(body=>body.reasoning),[
-    {effort:"low",mode:"standard"},{effort:"low",mode:"standard"},
+    {effort:"medium",mode:"standard"},{effort:"medium",mode:"standard"},
   ]);
   assert.equal(observations.length, 2);
   for (const body of payloads) {
