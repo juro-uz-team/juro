@@ -21,9 +21,11 @@ test("direct Lex health accepts only an HTTPS text response and records no sourc
     db,
     environment: "staging",
     now: () => new Date("2026-08-13T15:30:00.000Z"),
-    fetchImpl: async (_input, init) => {
+    fetchImpl: async (input, init) => {
+      assert.equal(input, "https://lex.uz/uz/");
+      assert.equal(init?.method, "HEAD", "Health checks must not download source content");
       request = init;
-      return new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
+      return new Response(null, { headers: { "content-type": "text/html; charset=utf-8", "content-length": "231995" } });
     },
   });
   assert.equal(request?.redirect, "manual");

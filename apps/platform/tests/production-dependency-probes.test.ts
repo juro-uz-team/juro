@@ -17,6 +17,7 @@ import {
   providerDiagnosticSafeErrorCode,
   runAnthropicProductionProbe,
   runProductionDependencyProbes,
+  runLocalDependencyProbes,
   safeProviderFailureReason,
 } from "../worker/production-dependency-probes";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
@@ -665,4 +666,23 @@ test("the lawyer-area probe exercises and atomically removes its synthetic acces
   } finally {
     sqlite.close();
   }
+});
+
+test("local dependency checks refresh native storage and builder without calling paid providers or sending mail", async context => {
+  const { sqlite, d1 } = sqliteD1Fixture();
+  context.after(() => sqlite.close());
+  context.mock.method(globalThis, "fetch", async () => { assert.fail("Local probes must not call external services"); });
+  const { bucket, objects } = builderBucket();
+  const env = { ...probeEnv(d1), APP_ENV: "staging" as const, PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
+    BUCKET: bucket, QUARANTINE_BUCKET: bucket, ASSETS: builderAssets([]),
+  };
+  const summary = await runLocalDependencyProbes(env);
+  assert.equal(summary.privateR2, "succeeded");
+  assert.equal(summary.documentBuilder, "succeeded");
+  assert.equal(summary.lawyerArea, "succeeded");
+  assert.equal(summary.malwareScanner, "failed", "Missing scanner must not be reported healthy");
+  assert.equal(objects.size, 0);
+  const keys = sqlite.prepare("SELECT DISTINCT dependency_key AS key FROM dependency_health_checks ORDER BY key").all();
+  assert.deepEqual(keys.map(row => (row as {key:string}).key), ["document_builder", "lawyer_area", "malware_scanner", "private_r2"]);
+  assert.equal((await runLocalDependencyProbes(env)).privateR2, "skipped", "Bound ledger and probe frequency");
 });

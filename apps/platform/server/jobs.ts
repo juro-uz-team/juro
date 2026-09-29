@@ -8,10 +8,12 @@ import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
 import { JOB_KINDS, expectedQueueName, handleQueue } from "../worker/platform-jobs";
 import { dispatchOutbox } from "../worker/platform-outbox";
 import { handleScheduled } from "../worker/platform-scheduled";
+import { consumeNativeHealth, nativeHealthEnabled, nativeHealthQueueName } from "../worker/native-dependency-health";
 
 const env = getSelfHostedRuntime();
 const pool = database().pool;
 const names = [...new Set(JOB_KINDS.map(kind => expectedQueueName(kind, env.APP_ENV)))];
+if (nativeHealthEnabled(env)) names.push(nativeHealthQueueName(env.APP_ENV));
 const queues = [...names, ...names.map(name => `${name}-dlq`)].map(name => new PostgresQueue(pool, name));
 let stopping = false;
 let lastHousekeeping = 0;
@@ -47,8 +49,9 @@ while (!stopping) {
       const retry = (options?: { delaySeconds?: number }) => { retrySeconds = options?.delaySeconds ?? 30; };
       const message = { ...claim, ack() { retrySeconds = undefined; }, retry };
       try {
-        await handleQueue({ queue: queue.name, metadata: { metrics: await queue.metrics() },
-          messages: [message], ackAll: message.ack, retryAll: retry }, env);
+        const batch = { queue: queue.name, metadata: { metrics: await queue.metrics() },
+          messages: [message], ackAll: message.ack, retryAll: retry };
+        if (!await consumeNativeHealth(batch, env)) await handleQueue(batch, env);
         if (!leaseLost) {
           if (retrySeconds === undefined) await queue.acknowledge(claim);
           else if (claim.attempts >= (documentQueue(queue.name) ? 4 : 6) && !queue.name.endsWith("-dlq")) await queue.deadLetter(claim);

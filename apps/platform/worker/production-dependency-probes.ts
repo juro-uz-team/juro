@@ -17,7 +17,8 @@ import {
 } from "./dependency-health-evidence";
 import type { ProviderDiagnosticSafeErrorCode } from "./dependency-health-evidence";
 
-const R2_PROBE_INTERVAL_MS = 8 * 60_000;
+// Leave scheduler jitter below the ten-minute storage freshness window.
+const R2_PROBE_INTERVAL_MS = 4 * 60_000;
 const MALWARE_PROBE_INTERVAL_MS = 10 * 60_000;
 const PROVIDER_PROBE_INTERVAL_MS = 10 * 60_000;
 const BUILDER_PROBE_INTERVAL_MS = 20 * 60_000;
@@ -820,6 +821,17 @@ async function runLawyerAreaProbe(env: PlatformJobEnv): Promise<ProbeOutcome> {
  * an idempotent per-slot lease; individual due checks bound provider cost and
  * prevent routine probes from growing the append-only health ledger.
  */
+export async function runLocalDependencyProbes(env: PlatformJobEnv) {
+  // These checks use the supplied native adapters and fixed disposable fixtures.
+  // Keep provider inference and outbound email out of this execution path.
+  return {
+    privateR2: await runPrivateR2Probe(env),
+    documentBuilder: await runDocumentBuilderProbe(env),
+    malwareScanner: await runMalwareScannerProbe(env),
+    lawyerArea: await runLawyerAreaProbe(env),
+  };
+}
+
 export async function runProductionDependencyProbes(
   env: PlatformJobEnv & { PRODUCTION_SYNTHETIC_PROBES_ENABLED?: string },
   hooks: ProductionDependencyProbeHooks = {},

@@ -1,12 +1,11 @@
 /**
  * Health checks for the query-scoped legal source path.
  *
- * The probes deliberately request only each public robots endpoint. They never
+ * The probes deliberately request only public landing-page headers. They never
  * fetch, retain, index, or parse a legal document, so this operational module
  * cannot reintroduce an owned legal corpus.
  */
 const HEALTH_TIMEOUT_MS = 10_000;
-const HEALTH_MAX_BYTES = 32 * 1024;
 const FRESH_WITHIN_MS = 24 * 60 * 60 * 1_000;
 
 export const directHealthKinds = ["lex"] as const;
@@ -34,7 +33,9 @@ export type DirectLegalSourceHealth = {
 };
 
 const endpoints: Record<DirectHealthKind, string> = {
-  lex: "https://lex.uz/robots.txt",
+  // robots.txt currently redirects to the site's 404 page. Probe the canonical
+  // landing page with HEAD, without retrieving or indexing legal content.
+  lex: "https://lex.uz/uz/",
 };
 
 function publicHealthError(error: unknown): string {
@@ -55,7 +56,7 @@ async function boundedHealthFetch(
   const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
   try {
     const response = await fetchImpl(endpointUrl, {
-      method: "GET",
+      method: "HEAD",
       // Cloudflare's fetch path does not consistently surface `redirect:
       // "error"` failures for an otherwise valid public HTTPS endpoint. Keep
       // redirects observable and reject them below instead of treating a
@@ -69,9 +70,8 @@ async function boundedHealthFetch(
         "user-agent": "JURO-LegalSourceHealth/1.0 (+https://juro.uz)",
       },
     });
-    const contentLength = Number(response.headers.get("content-length") ?? "0");
     const contentType = response.headers.get("content-type")?.toLocaleLowerCase() ?? "";
-    if (!response.ok || response.status >= 300 || (contentLength > 0 && contentLength > HEALTH_MAX_BYTES) || !contentType.includes("text")) {
+    if (!response.ok || response.status >= 300 || !contentType.includes("text")) {
       try { await response.body?.cancel(); } catch { /* best effort */ }
       throw new Error("DIRECT_SOURCE_HEALTH_UNAVAILABLE");
     }

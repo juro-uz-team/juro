@@ -11,6 +11,7 @@ import { PostgresVectorIndex } from "../storage/vectors";
 import {createVectorCandidateReader} from "../storage/vector-candidates";
 import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
 import { PostgresQueue } from "../storage/queue";
+import { nativeHealthQueueName } from "../../worker/native-dependency-health";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
 import LegalCorpusService from "../../worker/legal-corpus-worker";
 import { handleCustomSearchRequest, type CustomSearchEnv } from "../legal-corpus/custom-search-service";
@@ -61,6 +62,7 @@ export function getSelfHostedRuntime(): Runtime {
     LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST: "false", PUBLIC_DOCUMENT_URL_IMPORT_ENABLED: "false",
     ACCOUNT_DELETION_PURGE_ENABLED: "true", PAYMENT_FOUNDATION_ENABLED: "false", PAYMENT_PRODUCTION_APPROVED: "false",
     STAGING_LEGAL_EVALUATION_ENABLED: "false", STAGING_SYNTHETIC_PROBES_ENABLED: "false", PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
+    NATIVE_DEPENDENCY_PROBES_ENABLED: config.privateMode ? "false" : "true",
     LOCAL_AUTH_BYPASS: "false", ALLOW_PLATFORM_AUTH_HEADERS: "false",
     TURNSTILE_SECRET_KEY: config.privateMode ? "private-local" : process.env.AUTH_CHALLENGE_SECRET,
     TURNSTILE_SITE_KEY: config.privateMode ? "private-local" : "native-altcha",
@@ -111,6 +113,8 @@ export function getSelfHostedRuntime(): Runtime {
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
     productRevision,fallback:legal});
   state.juroRuntimeProductRevision=productRevision;
-  state.juroRuntime = { ...env, ...queues, ...deadLetters, LEGAL_RETRIEVAL_SERVICE: retrieval } as unknown as Runtime;
+  state.juroRuntime = { ...env, ...queues, ...deadLetters,
+    NATIVE_HEALTH_QUEUE: config.privateMode ? undefined : new PostgresQueue(application.pool, nativeHealthQueueName(appEnvironment)),
+    LEGAL_RETRIEVAL_SERVICE: retrieval } as unknown as Runtime;
   return state.juroRuntime;
 }

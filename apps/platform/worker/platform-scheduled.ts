@@ -28,6 +28,7 @@ import {
   recordScheduledD1HealthEvidence,
 } from "./dependency-health-evidence";
 import { reconcileQueueDlqHealth } from "./queue-dlq-health-reconciliation";
+import { runNativeDependencyHealth } from "./native-dependency-health";
 
 const OUTBOX_CRON = "*/5 * * * *";
 const LOCK_NAME = "outbox-dispatch";
@@ -679,6 +680,8 @@ export async function handleScheduled(
     }
     failureCode = "PRODUCTION_DEPENDENCY_PROBES_FAILED";
     const productionDependencyProbes = await maybeRunProductionDependencyProbes(env);
+    failureCode = "NATIVE_DEPENDENCY_PROBES_FAILED";
+    await runNativeDependencyHealth(env);
     // Measure D1 directly. The surrounding cron can include R2, queues,
     // provider calls and retention work, so its total duration is not D1
     // latency and must never be published as such.
