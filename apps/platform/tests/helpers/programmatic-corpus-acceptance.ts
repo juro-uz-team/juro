@@ -18,7 +18,7 @@ export type ProgrammaticFixtureProofs={
   }>}>
 };
 export async function programmaticAcceptanceFixture(change?:(proofs:ProgrammaticFixtureProofs)=>void,
-  changeProtocol?:(protocol:{version:string;requiredChecks:string[];workloadSha256:string;chatCaseIds:string[];heldOutChatCaseIds:string[]})=>void){
+  changeProtocol?:(protocol:{version:string;requiredChecks:string[];workloadSha256:string;chatCaseIds:string[];heldOutChatCaseIds:string[]})=>void,version:2|3=2){
   const legacy=nativeAcceptanceFixture();
   const oldProtocol=JSON.parse(Buffer.from(await legacy.read(legacy.manifest.protocol)).toString());
   delete oldProtocol.semanticCaseIds;delete oldProtocol.heldOutCaseIds;
@@ -26,13 +26,13 @@ export async function programmaticAcceptanceFixture(change?:(proofs:Programmatic
     "citation_integrity","tenant_isolation","saved_replay","historical_questions","comparison_questions","private_context"];
   const caseIds=nativeChatWorkload.map(row=>row.id);
   const heldOutCaseIds=nativeChatWorkload.filter(row=>row.heldOut).map(row=>row.id);
-  const protocolValue={...oldProtocol,version:"native-programmatic-chat-v2",chatCaseIds:[...caseIds],
+  const protocolValue={...oldProtocol,version:`native-programmatic-chat-v${version}`,chatCaseIds:[...caseIds],
     heldOutChatCaseIds:[...heldOutCaseIds],workloadSha256:nativeChatWorkloadSha256,requiredChecks};
   changeProtocol?.(protocolValue);
   const protocol=Buffer.from(JSON.stringify(protocolValue));
   const frozenChecks:string[]=protocolValue.requiredChecks;
   const {semantic,...commonProofs}=legacy.manifest.proofs;
-  const manifest=nativeCorpusAcceptanceSchema.parse({...legacy.manifest,version:2,
+  const manifest=nativeCorpusAcceptanceSchema.parse({...legacy.manifest,version,
     protocol:{...legacy.manifest.protocol,sha256:hash(protocol),sizeBytes:protocol.length},
     proofs:{...commonProofs,chat:semantic}});
   const bindingSha256=nativeCorpusBinding(manifest);
@@ -49,7 +49,7 @@ export async function programmaticAcceptanceFixture(change?:(proofs:Programmatic
   for(const row of proofs.native.requests)row.milliseconds=12000;
   change?.(proofs);
   const bytes=new Map<string,Uint8Array>([["protocol",protocol]]);
-  if(manifest.version!==2)throw Error("Expected programmatic manifest");
+  if(manifest.version===1)throw Error("Expected programmatic manifest");
   for(const kind of ["dense","native","chat","integrity","verification"] as const){
     const body=Buffer.from(JSON.stringify(proofs[kind]));bytes.set(kind,body);
     manifest.proofs[kind]={bucket:"proofs",key:kind,sha256:hash(body),sizeBytes:body.length};

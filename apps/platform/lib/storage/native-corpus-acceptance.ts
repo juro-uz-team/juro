@@ -25,6 +25,7 @@ const sharedProofs={dense:artifact,native:artifact,integrity:artifact,verificati
 export const nativeCorpusAcceptanceSchema=z.discriminatedUnion("version",[
   z.object({...acceptanceFields,version:z.literal(1),proofs:z.object({...sharedProofs,semantic:artifact}).strict()}).strict(),
   z.object({...acceptanceFields,version:z.literal(2),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
+  z.object({...acceptanceFields,version:z.literal(3),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
 ]).refine(manifest=>manifest.evidenceNamespace===retainedReleases.evidenceNamespace
   &&manifest.historyEvidenceNamespace===retainedReleases.historyEvidenceNamespace,"Accepted citation stores must preserve receipt routing");
 export type NativeCorpusAcceptance=z.infer<typeof nativeCorpusAcceptanceSchema>;
@@ -51,6 +52,7 @@ const protocolFields={
 const protocolSchema=z.discriminatedUnion("version",[
   z.object({...protocolFields,version:z.literal("native-indexed-retrieval-v1"),semanticCaseIds:ids,heldOutCaseIds:ids}).strict(),
   z.object({...protocolFields,version:z.literal("native-programmatic-chat-v2"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
+  z.object({...protocolFields,version:z.literal("native-programmatic-chat-v3"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
 ]);
 const base={bindingSha256:digest};
 const denseProof=z.object({...base,expectedQueryIds:ids,heldOutQueryIds:ids,
@@ -73,7 +75,8 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
   const protocolBytes=await read(manifest.protocol);
   if(protocolBytes.length!==manifest.protocol.sizeBytes||sha(protocolBytes)!==manifest.protocol.sha256)throw Error("NATIVE_CORPUS_PROTOCOL_CORRUPT");
   const protocol=protocolSchema.parse(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(protocolBytes)));
-  if((manifest.version===1)!==(protocol.version==="native-indexed-retrieval-v1"))throw Error("NATIVE_CORPUS_PROTOCOL_VERSION");
+  const expectedProtocol=manifest.version===1?"native-indexed-retrieval-v1":`native-programmatic-chat-v${manifest.version}`;
+  if(protocol.version!==expectedProtocol)throw Error("NATIVE_CORPUS_PROTOCOL_VERSION");
   const load=async<T>(reference:Artifact,schema:z.ZodType<T>)=>{
     const bytes=await read(reference);
     if(bytes.length!==reference.sizeBytes||sha(bytes)!==reference.sha256)throw Error("NATIVE_CORPUS_PROOF_CORRUPT");
@@ -87,7 +90,7 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
   exactIds(dense.expectedQueryIds,dense.results.map(result=>result.id));
   if(dense.heldOutQueryIds.some(id=>!dense.expectedQueryIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
   const native=await load(manifest.proofs.native,nativeProof);
-  if(native.requests.some(row=>row.milliseconds>(manifest.version===1?10000:15000)))throw Error("NATIVE_CORPUS_LATENCY_NOT_QUALIFIED");
+  if(native.requests.some(row=>row.milliseconds>(manifest.version===1?10000:manifest.version===2?15000:45000)))throw Error("NATIVE_CORPUS_LATENCY_NOT_QUALIFIED");
   exactIds(protocol.firstTouchIds,native.expectedFirstTouchIds);
   exactIds(protocol.expiredObservationIds,native.expectedExpiredObservationIds);
   exactIds(native.expectedFirstTouchIds,native.requests.filter(r=>r.phase==="first_touch").map(r=>r.id));
@@ -103,13 +106,13 @@ export async function verifyNativeCorpusQualification(manifest:NativeCorpusAccep
     exactIds(protocol.heldOutCaseIds,semantic.heldOutCaseIds);
     exactIds(semantic.expectedCaseIds,semantic.results.map(result=>result.id));
     if(semantic.heldOutCaseIds.some(id=>!semantic.expectedCaseIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
-  }else if(manifest.version===2&&protocol.version==="native-programmatic-chat-v2"){
+  }else if(manifest.version!==1&&protocol.version!=="native-indexed-retrieval-v1"){
     const chat=await load(manifest.proofs.chat,nativeChatProofSchema);
     exactIds(protocol.chatCaseIds,chat.expectedCaseIds);
     exactIds(protocol.heldOutChatCaseIds,chat.heldOutCaseIds);
     exactIds(chat.expectedCaseIds,chat.results.map(result=>result.id));
     if(chat.heldOutCaseIds.some(id=>!chat.expectedCaseIds.includes(id)))throw Error("NATIVE_CORPUS_HELD_OUT_MISSING");
-    verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256);
+    verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256,manifest.version);
   }
   const integrity=await load(manifest.proofs.integrity,integrityProof);
   if(integrity.expectedScopes!==integrity.verifiedScopes||integrity.expectedScopes!==protocol.expectedScopes

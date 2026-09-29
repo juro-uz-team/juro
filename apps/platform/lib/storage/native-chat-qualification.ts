@@ -16,7 +16,7 @@ export const nativeChatProofSchema=z.object({bindingSha256:z.string().regex(/^[a
 }).strict();
 
 /** Programmatic delivery evidence never certifies legal entailment or completeness. */
-export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema>,checks:readonly string[],workloadSha256:string):void {
+export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema>,checks:readonly string[],workloadSha256:string,version:2|3=2):void {
   const heldOut=nativeChatWorkload.filter(row=>row.heldOut).map(row=>row.id);
   if(workloadSha256!==nativeChatWorkloadSha256||proof.results.length!==nativeChatWorkload.length
     ||proof.heldOutCaseIds.length!==heldOut.length||heldOut.some(id=>!proof.heldOutCaseIds.includes(id))) {
@@ -42,6 +42,6 @@ export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema
       ||!rows.some(row=>proof.heldOutCaseIds.includes(row.id)))throw Error("NATIVE_CHAT_WORKLOAD_INCOMPLETE");
     const times=rows.map(row=>row.milliseconds).sort((a,b)=>a-b),middle=Math.floor(times.length/2);
     const median=times.length%2?times[middle]!:(times[middle-1]!+times[middle]!)/2;
-    if(median>15000||times[Math.ceil(times.length*.95)-1]!>30000)throw Error("NATIVE_CHAT_LATENCY_NOT_QUALIFIED");
+    if(median>(version===2?15000:45000)||times[Math.ceil(times.length*.95)-1]!>(version===2?30000:90000))throw Error("NATIVE_CHAT_LATENCY_NOT_QUALIFIED");
   }
 }

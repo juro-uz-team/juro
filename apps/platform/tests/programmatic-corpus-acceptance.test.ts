@@ -7,6 +7,32 @@ test("programmatic qualification admits visible partial answers using total chat
   const valid=await fixture();await verifyNativeCorpusQualification(valid.manifest,valid.read);
 });
 
+test("revised qualification budgets require a new protocol and retain failure checks",async()=>{
+  const slower=(p:ProgrammaticFixtureProofs)=>{
+    p.chat.results.forEach(row=>{row.milliseconds=45000;});
+    p.chat.results[0].milliseconds=90000;
+    p.native.requests.forEach(row=>{row.milliseconds=45000;});
+  };
+  const revised=await fixture(slower,undefined,3);
+  await verifyNativeCorpusQualification(revised.manifest,revised.read);
+  const old=await fixture(slower);
+  await assert.rejects(verifyNativeCorpusQualification(old.manifest,old.read),/LATENCY_NOT_QUALIFIED/);
+  for(const change of [
+    (p:ProgrammaticFixtureProofs)=>{p.chat.results.forEach(row=>{row.milliseconds=45001;});},
+    (p:ProgrammaticFixtureProofs)=>{p.chat.results[0].milliseconds=90001;p.chat.results[1].milliseconds=90001;},
+    (p:ProgrammaticFixtureProofs)=>{p.native.requests[0].milliseconds=45001;},
+    (p:ProgrammaticFixtureProofs)=>{p.chat.results[0].sourceChecksPassed=false;},
+    (p:ProgrammaticFixtureProofs)=>{p.chat.results.pop();},
+  ]){
+    const invalid=await fixture(change,undefined,3);
+    await assert.rejects(verifyNativeCorpusQualification(invalid.manifest,invalid.read));
+  }
+  for(const version of [2,3] as const){
+    const mismatched=await fixture(undefined,p=>{p.version=version===2?"native-programmatic-chat-v3":"native-programmatic-chat-v2";},version);
+    await assert.rejects(verifyNativeCorpusQualification(mismatched.manifest,mismatched.read),/PROTOCOL_VERSION/);
+  }
+});
+
 test("programmatic qualification rejects failed, missing or falsely certified chat evidence",async()=>{
   const failures:Array<(proofs:ProgrammaticFixtureProofs)=>void>=[
     p=>{p.chat.results.pop();},
