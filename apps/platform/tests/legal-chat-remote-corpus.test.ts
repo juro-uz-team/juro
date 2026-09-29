@@ -169,7 +169,7 @@ test("the indexed deadline includes opening a session and disposes a late capabi
     service:{openLegalResearch:()=>opened.promise}});
   const pending=remote.indexed(request).catch(error=>{failure=error;});
   try {
-    context.mock.timers.tick(15_000);
+    context.mock.timers.tick(45_000);
     await new Promise<void>(resolve=>setImmediate(resolve));
     assert.ok(failure instanceof DOMException&&failure.name==="TimeoutError");
   }finally{
@@ -192,7 +192,7 @@ test("formulation and native search share one deadline without resetting the bud
   try{
     await new Promise<void>(resolve=>setImmediate(resolve));
     context.mock.timers.tick(6000);formulated.resolve();await searching.promise;
-    context.mock.timers.tick(9000);await new Promise<void>(resolve=>setImmediate(resolve));
+    context.mock.timers.tick(39000);await new Promise<void>(resolve=>setImmediate(resolve));
     assert.ok(failure instanceof DOMException&&failure.name==="TimeoutError");
     assert.equal(attempt?.aborted,true);
     assert.equal(nested?.aborted,true);

@@ -1,6 +1,7 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 
-export const INDEXED_RETRIEVAL_TIMEOUT_MS=15_000;
+// One shared acquisition allowance, including planning and queued source reads.
+export const INDEXED_RETRIEVAL_TIMEOUT_MS=45_000;
 
 type RetrievalScope = {controller:AbortController;expiresAt:number};
 const scopes=new AsyncLocalStorage<RetrievalScope>();
