@@ -13,6 +13,7 @@ import type { LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure
 import { uzbekistanCalendarDate } from "../../lib/legal/applicability-date";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 import {readLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-chat/client-stream";
+import type {LegalChatDelivery} from "../../lib/legal-chat/delivery-stream";
 import {chatStageLabel} from "../../lib/legal-chat/stage-label";
 import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
@@ -149,6 +150,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const [historyCursor,setHistoryCursor]=useState<{before:string;beforeId:string}|null>(null),[loadingHistory,setLoadingHistory]=useState(false);
   const activeScope=useRef(workspaceId),currentMessage=useRef<string|undefined>(undefined),currentSelection=useRef("");
   const [optimisticQuestion,setOptimisticQuestion]=useState(""),[canRetry,setCanRetry]=useState(false);
+  const savedDeliveryRef=useRef<{idempotencyKey:string;delivery:LegalChatDelivery}|null>(null);
   const [answerMode,setAnswerMode]=useState<"short"|"detailed">("detailed"),[reasoningMode,setReasoningMode]=useState<"fast"|"deep">("fast");
   const [legalContextDate,setLegalContextDate]=useState(""),[editSourceMessageId,setEditSourceMessageId]=useState("");
   const [voiceMode,setVoiceMode]=useState(false),[voiceRecordingId,setVoiceRecordingId]=useState("");
@@ -244,13 +246,22 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     if(streamAbortRef.current)return;const controller=new AbortController();streamAbortRef.current=controller;retryRef.current=payload;
     setSending(true);setCanRetry(false);setError("");setOptimisticQuestion(payload.question||answer?.question||"");
     try {
-      if(payload.voiceRecordingId)await requestJson(`/api/platform/voice/recordings/${encodeURIComponent(payload.voiceRecordingId)}`,{method:"PATCH",body:JSON.stringify({transcript:payload.question}),signal:controller.signal});
-      const response=await fetch("/api/platform/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale,"x-juro-workspace-id":workspaceId},body:JSON.stringify(payload),signal:controller.signal});
-      const saved=await readLegalChatStream(response,stage=>{if(streamAbortRef.current===controller)setStreamStatus(chatStageLabel(stage,locale));});
+      // Once committed, recovery loads that answer instead of resubmitting work.
+      let saved=savedDeliveryRef.current?.idempotencyKey===payload.idempotencyKey?savedDeliveryRef.current.delivery:null;
+      if(!saved){
+        savedDeliveryRef.current=null;
+        if(payload.voiceRecordingId)await requestJson(`/api/platform/voice/recordings/${encodeURIComponent(payload.voiceRecordingId)}`,{method:"PATCH",body:JSON.stringify({transcript:payload.question}),signal:controller.signal});
+        const response=await fetch("/api/platform/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale,"x-juro-workspace-id":workspaceId},body:JSON.stringify(payload),signal:controller.signal});
+        saved=await readLegalChatStream(response,stage=>{if(streamAbortRef.current===controller)setStreamStatus(chatStageLabel(stage,locale));});
+      }
       if(controller.signal.aborted)return;
       if(!saved.conversationId)throw new Error("Missing saved conversation");
+      savedDeliveryRef.current={idempotencyKey:payload.idempotencyKey,delivery:saved};
+      await loadAnswer(saved.conversationId,saved.branchId,controller.signal);
+      if(controller.signal.aborted)return;
       setQuestion("");setEditSourceMessageId("");setVoiceRecordingId("");retryRef.current=null;setOptimisticQuestion("");
-      await loadAnswer(saved.conversationId,saved.branchId,controller.signal);await refresh(controller.signal);
+      // Sidebar metadata is ancillary to the already saved, loaded answer.
+      void refresh(controller.signal).catch(()=>{});
       let intakeFinalized=true;
       if(/^[A-Za-z0-9_-]{43}$/.test(intakeHandle)){
         intakeFinalized=await requestJson("/api/platform/ai/intake/finalize",{method:"POST",body:JSON.stringify({handle:intakeHandle,workspaceId}),
@@ -258,6 +269,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       }
       if(controller.signal.aborted)return;
       const nextParams=new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})});
+      savedDeliveryRef.current=null;
       router.replace(aiLocation(nextParams, !intakeFinalized), { scroll: false });
     } catch(cause){
       if(streamAbortRef.current!==controller)return;
@@ -351,7 +363,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           recorderPhase={voiceRecorderPhase}
           speechPhase={voiceSpeechPhase}
         />}
-        {!status?.configured && <div className="ai-unavailable" role="status"><ShieldAlert /><div><strong>{text("AI пока недоступен", "AI hozircha ishlamaydi", "AI is currently unavailable")}</strong><p>{text("Сервер не подтвердил ключ AI-провайдера. JURO не имитирует ответ и не показывает ложный success.", "Server AI-provayder kalitini tasdiqlamadi. JURO javobni taqlid qilmaydi va soxta muvaffaqiyatni ko‘rsatmaydi.", "The server could not verify the AI provider configuration. JURO will not simulate an answer or report a false success.")}</p></div></div>}
+        {status?.configured === false && <div className="ai-unavailable" role="status"><ShieldAlert /><div><strong>{text("AI пока недоступен", "AI hozircha ishlamaydi", "AI is currently unavailable")}</strong><p>{text("Попробуйте позже. Сохранённые диалоги по-прежнему доступны.", "Keyinroq qayta urinib ko‘ring. Saqlangan suhbatlar hali ham mavjud.", "Please try again later. Your saved conversations are still available.")}</p></div></div>}
         {error && <div className="ai-error" role="alert"><CircleAlert /><div><p>{error}</p>{canRetry && <button type="button" disabled={sending} onClick={retryQuestion}>{text("Безопасно повторить запрос", "So‘rovni xavfsiz qaytarish", "Retry safely")}</button>}</div></div>}
         <p className="sr-only" role="status" aria-live="polite">{sending ? streamStatus : answer?.messageId ? text("Ответ готов", "Javob tayyor", "Answer ready") : ""}</p>
         <div className="ai-answer-stream" ref={transcriptRef} role="log" aria-label={text("Юридический диалог", "Huquqiy suhbat", "Legal conversation")} aria-busy={sending} onScroll={trackTranscriptScroll}>
@@ -424,7 +436,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             <summary><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Быстро", "Tez", "Fast") : text("Глубоко", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
             <div className="ai-modes">
               <div className="ai-mode-field"><span id="ai-answer-mode-label">{text("Формат ответа", "Javob formati", "Answer format")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-answer-mode-label"><button type="button" aria-pressed={answerMode === "short"} onClick={() => setAnswerMode("short")}>{text("Кратко", "Qisqa", "Concise")}</button><button type="button" aria-pressed={answerMode === "detailed"} onClick={() => setAnswerMode("detailed")}>{text("Подробно", "Batafsil", "Detailed")}</button></div></div>
-              <div className="ai-mode-field"><span id="ai-reasoning-mode-label">{text("Глубина анализа", "Tahlil chuqurligi", "Analysis depth")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-reasoning-mode-label"><button type="button" aria-pressed={reasoningMode === "fast"} onClick={() => setReasoningMode("fast")}>{text("Быстро", "Tez", "Fast")}</button><button type="button" aria-pressed={reasoningMode === "deep"} onClick={() => setReasoningMode("deep")}>{text("Глубоко", "Chuqur", "Deep")}</button></div></div>
+              <div className="ai-mode-field"><span id="ai-reasoning-mode-label">{text("Модель AI", "AI modeli", "AI model")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-reasoning-mode-label"><button type="button" aria-pressed={reasoningMode === "fast"} onClick={() => setReasoningMode("fast")}>GPT-6 Luna</button><button type="button" aria-pressed={reasoningMode === "deep"} onClick={() => setReasoningMode("deep")}>GPT-5.6 Terra</button></div></div>
               <AiDatePicker locale={locale} value={legalContextDate} max={uzbekistanCalendarDate()} onChange={changeLegalContextDate} />
             </div>
           </details>
