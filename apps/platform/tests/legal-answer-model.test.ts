@@ -158,7 +158,7 @@ test("legal model transport pins each mode and keeps source locators out of prov
     assert.equal(draft.actions[0]?.description,"Submit the application and keep a copy.");
     assert.ok(!("sourceReview" in draft));
   }
-  assert.deepEqual(payloads.map(body => body.model), ["gpt-6-luna", "gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(body => body.model), ["gpt-5.6-terra", "gpt-6-luna"]);
   assert.deepEqual(payloads.map(body => body.text.verbosity), ["low", "low"]);
   assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Mode changes only the provider model");
   assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");

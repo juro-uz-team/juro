@@ -114,7 +114,7 @@ test("runtime composition uses the reserved flow and disposes corpus state even 
     commit:async terminal=>{assert.equal(terminal.kind,"unavailable");throw new Error("synthetic save failure");},
     release:async reason=>{assert.equal(reason,"failed");released++;},
   }),/synthetic save failure/);
-  assert.deepEqual(models,["gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(models,["gpt-6-luna","gpt-6-luna"]);
   assert.equal(opened,1);assert.equal(reads,1);assert.equal(disposed,1);
   assert.equal(renewed,2);assert.equal(released,1);
 });

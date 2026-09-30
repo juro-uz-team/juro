@@ -16,7 +16,7 @@ export const nativeChatProofSchema=z.object({bindingSha256:z.string().regex(/^[a
 }).strict();
 
 /** Programmatic delivery evidence never certifies legal entailment or completeness. */
-export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema>,checks:readonly string[],workloadSha256:string,version:2|3=2):void {
+export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema>,checks:readonly string[],workloadSha256:string,version:2|3|4=2):void {
   const heldOut=nativeChatWorkload.filter(row=>row.heldOut).map(row=>row.id);
   if(workloadSha256!==nativeChatWorkloadSha256||proof.results.length!==nativeChatWorkload.length
     ||proof.heldOutCaseIds.length!==heldOut.length||heldOut.some(id=>!proof.heldOutCaseIds.includes(id))) {
@@ -32,7 +32,9 @@ export function verifyNativeChatProof(proof:z.infer<typeof nativeChatProofSchema
       throw Error("NATIVE_CHAT_WORKLOAD_CHANGED");
     }
     if((row.outcome==="partial")!==(row.gapCount>0))throw Error("NATIVE_CHAT_GAPS_NOT_VISIBLE");
-    const model=row.mode==="fast"?"gpt-6-luna":"gpt-5.6-terra";
+    const model=version===4
+      ?row.mode==="fast"?"gpt-5.6-terra":"gpt-6-luna"
+      :row.mode==="fast"?"gpt-6-luna":"gpt-5.6-terra";
     if(row.modelCalls.some(call=>call.model!==model)
       ||!["interpreting","writing"].every(stage=>row.modelCalls.some(call=>call.stage===stage)))throw Error("NATIVE_CHAT_MODEL_ROUTING");
   }

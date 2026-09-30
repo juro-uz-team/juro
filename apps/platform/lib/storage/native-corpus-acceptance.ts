@@ -26,6 +26,7 @@ export const nativeCorpusAcceptanceSchema=z.discriminatedUnion("version",[
   z.object({...acceptanceFields,version:z.literal(1),proofs:z.object({...sharedProofs,semantic:artifact}).strict()}).strict(),
   z.object({...acceptanceFields,version:z.literal(2),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
   z.object({...acceptanceFields,version:z.literal(3),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
+  z.object({...acceptanceFields,version:z.literal(4),proofs:z.object({...sharedProofs,chat:artifact}).strict()}).strict(),
 ]).refine(manifest=>manifest.evidenceNamespace===retainedReleases.evidenceNamespace
   &&manifest.historyEvidenceNamespace===retainedReleases.historyEvidenceNamespace,"Accepted citation stores must preserve receipt routing");
 export type NativeCorpusAcceptance=z.infer<typeof nativeCorpusAcceptanceSchema>;
@@ -53,6 +54,7 @@ const protocolSchema=z.discriminatedUnion("version",[
   z.object({...protocolFields,version:z.literal("native-indexed-retrieval-v1"),semanticCaseIds:ids,heldOutCaseIds:ids}).strict(),
   z.object({...protocolFields,version:z.literal("native-programmatic-chat-v2"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
   z.object({...protocolFields,version:z.literal("native-programmatic-chat-v3"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
+  z.object({...protocolFields,version:z.literal("native-programmatic-chat-v4"),workloadSha256:digest,chatCaseIds:ids,heldOutChatCaseIds:ids}).strict(),
 ]);
 const base={bindingSha256:digest};
 const denseProof=z.object({...base,expectedQueryIds:ids,heldOutQueryIds:ids,

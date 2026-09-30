@@ -18,7 +18,7 @@ export type ProgrammaticFixtureProofs={
   }>}>
 };
 export async function programmaticAcceptanceFixture(change?:(proofs:ProgrammaticFixtureProofs)=>void,
-  changeProtocol?:(protocol:{version:string;requiredChecks:string[];workloadSha256:string;chatCaseIds:string[];heldOutChatCaseIds:string[]})=>void,version:2|3=2){
+  changeProtocol?:(protocol:{version:string;requiredChecks:string[];workloadSha256:string;chatCaseIds:string[];heldOutChatCaseIds:string[]})=>void,version:2|3|4=2){
   const legacy=nativeAcceptanceFixture();
   const oldProtocol=JSON.parse(Buffer.from(await legacy.read(legacy.manifest.protocol)).toString());
   delete oldProtocol.semanticCaseIds;delete oldProtocol.heldOutCaseIds;
@@ -44,7 +44,7 @@ export async function programmaticAcceptanceFixture(change?:(proofs:Programmatic
       actor,concurrency,milliseconds:12000,outcome:"partial",gapCount:1,
       findingCount:1,sourceCount:1,validationMethod:"programmatic",interpretationIndependentlyReviewed:false,
       sourceChecksPassed:true,reloadPassed:true,verificationModelCalls:0,
-      modelCalls:["interpreting","writing"].map(stage=>({stage,model:mode==="fast"?"gpt-6-luna":"gpt-5.6-terra"}))}))}};
+      modelCalls:["interpreting","writing"].map(stage=>({stage,model:version===4?(mode==="fast"?"gpt-5.6-terra":"gpt-6-luna"):(mode==="fast"?"gpt-6-luna":"gpt-5.6-terra")}))}))}};
   for(const proof of Object.values(proofs))proof.bindingSha256=bindingSha256;
   for(const row of proofs.native.requests)row.milliseconds=12000;
   change?.(proofs);

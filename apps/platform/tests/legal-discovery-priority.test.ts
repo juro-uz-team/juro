@@ -25,7 +25,7 @@ test("discovery modes differ only by provider model",async context=>{
     })});
     assert.deepEqual(await prioritize(input),["rendition:b"]);
   }
-  assert.deepEqual(requests.map(body=>body.model),["gpt-6-luna","gpt-5.6-terra"]);
+  assert.deepEqual(requests.map(body=>body.model),["gpt-5.6-terra","gpt-6-luna"]);
   assert.deepEqual({...requests[0],model:requests[1]!.model},requests[1]);
 });
 

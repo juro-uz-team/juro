@@ -7,6 +7,21 @@ test("programmatic qualification admits visible partial answers using total chat
   const valid=await fixture();await verifyNativeCorpusQualification(valid.manifest,valid.read);
 });
 
+test("Terra Fast and Luna Deep require a new qualification version",async()=>{
+  const current=await fixture(undefined,undefined,4);
+  await verifyNativeCorpusQualification(current.manifest,current.read);
+  for(const version of [2,3,4] as const){
+    const wrong=await fixture(p=>{
+      for(const row of p.chat.results)for(const call of row.modelCalls){
+        call.model=call.model==="gpt-6-luna"?"gpt-5.6-terra":"gpt-6-luna";
+      }
+    },undefined,version);
+    await assert.rejects(verifyNativeCorpusQualification(wrong.manifest,wrong.read),/MODEL_ROUTING/);
+  }
+  const mismatched=await fixture(undefined,p=>{p.version="native-programmatic-chat-v3";},4);
+  await assert.rejects(verifyNativeCorpusQualification(mismatched.manifest,mismatched.read),/PROTOCOL_VERSION/);
+});
+
 test("revised qualification budgets require a new protocol and retain failure checks",async()=>{
   const slower=(p:ProgrammaticFixtureProofs)=>{
     p.chat.results.forEach(row=>{row.milliseconds=45000;});

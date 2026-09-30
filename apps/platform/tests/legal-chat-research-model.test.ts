@@ -14,7 +14,7 @@ test("bounded Fast assessment returns a provisional issue draft with canonical c
   context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
     const body=JSON.parse(String(init?.body));
     assert.equal(body.text.format.name,"legal_research_answer");
-    assert.equal(body.model,"gpt-6-luna");
+    assert.equal(body.model,"gpt-5.6-terra");
     const payload=JSON.parse(body.input);assert.equal(payload.evidence[0].text,source.text);
     assert.equal(payload.answerMode,"short");
     return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
@@ -348,7 +348,7 @@ test("research pins Luna/Terra, reuses assessment queries and excludes source lo
     const next=await model.formulate({...input,round:1});
     assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
   }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-6-luna","gpt-6-luna","gpt-5.6-terra","gpt-5.6-terra"]);
+  assert.deepEqual(payloads.map(value=>value.model),["gpt-5.6-terra","gpt-5.6-terra","gpt-6-luna","gpt-6-luna"]);
   assert.deepEqual({...payloads[0],model:payloads[2]!.model},payloads[2],"Query planning differs only by model");
   assert.deepEqual({...payloads[1],model:payloads[3]!.model},payloads[3],"Evidence selection differs only by model");
   for(const payload of payloads) {

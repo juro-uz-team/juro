@@ -41,7 +41,7 @@ test("provider connectivity uses the retained structured transports and rejects 
     assert.deepEqual(await probeProviderContract(provider,{timeoutMs:20000}),{provider,fallbackFromProvider:null,status:"ok"});
   }
   assert.equal(requests.length,2);
-  assert.equal(requests[0].body.model,"gpt-6-luna");
+  assert.equal(requests[0].body.model,"gpt-5.6-terra");
   assert.equal(requests[0].body.max_output_tokens,256);
   assert.equal(requests[1].body.max_tokens,256);
   assert(!JSON.stringify(requests).includes("legalDatabaseAsOf"));
