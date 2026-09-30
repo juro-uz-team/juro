@@ -296,3 +296,6 @@ footer a {
   display: inline-flex;
   min-height: 44px;
 }
+
+
+:root{--brand-navy:#061827;--juro-navy-950:#061827}

@@ -1,11 +1,15 @@
 "use client";
 
-import Image from "next/image";
+
+import { JurobekAvatar } from "./JurobekAvatar";
+import { IntelligenceScene } from "./IntelligenceScene";
 import Link from "next/link";
+import { platformAuthHref, platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
 import {
   ArrowDownRight,
   ArrowRight,
   Check,
+  ChevronRight,
   CircleDot,
   Clock3,
   FileCheck2,
@@ -15,13 +19,12 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { ru } from "../../../content/ru";
 import { uz } from "../../../content/uz";
 import { en } from "../../../content/en";
 import type { PublicLanguage } from "../../../content/types";
 import { SiteFooter, SiteHeader } from "./SiteChrome";
-import { platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
 import { JuroMotionDirector } from "./JuroMotionDirector";
 import styles from "./juro-home.module.css";
 import motionStyles from "./juro-motion.module.css";
@@ -161,7 +164,7 @@ const copy = {
       note: "Работа живого юриста и дополнительные услуги согласуются отдельно до подтверждения.",
     },
     faqTitle: "Вопросы, которые стоит задать до начала",
-    finalTitle: "Юридический вопрос не должен оставаться просто вопросом",
+    finalTitle: "От вопроса — к действию.",
     finalBody: "Опишите ситуацию. JURO поможет превратить её в факты, риски и понятный следующий шаг.",
     finalPrimary: "Начать бесплатно",
     finalSecondary: "Посмотреть видео",
@@ -201,7 +204,7 @@ const copy = {
     resources: { eyebrow: "YAQINROQ TANISHING", title: "Alohida manzillarni qidirmang", items: [["Video", "2:42", "JURO mahsuloti va yondashuvini ko‘rish", "video"], ["Yuristlar", "Katalog", "Mutaxassislar bilan tanishish", "lawyers"], ["Trust Center", "Faktlar", "Ma’lumotlar bilan ishlashni tekshirish", "trust"], ["Yuridik markaz", "RU · UZ", "Siyosat va shartlarni ochish", "legal"]] },
     access: { eyebrow: "ORTIQCHA XAVFSIZ BOSHLASH", title: "Avval qiymatni tushuning. Keyin formatni tanlang.", plans: [["O‘zingiz uchun", "Bepul boshlanish", "Shaxsiy vaziyat tahlili, hujjatlar va tushunarli reja", "Bepul boshlash"], ["Biznes uchun", "Tasdiqdan oldingi shartlar", "Shartnomalar, rollar, muddatlar va yagona tarix", "Biznes makonini yaratish"], ["Yuridik jamoa uchun", "Individual format", "Tadqiqot, hujjat, kelishuv va audit", "Vazifani muhokama qilish"]], note: "Jonli yurist va qo‘shimcha xizmatlar tasdiqdan oldin alohida kelishiladi." },
     faqTitle: "Boshlashdan oldin berish kerak bo‘lgan savollar",
-    finalTitle: "Yuridik savol shunchaki savol bo‘lib qolmasligi kerak",
+    finalTitle: "Savoldan — harakatga.",
     finalBody: "Vaziyatni yozing. JURO uni fakt, xavf va tushunarli keyingi qadamga aylantirishga yordam beradi.",
     finalPrimary: "Bepul boshlash",
     finalSecondary: "Videoni ko‘rish",
@@ -243,7 +246,7 @@ const englishCopy = {
   resources: { eyebrow: "GET TO KNOW JURO", title: "Your public JURO starting points", items: [["Video", "2:42", "Watch JURO’s product and approach", "video"], ["Professionals", "Catalogue", "Meet available legal professionals", "lawyers"], ["Trust Center", "Facts", "Review how data is handled", "trust"], ["Legal Centre", "RU · UZ", "Read published legal originals", "legal"]] },
   access: { eyebrow: "START WITH CLARITY", title: "Understand the value first. Then choose a format.", plans: [["For yourself", "Start without charge", "Explore a personal situation, documents and a clear plan", "Get started"], ["For business", "Terms before confirmation", "Contracts, roles, deadlines and one shared work history", "Create a business workspace"], ["For legal teams", "Tailored format", "Research, documents, review and audit", "Discuss your needs"]], note: "Professional legal services and additional services are agreed separately before confirmation." },
   faqTitle: "Questions worth asking before you start",
-  finalTitle: "A legal question should not stay just a question",
+  finalTitle: "From a question to a next step.",
   finalBody: "Describe the situation. JURO helps turn it into facts, risks and a clear next step.",
   finalPrimary: "Get started",
   finalSecondary: "Watch the video",
@@ -251,13 +254,14 @@ const englishCopy = {
 
 export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const t = language === "en" ? englishCopy : copy[language];
+  const headline = language === "ru" ? ["Право становится", "понятным.", "AI, документы и юристы. В одной системе."] : language === "uz" ? ["Huquq endi", "tushunarli.", "AI, hujjatlar va yuristlar. Bitta tizimda."] : ["Legal complexity.", "Made clear.", "AI, documents and lawyers. One connected workspace."];
   const content = language === "ru" ? ru : language === "uz" ? uz : en;
   const [scenario, setScenario] = useState(0);
   const [processStep, setProcessStep] = useState(0);
   const [clause, setClause] = useState(0);
-  const [continuityStep, setContinuityStep] = useState(0);
-  const scenarioInteracted = useRef(false);
-  const continuityInteracted = useRef(false);
+  const [journey, setJourney] = useState(0);
+  const journeyNotes = language === "ru" ? ["Один вопрос создаёт общую рабочую нить дела.", "Подтверждённые факты остаются рядом с исходным вопросом.", "Правовые основания связаны с фактами, которые они объясняют.", "Риск сохраняет связь с конкретным пунктом документа.", "Следующее действие опирается на уже собранные материалы.", "Документ продолжает работу с теми же фактами и выводами.", "Вы выбираете, какой контекст передать специалисту."] : language === "uz" ? ["Bitta savol ishning umumiy yo‘lini boshlaydi.", "Tasdiqlangan faktlar asl savol bilan birga saqlanadi.", "Huquqiy asoslar tegishli faktlar bilan bog‘lanadi.", "Xavf hujjatning aniq bandi bilan bog‘liq qoladi.", "Keyingi qadam yig‘ilgan materiallarga tayanadi.", "Hujjat o‘sha faktlar va xulosalar bilan davom etadi.", "Mutaxassisga qaysi kontekstni uzatishni siz tanlaysiz."] : ["One question starts a shared thread for the case.", "Confirmed facts stay alongside the original question.", "Legal sources stay linked to the facts they explain.", "Each risk retains its connection to the exact clause.", "The next action builds on materials already collected.", "The document carries the same facts and findings forward.", "You choose which context to share with a professional."];
+  const clauseInteracted = useRef(false);
   const activeScenario = t.scenarios[scenario];
   const processLabels = [t.hero.facts, t.hero.risk, t.hero.source, t.hero.action];
   const activeClause = t.document.clauses[clause];
@@ -304,47 +308,45 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
   }, []);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => {
-      if (!scenarioInteracted.current && !document.hidden) {
-        setProcessStep(0);
-        setScenario((current) => (current + 1) % t.scenarios.length);
-      }
-    }, 5200);
-    return () => window.clearInterval(timer);
-  }, [t.scenarios.length]);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => {
-      if (!document.hidden) setProcessStep((current) => (current + 1) % processLabels.length);
-    }, 1300);
-    return () => window.clearInterval(timer);
-  }, [processLabels.length]);
-
-  useEffect(() => {
-    const updateContinuity = (event: Event) => {
-      if (continuityInteracted.current) return;
-      const next = (event as CustomEvent<number>).detail;
-      if (Number.isInteger(next) && next >= 0 && next < t.continuity.steps.length) setContinuityStep(next);
+    const target = document.getElementById("ai-playground");
+    if (!target) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let visible = false;
+    const stop = () => { if (timer) clearInterval(timer); timer = undefined; };
+    const sync = () => {
+      stop();
+      if (media.matches) { setProcessStep(3); return; }
+      if (visible && !document.hidden) timer = setInterval(() => setProcessStep(current => {
+        if (current >= 3) { stop(); return 3; }
+        return current + 1;
+      }), 550);
     };
-    document.addEventListener("juro:continuity-step", updateContinuity);
-    return () => document.removeEventListener("juro:continuity-step", updateContinuity);
-  }, [t.continuity.steps.length]);
+    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); }, { threshold: .15 });
+    observer.observe(target);
+    document.addEventListener("visibilitychange", sync);
+    media.addEventListener("change", sync);
+    return () => { stop(); observer.disconnect(); document.removeEventListener("visibilitychange", sync); media.removeEventListener("change", sync); };
+  }, [scenario]);
+
+  useEffect(() => {
+    const updateClause = (event: Event) => {
+      if (clauseInteracted.current) return;
+      const next = (event as CustomEvent<number>).detail;
+      if (Number.isInteger(next) && next >= 0 && next < t.document.clauses.length) setClause(next);
+    };
+    document.addEventListener("juro:document-step", updateClause);
+    return () => document.removeEventListener("juro:document-step", updateClause);
+  }, [t.document.clauses.length]);
 
   const selectScenario = (index: number) => {
-    scenarioInteracted.current = true;
     setProcessStep(0);
     setScenario(index);
   };
 
   const selectClause = (index: number) => {
+    clauseInteracted.current = true;
     setClause(index);
-  };
-
-  const selectContinuityStep = (index: number) => {
-    continuityInteracted.current = true;
-    setContinuityStep(index);
   };
 
   const moveTab = (
@@ -378,16 +380,22 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
           <div className={`${styles.heroGrid} ${laptopStyles.heroGrid}`}>
             <div className={`${styles.heroCopy} ${motionStyles.heroCopyMotion} ${laptopStyles.heroCopy}`}>
               <p className={styles.eyebrow}>{t.hero.eyebrow}</p>
-              <h1 className={laptopStyles.heroTitle}><span>{t.hero.titleA}</span><span>{t.hero.titleB}</span><em>{t.hero.titleC}</em></h1>
+              <h1 className={laptopStyles.heroTitle}><span>{headline[0]}</span><span>{headline[1]}</span><em>{headline[2]}</em></h1>
               <p className={styles.heroLead}>{t.hero.lead}</p>
               <div className={styles.heroActions}>
                 <a className={styles.buttonGold} href={register}>{t.hero.primary}<ArrowRight aria-hidden="true" size={18} /></a>
-                <a className={styles.buttonGhost} href="#product" onClick={navigateToSection}><Play aria-hidden="true" size={16} />{t.hero.secondary}</a>
+                <a className={styles.buttonGhost} href="#ai-playground" onClick={navigateToSection}><Play aria-hidden="true" size={16} />{t.hero.secondary}</a>
               </div>
-              <p className={`${styles.heroNote} ${laptopStyles.heroNote}`}>{t.hero.note}</p>
+              <p className={styles.heroNote}>{t.hero.note}</p>
               <ul className={styles.heroProof}>{t.proof.map((item) => <li key={item}><Check aria-hidden="true" size={14} />{item}</li>)}</ul>
             </div>
-            <div className={`${styles.heroProduct} ${motionStyles.heroProductMotion} ${laptopStyles.heroProduct}`} data-motion-product>
+            <IntelligenceScene language={language} />
+          </div>
+        </section>
+
+        <section className={styles.playground} id="ai-playground">
+          <header data-reveal><p className={styles.eyebrowDark}>01 / ASK JURO</p><h2>{language === "ru" ? "Ваш вопрос.\nСистема действий." : language === "uz" ? "Savolingiz. Harakatlar tizimi." : "Your question. A way forward."}</h2><p>{language === "ru" ? "Выберите ситуацию. Посмотрите, как JURO связывает факты, источники и следующий шаг." : language === "uz" ? "Vaziyatni tanlang. JURO faktlar, manbalar va keyingi qadamni qanday bog‘lashini ko‘ring." : "Choose a situation. Explore how JURO connects facts, sources and the next step."}</p><a className={styles.playgroundLink} href={register}>{t.finalPrimary}<ArrowRight size={18} aria-hidden="true" /></a></header>
+            <div className={`${styles.heroProduct} ${styles.playgroundWindow} ${laptopStyles.heroProduct}`}>
               <div className={styles.sceneTop}><span><CircleDot aria-hidden="true" size={14} />{t.hero.scene}</span><small>01 — 04</small></div>
               <div aria-label={language === "ru" ? "Примеры юридических ситуаций" : language === "uz" ? "Yuridik vaziyatlar misollari" : "Examples of legal situations"} className={styles.scenarioTabs} role="tablist">
                 {t.scenarios.map((item, index) => <button aria-controls="scenario-panel" aria-selected={scenario === index} id={`scenario-tab-${index}`} key={item.tab} onClick={() => selectScenario(index)} onKeyDown={(event) => moveTab(event, index, t.scenarios.length, "scenario-tab", selectScenario)} role="tab" tabIndex={scenario === index ? 0 : -1} type="button">{item.tab}</button>)}
@@ -405,30 +413,28 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
                 </div>
               </div>
             </div>
-          </div>
         </section>
 
         <section className={`${styles.transitionSection} ${motionStyles.storySection} ${laptopStyles.transitionSection}`} data-chapter id="product">
           <div className={`${styles.sectionIntro} ${laptopStyles.sectionIntro}`} data-reveal="left"><p className={styles.eyebrowDark}>{t.transition.eyebrow}</p><h2 className={laptopStyles.transitionTitle}>{t.transition.title}</h2><p>{t.transition.lead}</p></div>
-          <div className={`${styles.transitionRail} ${motionStyles.storyRail}`} data-story-rail>{t.transition.items.map(([number, title, body]) => <article className={motionStyles.storyStep} data-story-step key={number}><span>{number}</span><div><h3>{title}</h3><p>{body}</p></div></article>)}</div>
+          <div className={`${styles.transitionRail} ${motionStyles.storyRail}`} data-story-rail>{t.transition.items.map(([number, title, body]) => <article className={motionStyles.storyStep} data-story-step key={number}><span>{number}</span><div><h3>{title}</h3><p>{body}</p></div><ChevronRight aria-hidden="true" size={18} /></article>)}</div>
         </section>
 
         <section className={styles.audienceSection} id="audiences">
-          <header className={`${styles.sectionHeader} ${laptopStyles.audienceHeader}`} data-reveal><p className={styles.eyebrowDark}>{t.audience.eyebrow}</p><h2>{t.audience.title}</h2></header>
+          <header className={styles.sectionHeader} data-reveal><p className={styles.eyebrowDark}>{t.audience.eyebrow}</p><h2>{t.audience.title}</h2></header>
           <div className={styles.audienceLayout}>
-            <div className={styles.audienceList}>{content.audience.top.map((item, index) => <article className={motionStyles.audienceCardMotion} data-reveal="left" key={item.id}><span>0{index + 1}</span><div><h3>{item.title}</h3><p>{item.body}</p><ul>{item.scenarios.map((scenarioItem) => <li key={scenarioItem}>{scenarioItem}</li>)}</ul></div><a href={`${register}&intent=${item.id}`}>{item.cta}<ArrowRight aria-hidden="true" size={16} /></a></article>)}</div>
+            <div className={styles.audienceList}>{content.audience.top.map((item, index) => <article className={motionStyles.audienceCardMotion} data-reveal="left" key={item.id}><span>0{index + 1}{index === 0 ? <Fingerprint size={24}/> : index === 1 ? <FileCheck2 size={24}/> : <Scale size={24}/>}</span><div><h3>{item.title}</h3><p>{item.body}</p><ul>{item.scenarios.map((scenarioItem) => <li key={scenarioItem}>{scenarioItem}</li>)}</ul></div><a href={`${register}&intent=${item.id}`}>{item.cta}<ArrowRight aria-hidden="true" size={16} /></a></article>)}</div>
             <aside className={`${styles.investorPanel} ${motionStyles.investorMotion}`} data-reveal="right"><span>04</span><Sparkles aria-hidden="true" size={26} /><h3>{t.audience.investor}</h3><p>{t.audience.investorBody}</p><Link href={`/${language}/video`}>{t.audience.investorCta}<ArrowRight aria-hidden="true" size={17} /></Link></aside>
           </div>
         </section>
 
         <section className={`${styles.documentSection} ${motionStyles.documentStory}`} data-chapter data-document-story id="analysis">
-          <header className={`${styles.documentIntro} ${laptopStyles.documentHeader}`} data-reveal><p className={styles.eyebrowLight}>{t.document.eyebrow}</p><h2>{t.document.title}</h2><p>{t.document.lead}</p></header>
+          <header className={styles.documentIntro} data-reveal><p className={styles.eyebrowLight}>{t.document.eyebrow}</p><h2>{t.document.title}</h2><p>{t.document.lead}</p></header>
           <div className={`${styles.documentLab} ${motionStyles.documentLabMotion}`} data-reveal="mask">
             <div className={`${styles.documentCanvas} ${motionStyles.documentCanvasMotion}`}>
               <div className={styles.documentToolbar}><span><FileCheck2 aria-hidden="true" size={16} />{t.document.file}</span><i>•••</i></div>
-              <p data-current={clause === 0 || undefined}>4.1. {t.document.clauses[0][1]}</p>
-              <p data-current={clause === 1 || undefined}>4.2. {t.document.clauses[1][1]}</p>
-              <p data-current={clause === 2 || undefined}>6.3. {t.document.clauses[2][1]}</p>
+              <div className={styles.revisionLegend}>{language === "ru" ? "До → после · пример правки" : language === "uz" ? "Oldin → keyin · tahrir namunasi" : "Before → after · suggested edit"}</div>
+              {t.document.clauses.map((item,index)=><p data-current={clause === index || undefined} key={item[0]}>{["4.1.","4.2.","6.3."][index]} {clause === index ? <><del>{item[1]}</del><ins>{item[3]}</ins></> : item[1]}</p>)}
               <div aria-hidden="true" className={styles.documentMarker} data-clause={clause}>0{clause + 1}</div>
             </div>
             <div className={styles.findingPanel}>
@@ -447,33 +453,34 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
         <section className={`${styles.continuitySection} ${motionStyles.continuityMotion}`} data-chapter data-continuity-story id="case-flow">
           <div className={styles.continuityCopy} data-reveal="left"><p className={styles.eyebrowDark}>{t.continuity.eyebrow}</p><h2>{t.continuity.title}</h2><p>{t.continuity.lead}</p></div>
           <div className={`${styles.continuityVisual} ${motionStyles.continuityVisualMotion}`} data-reveal="right">
-            <div className={styles.caseCard}><small>JURO / CASE 024 · {continuityStep + 1}/{t.continuity.steps.length}</small><h3>{t.continuity.cardTitle}</h3><p>{t.continuity.cardBody}</p></div>
-            <ol aria-label={language === "ru" ? "Этапы дела" : language === "uz" ? "Ish bosqichlari" : "Case stages"} className={motionStyles.continuitySteps} style={{ "--continuity-stage-progress": continuityStep / Math.max(1, t.continuity.steps.length - 1) } as CSSProperties}>{t.continuity.steps.map((step, index) => <li data-active={index <= continuityStep || undefined} data-continuity-step data-current={index === continuityStep || undefined} key={step}><button aria-current={index === continuityStep ? "step" : undefined} id={`continuity-step-${index}`} onClick={() => selectContinuityStep(index)} onKeyDown={(event) => moveTab(event, index, t.continuity.steps.length, "continuity-step", selectContinuityStep)} type="button"><span>0{index + 1}</span><strong>{step}</strong></button></li>)}</ol>
-            <div className={styles.nextCard}><span>{t.continuity.next}</span><strong>{t.continuity.nextBody}</strong></div>
+            <div className={styles.caseCard}><small>JURO / CASE 024</small><h3>{t.continuity.cardTitle}</h3><p>{t.continuity.cardBody}</p></div>
+            <ol className={styles.journeySteps}>{t.continuity.steps.map((step, index) => <li key={step}><button type="button" aria-pressed={journey === index} onClick={()=>setJourney(index)}><span>0{index + 1}</span>{step}</button></li>)}</ol>
+            <div className={styles.contextCarry}><FileCheck2 size={16}/><span>CASE 024</span><span>{t.document.file}</span><Check size={15}/></div>
+            <div className={styles.nextCard}><span>0{journey+1} / {t.continuity.steps[journey]}</span><strong aria-live="polite">{journeyNotes[journey]}</strong><ArrowDownRight aria-hidden="true" size={20} /></div>
           </div>
         </section>
 
         <section className={`${styles.handoffSection} ${motionStyles.handoffMotion}`} data-chapter data-handoff-story id="lawyer-handoff">
-          <div className={`${styles.jurobekStage} ${motionStyles.jurobekMotion}`} data-reveal="left"><div aria-hidden="true" className={styles.jurobekHalo} /><Image alt={content.hero.jurobekAlt} height={1672} src="/jurobek-point.webp" unoptimized width={941} /></div>
+          <JurobekAvatar language={language} />
           <div className={styles.handoffCopy} data-reveal><p className={styles.eyebrowLight}>{t.handoff.eyebrow}</p><h2>{t.handoff.title}</h2><p>{t.handoff.lead}</p><Link href={`/${language}/lawyers`}>{t.handoff.cta}<ArrowRight aria-hidden="true" size={18} /></Link></div>
           <div className={`${styles.dossier} ${motionStyles.dossierMotion}`}><div><span>{t.handoff.dossier}</span><small><ShieldCheck aria-hidden="true" size={15} />{t.handoff.ready}</small></div>{t.handoff.items.map((item, index) => <p key={item}><i>0{index + 1}</i><Check aria-hidden="true" size={15} />{item}</p>)}</div>
         </section>
 
         <section className={`${styles.trustSection} ${editorialStyles.trustSection}`} data-chapter id="trust">
-          <header className={laptopStyles.trustHeader} data-reveal><p className={styles.eyebrowDark}>{t.trust.eyebrow}</p><h2>{t.trust.title}</h2><p>{t.trust.lead}</p></header>
-          <div className={`${styles.trustGrid} ${editorialStyles.trustGrid}`}>{content.security.items.map((item, index) => <article className={`${motionStyles.trustMotion} ${editorialStyles.trustItem}`} data-primary={index === 0 || undefined} data-trust-card key={item.title}><span>{index === 2 ? t.trust.policy : t.trust.verified}</span><ShieldCheck aria-hidden="true" size={22} /><h3>{item.title}</h3><p>{item.body}</p></article>)}</div>
+          <header data-reveal><p className={styles.eyebrowDark}>{t.trust.eyebrow}</p><h2>{t.trust.title}</h2><p>{t.trust.lead}</p></header>
+          <div className={`${styles.trustGrid} ${editorialStyles.trustGrid}`}>{content.security.items.map((item, index) => <article className={`${motionStyles.trustMotion} ${editorialStyles.trustItem}`} data-primary={index === 0 || undefined} data-reveal key={item.title}><span>{index === 2 ? t.trust.policy : t.trust.verified}</span><ShieldCheck aria-hidden="true" size={22} /><h3>{item.title}</h3><p>{item.body}</p></article>)}</div>
           <div className={styles.trustActions}><Link href={`/${language}/trust`}>{t.trust.cta}<ArrowRight aria-hidden="true" size={17} /></Link><Link href={`/${language}/legal`}>{t.trust.legal}</Link></div>
         </section>
 
         <section className={`${styles.resourcesSection} ${editorialStyles.resourcesSection}`} id="resources">
-          <header className={laptopStyles.resourcesHeader} data-reveal><p className={styles.eyebrowDark}>{t.resources.eyebrow}</p><h2>{t.resources.title}</h2></header>
-          <div className={editorialStyles.resourceGrid}>{t.resources.items.map(([title, meta, body, path], index) => <Link className={`${motionStyles.resourceMotion} ${editorialStyles.resourceItem}`} data-primary={index === 0 || undefined} data-reveal href={`/${language}/${path}`} key={path}>{index === 0 ? <><div className={editorialStyles.resourceFeatureMeta}><span>01</span><small>{meta}</small></div><div className={editorialStyles.resourceFeatureCopy}><div className={editorialStyles.resourceFeatureHeading}><h3>{title}</h3><p>{body}</p></div><span aria-hidden="true" className={editorialStyles.resourceFeaturePlay}><Play size={54} /></span></div><div className={editorialStyles.resourceFeatureAction}><span className={editorialStyles.watchSignal}><Play aria-hidden="true" size={15} />{language === "ru" ? "Смотреть обзор" : language === "uz" ? "Sharhni ko‘rish" : "Watch overview"}</span></div></> : <><span>0{index + 1}</span><small>{meta}</small><h3>{title}</h3><p>{body}</p><ArrowDownRight aria-hidden="true" size={22} /></>}</Link>)}</div>
+          <header data-reveal><p className={styles.eyebrowDark}>{t.resources.eyebrow}</p><h2>{t.resources.title}</h2></header>
+          <div className={editorialStyles.resourceGrid}>{t.resources.items.map(([title, meta, body, path], index) => <Link className={`${motionStyles.resourceMotion} ${editorialStyles.resourceItem}`} data-primary={index === 0 || undefined} data-reveal href={`/${language}/${path}`} key={path}><span>0{index + 1}</span><small>{meta}</small><h3>{title}</h3><p>{body}</p>{index === 0 ? <><span className={editorialStyles.playDisc} aria-hidden="true"><Play size={38} fill="currentColor" /></span><div className={editorialStyles.watchSignal}><Play aria-hidden="true" size={15} />{language === "ru" ? "Смотреть обзор" : language === "uz" ? "Sharhni ko‘rish" : "Watch overview"}</div></> : null}<ArrowDownRight aria-hidden="true" size={22} /></Link>)}</div>
         </section>
 
         <section className={`${styles.accessSection} ${decisionStyles.accessSection}`} id="pricing">
-          <header className={laptopStyles.accessHeader} data-reveal><p className={styles.eyebrowLight}>{t.access.eyebrow}</p><h2>{t.access.title}</h2></header>
-          <div className={`${styles.accessPlans} ${decisionStyles.accessPlans}`}>{t.access.plans.map(([title, meta, body, cta], index) => <article className={`${motionStyles.planMotion} ${decisionStyles.accessPlan}`} data-access-plan data-featured={index === 1 || undefined} key={title}><span>0{index + 1}</span><small>{meta}</small><h3>{title}</h3><p>{body}</p><a href={index === 2 ? "mailto:muzaffarbekmurodoff@gmail.com" : `${register}&intent=${index === 1 ? "business" : "individual"}`}>{cta}<ArrowRight aria-hidden="true" size={16} /></a></article>)}</div>
-          <p className={`${styles.accessNote} ${laptopStyles.accessNote}`}>{t.access.note}</p>
+          <header data-reveal><p className={styles.eyebrowLight}>{t.access.eyebrow}</p><h2>{t.access.title}</h2></header>
+          <div className={`${styles.accessPlans} ${decisionStyles.accessPlans}`}>{t.access.plans.map(([title, meta, body, cta], index) => <article className={`${motionStyles.planMotion} ${decisionStyles.accessPlan}`} data-featured={index === 1 || undefined} data-reveal key={title}><span>0{index + 1}</span><small>{meta}</small><h3>{title}</h3><p>{body}</p><a href={index === 2 ? "mailto:muzaffarbekmurodoff@gmail.com" : `${register}&intent=${index === 1 ? "business" : "individual"}`}>{cta}<ArrowRight aria-hidden="true" size={16} /></a></article>)}</div>
+          <p className={styles.accessNote}>{t.access.note}</p>
         </section>
 
         <section className={styles.faqSection} id="faq">

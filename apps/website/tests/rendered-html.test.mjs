@@ -176,9 +176,9 @@ test("renders the complete English public landing and keeps product actions on E
     const attribute = tag === "description" ? "name" : tag.startsWith("og:") ? "property" : "name";
     assert.match(html, new RegExp(`<meta ${attribute}="${tag}" content="JURO — AI assistance, documents and legal professionals in one service\."`));
   }
-  assert.match(html, /Tell us/);
-  assert.match(html, /Get a clear next step/);
-  assert.match(html, /aria-label="Case stages"/);
+  assert.match(html, /Legal complexity/);
+  assert.match(html, /Made clear/);
+  assert.match(html, /CASE 024/);
   assert.doesNotMatch(html, /aria-label="Ish bosqichlari"/);
   assert.match(html, /http:\/\/localhost:3000\/en\/auth\/register\?accountType=individual/);
   assert.doesNotMatch(html, /http:\/\/localhost:3000\/ru\/auth/u);

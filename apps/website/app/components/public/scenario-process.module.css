@@ -93,21 +93,9 @@
   }
 }
 
-:global(html[data-theme="dark"]) .heading > span:last-child,
-:global(html[data-theme="dark"]) .flow li {
-  color: var(--text-secondary);
-}
-
-:global(html[data-theme="dark"]) .flow li {
-  border-color: var(--border-strong);
-}
-
-:global(html[data-theme="dark"]) .flow li[data-current] {
-  background: var(--brand-gold);
-  border-color: var(--brand-gold);
-  color: #071827;
-}
-
-:global(html[data-theme="dark"]) .output article[data-current] {
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
-}
+/* Progress must remain legible before and after the illustrative sequence. */
+.heading>span:last-child{color:var(--text-secondary);font-size:10px;line-height:1.5}
+.flow li{font-size:10px;line-height:1.45;letter-spacing:0;font-weight:600;color:var(--text-secondary);border-color:var(--border-subtle);padding:7px}
+.output article,.output article[data-complete]{opacity:1}
+:global(html[data-theme="dark"]) .flow li[data-current]{background:#d8be8b;color:#1b222c;border-color:#d8be8b}
+@media(max-width:720px){.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.heading>span:last-child,.flow li{font-size:11px}}

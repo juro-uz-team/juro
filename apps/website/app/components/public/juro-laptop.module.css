@@ -10,82 +10,18 @@
   text-wrap: balance;
 }
 
-/* On the two-column layout the headline lives in a much narrower column than
-   the viewport, so viewport-only sizing makes localized phrases wrap twice. */
-.heroTitle.heroTitle {
-  font-size: clamp(3.5rem, 4.4vw, 5.3rem);
-  line-height: .9;
-  max-width: 100%;
-}
-
-.heroTitle.heroTitle span {
-  white-space: nowrap;
-}
-
-.heroNote.heroNote {
-  color: #91a3b2;
-  line-height: 1.65;
-  margin: clamp(1.35rem, 2.4vw, 1.75rem) 0 0;
-  max-width: 62ch;
-}
-
-.accessNote.accessNote {
-  color: #91a3b2;
-  line-height: 1.65;
-  margin: clamp(1.35rem, 2.4vw, 1.75rem) auto 0;
-}
-
-/* Keep editorial introductions on one readable axis. The former split grid
-   stranded labels in the left gutter and pushed related copy halfway across
-   laptop screens. */
-.audienceHeader.audienceHeader,
-.documentHeader.documentHeader,
-.trustHeader.trustHeader,
-.resourcesHeader.resourcesHeader,
-.accessHeader.accessHeader {
-  display: block;
-}
-
-.audienceHeader.audienceHeader > h2,
-.documentHeader.documentHeader > h2,
-.documentHeader.documentHeader > p:last-child,
-.trustHeader.trustHeader > h2,
-.trustHeader.trustHeader > p:last-child,
-.resourcesHeader.resourcesHeader > h2,
-.accessHeader.accessHeader > h2 {
-  grid-column: auto;
-}
-
-.audienceHeader.audienceHeader > h2,
-.trustHeader.trustHeader > h2,
-.resourcesHeader.resourcesHeader > h2,
-.accessHeader.accessHeader > h2 {
-  margin-top: 1.2rem;
-  max-width: 18ch;
-}
-
-.documentHeader.documentHeader > h2 {
-  max-width: 16ch;
-}
-
-.documentHeader.documentHeader > p:last-child {
-  margin-top: 1.5rem;
-}
-
-@media (max-width: 1420px) {
+@media (max-width: 1100px) {
   .heroGrid.heroGrid {
     gap: clamp(2.75rem, 5vw, 4.5rem);
     grid-template-columns: minmax(0, 1fr);
     max-width: 1060px;
   }
 
-  .heroCopy.heroCopy { max-width: 900px; }
+  .heroCopy.heroCopy { max-width: 780px; }
 
   .heroTitle.heroTitle {
     font-size: clamp(3.5rem, 7.8vw, 6.15rem);
-    /* The copy already supplies one block per intended line. A character cap
-       narrower than the copy column made each block wrap a second time. */
-    max-width: 100%;
+    max-width: 10.5ch;
   }
 
   .heroProduct.heroProduct {
@@ -99,7 +35,6 @@
     gap: clamp(2.75rem, 5vw, 4.5rem);
     grid-template-columns: minmax(0, 1fr);
     max-width: 1080px;
-    min-height: auto;
   }
 
   .sectionIntro.sectionIntro {
@@ -114,13 +49,7 @@
 }
 
 @media (max-width: 760px) {
-  .heroTitle.heroTitle {
-    font-size: clamp(2.625rem, 12vw, 5.3rem);
-  }
-
+  .heroTitle.heroTitle { max-width: 9.5ch; }
   .heroProduct.heroProduct { min-height: 0; }
-  .transitionTitle.transitionTitle {
-    font-size: clamp(2.05rem, 8vw, 3.25rem);
-    max-width: 100%;
-  }
+  .transitionTitle.transitionTitle { font-size: clamp(2.65rem, 12vw, 4.25rem); }
 }

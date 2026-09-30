@@ -1,7 +1,8 @@
 "use client";
 
-import Image from "next/image";
+import { OfficialLogo } from "./OfficialLogo";
 import Link from "next/link";
+import { platformAuthHref, platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
 import { ArrowRight, Mail, MapPin, Menu, Phone, X } from "lucide-react";
 import { type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import type { PublicLanguage } from "../../../content/types";
@@ -11,11 +12,6 @@ import footerRailStyles from "./footer-rail.module.css";
 import headerTouchStyles from "./header-touch-targets.module.css";
 import styles from "./site-chrome.module.css";
 import { PublicThemeSwitcher } from "./ThemeSwitcher";
-import {
-  platformAuthHref,
-  platformPersonalHref,
-  platformRegistrationHref,
-} from "./platform-hrefs";
 
 type Locale = PublicLanguage;
 
@@ -98,18 +94,13 @@ export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavi
   const scrollSentinelRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const loginHref = platformAuthHref(locale, "login");
-  const registrationHref = platformRegistrationHref(locale);
   const localizedSuffix = languageHref?.replace(/^\/(?:ru|uz|en)(?=\/|$)/, "") ?? "";
   const localeHref = (target: Locale) => `/${target}${localizedSuffix}`;
 
   useEffect(() => {
     const sentinel = scrollSentinelRef.current;
     if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setScrolled(!entry?.isIntersecting),
-      { rootMargin: "18px 0px 0px", threshold: 0 },
-    );
+    const observer = new IntersectionObserver(([entry]) => setScrolled(!entry?.isIntersecting), { rootMargin: "18px 0px 0px", threshold: 0 });
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
@@ -158,56 +149,49 @@ export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavi
 
   return (
     <>
-      <span
-        aria-hidden="true"
-        ref={scrollSentinelRef}
-        style={{ height: 1, left: 0, pointerEvents: "none", position: "absolute", top: 0, width: 1 }}
-      />
-      <header className={styles.header} data-scrolled={scrolled || undefined} data-tone={tone}>
-        <a className={styles.skipLink} href="#main-content">{t.skip}</a>
-        <div className={styles.headerInner}>
-          <Link aria-label="JURO" className={`${styles.logo} ${brandStyles.logo}`} href={`/${locale}`}>
-            <span className={brandStyles.markFrame}><Image alt="" className={brandStyles.mark} height={1024} priority src={tone === "dark" && !scrolled ? "/juro-mark-light.png" : "/juro-mark.png"} unoptimized width={1024} /></span>
-            <span className={brandStyles.wordmark}>JURO</span>
-          </Link>
-          <nav aria-label={t.nav} className={styles.desktopNav}>
-            {nav.map(([label, href]) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={onSectionNavigation}>{label}</a> : <Link href={href} key={href}>{label}</Link>)}
-          </nav>
-          <div className={styles.actions}>
-            <PublicThemeSwitcher locale={locale} />
-            <div aria-label="Language" className={`${styles.languageSet} ${headerTouchStyles.languageSet}`}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</Link>)}</div>
-            <a className={`${styles.login} ${headerTouchStyles.login}`} href={loginHref}>{t.signIn}</a>
-            <a className={styles.primary} href={registrationHref}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
-            <button aria-controls={panelId} aria-expanded={open} aria-label={t.open} className={styles.menuButton} onClick={() => setOpen(true)} ref={triggerRef} type="button"><Menu aria-hidden="true" size={22} /></button>
-          </div>
+    <span ref={scrollSentinelRef} aria-hidden="true" style={{ position: "absolute", top: 0, width: 1, height: 1, pointerEvents: "none" }} />
+    <header className={styles.header} data-scrolled={scrolled || undefined} data-tone={tone}>
+      <a className={styles.skipLink} href="#main-content">{t.skip}</a>
+      <div className={styles.headerInner}>
+        <Link aria-label="JURO" className={`${styles.logo} ${brandStyles.logo}`} href={`/${locale}`}>
+          <OfficialLogo inverse={tone === "dark" && !scrolled} priority />
+        </Link>
+        <nav aria-label={t.nav} className={styles.desktopNav}>
+          {nav.map(([label, href]) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={onSectionNavigation}>{label}</a> : <Link href={href} key={href}>{label}</Link>)}
+        </nav>
+        <div className={styles.actions}>
+          <PublicThemeSwitcher locale={locale} />
+          <div aria-label="Language" className={`${styles.languageSet} ${headerTouchStyles.languageSet}`}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</Link>)}</div>
+          <a className={`${styles.login} ${headerTouchStyles.login}`} href={platformAuthHref(locale, "login")}>{t.signIn}</a>
+          <a className={styles.primary} href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
+          <button aria-controls={panelId} aria-expanded={open} aria-label={t.open} className={styles.menuButton} onClick={() => setOpen(true)} ref={triggerRef} type="button"><Menu aria-hidden="true" size={22} /></button>
         </div>
-        {open ? (
-          <div className={styles.mobileLayer}>
-            <button aria-label={t.close} className={styles.scrim} onClick={() => setOpen(false)} type="button" />
-            <div aria-label={t.nav} aria-modal="true" className={styles.mobilePanel} id={panelId} ref={panelRef} role="dialog">
-              <div className={styles.mobileTop}>
-                <div className={brandStyles.mobileBrand}>
-                  <span className={brandStyles.mobileMarkFrame}><Image alt="" className={brandStyles.mobileMark} height={1024} src="/juro-mark.png" unoptimized width={1024} /></span>
-                  <span>JURO</span>
-                </div>
-                <button aria-label={t.close} className={styles.closeButton} onClick={() => setOpen(false)} type="button"><X aria-hidden="true" size={22} /></button>
+      </div>
+      {open ? (
+        <div className={styles.mobileLayer}>
+          <button aria-label={t.close} className={styles.scrim} onClick={() => setOpen(false)} type="button" />
+          <div aria-label={t.nav} aria-modal="true" className={styles.mobilePanel} id={panelId} ref={panelRef} role="dialog">
+            <div className={styles.mobileTop}>
+              <div className={brandStyles.mobileBrand}>
+                <OfficialLogo />
               </div>
-              <nav>
-                {nav.map(([label, href], index) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={(event) => { onSectionNavigation(event); setOpen(false); }}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></a> : <Link href={href} key={href} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></Link>)}
-                <Link href={`/${locale}/lawyers`} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
-                <Link href={`/${locale}/video`} onClick={() => setOpen(false)}><span>06</span>{t.video}<ArrowRight aria-hidden="true" size={18} /></Link>
-                <Link href={`/${locale}/legal`} onClick={() => setOpen(false)}><span>07</span>{t.legal}<ArrowRight aria-hidden="true" size={18} /></Link>
-              </nav>
-              <div className={styles.mobileActions}>
-                <PublicThemeSwitcher locale={locale} />
-                <div aria-label="Language" className={styles.mobileLanguageSet}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={localeHref(target)} key={target} onClick={() => setOpen(false)}>{languageLabels[target]}</Link>)}</div>
-                <a href={loginHref}>{t.signIn}</a>
-                <a href={registrationHref}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
-              </div>
+              <button aria-label={t.close} className={styles.closeButton} onClick={() => setOpen(false)} type="button"><X aria-hidden="true" size={22} /></button>
+            </div>
+            <nav>
+              {nav.map(([label, href], index) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={(event) => { onSectionNavigation(event); setOpen(false); }}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></a> : <Link href={href} key={href} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></Link>)}
+              <Link href={`/${locale}/lawyers`} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
+              <Link href={`/${locale}/video`} onClick={() => setOpen(false)}><span>06</span>{t.video}<ArrowRight aria-hidden="true" size={18} /></Link>
+              <Link href={`/${locale}/legal`} onClick={() => setOpen(false)}><span>07</span>{t.legal}<ArrowRight aria-hidden="true" size={18} /></Link>
+            </nav>
+            <div className={styles.mobileActions}>
+              <PublicThemeSwitcher locale={locale} />
+              <div aria-label="Language" className={styles.mobileLanguageSet}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={localeHref(target)} key={target} onClick={() => setOpen(false)}>{languageLabels[target]}</Link>)}</div>
+              <a href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
             </div>
           </div>
-        ) : null}
-      </header>
+        </div>
+      ) : null}
+    </header>
     </>
   );
 }
@@ -226,8 +210,7 @@ export function SiteFooter({ locale }: { locale: Locale }) {
       <div className={`${styles.footerTop} ${footerRailStyles.top}`}>
         <div className={`${styles.footerBrand} ${footerRailStyles.brand}`}>
           <Link aria-label="JURO" className={brandStyles.footerLogo} href={`/${locale}`}>
-            <span className={brandStyles.footerMarkFrame}><Image alt="" className={brandStyles.footerMark} height={1024} src="/juro-mark-light.png" unoptimized width={1024} /></span>
-            <span>JURO</span>
+            <OfficialLogo inverse />
           </Link>
           <p>{t.description}</p>
           <a className={footerRailStyles.brandCta} href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={16} /></a>
@@ -237,10 +220,11 @@ export function SiteFooter({ locale }: { locale: Locale }) {
         <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.legalLabel}</strong><Link href={`/${locale}/legal`}>{t.legal}</Link><Link href={`/${locale}/privacy-policy`}>{t.privacy}</Link><Link href={`/${locale}/terms`}>{t.terms}</Link><Link href={`/${locale}/personal-data-processing`}>{t.data}</Link><Link href={`/${locale}/ai-rules`}>{t.aiRules}</Link></div>
       </div>
       <address aria-label={t.contacts} className={`${footerContactStyles.contacts} ${footerRailStyles.contacts}`}>
-        <span><MapPin aria-hidden="true" size={16} />{t.address}</span>
-        <a href="tel:+998974022292"><Phone aria-hidden="true" size={16} />+998974022292</a>
-        <a href="mailto:admin@juro.uz"><Mail aria-hidden="true" size={16} />admin@juro.uz</a>
+        <div className={footerRailStyles.contactIntro}><span className={footerRailStyles.contactEyebrow}>{t.contacts}</span><strong>{locale === "ru" ? "На связи. По делу." : locale === "uz" ? "Aloqadamiz. Ish yuzasidan." : "A conversation. A next step."}</strong><span><MapPin aria-hidden="true" size={14} />{t.address}</span></div>
+        <a className={footerRailStyles.contactCard} href="mailto:admin@juro.uz"><Mail aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Написать нам" : locale === "uz" ? "Bizga yozing" : "Write to us"}</small><strong>admin@juro.uz</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
+        <a className={footerRailStyles.contactCard} href="tel:+998974022292"><Phone aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Позвонить" : locale === "uz" ? "Qo‘ng‘iroq qilish" : "Call us"}</small><strong>+998 97 402 22 92</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
       </address>
+      <div className={footerRailStyles.signature} aria-hidden="true"><span>JURO</span><small>LEGAL INTELLIGENCE<br />HUMAN DIRECTION.</small></div>
       <div className={`${styles.footerBottom} ${footerContactStyles.bottom} ${footerRailStyles.bottom}`}><span>© {year} JURO</span><p>{t.note}</p><span className={styles.footerLanguages}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={`/${target}`} key={target}>{languageLabels[target]}</Link>)}</span></div>
     </footer>
   );

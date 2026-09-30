@@ -1,0 +1,15 @@
+{
+ "name":"Jurobek 2D", "version":1, "format":"layered SVG with WebP textures", "sourceSize":[941,1672], "viewBox":[-140,0,1221,1672],
+ "layers":[
+  {"name":"body","pivot":[395,1450]},
+  {"name":"head","pivot":[395,780],"source":"reference.webp"},
+  {"name":"point-arm","pivot":[170,1240],"source":"reference.webp"},
+  {"name":"wave-hand","pivot":[150,915],"source":"wave.webp","poseOffset":[-90,0]},
+  {"name":"brows","source":"reference.webp"},
+  {"name":"eyelids","source":"blink.webp","blend":"opacity"},
+  {"name":"smile","source":"smile.webp","blend":"opacity"}
+ ],
+ "poses":["idle","wave","point","guide","smile"],
+ "motion":{"blinkIntervalSeconds":[3.6,6.2],"blinkDurationSeconds":0.24,"waveHandDegrees":5.5,"pointArmDegrees":1.5,"reducedMotion":true,"pauseWhenHidden":true},
+ "notes":"Raster-layer puppet, not vector-only Lottie. Head identity comes from the supplied reference in every pose. Wave and idle body plates are reference-derived edits. Does not contain a phoneme/lip-sync rig."
+}
