@@ -96,8 +96,8 @@ test("renders the production landing with localized canonical metadata and real 
     assert.match(response.headers.get("permissions-policy") ?? "", /camera=\(\)/);
     const html = await response.text();
     const head = html.slice(0, html.indexOf("</head>"));
-    assert.match(html, /<link rel="icon" href="\/favicon\.png" type="image\/png"\/>/);
-    assert.match(html, /<link rel="apple-touch-icon" href="\/apple-touch-icon\.png"\/>/);
+    assert.match(html, /<link rel="icon" href="\/brand\/JURO_avatar_1080\.png" type="image\/png"\/>/);
+    assert.match(html, /<link rel="apple-touch-icon" href="\/brand\/JURO_avatar_1080\.png"\/>/);
     assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest"\/>/);
     assert.match(head, /<meta name="description" content="[^"]+"/);
     assert.match(head, /<meta name="robots" content="index, follow"/);
@@ -162,7 +162,7 @@ test("serves the public manifest from a same-origin route", async () => {
   assert.equal(response.headers.get("cache-control"), "public, max-age=3600, must-revalidate");
   const body = await response.json();
   assert.equal(body.start_url, "/ru");
-  assert.equal(body.icons[0].src, "/favicon.png");
+  assert.equal(body.icons[0].src, "/brand/JURO_avatar_1080.png");
 });
 
 test("renders the complete English public landing and keeps product actions on English auth", async () => {

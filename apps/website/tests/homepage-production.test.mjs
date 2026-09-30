@@ -145,7 +145,7 @@ test("laptop layouts prevent large headline and product-grid clipping", () => {
 test("brand uses official complete JURO logo assets in both themes", () => {
   assert.match(chrome, /OfficialLogo/);
   const logo = fs.readFileSync("app/components/public/OfficialLogo.tsx", "utf8");
-  for (const asset of ["juro-logo-primary.avif", "juro-logo-light.avif"]) {
+  for (const asset of ["brand/JURO_logo_navy.png", "brand/JURO_logo_transparent.png"]) {
     assert.ok(logo.includes(asset));
     assert.ok(fs.existsSync("public/" + asset));
   }
