@@ -52,7 +52,7 @@ export async function deliverGuestLegalChat(input:{
   const started=Date.now();
   const accounting=createLegalChatAccounting({db:input.db,workspaceId:null,userId:null,environment:input.settings.environment,feature:"guest_legal_chat"});
   return executeRuntimeLegalChat({service:input.service,environment:input.retrievalEnvironment,requestId:run.id,safetyIdentifier,
-    responseTone:input.settings.responseTone,context:{question:request.question,locale:request.locale,priorTurns,
+    responseTone:input.settings.responseTone,systemInstructions:input.settings.systemInstructions,context:{question:request.question,locale:request.locale,priorTurns,
       legalContextDate:request.legalContextDate,signal:input.signal},mode:request.reasoningMode,answerMode:request.answerMode,
     onStage:input.onStage,onAttempt:accounting.onAttempt,onAttemptFinished:accounting.onAttemptFinished,
     renew:()=>renewGuestAiReservation({db:input.db,session:input.session,runId:run.id}),

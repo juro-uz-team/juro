@@ -309,6 +309,7 @@ function documentAnalysisInstructions(
       "Верни полный структурный контракт: каждый обязательный ключ должен присутствовать. Для отсутствующих фактов используй пустой массив или null строго по схеме, а не пропускай ключ. Не добавляй ключи вне схемы.",
     ] : []),
     aiResponseToneInstruction(settings.responseTone, locale),
+    settings.systemInstructions??"",
     locale === "uz" ? "Natijani o‘zbek tilida lotin yozuvida ber." : "Верни результат полностью на русском языке.",
   ].join(" ");
 }

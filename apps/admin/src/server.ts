@@ -1,8 +1,11 @@
+import {initializeControlCenterEnvironment} from "../../../scripts/control-center-runtime.mjs";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import application from "./worker";
 import { nativeAdminOrigin, nativeAdminRequestUrl } from "../../../scripts/native-admin-http.mjs";
 
+initializeControlCenterEnvironment(process.env);
 if (process.env.PRIVATE_DEVELOPMENT !== "true" && !["production", "staging"].includes(process.env.DEPLOYMENT_ENVIRONMENT ?? "")) throw new Error("Admin requires an explicit native deployment");
 const port = Number(process.env.ADMIN_PORT ?? 3002);
 const adminOrigin = nativeAdminOrigin(process.env);
@@ -24,15 +27,22 @@ createServer(async (request, response) => {
     response.writeHead(403); response.end(); return;
   }
   try {
+    const font=/^\/assets\/manrope-(latin|cyrillic)\.woff2$/.exec(request.url??"");
+    if(request.method==="GET" && font){const bytes=await readFile(new URL(`../../website/node_modules/@fontsource-variable/manrope/files/manrope-${font[1]}-wght-normal.woff2`,import.meta.url));response.writeHead(200,{"content-type":"font/woff2","cache-control":"public,max-age=86400"});response.end(bytes);return;}
+    if (request.method === "GET" && request.url === "/assets/juro-logo.svg") {
+      const logo = await readFile(new URL("../../website/public/brand/JURO_logo_transparent.png",import.meta.url)).catch(()=>null);
+      if(logo){response.writeHead(200,{"content-type":"image/png","cache-control":"public, max-age=86400"});response.end(logo);return;}
+    }
     const chunks: Buffer[] = [];
     let length = 0;
     for await (const chunk of request) {
       length += chunk.length;
-      if (length > 8192) { response.writeHead(413); response.end(); return; }
+      if (length > 1048576) { response.writeHead(413); response.end(); return; }
       chunks.push(chunk);
     }
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) if (value) headers.set(name, Array.isArray(value) ? value.join(",") : value);
+    headers.set("x-juro-client-ip", String(request.headers["x-real-ip"] ?? request.socket.remoteAddress ?? "unknown"));
     const result = await application.fetch(new Request(nativeAdminRequestUrl(adminOrigin, request.url), {
       method: request.method, headers,
       ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: Buffer.concat(chunks) }),

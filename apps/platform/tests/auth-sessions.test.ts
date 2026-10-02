@@ -160,9 +160,11 @@ function databaseFixture(): {
       phone_key_version TEXT,
       phone_lookup_hash TEXT,
       phone_lookup_key_version TEXT,
+      lifecycle_status TEXT NOT NULL DEFAULT 'active',
       full_name TEXT
     );
 
+    CREATE TABLE control_account_blocks(user_id TEXT PRIMARY KEY,reason TEXT,actor_email TEXT);
     CREATE TABLE auth_device_continuities (
       id TEXT PRIMARY KEY NOT NULL,
       user_id TEXT NOT NULL,

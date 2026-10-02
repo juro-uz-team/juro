@@ -70,7 +70,7 @@ export async function deliverSignedInLegalChat(input:{
   const started=Date.now();
   const accounting=createLegalChatAccounting({...owner,environment:input.settings.environment,feature:"legal_chat"});
   return executeRuntimeLegalChat({service:input.service,environment:input.retrievalEnvironment,requestId:reservation.runId,
-    safetyIdentifier,responseTone:input.settings.responseTone,
+    safetyIdentifier,responseTone:input.settings.responseTone,systemInstructions:input.settings.systemInstructions,
     context:{question:selected.branch.question,locale:request.locale,userContext,documents,
       priorTurns:selected.turns.map(turn=>({question:turn.question,answer:turn.answer})),
       legalContextDate:request.legalContextDate,signal:input.signal},mode:request.reasoningMode,answerMode:request.answerMode,

@@ -255,7 +255,10 @@ const englishCopy = {
 export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const t = language === "en" ? englishCopy : copy[language];
   const headline = language === "ru" ? ["Право становится", "понятным.", "AI, документы и юристы. В одной системе."] : language === "uz" ? ["Huquq endi", "tushunarli.", "AI, hujjatlar va yuristlar. Bitta tizimda."] : ["Legal complexity.", "Made clear.", "AI, documents and lawyers. One connected workspace."];
-  const content = language === "ru" ? ru : language === "uz" ? uz : en;
+  const baseContent = language === "ru" ? ru : language === "uz" ? uz : en;
+  const [publishedFaq,setPublishedFaq]=useState<{question:string;answer:string}[]|null>(null);
+  useEffect(()=>{let active=true;fetch(`/api/site-content?kind=faq&locale=${language}`).then(r=>r.ok?r.json():null).then(rows=>{if(active&&Array.isArray(rows)&&rows.length)setPublishedFaq(rows.map((r:{title:string;body:string})=>({question:r.title,answer:r.body})));}).catch(()=>{});return()=>{active=false;setPublishedFaq(null);};},[language]);
+  const content={...baseContent,faq:{...baseContent.faq,items:publishedFaq??baseContent.faq.items}};
   const [scenario, setScenario] = useState(0);
   const [processStep, setProcessStep] = useState(0);
   const [clause, setClause] = useState(0);

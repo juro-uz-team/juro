@@ -1,3 +1,4 @@
+import {ProductAnalytics} from "./_platform/ProductAnalytics";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Geist_Mono, Manrope } from "next/font/google";
@@ -58,6 +59,7 @@ export default async function RootLayout({
       <body className="antialiased">
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: `(function(){var m=location.pathname.match(/^\\/(ru|uz|en)(?:\\/|$)/);var q=new URLSearchParams(location.search).get("lang");document.documentElement.lang=m?m[1]:(q==="uz"?"uz":q==="en"?"en":"ru");})();` }} />
+        <ProductAnalytics/>
         {children}
       </body>
     </html>

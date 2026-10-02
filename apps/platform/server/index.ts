@@ -1,3 +1,5 @@
+import {initializeControlCenterEnvironment} from "../../../scripts/control-center-runtime.mjs";
+import { controlFeatureUnavailable } from "../lib/control-center/features";
 import { publicApiRequestBodyLimit } from "../lib/request-body";
 import { STATUS_ORIGIN_HEADER } from "../lib/operations/status-metadata";
 import { LAWYER_HOST_REQUEST_HEADER } from "../lib/platform/lawyer-entry-routing";
@@ -10,6 +12,7 @@ import { INTERNAL_REQUEST_PATH_HEADER, isAuthenticatedPlatformPathReady } from "
 import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
 import { routeNativeDomain } from "../lib/runtime/domain-routing";
 
+initializeControlCenterEnvironment(process.env);
 const config = nativeHttpConfiguration(process.env, "platform");
 const { port } = config;
 const internalConfig = nativeHttpConfiguration({ ...process.env, PRIVATE_DEVELOPMENT: "true", PLATFORM_HOST_ROLE: "app", PORT: String(port) }, "platform");
@@ -94,6 +97,9 @@ createServer(async (request, response) => {
         return;
       }
       response.writeHead(404); response.end(); return;
+    }
+    if(await controlFeatureUnavailable(url.pathname,request.method??"GET")){
+      response.writeHead(503,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify({code:"FEATURE_UNAVAILABLE",error:"Функция временно недоступна."}));return;
     }
     await handle(request, response);
   } catch (error) {

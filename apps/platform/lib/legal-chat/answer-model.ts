@@ -179,7 +179,7 @@ export function createLegalAnswerModel(options: {
   requestId: string;
   deadlineAt?: number;
   safetyIdentifier?: string;
-  responseTone?:AiResponseTone;
+  responseTone?:AiResponseTone;systemInstructions?:string;
   onProgress?: (input: AiStructuredProgress) => void | Promise<void>;
   /** Internal diagnostics only: neither callback contains approved public text. */
   onDraftProduced?: (input: z.infer<typeof draftResponseSchema>) => void | Promise<void>;
@@ -193,7 +193,7 @@ export function createLegalAnswerModel(options: {
     const profile=legalChatModelProfile(question.mode,"writing");
     const result = await callOpenAiStructured({
       instructions:(options.responseTone
-        ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`)+`\n${languageInstruction}`,
+        ? `${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}\n${aiResponseToneInstruction(options.responseTone,question.locale)}`:`${instructions}\n${userContextPolicy}\n${privateDocumentPolicy}`)+`\n${languageInstruction}\n${options.systemInstructions??""}`,
       input, schemaName, schema: z.toJSONSchema(providerSchema??schema, {reused:"ref"}), parse: value => schema.parse(decode?decode(value):value),
       requestId: options.requestId, ...profile, maxAttempts: 2,retryOnlyOnHeadersTimeout:true,
       textVerbosity: "low",

@@ -1,3 +1,4 @@
+import { ProductAnalytics } from "./components/public/ProductAnalytics";
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "@fontsource-variable/manrope/wght.css";
@@ -47,6 +48,7 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.setAttribute("data-juro-loading", "true");' }} />
         <BrandLoading language={locale} />
         {children}
+        <ProductAnalytics />
       </body>
     </html>
   );

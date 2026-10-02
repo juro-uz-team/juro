@@ -1,3 +1,5 @@
+import {assertTemplatePlan} from "../../../../../../lib/control-center/template-access";
+import { resolvedDocument } from "../../../../../../lib/document-builder/registry/published";
 import { assertSafeWrite, requireApiUser } from "../../../../../../lib/document-builder/auth/api";
 import { apiError, badRequest, forbidden, jsonResponse, notFound } from "../../../../../../lib/document-builder/auth/responses";
 import { loadDocxTemplate, loadFooterMark, loadPdfFont } from "../../../../../../lib/document-builder/generation/assets";
@@ -30,8 +32,9 @@ export async function POST(request: Request, context: Context): Promise<Response
     const document = await loadConfiguredDocument(id, user.id);
     if (!document) return notFound();
     if (document.answers["confirmation.accepted"] !== true) return badRequest("Подтвердите достоверность данных и условия использования шаблона.", "CONFIRMATION_REQUIRED");
-    const definition = getDocumentByCode(document.templateCode);
+    const definition = await resolvedDocument(document.templateCode,document.templateVersion);
     if (!definition || definition.status !== "published") return badRequest("Шаблон недоступен.", "TEMPLATE_UNAVAILABLE");
+    await assertTemplatePlan(definition,user.id);
     const rendered = renderConfiguredDocument(definition, document.answers, document.language === "uz" ? "uz" : "ru");
     const paragraphs = document.manuallyEdited ? paragraphsFromFinalText(document.finalContent) : rendered.paragraphs;
     const [template, regularFont, boldFont, footerMark] = await Promise.all([

@@ -90,7 +90,8 @@ export async function transitionLawyerProfileLifecycle(
   db: D1Database,
   input: {
     profileId: string;
-    actorUserId: string;
+    actorUserId: string | null;
+    adminSessionId?: string;
     action: LawyerProfileLifecycleAction;
     reason: string;
     now?: Date;
@@ -131,8 +132,8 @@ export async function transitionLawyerProfileLifecycle(
         `INSERT INTO lawyer_profile_lifecycle_events (
            id,lawyer_profile_id,from_profile_revision,to_profile_revision,
            actor_user_id,action,reason,from_profile_status,to_profile_status,
-           from_marketplace_status,to_marketplace_status,created_at
-         ) SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+           from_marketplace_status,to_marketplace_status,created_at,admin_session_id
+         ) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
          WHERE EXISTS (
            SELECT 1 FROM lawyer_profiles
            WHERE id=? AND profile_revision=? AND status=? AND marketplace_status=?
@@ -140,7 +141,7 @@ export async function transitionLawyerProfileLifecycle(
       ).bind(
         eventId, profile.id, profile.profileRevision, target.profileRevision,
         input.actorUserId, input.action, input.reason, profile.status, target.status,
-        profile.marketplaceStatus, target.marketplaceStatus, now,
+        profile.marketplaceStatus, target.marketplaceStatus, now, input.adminSessionId ?? null,
         profile.id, profile.profileRevision, profile.status, profile.marketplaceStatus,
       ),
       db.prepare(
@@ -149,7 +150,7 @@ export async function transitionLawyerProfileLifecycle(
          ) SELECT ?,?,?,'lawyer_profile',?,?,?,?
          WHERE EXISTS (
            SELECT 1 FROM lawyer_profile_lifecycle_events
-           WHERE id=? AND lawyer_profile_id=? AND actor_user_id=? AND action=?
+           WHERE id=? AND lawyer_profile_id=? AND actor_user_id IS NOT DISTINCT FROM ? AND action=?
          )`,
       ).bind(
         auditId, profile.workspaceId, input.actorUserId, profile.id,

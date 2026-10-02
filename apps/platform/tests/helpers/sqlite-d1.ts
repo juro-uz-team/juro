@@ -98,6 +98,15 @@ function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, lo
     }
     for (const statement of statements(sql)) sqlite.exec(statement);
   }
+  // Project additive native Control Center columns into current legacy fixtures.
+  // Historical SQLite migration files remain immutable.
+  if(lastMigrationIndex===Number.POSITIVE_INFINITY){
+    sqlite.exec(`CREATE TABLE control_account_blocks(user_id TEXT PRIMARY KEY,reason TEXT,actor_email TEXT);
+      CREATE TABLE control_ai_versions(id TEXT PRIMARY KEY,version INTEGER,settings TEXT,system_instructions TEXT,created_at TEXT,applied_at TEXT);
+      ALTER TABLE lawyer_profile_moderation ADD COLUMN admin_session_id TEXT;
+      ALTER TABLE lawyer_profile_lifecycle_events ADD COLUMN admin_session_id TEXT;
+      ALTER TABLE support_messages ADD COLUMN admin_session_id TEXT;`);
+  }
   const d1 = {
     prepare(sql: string) {
       return new SqliteStatement(sqlite, sql);

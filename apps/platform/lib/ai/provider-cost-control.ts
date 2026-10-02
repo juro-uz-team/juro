@@ -305,7 +305,7 @@ export async function evaluateProviderCostControl(input: {
 export async function createCostGuardPolicyVersion(input: {
   db: D1Database;
   environment: ProviderEnvironment;
-  actorUserId: string;
+  actorUserId: string | null;
   value: z.input<typeof costGuardPolicyMutationSchema>;
   now?: Date;
 }): Promise<{ id: string }> {
@@ -345,7 +345,7 @@ export async function setProviderCircuitState(input: {
   environment: ProviderEnvironment;
   provider: ProviderName;
   state: "open" | "closed";
-  actorUserId: string;
+  actorUserId: string | null;
   now?: Date;
 }): Promise<{ changed: boolean }> {
   const now = (input.now ?? new Date()).toISOString();

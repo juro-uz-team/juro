@@ -1,3 +1,8 @@
+import { publishedSiteContent } from "../control-center/site-content";
+import { collectProductEvent } from "../control-center/events";
+import { queueDecisionEmail } from "../control-center/delivery";
+import { controlPrincipal, controlAudit, requestAdminCode, verifyAdminCode, revokeControlSession } from "./control-admin-auth";
+import { handleControlCenter } from "../control-center/api";
 import { z } from "zod";
 
 import {
@@ -20,7 +25,7 @@ const profileIdSchema = z.string().uuid();
 const reviewIdSchema = z.string().uuid();
 const consumeSchema = z.object({ ticket: z.string().regex(TOKEN_PATTERN) }).strict();
 const moderationSchema = z.object({
-  decision: z.enum(["approved", "rejected"]),
+  decision: z.enum(["approved", "changes_requested", "rejected"]),
   reason: z.string().trim().min(1).max(2_000),
 }).strict();
 const lifecycleSchema = z.object({
@@ -100,10 +105,9 @@ async function requirePrincipal(request: Request, env: AdminInternalEnv) {
   if (!internal) return null;
   try {
     const runtime = await requireInternal(env);
-    const principal = await requireAdminDomainSession(runtime.db, {
-      token: request.headers.get(SESSION_HEADER),
-      environment: runtime.environment,
-    });
+    const control = await controlPrincipal(request.headers.get(SESSION_HEADER));
+    if (!control) return null;
+    const principal = {sessionId:control.sessionId, userId:control.userId ?? "", sourceSessionId:"", sourceMfaVerifiedAt:"", roles:["super_admin"] as ("super_admin")[], expiresAt:control.expiresAt};
     return { ...runtime, principal };
   } catch {
     return null;
@@ -119,7 +123,7 @@ async function dashboard(request: Request, env: AdminInternalEnv): Promise<Respo
     authenticated.db.prepare("SELECT count(*) AS total FROM lawyer_requests WHERE status NOT IN ('completed','cancelled','rejected')").first<{ total: number }>(),
     authenticated.db.prepare("SELECT count(*) AS total FROM admin_domain_audit_events WHERE environment=?").bind(authenticated.environment).first<{ total: number }>(),
   ]);
-  await appendAdminDomainAudit(authenticated.db, {
+  await controlAuditEvent(authenticated.db, {
     environment: authenticated.environment,
     principal: authenticated.principal,
     action: "dashboard_viewed",
@@ -140,24 +144,27 @@ async function dashboard(request: Request, env: AdminInternalEnv): Promise<Respo
 async function lawyerProfiles(request: Request, env: AdminInternalEnv): Promise<Response> {
   const authenticated = await requirePrincipal(request, env);
   if (!authenticated || !adminRoleAllows(authenticated.principal.roles, "lawyer.profiles.moderate")) return noStore({ code: "ACCESS_DENIED" }, 403);
-  const status = new URL(request.url).searchParams.get("status") ?? "pending_review";
+  const url=new URL(request.url);const page=Math.max(1,Math.floor(Number(url.searchParams.get("page"))||1));
+  const status = url.searchParams.get("status") ?? "pending_review";
   if (!["profile_incomplete", "pending_review", "changes_requested", "public_approved", "rejected", "suspended", "blocked", "archived"].includes(status)) return noStore({ code: "INVALID_INPUT" }, 400);
   const rows = await authenticated.db.prepare(
     `SELECT p.id,p.display_name AS displayName,p.status,p.marketplace_status AS marketplaceStatus,
        p.profile_revision AS profileRevision,p.city,p.region,p.experience_years AS experienceYears,
        p.price_description AS priceDescription,p.availability_status AS availabilityStatus,
-       p.updated_at AS updatedAt
-     FROM lawyer_profiles p
-     WHERE p.marketplace_status=? ORDER BY p.updated_at ASC,p.id ASC LIMIT 100`,
-  ).bind(status).all();
-  await appendAdminDomainAudit(authenticated.db, {
+       p.updated_at AS updatedAt,coalesce(d.professional_type,CASE WHEN p.advocate_status='declared' THEN 'advocate' ELSE 'lawyer' END) AS professionalType,
+       (SELECT count(*) FROM control_professional_documents f WHERE f.profile_id=p.id) AS documentCount,
+       EXISTS(SELECT 1 FROM lawyer_profile_moderation m WHERE m.lawyer_profile_id=p.id) AS resubmitted
+     FROM lawyer_profiles p LEFT JOIN control_professional_details d ON d.profile_id=p.id
+     WHERE p.marketplace_status=? ORDER BY p.updated_at ASC,p.id ASC LIMIT 25 OFFSET ?`,
+  ).bind(status,(page-1)*25).all();
+  await controlAuditEvent(authenticated.db, {
     environment: authenticated.environment,
     principal: authenticated.principal,
     action: "lawyer_profiles_viewed",
     entityType: "lawyer_profile_list",
     metadata: { status, count: rows.results.length },
   });
-  return noStore({ profiles: rows.results });
+  return noStore({ profiles: rows.results,page });
 }
 
 async function moderateProfile(request: Request, env: AdminInternalEnv, profileId: string): Promise<Response> {
@@ -166,13 +173,15 @@ async function moderateProfile(request: Request, env: AdminInternalEnv, profileI
   const payload = moderationSchema.safeParse(await parseJson(request));
   if (!payload.success) return noStore({ code: "INVALID_INPUT" }, 400);
   try {
+    await authenticated.db.prepare("INSERT INTO control_professional_flow_events(id,profile_id,revision,event) SELECT ?,id,profile_revision,'reviewed' FROM lawyer_profiles WHERE id=? ON CONFLICT DO NOTHING").bind(crypto.randomUUID(),profileId).run();
     const result = await moderateLawyerProfile(authenticated.db, {
       profileId,
-      moderatorUserId: authenticated.principal.userId,
+      moderatorUserId: authenticated.principal.userId || null,
+      adminSessionId:authenticated.principal.sessionId,
       decision: payload.data.decision,
       reason: payload.data.reason,
     });
-    await appendAdminDomainAudit(authenticated.db, {
+    await controlAuditEvent(authenticated.db, {
       environment: authenticated.environment,
       principal: authenticated.principal,
       action: "lawyer_profile_moderated",
@@ -180,6 +189,8 @@ async function moderateProfile(request: Request, env: AdminInternalEnv, profileI
       entityId: profileId,
       metadata: { decision: payload.data.decision },
     });
+    const owner = await authenticated.db.prepare("SELECT user_id AS userId FROM lawyer_profiles WHERE id=?").bind(profileId).first<{userId:string}>();
+    if(owner) await queueDecisionEmail(owner.userId,{approved:"Профиль подтверждён JURO",rejected:"Заявка отклонена",changes_requested:"Требуется дополнительная информация"}[payload.data.decision],payload.data.reason+" Откройте профессиональный профиль в JURO для следующего действия.").catch(()=>console.error("control.delivery_queue_failed"));
     return noStore({ ok: true, status: result.status });
   } catch {
     return noStore({ code: "PROFILE_UNAVAILABLE" }, 409);
@@ -202,11 +213,12 @@ async function transitionProfileLifecycle(request: Request, env: AdminInternalEn
   try {
     const result = await transitionLawyerProfileLifecycle(authenticated.db, {
       profileId,
-      actorUserId: authenticated.principal.userId,
+      actorUserId: authenticated.principal.userId || null,
+      adminSessionId:authenticated.principal.sessionId,
       action: payload.data.action,
       reason: payload.data.reason,
     });
-    await appendAdminDomainAudit(authenticated.db, {
+    await controlAuditEvent(authenticated.db, {
       environment: authenticated.environment,
       principal: authenticated.principal,
       action: auditAction[payload.data.action],
@@ -231,7 +243,7 @@ async function reviews(request: Request, env: AdminInternalEnv): Promise<Respons
   });
   if (!parsed.success) return noStore({ code: "INVALID_INPUT" }, 400);
   const reviews = await listLawyerReviews(authenticated.db, parsed.data);
-  await appendAdminDomainAudit(authenticated.db, {
+  await controlAuditEvent(authenticated.db, {
     environment: authenticated.environment,
     principal: authenticated.principal,
     action: "lawyer_reviews_viewed",
@@ -254,7 +266,7 @@ async function moderateReview(request: Request, env: AdminInternalEnv, reviewId:
       moderatedBody: payload.data.moderatedBody,
       reason: payload.data.reason,
     });
-    await appendAdminDomainAudit(authenticated.db, {
+    await controlAuditEvent(authenticated.db, {
       environment: authenticated.environment,
       principal: authenticated.principal,
       action: "lawyer_review_moderated",
@@ -296,10 +308,7 @@ async function logout(request: Request, env: AdminInternalEnv): Promise<Response
   if (!internal) return noStore({ code: "ACCESS_DENIED" }, 403);
   try {
     const runtime = await requireInternal(env);
-    await revokeAdminDomainSession(runtime.db, {
-      token: request.headers.get(SESSION_HEADER),
-      environment: runtime.environment,
-    });
+    await revokeControlSession(request.headers.get(SESSION_HEADER) ?? "");
     return noStore({ ok: true });
   } catch {
     return noStore({ code: "ACCESS_DENIED" }, 403);
@@ -309,7 +318,26 @@ async function logout(request: Request, env: AdminInternalEnv): Promise<Response
 export async function handleInternalAdminRequest(request: Request, env: AdminInternalEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/internal/admin/")) return null;
-  if (url.pathname === "/api/internal/admin/session/consume" && request.method === "POST") return consume(request, env);
+  if (!await hasInternalToken(request, env)) return noStore({code:"ACCESS_DENIED"},403);
+  if (url.pathname === "/api/internal/admin/auth/request" && request.method === "POST") {
+    const input = z.object({email:z.string().email().max(254),ip:z.string().max(200)}).strict().safeParse(await parseJson(request));
+    if (!input.success) return noStore({code:"INVALID_INPUT"},400);
+    return noStore(await requestAdminCode(input.data.email,input.data.ip,{apiKey:process.env.RESEND_API_KEY ?? "",from:process.env.EMAIL_FROM ?? ""}));
+  }
+  if (url.pathname === "/api/internal/admin/auth/verify" && request.method === "POST") {
+    const input = z.object({challengeId:z.string().uuid(),code:z.string().max(20),ip:z.string().max(200)}).strict().safeParse(await parseJson(request));
+    if (!input.success) return noStore({code:"INVALID_INPUT"},400);
+    const session = await verifyAdminCode(input.data.challengeId,input.data.code,input.data.ip);
+    return session ? noStore(session) : noStore({code:"CODE_DENIED"},401);
+  }
+  if(url.pathname==="/api/internal/admin/analytics/collect"&&request.method==="POST") {
+   try {await collectProductEvent(await parseJson(request),request.headers.get("x-juro-client-ip")??"unknown");return noStore({ok:true});}catch(error){return noStore({code:error instanceof Error&&error.message==="RATE_LIMITED"?"RATE_LIMITED":"INVALID_INPUT"},error instanceof Error&&error.message==="RATE_LIMITED"?429:400);}
+  }
+  if(url.pathname==="/api/internal/admin/site-content/published"&&request.method==="GET"){
+    try{return noStore(await publishedSiteContent(url.searchParams.get("locale")??"ru",url.searchParams.get("kind")??"faq"));}catch{return noStore({code:"CONTENT_UNAVAILABLE"},503);}
+  }
+  const control = await handleControlCenter(request);
+  if (control) return control;
   if (url.pathname === "/api/internal/admin/session/logout" && request.method === "POST") return logout(request, env);
   if (url.pathname === "/api/internal/admin/dashboard" && request.method === "GET") return dashboard(request, env);
   if (url.pathname === "/api/internal/admin/lawyers" && request.method === "GET") return lawyerProfiles(request, env);
@@ -333,4 +361,8 @@ export async function handleInternalAdminRequest(request: Request, env: AdminInt
     return moderateReview(request, env, reviewId.data);
   }
   return noStore({ code: "NOT_FOUND" }, 404);
+}
+
+async function controlAuditEvent(_db: D1Database, input: {principal:{userId:string};action:string;entityType?:string;entityId?:string;metadata?:object;environment:string}) {
+ await controlAudit(process.env.ADMIN_ALLOWED_EMAIL ?? "muzaffarbekmurodov@gmail.com",input.action,input.entityType,input.entityId,input.metadata);
 }

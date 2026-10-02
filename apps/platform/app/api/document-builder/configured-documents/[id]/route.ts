@@ -1,3 +1,5 @@
+import {assertTemplatePlan} from "../../../../../lib/control-center/template-access";
+import { resolvedDocument } from "../../../../../lib/document-builder/registry/published";
 import { assertSafeWrite, requireApiUser } from "../../../../../lib/document-builder/auth/api";
 import { apiError, badRequest, forbidden, jsonResponse, notFound } from "../../../../../lib/document-builder/auth/responses";
 import { getDocumentByCode } from "../../../../../lib/document-builder/registry";
@@ -46,8 +48,9 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     if (parsed.data.revision && parsed.data.revision !== current.revision) {
       return jsonResponse({ error: "Документ изменён в другой вкладке. Обновите страницу.", code: "REVISION_CONFLICT", currentRevision: current.revision }, { status: 409 });
     }
-    const definition = getDocumentByCode(current.templateCode);
+    const definition = await resolvedDocument(current.templateCode,current.templateVersion);
     if (!definition) return badRequest("Конфигурация шаблона не найдена.", "TEMPLATE_NOT_FOUND");
+    await assertTemplatePlan(definition,user.id);
     const rendered = renderConfiguredDocument(definition, parsed.data.answers, parsed.data.language);
     const now = isoNow();
     const nextRevision = current.revision + 1;

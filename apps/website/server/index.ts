@@ -13,6 +13,21 @@ createServer(async (request, response) => {
   if (!url) {
     response.writeHead(403); response.end(); return;
   }
+  if(url.pathname==="/api/site-content" && request.method==="GET"){
+    try{
+      const query=new URLSearchParams({locale:url.searchParams.get("locale")??"ru",kind:url.searchParams.get("kind")??"faq"});
+      const upstream=await fetch(`http://localhost:${process.env.PORT??3000}/api/internal/admin/site-content/published?${query}`,{headers:{"x-juro-admin-internal-token":process.env.ADMIN_INTERNAL_TOKEN??""},signal:AbortSignal.timeout(5000)});
+      response.writeHead(upstream.status,{"content-type":"application/json","cache-control":"no-store"});response.end(await upstream.text());
+    }catch{response.writeHead(503);response.end();}return;
+  }
+  if(url.pathname==="/api/product-events" && request.method==="POST") {
+    if(request.headers.origin!==config.origin){response.writeHead(403);response.end();return;}
+    const chunks:Buffer[]=[];let size=0;for await(const chunk of request){size+=chunk.length;if(size>4096){response.writeHead(413);response.end();return;}chunks.push(chunk);}
+    try {
+      const upstream=await fetch(`http://localhost:${process.env.PORT??3000}/api/internal/admin/analytics/collect`,{method:"POST",headers:{"content-type":"application/json","x-juro-admin-internal-token":process.env.ADMIN_INTERNAL_TOKEN??"","x-juro-client-ip":String(request.headers["x-real-ip"]??request.socket.remoteAddress??"unknown")},body:Buffer.concat(chunks),signal:AbortSignal.timeout(5000)});
+      response.writeHead(upstream.status,{"cache-control":"no-store"});response.end();
+    }catch{response.writeHead(503);response.end();}return;
+  }
   if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405); response.end(); return; }
   request.headers["x-juro-request-path"] = url.pathname;
   response.setHeader("X-Content-Type-Options", "nosniff");

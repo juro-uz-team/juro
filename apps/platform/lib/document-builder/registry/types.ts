@@ -163,6 +163,7 @@ export interface DocumentSourceReference {
 }
 
 export interface DocumentDefinition {
+  allowedPlans?: string[];
   id: string;
   code: string;
   categoryCode: string;

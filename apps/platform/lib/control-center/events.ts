@@ -1,0 +1,20 @@
+import { createHash } from "node:crypto";
+import { z } from "zod";
+import { database } from "../storage/connection";
+export const productEvent=z.object({id:z.string().uuid(),event:z.enum(["page_view","registration_started","registration_completed"]),application:z.enum(["website","app","lawyer"]),visitorId:z.string().uuid(),sessionId:z.string().uuid(),page:z.string().regex(/^\/[a-zA-Z0-9/_-]*$/).max(200),source:z.string().regex(/^[a-zA-Z0-9._ -]*$/).max(80).optional(),medium:z.string().regex(/^[a-zA-Z0-9._ -]*$/).max(80).optional(),campaign:z.string().regex(/^[a-zA-Z0-9._ -]*$/).max(100).optional(),device:z.enum(["desktop","tablet","mobile"]),consent:z.literal(true)}).strict();
+export async function collectProductEvent(data:unknown,ip:string,user?:{id:string;email:string}){
+ const key="product:"+createHash("sha256").update(ip).digest("hex");
+ const rate=await database().pool.query("INSERT INTO control_admin_rate_limits(key,window_start,count) VALUES($1,now(),1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN control_admin_rate_limits.window_start<now()-interval '60 seconds' THEN 1 ELSE control_admin_rate_limits.count+1 END,window_start=CASE WHEN control_admin_rate_limits.window_start<now()-interval '60 seconds' THEN now() ELSE control_admin_rate_limits.window_start END RETURNING count",[key]);
+ if(rate.rows[0].count>120)throw Error("RATE_LIMITED");
+ const input=productEvent.parse(data);
+ if(user?.email.toLowerCase()===(process.env.ADMIN_ALLOWED_EMAIL??"muzaffarbekmurodov@gmail.com").toLowerCase()||process.env.DEPLOYMENT_ENVIRONMENT==='staging')return;
+ const owner=user?(await database().pool.query("SELECT u.id,u.account_type,u.email_verified_at,coalesce(s.plan_code,'free') AS plan_code FROM user_profiles u LEFT JOIN subscriptions s ON s.workspace_id=u.default_workspace_id WHERE u.id=$1 AND NOT EXISTS(SELECT 1 FROM auth_pending_registrations p WHERE p.user_id=u.id)",[user.id])).rows[0]:null;
+ if(owner){await database().pool.query("INSERT INTO control_analytics_consent(user_id,application,visitor_id,session_id,device) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id) DO UPDATE SET application=excluded.application,visitor_id=excluded.visitor_id,session_id=excluded.session_id,device=excluded.device",[owner.id,input.application,input.visitorId,input.sessionId,input.device]);await database().pool.query("UPDATE control_product_events SET user_id=$3,account_type=$4,plan_code=$5 WHERE application=$1 AND visitor_id=$2 AND user_id IS NULL AND created_at>now()-interval '30 days'",[input.application,input.visitorId,owner.id,owner.account_type,owner.plan_code]);}
+ if(input.event==='registration_completed'){
+  if(!owner?.email_verified_at)return;const started=(await database().pool.query("SELECT source,medium,campaign FROM control_product_events WHERE visitor_id=$1 AND application=$2 AND event='registration_started' AND created_at<=$3::timestamptz AND created_at>$3::timestamptz-interval '30 days' ORDER BY created_at LIMIT 1",[input.visitorId,input.application,owner.email_verified_at])).rows[0];if(!started)return;
+  await database().pool.query("INSERT INTO control_product_events(id,event,application,visitor_id,session_id,page,device,user_id,account_type,plan_code,source,medium,campaign,created_at) VALUES($1,'registration_completed',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING",['registered:'+owner.id,input.application,input.visitorId,input.sessionId,input.page,input.device,owner.id,owner.account_type,owner.plan_code,started.source,started.medium,started.campaign,owner.email_verified_at]);return;
+ }
+
+ // No full URLs, searches, free text, user documents or device fingerprints.
+ await database().pool.query("INSERT INTO control_product_events(id,event,application,visitor_id,session_id,page,source,medium,campaign,device,user_id,account_type,plan_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING",[input.id,input.event,input.application,input.visitorId,input.sessionId,input.page,input.source??null,input.medium??null,input.campaign??null,input.device,owner?.id??null,owner?.account_type??null,owner?.plan_code??null]);
+}

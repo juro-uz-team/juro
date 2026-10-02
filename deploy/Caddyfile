@@ -72,12 +72,14 @@ www.{$SITE_HOST} {
 	import native_proxy 127.0.0.1:3100
 }
 
-# These TLS listeners are reachable only through an operator's SSH tunnel.
-https://admin.juro.uz:3443 {
-	bind 127.0.0.1
-	tls internal
+# Production Control Center uses its independent email-code session.
+admin.juro.uz {
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy 127.0.0.1:3002 {
 		header_up Host localhost:3002
+		header_up X-Real-IP {remote_host}
+		header_up -X-Juro-Client-IP
 	}
 }
 
