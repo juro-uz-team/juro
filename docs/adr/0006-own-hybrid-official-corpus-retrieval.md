@@ -6,6 +6,15 @@ JURO will own Hybrid Candidate Fusion for the Indexed Official Corpus. Immutable
 
 ## Consequences
 
+- By owner direction on 2026-10-02, operational live query embeddings record
+  estimated provider exposure in an append-only usage ledger without requiring
+  a manually provisioned monthly monetary allowance. A calendar boundary or
+  exhausted query grant must not disable live retrieval. This supersedes the
+  live-query spending gate below, while explicit qualification/evaluation and
+  corpus construction, embedding and repair authorization caps remain in force.
+  Request and abuse controls, user-plan allowances, provider usage accounting,
+  evidence integrity and release qualification remain required.
+
 - By owner direction on 2026-09-05, the
   [verification policy](../operations/legal-corpus-verification.md) replaces
   repeated full-corpus replays, routine full backup/restore rehearsals,
