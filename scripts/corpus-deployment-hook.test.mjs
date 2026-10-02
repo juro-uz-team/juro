@@ -9,6 +9,20 @@ function fixture(phase="prepare"){
  const operations={guard:async services=>events.push(services?"process-guard":"guard"),selected:async()=>actual,qualify:async()=>events.push("qualify"),fences:async()=>events.push("fences"),activate:async()=>{events.push("activate");actual=acceptance;}};
  return {request,events,operations,setActual:value=>actual=value};
 }
+test("retry verifies the committed selection and live services without republishing",async()=>{
+ const f=fixture("verify");f.setActual(acceptance);
+ assert.equal((await runDeploymentPhase(f.request,bundle,f.operations)).selectionState,"committed");
+ assert.deepEqual(f.events,["guard","qualify","fences","process-guard"]);
+});
+test("retry rejects original, changed or raced selections and failed service guards",async()=>{
+ for(const actual of [original,"e".repeat(64),undefined]){
+  const f=fixture("verify");f.setActual(actual);await assert.rejects(runDeploymentPhase(f.request,bundle,f.operations));
+ }
+ const f=fixture("verify");f.setActual(acceptance);f.operations.fences=async()=>f.setActual(original);
+ await assert.rejects(runDeploymentPhase(f.request,bundle,f.operations));
+ const broken=fixture("verify");broken.setActual(acceptance);broken.operations.guard=async services=>{if(services)throw Error("service changed");};
+ await assert.rejects(runDeploymentPhase(broken.request,bundle,broken.operations),/service changed/);
+});
 test("exact reviewed environment/revision and canonical release required",()=>{
  assert.deepEqual(bindOperatorBundle(deploymentRequest(args),bundle),bundle);
  for(const bad of [["prepare","other",...args.slice(2)],[...args,"extra"],[...args.slice(0,3),args[3]+"/../evil",""]])assert.throws(()=>deploymentRequest(bad));

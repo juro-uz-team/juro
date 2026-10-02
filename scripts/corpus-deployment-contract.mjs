@@ -3,7 +3,7 @@ import {createHash} from "node:crypto";
 export const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 export function deploymentRequest(args) {
  const [phase,environment,revision,release,previous,...extra]=args;
- assert(!extra.length && ["prepare","activate","status"].includes(phase));
+ assert(!extra.length && ["prepare","activate","status","verify"].includes(phase));
  assert(["production","staging"].includes(environment) && /^[a-f0-9]{40}$/.test(revision));
  assert(new RegExp(`^/srv/juro/${environment}/releases/${revision}-[0-9]+$`).test(release));
  assert(previous==="" || new RegExp(`^/srv/juro/${environment}/releases/[a-f0-9]{40}-[a-zA-Z0-9-]+$`).test(previous));
@@ -22,6 +22,12 @@ export async function runDeploymentPhase(request,bundle,operations){
  await operations.guard(false);
  const before=selectionState(await operations.selected(),bundle);
  if(request.phase==="status")return receipt(before);
+ if(request.phase==="verify"){
+  assert.equal(before,"committed","Retry requires the reviewed committed selection");
+  await operations.qualify();await operations.fences();await operations.guard(true);
+  assert.equal(await operations.selected(),bundle.acceptanceSha256,"Selection changed during retry verification");
+  return receipt("committed");
+ }
  assert.equal(before,"original","Selection differs from reviewed parent");
  await operations.qualify();
  if(request.phase==="prepare"){await operations.fences();await operations.guard(false);assert.equal(await operations.selected(),bundle.expectedParent);return receipt("original");}
