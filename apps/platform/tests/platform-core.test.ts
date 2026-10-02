@@ -93,7 +93,7 @@ test("lawyer professional profile accepts only bounded self-declared directory d
   for (const environment of [undefined, "preview"]) assert.equal(isLawyerProfileDirectoryPreviewEnabled({ APP_ENV: environment, LAWYER_PROFILE_DIRECTORY_ENABLED: "true", DB: {} }), false);
   assert.equal(isLawyerProfileDirectoryPreviewEnabled({ APP_ENV: "staging", LAWYER_PROFILE_DIRECTORY_ENABLED: "false", DB: {} }), false);
   assert.equal(isLawyerProfileDirectoryPreviewEnabled({ APP_ENV: "staging", LAWYER_PROFILE_DIRECTORY_ENABLED: "true" }), false);
-  assert.match(route, /account_type='lawyer'/); assert.match(route, /isLawyerProfileDirectoryPreviewEnabled/); assert.match(route, /assertSafeWrite/); assert.match(route, /lawyer_profile_created/); assert.match(route, /lawyer_profile_draft_saved/); assert.match(route, /meta\.changes/); assert.match(route, /WHERE EXISTS/);
+  assert.match(route, /account_type IN \('lawyer','business'\)/); assert.match(route, /isLawyerProfileDirectoryPreviewEnabled/); assert.match(route, /assertSafeWrite/); assert.match(route, /lawyer_profile_created/); assert.match(route, /lawyer_profile_draft_saved/); assert.match(route, /meta\.changes/); assert.match(route, /WHERE EXISTS/);
   assert.match(client, /Статус адвоката «подтверждён» нельзя установить самостоятельно/);
   for (const filter of ["specialtyFilter", "languageFilter", "minimumExperience", "minimumRating", "availabilityFilter", "advocateFilter", "firmFilter"]) assert.match(handoffClient, new RegExp(filter));
   assert.match(migration, /lawyer_profiles_directory_values_insert/); assert.match(migration, /lawyer_profiles_directory_filter_idx/);
