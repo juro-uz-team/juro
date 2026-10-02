@@ -5,7 +5,71 @@ import {readFileSync} from "node:fs";
 import {createD1SourceObservationStore} from "../lib/legal/source-observation-store";
 import {createSourceObservationReader, isCurrentSourceObservation, sourceObservationSchema, type SourceObservation} from "../lib/legal/source-observation";
 import {refreshPublicSourceObservations, reserveSourceObservationCrawlWindow} from "../lib/legal/source-observation-refresh";
+import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 import {createSharedSourceObservationRefresh} from "../lib/legal/shared-source-observation";
+
+for (const scenario of ["slow", "handoff", "handoff_stale", "cancel", "bounded"] as const) {
+test(`a joined publisher refresh handles ${scenario} ownership without duplicate requests`, async (context) => {
+  context.mock.timers.enable({apis: ["setInterval"]});
+  const sqlite = new DatabaseSync(":memory:");
+  let time = Date.parse("2026-09-11T00:00:00.000Z");
+  const url = "https://lex.uz/ru/docs/777";
+  const observation = (): SourceObservation => ({version: 2, officialUrl: url, observedAt: new Date(time).toISOString(),
+    current: true, normalizedTextSha256: "a".repeat(64), rawContentSha256: "b".repeat(64), normalizedTextSha256V2: "d".repeat(64),normalizationPolicy:"e".repeat(64)});
+  let beforeLeaseRead: (() => Promise<void>) | undefined;
+  const db = {prepare(sql: string) {return {bind(...values: (string | number)[]) {return {
+    async first() {
+      if (sql.startsWith("SELECT lease_token") && beforeLeaseRead) {
+        const pending = beforeLeaseRead; beforeLeaseRead = undefined; await pending();
+      }
+      return sqlite.prepare(sql).get(...values) ?? null;
+    },
+    async run() {
+      return {meta: {changes: sqlite.prepare(sql).run(...values).changes}};
+    },
+  };}};}} as unknown as D1Database;
+  try {
+    sqlite.exec(readFileSync("legal-drizzle/0032_public_source_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("legal-drizzle/0033_publisher_status_observations.sql", "utf8"));
+    sqlite.exec(readFileSync("postgres/0025-publisher-normalization-fingerprint.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec(readFileSync("postgres/0026-publisher-fingerprint-observation-binding.sql", "utf8").replace("legal.legal_publisher_status_observations", "legal_publisher_status_observations"));
+    sqlite.exec("ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy text; ALTER TABLE legal_publisher_status_observations ADD COLUMN normalization_policy_observed_at text;");
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => {entered = resolve;});
+    const blocked = new Promise<void>(resolve => {release = resolve;});
+    let calls = 0;
+    const owner = createSharedSourceObservationRefresh({db, now: () => time, readPublisher: async () => {
+      calls++; entered(); await blocked; return observation();
+    }})(url);
+    await started;
+    const cancellation = new AbortController();
+    const cancelled = new Error("request cancelled");
+    if (scenario === "handoff" || scenario === "handoff_stale") beforeLeaseRead = async () => {
+      release(); await owner;
+      if (scenario === "handoff_stale") sqlite.prepare("UPDATE legal_publisher_status_observations SET observed_at=?")
+        .run(new Date(time - 300_000).toISOString());
+    };
+    const join = createSharedSourceObservationRefresh({db, now: () => time,
+      wait: async () => {
+        time += 250; context.mock.timers.tick(250);
+        await new Promise(resolve => setImmediate(resolve));
+        if (scenario === "slow" && time >= Date.parse("2026-09-11T00:00:13.000Z")) {release(); await owner;}
+        if (scenario === "cancel") cancellation.abort(cancelled);
+      }, readPublisher: async () => {assert.fail("A joiner must not issue another publisher request");}});
+    const joined = scenario === "cancel" ? runIndexedRetrieval(cancellation.signal, () => join(url)) : join(url);
+    try {
+      if (scenario === "cancel") await assert.rejects(joined, error => error === cancelled);
+      else if (scenario === "handoff_stale") await assert.rejects(joined, /SOURCE_OBSERVATION_REFRESH_UNAVAILABLE/);
+      else if (scenario === "bounded") {
+        await assert.rejects(joined, /SOURCE_OBSERVATION_REFRESH_UNAVAILABLE/);
+        assert.equal(time, Date.parse("2026-09-11T00:00:45.000Z"));
+      } else assert.deepEqual(await joined, await owner);
+      assert.equal(calls, 1);
+    } finally {release(); await owner;}
+  } finally {sqlite.close();}
+});
+}
 
 test("a slow publisher owner renews its lease and acquisition rechecks completed observations", async (context) => {
   context.mock.timers.enable({apis: ["setInterval"]});

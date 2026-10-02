@@ -1,5 +1,5 @@
 import {classifyLegalSourceUrl} from "./source-fetch";
-import {finishIndexedRetrievalCleanup} from "../runtime/indexed-retrieval";
+import {finishIndexedRetrievalCleanup, indexedRetrievalRemainingMs} from "../runtime/indexed-retrieval";
 import {readLexPublisherObservation} from "./lex-document-status";
 import {createD1SourceObservationStore} from "./source-observation-store";
 import {createSourceObservationReader, isFreshSourceObservation, sourceObservationSchema, type SourceObservation} from "./source-observation";
@@ -28,13 +28,22 @@ export function createSharedSourceObservationRefresh(input: {
       url, token, new Date(startedAt + 20_000).toISOString(), new Date(startedAt).toISOString()).run();
     if (Number(lease.meta.changes ?? 0) !== 1) {
       // Join an existing public refresh; never duplicate its publisher request.
-      for (let attempt = 0; attempt < 48 && now() - startedAt < 12_000; attempt++) {
+      const joinedAt = now();
+      const waitBudget = indexedRetrievalRemainingMs();
+      for (let attempt = 0; attempt < Math.ceil(waitBudget / 250) && now() - joinedAt < waitBudget; attempt++) {
+        indexedRetrievalRemainingMs();
         await wait();
+        indexedRetrievalRemainingMs();
         const observation = await store.get(url);
         if (isFreshSourceObservation(observation, url, now()) && Date.parse(observation.observedAt) > previousObservedAt) return observation;
         const owner = await input.db.prepare("SELECT lease_token FROM legal_source_observation_refresh_leases WHERE official_url=? AND lease_until>?")
           .bind(url, new Date(now()).toISOString()).first();
-        if (!owner) throw new TypeError("SOURCE_OBSERVATION_REFRESH_UNAVAILABLE");
+        if (!owner) {
+          // The owner may publish and release between our observation and lease reads.
+          const completed = await store.get(url);
+          if (isFreshSourceObservation(completed, url, now()) && Date.parse(completed.observedAt) > previousObservedAt) return completed;
+          throw new TypeError("SOURCE_OBSERVATION_REFRESH_UNAVAILABLE");
+        }
       }
       throw new TypeError("SOURCE_OBSERVATION_REFRESH_UNAVAILABLE");
     }
