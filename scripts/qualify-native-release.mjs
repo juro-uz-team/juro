@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { nativeAdminHealthReady, verifyNativeAdminBoundary } from "./native-readiness.mjs";
 import { spawn, execFileSync } from "node:child_process";
 import { mkdir, open, readFile, realpath, writeFile } from "node:fs/promises";
 import { request } from "node:http";
@@ -22,7 +23,7 @@ const temporary = { ...process.env, ...settings, NODE_ENV: "production", PORT: S
 const services = [
   { name: "app", app: "platform", entry: "server/index.ts", port, host: new URL(settings.APP_URL).host, path: "/en/auth/login" },
   { name: "website", app: "website", entry: "server/index.ts", port: port + 1, host: new URL(settings.PUBLIC_SITE_URL).host, path: "/en" },
-  { name: "admin", app: "admin", entry: "src/server.ts", port: port + 2, host: `localhost:${port + 2}`, path: "/" },
+  { name: "admin", app: "admin", entry: "src/server.ts", port: port + 2, host: `localhost:${port + 2}`, path: "/health" },
   { name: "status", app: "platform", entry: "server/index.ts", port: port + 4, host: new URL(settings.STATUS_URL).host, path: "/api/status" },
   ...(settings.LAWYER_URL ? [{ name: "lawyer", app: "platform", entry: "server/index.ts", port: port + 3, host: new URL(settings.LAWYER_URL).host, path: "/favicon.png" }] : []),
 ];
@@ -61,8 +62,7 @@ try {
       if (startupError || child.exitCode !== null || child.signalCode !== null) throw Error(`${service.name} exited during qualification`);
       try {
         const response = await probe(service);
-        if (service.name === "admin" ? response.status === 303
-          && response.headers.location === `${settings.APP_URL}/ru/admin/console?reason=admin-session` : response.status === 200) {
+        if (service.name === "admin" ? nativeAdminHealthReady(response, environment) : response.status === 200) {
           ready = true; break;
         }
       } catch { /* Listener is still starting. */ }
@@ -72,6 +72,10 @@ try {
     report.checks.push(`${service.name} responds on its canonical host`);
     assert.equal((await probe(service, service.path, "GET", "untrusted.example")).status, service.app === "platform" ? 400 : 403);
     report.checks.push(`${service.name} rejects an unrelated Host`);
+    if (service.name === "admin") {
+      await verifyNativeAdminBoundary(path => probe(service, path));
+      report.checks.push("admin login is available and its API rejects unauthenticated access");
+    }
   }
   assert.equal((await probe(services[0], "/api/platform/profile")).status, 401);
   report.checks.push("private profile rejects unauthenticated access");
