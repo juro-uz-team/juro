@@ -90,6 +90,7 @@ export function getSelfHostedRuntime(): Runtime {
           if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
           return handleCustomSearchRequest(new Request(input, init), {
             ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog, BUDGET_DB: observations,
+            CUSTOM_QUERY_BUDGET_MODE: "metered",
             ARTIFACTS: corpusBucket(configuration.artifactNamespace),
             RUNTIME_CACHE: cache,
             PREPARED_ORDINALS:createPreparedOrdinalReader(corpus.pool),

@@ -110,6 +110,8 @@ export type CustomSearchEnv = {
   PREPARED_ORDINALS?: PreparedOrdinalReader;
   CATALOG_DB: D1Database;
   BUDGET_DB?: D1Database;
+  /** Live requests record usage; qualification keeps an explicit spending cap. */
+  CUSTOM_QUERY_BUDGET_MODE?: "metered" | "capped";
   CUSTOM_SEARCH_CAPABILITY: "current" | "history";
   CUSTOM_SEARCH_RELEASE_ID: string;
   CUSTOM_SEARCH_PHYSICAL_RELEASE_ID?: string;
@@ -125,12 +127,20 @@ async function reserveQueryBudget(
   queryCount: number,
 ): Promise<string> {
   const environment = legalEnvironmentSchema.parse(env.APP_ENV);
+  const mode = z.enum(["metered", "capped"]).parse(env.CUSTOM_QUERY_BUDGET_MODE ?? "capped");
   const period = environment === "staging" ? "evaluation"
     : new Date().toISOString().slice(0, 7);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const reservation = QUERY_RESERVATION_USD_MICROS * queryCount;
   const database = env.BUDGET_DB ?? env.CATALOG_DB;
+  if (mode === "metered") {
+    const recorded = await database.prepare(`INSERT INTO legal_custom_query_usage
+      (id,environment,release_id,estimated_usd_micros,query_count,created_at)
+      VALUES (?,?,?,?,?,?)`).bind(id, environment, releaseId, reservation, queryCount, now).run();
+    if (!recorded.success) throw new TypeError("CUSTOM_QUERY_USAGE_UNAVAILABLE");
+    return id;
+  }
   const reserved = await database.prepare(`UPDATE legal_custom_query_budget_periods
     SET reserved_usd_micros=reserved_usd_micros+?,reserved_requests=reserved_requests+?
     WHERE environment=? AND period=?
