@@ -1792,7 +1792,8 @@ export const lawyerProfileLifecycleEvents = pgTable("lawyer_profile_lifecycle_ev
   lawyerProfileId: text("lawyer_profile_id").notNull().references(() => lawyerProfiles.id, { onDelete: "cascade" }),
   fromProfileRevision: bigint("from_profile_revision", { mode: "number" }).notNull(),
   toProfileRevision: bigint("to_profile_revision", { mode: "number" }).notNull(),
-  actorUserId: text("actor_user_id").notNull().references(() => userProfiles.id, { onDelete: "restrict" }),
+  actorUserId: text("actor_user_id").references(() => userProfiles.id, { onDelete: "restrict" }),
+  adminSessionId: text("admin_session_id"),
   action: text("action").notNull(),
   reason: text("reason").notNull(),
   fromProfileStatus: text("from_profile_status").notNull(),
@@ -1946,7 +1947,7 @@ export const supportTickets = pgTable("support_tickets", {
 }, (table) => [index("support_tickets_workspace_idx").on(table.workspaceId, table.updatedAt), index("support_tickets_status_idx").on(table.status, table.updatedAt), index("support_tickets_requester_idx").on(table.requesterUserId, table.updatedAt)]);
 
 export const supportMessages = pgTable("support_messages", {
-  id: text("id").primaryKey(), ticketId: text("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }), authorUserId: text("author_user_id").notNull().references(() => userProfiles.id, { onDelete: "cascade" }), authorType: text("author_type").notNull(), body: text("body").notNull(), createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(), ticketId: text("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }), authorUserId: text("author_user_id").references(() => userProfiles.id, { onDelete: "cascade" }), adminSessionId: text("admin_session_id"), authorType: text("author_type").notNull(), body: text("body").notNull(), createdAt: text("created_at").notNull(),
 }, (table) => [index("support_messages_ticket_idx").on(table.ticketId, table.createdAt)]);
 export const knowledgeBaseArticles = pgTable("knowledge_base_articles", {
   id: text("id").primaryKey(),

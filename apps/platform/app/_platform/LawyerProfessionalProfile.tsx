@@ -1,4 +1,5 @@
 "use client";
+import {ProfessionalCredentials} from "./ProfessionalCredentials";
 
 import { Check, Send, Save } from "lucide-react";
 import Image from "next/image";
@@ -372,6 +373,7 @@ export function LawyerProfessionalProfile({
 
   return (
     <section className="profile-panels lawyer-professional-profile">
+      <ProfessionalCredentials locale={locale} profileId={profile?.id}/>
       <section>
         <div
           className="lawyer-application-steps"

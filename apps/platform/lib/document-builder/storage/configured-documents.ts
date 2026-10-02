@@ -1,3 +1,5 @@
+import {assertTemplatePlan} from "../../control-center/template-access";
+import { resolvedDocument } from "../registry/published";
 import type { DocumentDefinition, QuestionnaireAnswers } from "../registry";
 import { getCategory, getDocumentByCode } from "../registry";
 import { renderConfiguredDocument, type BuilderLanguage } from "../registry/engine";
@@ -74,6 +76,7 @@ export async function createConfiguredDocument(
   input: CreateConfiguredDocumentInput,
   dependencies: CreateConfiguredDocumentDependencies = {},
 ): Promise<GenericStoredDocument> {
+  await assertTemplatePlan(input.definition,user.id);
   const db = dependencies.db ?? requireD1();
   const workspace = dependencies.workspace ?? await workspaceForUser(user);
   await ensureConfiguredTemplateSeed(input.definition, db);
@@ -142,7 +145,7 @@ export async function loadConfiguredDocument(documentId: string, userId: string)
     FROM documents d JOIN document_answers a ON a.document_id = d.id
     JOIN document_current_content c ON c.document_id = d.id WHERE d.id = ? LIMIT 1`,
   ).bind(documentId).first<ConfiguredRow>();
-  if (!row?.templateCode || !row.templateVersion || !getDocumentByCode(row.templateCode)) return null;
+  if (!row?.templateCode || !row.templateVersion || !await resolvedDocument(row.templateCode,row.templateVersion)) return null;
   return {
     id: row.id, ownerUserId: row.ownerUserId, templateId: row.templateId, templateCode: row.templateCode, templateVersion: row.templateVersion,
     title: row.title, category: row.category, status: row.status, language: row.language as BuilderLanguage,

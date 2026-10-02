@@ -60,7 +60,8 @@ export async function moderateLawyerProfile(
   db: D1Database,
   input: {
     profileId: string;
-    moderatorUserId: string;
+    moderatorUserId: string | null;
+    adminSessionId?: string;
     decision: "approved" | "changes_requested" | "rejected";
     reason: string;
     now?: Date;
@@ -142,15 +143,15 @@ export async function moderateLawyerProfile(
       db.prepare(
         `INSERT INTO lawyer_profile_moderation (
            id,lawyer_profile_id,profile_revision,moderator_user_id,decision,
-           reason,profile_sha256,created_at
-         ) SELECT ?,?,?,?,?,?,?,?
+           reason,profile_sha256,created_at,admin_session_id
+         ) SELECT ?,?,?,?,?,?,?,?,?
          WHERE EXISTS (
            SELECT 1 FROM lawyer_profiles
            WHERE id=? AND profile_revision=? AND status='pending'
          )`,
       ).bind(
         moderationId, profile.id, profile.profileRevision, input.moderatorUserId,
-        input.decision, input.reason, profileSha256, now,
+        input.decision, input.reason, profileSha256, now, input.adminSessionId??null,
         profile.id, profile.profileRevision,
       ),
       db.prepare(
@@ -161,7 +162,7 @@ export async function moderateLawyerProfile(
          WHERE EXISTS (
            SELECT 1 FROM lawyer_profile_moderation
            WHERE id=? AND lawyer_profile_id=? AND profile_revision=?
-             AND moderator_user_id=? AND decision=?
+             AND moderator_user_id IS NOT DISTINCT FROM ? AND decision=?
          )`,
       ).bind(
         auditId, profile.workspaceId, input.moderatorUserId, profile.id,
@@ -176,7 +177,7 @@ export async function moderateLawyerProfile(
          WHERE EXISTS (
            SELECT 1 FROM lawyer_profile_moderation
            WHERE id=? AND lawyer_profile_id=? AND profile_revision=?
-             AND moderator_user_id=? AND decision=?
+             AND moderator_user_id IS NOT DISTINCT FROM ? AND decision=?
          )`,
       ).bind(
         notificationId, profile.workspaceId, profile.userId, notification.title,

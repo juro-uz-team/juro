@@ -476,6 +476,8 @@ export async function localSessionFromCookie(
      JOIN user_profiles u ON u.id=s.user_id
      LEFT JOIN auth_devices d ON d.id=s.device_id
      WHERE s.token_hash=?
+       AND u.lifecycle_status='active'
+       AND NOT EXISTS (SELECT 1 FROM control_account_blocks block WHERE block.user_id=s.user_id)
        AND s.revoked_at IS NULL
        AND s.expires_at>?
        AND coalesce(s.idle_expires_at,s.expires_at)>?

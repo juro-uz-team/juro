@@ -1,3 +1,4 @@
+import {initializeControlCenterEnvironment} from "../../../../scripts/control-center-runtime.mjs";
 import { localDocumentConverter } from "./document-converter";
 import { localMalwareScanner } from "./scanner";
 import { operationalMetrics } from "./metrics";
@@ -36,6 +37,7 @@ export function getSelfHostedRuntime(): Runtime {
       &&state.juroRuntimeProductRevision!==executingProductRevision())throw Error("NATIVE_RUNTIME_BUILD_MISMATCH");
     return state.juroRuntime;
   }
+  initializeControlCenterEnvironment(process.env);
   const productRevision=runtimeProductRevision();
   const config = nativeHttpConfiguration(process.env, "platform");
   if (!config.privateMode) {

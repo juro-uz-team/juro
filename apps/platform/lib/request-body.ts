@@ -46,6 +46,8 @@ export function publicApiRequestBodyLimit(
     return null;
   }
 
+  if(pathname === "/api/platform/lawyer-profile/credentials")return 11*1024*1024;
+  if(pathname === "/api/product-events")return 4096;
   const isStreamingUpload =
     (normalizedMethod === "POST" && /^\/api\/document-builder\/documents\/[^/]+\/(?:attachments|signed-file)$/u.test(pathname))
     || (normalizedMethod === "POST" && pathname === "/api/platform/document-comparisons")

@@ -78,7 +78,7 @@ export const legalResearchInstructions=`Do not write an answer, legal conclusion
 /** Request-local planning; assessment is used only when the admitted packet
  * needs evidence selection. Its output contract never enters initial planning. */
 export function createLegalResearchModel(options:{requestId:string;deadlineAt?:number;safetyIdentifier?:string;
-  draftDuringAssessment?:boolean;responseTone?:AiResponseTone;
+  draftDuringAssessment?:boolean;responseTone?:AiResponseTone;systemInstructions?:string;
   onAttempt?:(input:{model:string})=>void|Promise<void>;
   onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
 }):{
@@ -211,7 +211,7 @@ export function createLegalResearchModel(options:{requestId:string;deadlineAt?:n
         // malformed. The writer contract still gates every reused draft.
         const decoded=z.object({assessment:outputSchema,draft:z.unknown()}).strict();
         const result=await call(request,decoded,payload,"legal_research_answer",undefined,schema,
-          `${legalResearchPolicy}\n${legalResearchAssessmentPolicy}\n${legalAnswerWriterInstructions}\nIn this combined request, return assessment and draft. assessment follows the research contract; draft follows the answer contract. If supportedAnswerAvailable is false, draft must be null. Otherwise draft the useful supported answer using only selectedSourceIds. Record material unresolved law in assessment.needs and draft.answer.unresolved. Do not remove a material source to make a simpler answer. This draft is provisional: server evidence and citation checks gate publication.\n${options.responseTone?aiResponseToneInstruction(options.responseTone,request.question.locale):""}`);
+          `${legalResearchPolicy}\n${legalResearchAssessmentPolicy}\n${legalAnswerWriterInstructions}\nIn this combined request, return assessment and draft. assessment follows the research contract; draft follows the answer contract. If supportedAnswerAvailable is false, draft must be null. Otherwise draft the useful supported answer using only selectedSourceIds. Record material unresolved law in assessment.needs and draft.answer.unresolved. Do not remove a material source to make a simpler answer. This draft is provisional: server evidence and citation checks gate publication.\n${options.responseTone?aiResponseToneInstruction(options.responseTone,request.question.locale):""}\n${options.systemInstructions??""}`);
         wireResult=result.assessment;
         if(result.draft && wireResult.supportedAnswerAvailable===true) {
           try {provisionalDraft=format.parse(result.draft);} catch { /* Fall back to standalone writing. */ }

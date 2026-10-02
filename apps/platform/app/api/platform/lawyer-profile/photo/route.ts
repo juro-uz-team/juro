@@ -180,7 +180,7 @@ async function ownProfile(userId: string): Promise<ProfileForPhoto | null> {
       p.profile_photo_key AS profilePhotoKey,p.profile_revision AS profileRevision,
       CASE WHEN u.phone IS NOT NULL AND length(trim(u.phone))>0 THEN 1 ELSE 0 END AS hasPhone
      FROM lawyer_profiles p JOIN user_profiles u ON u.id=p.user_id
-     WHERE p.user_id=? AND u.account_type='lawyer' LIMIT 1`,
+     WHERE p.user_id=? AND u.account_type IN ('lawyer','business') LIMIT 1`,
     )
     .bind(userId)
     .first<ProfileForPhoto>();
