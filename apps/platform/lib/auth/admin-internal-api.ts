@@ -364,5 +364,5 @@ export async function handleInternalAdminRequest(request: Request, env: AdminInt
 }
 
 async function controlAuditEvent(_db: D1Database, input: {principal:{userId:string};action:string;entityType?:string;entityId?:string;metadata?:object;environment:string}) {
- await controlAudit(process.env.ADMIN_ALLOWED_EMAIL ?? "muzaffarbekmurodov@gmail.com",input.action,input.entityType,input.entityId,input.metadata);
+ await controlAudit(process.env.ADMIN_ALLOWED_EMAIL ?? "muzaffarbekmurodoff@gmail.com",input.action,input.entityType,input.entityId,input.metadata);
 }

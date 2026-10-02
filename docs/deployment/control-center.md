@@ -11,10 +11,12 @@ Configure the same environment file for the existing native services:
 - `ADMIN_CONSOLE_ORIGIN=https://admin.juro.uz`; remove the obsolete production `:3443` origin.
 - Independent randomly generated `ADMIN_OTP_SECRET` of at least 32 characters. If omitted, native services atomically provision a private persistent secret under the existing object-storage data volume (`.control-center/otp-secret`). Do not reuse ordinary user authentication secrets.
 - Existing `ADMIN_INTERNAL_TOKEN` and `ADMIN_CONSOLE_TOKEN`, generated separately. Keep internal backend listeners private.
-- `ADMIN_ALLOWED_EMAIL=muzaffarbekmurodov@gmail.com` (single mailbox, no invitation or signup).
+- `ADMIN_ALLOWED_EMAIL=muzaffarbekmurodoff@gmail.com` (single mailbox, no invitation or signup).
 - `ADMIN_OTP_TTL_SECONDS=300`, `ADMIN_OTP_RESEND_SECONDS=60`, `ADMIN_OTP_MAX_ATTEMPTS=5`, `ADMIN_SESSION_TTL_SECONDS=3600`.
 - Existing production `EMAIL_DELIVERY_MODE=resend`, `RESEND_API_KEY` and verified `EMAIL_FROM`. Staging/private environments use the existing capture transport; production rejects capture.
 - Existing `DATABASE_URL`, protected identity keyring/mode, object storage and AI provider configuration. The console never displays provider keys.
+
+The runtime `ADMIN_ALLOWED_EMAIL` overrides the source default. For this mailbox correction, an authorized operator must check only that setting in the external production `environmentFile` referenced by `/etc/juro/production.json`, replace the old address if present, and reload the affected native services through the normal deployment procedure. A source release does not rewrite that operator-managed file. Confirm the effective setting in the running platform process; an HTTP health check alone does not verify the allowed mailbox. Existing sessions for a different mailbox fail the per-request mailbox check.
 
 Point `admin.juro.uz` DNS to the existing host and allow existing public HTTPS ingress. The production installer inserts only the admin route into the existing local Caddy configuration when its loopback admin API is available. Otherwise reload `deploy/Caddyfile` with its normal ACME settings; the installer reports that external configuration is required. Caddy terminates TLS, overwrites trusted client IP and forwards to loopback. Do not expose the platform internal API, PostgreSQL or captured email. Validate the actual certificate/domain and one administrator email delivery after deployment; repository builds do not establish that production is running.
 

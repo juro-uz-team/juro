@@ -4,7 +4,7 @@ import { randomToken, sha256 } from "./crypto";
 import { renderJuroAuthEmail, sendJuroAuthEmail } from "./transactional-email";
 import { createIdentityProtectionContext, userIdByEmail } from "./identity-protection";
 
-export const adminEmail = () => (process.env.ADMIN_ALLOWED_EMAIL ?? "muzaffarbekmurodov@gmail.com").trim().toLowerCase();
+export const adminEmail = () => (process.env.ADMIN_ALLOWED_EMAIL ?? "muzaffarbekmurodoff@gmail.com").trim().toLowerCase();
 const bounded = (key: string, fallback: number, max: number) => Math.min(max, Math.max(1, Number(process.env[key]) || fallback));
 const secret = () => {
  const value = process.env.ADMIN_OTP_SECRET;
