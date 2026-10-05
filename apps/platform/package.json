@@ -23,6 +23,7 @@
     "evaluate:legal:build-agent": "tsx scripts/build-staging-legal-agent-artifacts.ts"
   },
   "dependencies": {
+    "@internationalized/date": "^3.12.4",
     "@pdf-lib/fontkit": "^1.1.1",
     "@radix-ui/react-select": "^2.3.7",
     "altcha": "3.2.3",
@@ -38,6 +39,7 @@
     "pg": "8.16.3",
     "pizzip": "^3.2.0",
     "react": "19.2.8",
+    "react-aria-components": "^1.21.1",
     "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "react-virtuoso": "4.18.11",

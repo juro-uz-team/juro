@@ -1,5 +1,8 @@
 "use client";
 
+import { AccountDisclosure } from "./AccountArea";
+import { accountSettingsCopy } from "./account-settings-copy";
+
 import { Select } from "../_components/Select";
 
 import { Brain, CircleAlert, LoaderCircle, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
@@ -273,8 +276,7 @@ function WorkspaceMemoryPanel({locale,workspaceId}:{locale:PlatformLocale;worksp
     </p>}
 
     {data?.available && <>
-      <form className="memory-create" onSubmit={createMemory}>
-        <h3>{t.add}</h3>
+      <AccountDisclosure title={t.add} description={accountSettingsCopy[locale].memoryAddDescription} icon={Plus}><form className="memory-create" onSubmit={createMemory}>
         <div className="memory-fields">
           <label>{t.category}
             <Select value={create.category} onChange={(event) => setCreate(current => ({ ...current, category: event.target.value as Category }))}>
@@ -299,7 +301,7 @@ function WorkspaceMemoryPanel({locale,workspaceId}:{locale:PlatformLocale;worksp
           {busy === "create" ? <LoaderCircle className="spin" aria-hidden="true" /> : <Plus aria-hidden="true" />}
           {t.saveMemory}
         </button>
-      </form>
+      </form></AccountDisclosure>
 
       <div className="memory-list" aria-live="polite">
         <h3>{t.savedEntries}: {data.memories.length}</h3>

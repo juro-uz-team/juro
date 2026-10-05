@@ -1,0 +1,229 @@
+.profile-workspace.account-area {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 40px clamp(20px, 4vw, 48px) 64px;
+  gap: 32px;
+  color: var(--text-primary);
+}
+.account-heading > p { margin: 0 0 8px; color: var(--brand-gold-text); font-size: 12px; font-weight: 650; letter-spacing: .04em; }
+.account-heading h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -.035em; }
+.account-heading > span { display: block; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.account-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); align-items: start; gap: 36px; }
+.account-rail { position: sticky; top: 24px; min-width: 0; }
+.account-identity { display: flex; align-items: center; gap: 12px; padding: 0 0 24px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
+.account-avatar { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 1px solid var(--border-accent); border-radius: 14px; background: var(--surface-brand); color: var(--brand-gold-text); font-size: 14px; font-weight: 700; }
+.account-avatar svg { width: 20px; }
+.account-identity > div { display: grid; min-width: 0; gap: 4px; }
+.account-identity strong { font-size: 13px; overflow-wrap: anywhere; }
+.account-identity > div > span { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-rail nav { display: grid; gap: 4px; }
+.account-rail nav a { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 12px; border: 1px solid transparent; border-radius: 12px; text-decoration: none; color: var(--text-secondary); }
+.account-rail nav a:hover { background: var(--surface-subtle); color: var(--text-primary); }
+.account-rail nav a[aria-current=page] { color: var(--text-primary); background: var(--surface-raised); border-color: var(--border-subtle); }
+.account-rail nav a > svg { width: 19px; height: 19px; flex: none; }
+.account-rail nav a[aria-current=page] > svg { color: var(--brand-gold-text); }
+.account-rail nav a > span { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.account-rail nav strong { font-size: 13px; font-weight: 650; }
+.account-rail nav small { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.account-rail nav .account-nav-arrow { width: 14px; opacity: 0; }
+.account-rail nav a[aria-current=page] .account-nav-arrow { opacity: 1; }
+.account-content { display: grid; min-width: 0; gap: 20px; align-content: start; }
+.account-content > * { min-width: 0; }
+.account-content :is(h2,h3) { text-wrap: balance; }
+.account-content h2 { margin: 0; font-size: 17px; line-height: 1.45; font-weight: 650; letter-spacing: -.015em; }
+.account-content h2 > svg { width: 20px; height: 20px; flex: none; color: var(--brand-gold-text); }
+.account-content :is(p,small) { text-wrap: pretty; }
+.account-content :is(.email-change-panel,.notification-preferences-panel,.memory-panel,.profile-panels>section,.account-edit-form) {
+  margin: 0; padding: 24px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-raised);
+}
+.account-content :is(.email-change-panel,.notification-preferences-panel,.memory-panel) { gap: 16px; }
+.account-content :is(.email-change-panel>p,.notification-preferences-panel>p,.memory-panel-heading p,.profile-panels section>p,.mfa-state p) { margin-top: 8px; font-size: 13px; line-height: 1.65; color: var(--text-secondary); }
+.account-content .profile-panels { gap: 20px; }
+.account-content .profile-message { margin: 0; align-items: center; font-size: 13px; line-height: 1.5; }
+.account-content .profile-message > svg { flex: none; }
+.account-content .profile-message > span { flex: 1; }
+.account-section-heading p { margin: 8px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-secondary); }
+.account-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; padding: 0; margin: 24px 0; border: 0; }
+.account-fields label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
+.account-optional { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.account-fields :is(input,.juro-select) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--control-background); color: var(--text-primary); font: inherit; font-weight: 400; }
+.account-save-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 20px; border-top: 1px solid var(--border-subtle); }
+.account-save-bar > span { color: var(--text-secondary); font-size: 11px; }
+.account-save-bar > div { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.account-content .account-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--border-accent); border-radius: 8px; background: var(--interactive-primary); color: var(--text-on-action); font-size: 12px; font-weight: 600; cursor: pointer; }
+.account-content .account-button.secondary { background: transparent; border-color: var(--border-subtle); color: var(--text-secondary); }
+.account-content .account-button svg { width: 16px; height: 16px; }
+.account-content button:not(:disabled):hover { filter: brightness(.97); }
+.account-content button:disabled { cursor: not-allowed; opacity: .5; }
+.account-content button { max-width: 100%; white-space: normal; }
+.account-content :is(button,a,input,textarea,summary):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.account-email { display: grid; gap: 6px; padding: 16px; border-radius: 10px; background: var(--surface-canvas); }
+.account-email span { color: var(--text-secondary); font-size: 11px; }
+.account-email strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.account-content .email-change-panel form { gap: 16px; }
+.account-content .email-change-panel label { font-size: 13px; font-weight: 600; }
+.account-content .email-change-panel input { min-height: 46px; }
+.account-disclosure { min-width: 0; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-raised); }
+.account-disclosure > summary { display: flex; align-items: center; gap: 14px; min-height: 88px; padding: 20px 24px; cursor: pointer; list-style: none; }
+.account-disclosure > summary::-webkit-details-marker { display: none; }
+.account-disclosure > summary > svg { width: 20px; height: 20px; flex: none; color: var(--brand-gold-text); }
+.account-disclosure > summary > span { display: grid; gap: 6px; min-width: 0; flex: 1; }
+.account-disclosure > summary strong { font-size: 14px; font-weight: 650; }
+.account-disclosure > summary small { font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.account-disclosure > summary .account-disclosure-chevron { width: 16px; color: var(--text-secondary); }
+.account-disclosure[open] > summary .account-disclosure-chevron { transform: rotate(180deg); }
+.account-disclosure-body { padding: 0 24px 24px; }
+.account-disclosure-danger > summary > svg, .account-disclosure-danger > summary strong { color: var(--p-err); }
+.account-content .account-disclosure-body :is(.business-workspace-panel,.delete-request,.lawyer-professional-profile>section) { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.account-content .business-workspace-heading { display: none; }
+.account-content .business-workspace-panel form { grid-template-columns: 1fr 1fr; }
+.account-content .business-workspace-panel form > button { grid-column: 1/-1; justify-self: start; }
+.account-content .delete-request { gap: 0; }
+.account-content .delete-request > svg, .account-content .delete-request h2 { display: none; }
+.account-content .delete-request > div { gap: 16px; }
+.account-content .delete-request p { font-size: 13px; }
+.account-content .consent-row { font-size: 12px; padding: 16px 0; }
+.account-content .consent-row strong { overflow-wrap: anywhere; }
+.account-content .session-row { padding: 20px 0; grid-template-columns: minmax(0,1fr) auto; gap: 20px; }
+.account-content .session-row strong { font-size: 13px; font-weight: 650; }
+.account-content .session-row small { font-size: 11px; line-height: 1.6; }
+.account-content .session-row em { font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.account-content .session-bulk-actions { margin-top: 16px; gap: 12px; }
+.account-content .session-bulk-actions button { margin-top: 0; }
+.account-content .mfa-state { margin-top: 16px; }
+.account-content .mfa-state > span { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--surface-subtle); }
+.account-content .mfa-state > span.mfa-enabled { background: var(--green-bg); color: var(--p-ok); }
+.account-content .mfa-state > button { margin-top: 16px; }
+.account-content .notification-preferences-list { gap: 0; margin: 0; }
+.account-content .notification-preferences-list label { grid-template-columns: minmax(0,1fr) 24px; align-items: center; padding: 16px 0; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; background: transparent; }
+.account-content .notification-preferences-list label > input { grid-column: 2; grid-row: 1; }
+.account-content .notification-preferences-list label > span { grid-column: 1; grid-row: 1; gap: 6px; }
+.account-content .notification-preferences-list strong { font-size: 13px; font-weight: 600; }
+.account-content .notification-preferences-list small { font-size: 12px; line-height: 1.6; }
+.account-content .notification-preferences-panel > button { margin-top: 4px; justify-self: end; }
+.account-content .memory-panel-heading { flex-direction: column; gap: 16px; }
+.account-content .memory-toggle { width: 100%; border-color: var(--border-subtle); background: var(--surface-canvas); font-size: 13px; font-weight: 500; }
+.account-content .memory-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.account-content .memory-create { border: 0; padding: 0; }
+.account-content .memory-row { grid-template-columns: 1fr; grid-template-areas: "meta" "category" "statement" "confirmation" "actions"; }
+.account-content .memory-row-meta { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.account-content .memory-row-actions { justify-content: flex-end; }
+.account-content .memory-empty { padding: 20px; border-radius: 10px; background: var(--surface-canvas); font-size: 13px; }
+.account-content .memory-clear .danger-outline { margin-top: 0; }
+.account-content .lawyer-professional-profile .profile-form { padding: 0; border: 0; background: transparent; }
+.account-content .lawyer-application-steps { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.account-content .lawyer-application-status { font-size: 13px; }
+.account-loading { display: flex; align-items: center; gap: 12px; min-height: 200px; justify-content: center; color: var(--text-secondary); font-size: 13px; }
+.account-loading svg { width: 20px; }
+.account-show-devices { margin-top: 16px; }
+.account-content .professional-credentials { display: grid; gap: 16px; padding: 0 0 24px; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; }
+.professional-credentials h2 { display: flex; align-items: center; gap: 8px; }
+.professional-credentials > p, .credential-upload > p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.credential-upload { margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--border-subtle); }
+.credential-upload > button { margin-top: 16px; }
+.professional-credentials .account-fields { margin-block: 16px; }
+.professional-credentials input[type=file] { font-size: 12px; }
+.professional-credentials .juro-file-picker { flex-basis: 100%; width: 100%; }
+.credential-representatives { display: grid; gap: 16px; margin: 0 0 20px; }
+.credential-representatives > button { justify-self: start; }
+.credential-person { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; }
+.credential-person legend { padding: 0 8px; font-size: 12px; color: var(--text-secondary); }
+.credential-person label { display: grid; gap: 8px; min-width: 0; font-size: 12px; }
+.credential-person input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--control-background); }
+.credential-person > button { justify-self: end; }
+.credential-documents { list-style: none; margin: 0; padding: 0; }
+.credential-documents li { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; overflow-wrap: anywhere; }
+.credential-documents svg { width: 18px; flex: none; color: var(--brand-gold-text); }
+.account-disclosure[open] > summary { border-bottom: 1px solid var(--border-subtle); margin-bottom: 24px; }
+.account-content .lawyer-professional-profile { gap: 32px; }
+.account-content .lawyer-professional-profile > section { min-width: 0; }
+.account-content .professional-credentials { padding: 0 0 32px; gap: 12px; }
+.account-content .professional-credentials h2 { font-size: 16px; }
+.account-content .professional-credentials h2 svg { width: 18px; height: 18px; }
+.account-content .lawyer-professional-profile .profile-form { margin-top: 24px; gap: 32px; }
+.account-content .lawyer-professional-profile .profile-form > fieldset > section:not(.lawyer-schedule-callout) { gap: 20px; }
+.account-content .lawyer-professional-profile h3 { margin: 0 0 4px; font-size: 16px; font-weight: 650; letter-spacing: -.02em; }
+.account-content .lawyer-professional-profile label { font-weight: 600; line-height: 1.5; }
+.account-content .lawyer-profile-photo > label > img { border-radius: 12px; object-fit: cover; }
+.account-content .lawyer-schedule-callout { grid-column: 1/-1; display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-subtle); }
+.lawyer-schedule-callout > div { flex: 1 1 280px; }
+.lawyer-schedule-callout strong { font-size: 14px; }
+.lawyer-schedule-callout p { margin: 6px 0 0; font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+.lawyer-schedule-callout > a { flex: none; min-height: 44px; padding: 10px 16px; font-size: 12px; border-radius: 8px; }
+.account-content .lawyer-profile-preview { display: grid; gap: 16px; padding: 24px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-canvas); }
+.lawyer-profile-preview > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.account-content .lawyer-profile-preview header small { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--brand-gold-text); }
+.account-content .lawyer-profile-preview header h3 { margin-top: 6px; font-size: 18px; }
+.lawyer-profile-preview > header > span { padding: 6px 10px; border-radius: 6px; background: var(--surface-subtle); font-size: 11px; color: var(--text-secondary); }
+.lawyer-profile-preview-card { display: grid; grid-template-columns: 80px minmax(0,1fr); align-items: start; gap: 24px 20px; padding: 28px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-raised); }
+.lawyer-profile-preview-card > img,.lawyer-profile-preview-photo { width: 80px; height: 80px; object-fit: cover; border-radius: 16px; border: 1px solid var(--border-subtle); }
+.lawyer-profile-preview-photo { display: grid; place-items: center; background: var(--surface-brand); color: var(--brand-gold-text); font-size: 30px; font-weight: 600; }
+.lawyer-profile-preview-card h4 { margin: 2px 0 8px; font-size: 22px; font-weight: 650; letter-spacing: -.025em; line-height: 1.3; overflow-wrap: anywhere; }
+.lawyer-profile-preview-card > div > p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.lawyer-profile-preview-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.lawyer-profile-preview-tags span { padding: 6px 10px; border-radius: 6px; background: var(--surface-subtle); color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.lawyer-profile-preview-card dl { grid-column: 1/-1; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px 24px; padding-top: 24px; margin: 0; border-top: 1px solid var(--border-subtle); }
+.lawyer-profile-preview-card dl > div { display: grid; align-content: start; gap: 6px; }
+.lawyer-profile-preview-card dt { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.lawyer-profile-preview-card dd { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; overflow-wrap: anywhere; }
+.lawyer-profile-preview-bio { grid-column: 1/-1; margin: 0; padding-top: 20px; border-top: 1px solid var(--border-subtle); font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lawyer-preview-empty { grid-column: 1/-1; margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+.lawyer-bio-field { display: grid; gap: 8px; min-width: 0; }
+.account-content .lawyer-bio-field textarea { display: block; width: 100%; min-height: 160px; resize: vertical; padding: 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-background); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.7; }
+.lawyer-bio-field textarea::placeholder { color: var(--text-secondary); opacity: .8; }
+.lawyer-bio-field textarea:hover { border-color: var(--border-strong); }
+.lawyer-bio-field textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.lawyer-bio-field textarea:disabled { opacity: .6; cursor: not-allowed; }
+.lawyer-bio-footer { display: flex; align-items: start; gap: 12px; }
+.lawyer-bio-footer small { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.lawyer-bio-footer small:first-child { flex: 1; }
+.lawyer-bio-footer small:last-child { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.account-content .lawyer-required-fields { padding: 16px; border: 1px solid var(--border-accent); background: var(--surface-brand); border-radius: 10px; color: var(--text-secondary); }
+@media(max-width:1100px) { .account-content .lawyer-professional-profile .profile-form { grid-template-columns: minmax(0,1fr); } }
+@media(max-width:600px) {
+  .account-content .lawyer-profile-preview { padding: 16px; }
+  .lawyer-profile-preview-card { padding: 20px; grid-template-columns: 56px minmax(0,1fr); gap: 20px 12px; }
+  .lawyer-profile-preview-card > img,.lawyer-profile-preview-photo { width: 56px; height: 56px; border-radius: 12px; font-size: 24px; }
+  .lawyer-profile-preview-card h4 { font-size: 18px; }
+  .lawyer-profile-preview-card dl { grid-template-columns: minmax(0,1fr); gap: 16px; }
+  .lawyer-profile-preview-tags { grid-column: 1/-1; }
+  .lawyer-schedule-callout > a { width: 100%; text-align: center; }
+  .account-content .lawyer-application-actions { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 1100px) {
+  .account-layout { grid-template-columns: 184px minmax(0,1fr); gap: 24px; }
+  .account-rail nav a { padding: 12px 8px; gap: 8px; }
+  .account-rail nav .account-nav-arrow { display: none; }
+  .account-fields { grid-template-columns: 1fr; gap: 16px; }
+}
+@media (max-width: 800px) {
+  .profile-workspace.account-area { padding: 24px 20px 48px; gap: 24px; }
+  .account-heading h1 { font-size: 26px; }
+  .account-layout { grid-template-columns: minmax(0,1fr); gap: 24px; }
+  .account-rail { position: static; }
+  .account-identity { display: none; }
+  .account-rail nav { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; }
+  .account-rail nav a { flex-direction: column; justify-content: center; gap: 8px; min-height: 76px; padding: 10px 4px; text-align: center; }
+  .account-rail nav strong { font-size: 12px; }
+  .account-rail nav small { display: none; }
+  .account-rail nav a > span { flex: none; }
+  .account-content .profile-message { flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .profile-workspace.account-area { padding: 24px 14px 48px; }
+  .account-rail nav strong { font-size: 11px; }
+  .account-content :is(.email-change-panel,.notification-preferences-panel,.memory-panel,.profile-panels>section,.account-edit-form) { padding: 20px; }
+  .account-content h2 { font-size: 16px; }
+  .account-save-bar > div { width: 100%; }
+  .account-save-bar button { flex: 1; }
+  .account-disclosure > summary { padding: 20px; gap: 12px; }
+  .account-disclosure-body { padding: 0 20px 20px; }
+  .account-content .session-row { grid-template-columns: 1fr; gap: 12px; }
+  .account-content .session-actions { flex-direction: row; justify-content: space-between; align-items: center; }
+  .account-content .session-actions time { max-width: 50%; }
+  .account-content .business-workspace-panel form, .account-content .memory-fields { grid-template-columns: 1fr; }
+  .credential-person { grid-template-columns: 1fr; }
+  .account-content .email-change-panel form, .account-content .email-change-actions { grid-template-columns: minmax(0,1fr); }
+  .account-content .lawyer-application-steps { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

@@ -1,5 +1,11 @@
 "use client";
 
+import { AccountArea, AccountDisclosure } from "./AccountArea";
+import { accountSettingsCopy } from "./account-settings-copy";
+import { useRouter } from "next/navigation";
+
+import { AnalyticsPreferences } from "./ProductAnalytics";
+
 import { Select } from "../_components/Select";
 
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -10,7 +16,7 @@ import { MemoryPanel } from "./MemoryPanel";
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated profile data is hydrated after the first browser render */
 
 import Link from "next/link";
-import { Building2, CircleAlert, Copy, Database, Download, KeyRound, Languages, LoaderCircle, LogOut, MailCheck, MonitorSmartphone, RefreshCcw, Save, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { Building2, CircleAlert, Copy, Database, Download, KeyRound, LoaderCircle, LogOut, MailCheck, MonitorSmartphone, RefreshCcw, Save, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { formatPlatformDateTime } from "../../lib/platform/date-time";
 import { isLocale, type AccountType, type PlatformLocale } from "../../lib/platform/routing";
@@ -514,15 +520,20 @@ function localizedMessage(
 
 export function ProfileSettingsClient({ locale, accountType, view }: { locale: PlatformLocale; accountType: AccountType; view: View }) {
   const copy = PROFILE_COPY[locale];
+  const ui = accountSettingsCopy[locale];
+  const router = useRouter();
   const base = usePlatformBasePath();
   const [data, setData] = useState<ProfileData | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ fullName: "", phone: "", locale, timezone: "Asia/Tashkent", companyName: "", organizationRole: "" });
+  const [savedForm, setSavedForm] = useState<typeof form | null>(null);
+  const dirty = savedForm !== null && JSON.stringify(form) !== JSON.stringify(savedForm);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deletionCode, setDeletionCode] = useState("");
   const [deletionChallenge, setDeletionChallenge] = useState<DeletionChallenge | null>(null);
@@ -583,7 +594,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
       const profileBody = await profileResponse.json() as ProfileData & { error?: string };
       if (!profileResponse.ok) throw new Error(profileBody.error || copy.profileLoadFailed);
       setData(profileBody);
-      setForm({
+      const loadedForm = {
         fullName: profileBody.profile.fullName || "",
         phone: profileBody.profile.phone || "",
         locale: isLocale(profileBody.profile.locale)
@@ -592,23 +603,27 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
         timezone: profileBody.profile.timezone,
         companyName: profileBody.profile.companyName || "",
         organizationRole: profileBody.profile.organizationRole || "",
-      });
-      if (view === "profile" || view === "settings") {
-        const emailChangeResponse = await fetch(
-          `/api/platform/security/email-change?lang=${locale}`,
-          {
-            cache: "no-store",
-            headers: { "x-juro-locale": locale },
-          },
-        );
-        const emailChangeBody = await emailChangeResponse.json() as
-          EmailChangeStatus & { error?: string };
-        if (!emailChangeResponse.ok) {
-          throw new Error(
-            emailChangeBody.error || copy.emailChangeSettingsLoadFailed,
+      };
+      setForm(loadedForm);
+      setSavedForm(loadedForm);
+      if (view === "security") {
+        try {
+          const emailChangeResponse = await fetch(
+            `/api/platform/security/email-change?lang=${locale}`,
+            {
+              cache: "no-store",
+              headers: { "x-juro-locale": locale },
+            },
           );
-        }
-        setEmailChange(emailChangeBody);
+          const emailChangeBody = await emailChangeResponse.json() as
+            EmailChangeStatus & { error?: string };
+          if (!emailChangeResponse.ok) {
+            throw new Error(
+              emailChangeBody.error || copy.emailChangeSettingsLoadFailed,
+            );
+          }
+          setEmailChange(emailChangeBody);
+        } catch (value) { setError(value instanceof Error ? value.message : copy.emailChangeSettingsLoadFailed); }
       }
       if (view === "security") {
         const sessionResponse = await fetch(
@@ -667,26 +682,22 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
     setSaving(true);
     setError("");
     setNotice("");
-    const response = await fetch(`/api/platform/profile?lang=${locale}`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "x-juro-csrf": "1",
-        "x-juro-locale": locale,
-      },
-      body: JSON.stringify(form),
-    });
-    const body = await response.json() as { error?: string };
-    if (!response.ok) setError(body.error || copy.saveFailed);
-    else {
+    try {
+      const response = await fetch(`/api/platform/profile?lang=${locale}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
+        body: JSON.stringify(form),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || copy.saveFailed);
+      setSavedForm({ ...form });
       setNotice(copy.saveSucceeded);
-      if (form.locale !== locale) {
-        const localizedBase = base.replace(`/${locale}/`, `/${form.locale}/`);
-        window.location.assign(`${localizedBase}/${view === "profile" ? "profile" : "settings"}`);
-      }
-      else await load();
-    }
-    setSaving(false);
+      if (view === "settings" && form.locale !== locale) {
+        router.push(`${base.replace(`/${locale}/`, `/${form.locale}/`)}/settings`);
+      } else await load();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : copy.saveFailed);
+    } finally { setSaving(false); }
   }
 
   async function submitEmailChange(event: FormEvent) {
@@ -1225,28 +1236,42 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
       setCreatingWorkspace(false);
     }
   }
-  if (loading) return <div className="profile-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" /><span className="sr-only">{copy.loadingSettings}</span></div>;
-  const title = view === "profile"
-    ? copy.profileTitle
-    : view === "security"
-      ? copy.securityTitle
-      : view === "privacy"
-        ? copy.privacyTitle
-        : copy.settingsTitle;
-  const Icon = view === "profile" ? UserRound : view === "security" ? ShieldCheck : view === "privacy" ? Database : Languages;
-  return <section className="profile-workspace"><header><Icon /><div><small>JURO</small><h1>{title}</h1><p>{copy.headerDescription}</p></div></header><nav aria-label={copy.accountSettings}><Link className={view === "profile" ? "active" : ""} href={`${base}/profile`}>{copy.profileNav}</Link><Link className={view === "settings" ? "active" : ""} href={`${base}/settings`}>{copy.settingsNav}</Link><Link className={view === "security" ? "active" : ""} href={`${base}/settings/security`}>{copy.securityNav}</Link><Link className={view === "privacy" ? "active" : ""} href={`${base}/settings/privacy`}>{copy.privacyNav}</Link></nav>{error && <p className="profile-message error" role="alert"><CircleAlert aria-hidden="true" />{error}</p>}{view === "security" && error && !mfa && <button className="profile-retry" type="button" disabled={retrying} aria-busy={retrying} onClick={() => void retryLoad()}>{retrying && <LoaderCircle className="spin" aria-hidden="true" />}{copy.retryLoad}</button>}{notice && <p className="profile-message success" role="status"><ShieldCheck aria-hidden="true" />{notice}</p>}
-    {(view === "profile" || view === "settings") && data && <form className="profile-form" onSubmit={save}><section><h2>{copy.basicData}</h2><label>{copy.name}<input required value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label><label>Email<input disabled value={data.profile.email} /><small>{copy.emailChangeHint}</small></label><label>{copy.phone}<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} autoComplete="tel" /></label></section><section><h2>{copy.workspace}</h2><label>{copy.language}<Select value={form.locale} onChange={(event) => { if (isLocale(event.target.value)) setForm({ ...form, locale: event.target.value }); }}><option value="ru">Русский</option><option value="uz">O‘zbekcha</option><option value="en">English</option></Select></label><label>{copy.timezone}<Select value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}><option value="Asia/Tashkent">Asia/Tashkent</option><option value="UTC">UTC</option></Select></label>{accountType === "business" && <><label>{copy.organization}<input value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value })} /></label><label>{copy.organizationRole}<input value={form.organizationRole} onChange={(event) => setForm({ ...form, organizationRole: event.target.value })} /></label></>}</section><button disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <Save />}{copy.saveChanges}</button></form>}
-    {["lawyer","business"].includes(accountType) && (view === "profile" || view === "settings") && <LawyerProfessionalProfile locale={locale} />}
+  return <AccountArea locale={locale} view={view} name={data?.profile.fullName} email={data?.profile.email}>
+    {loading && <div className="account-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" />{copy.loadingSettings}</div>}
+    {error && <div className="profile-message error" role="alert"><CircleAlert aria-hidden="true" /><span>{error}</span><button className="account-button secondary" type="button" disabled={retrying} onClick={() => void retryLoad()}>{retrying ? <LoaderCircle className="spin" aria-hidden="true" /> : null}{ui.retry}</button></div>}
+    {notice && <p className="profile-message success" role="status"><ShieldCheck aria-hidden="true" />{notice}</p>}
+    {(view === "profile" || view === "settings") && data && <form className="account-edit-form" onSubmit={save}>
+      <div className="account-section-heading"><h2>{view === "profile" ? ui.details : ui.preferences}</h2><p>{view === "profile" ? ui.detailsDescription : ui.preferencesDescription}</p></div>
+      <fieldset className="account-fields" disabled={saving}>
+        <legend className="sr-only">{view === "profile" ? ui.details : ui.preferences}</legend>
+        {view === "profile" ? <>
+          <label>{copy.name}<input required maxLength={160} autoComplete="name" value={form.fullName} onChange={event => setForm({ ...form, fullName: event.target.value })} /></label>
+          <label>{copy.phone}<span className="account-optional">{ui.optional}</span><input type="tel" maxLength={40} value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} autoComplete="tel" /></label>
+          {accountType === "business" && <><label>{copy.organization}<input maxLength={180} autoComplete="organization" value={form.companyName} onChange={event => setForm({ ...form, companyName: event.target.value })} /></label><label>{copy.organizationRole}<input maxLength={120} autoComplete="organization-title" value={form.organizationRole} onChange={event => setForm({ ...form, organizationRole: event.target.value })} /></label></>}
+        </> : <>
+          <label>{copy.language}<Select value={form.locale} onChange={event => { if (isLocale(event.target.value)) setForm({ ...form, locale: event.target.value }); }}><option value="ru">Русский</option><option value="uz">O‘zbekcha</option><option value="en">English</option></Select></label>
+          <label>{copy.timezone}<Select value={form.timezone} onChange={event => setForm({ ...form, timezone: event.target.value })}><option value="Asia/Tashkent">Tashkent (UTC+05:00)</option><option value="UTC">UTC (+00:00)</option></Select></label>
+        </>}
+      </fieldset>
+      <footer className="account-save-bar"><span role="status">{saving ? ui.saving : dirty ? ui.unsaved : ui.saved}</span><div>
+        {dirty && <button type="button" className="account-button secondary" disabled={saving} onClick={() => { if (savedForm) setForm({ ...savedForm }); setError(""); setNotice(""); }}>{ui.discard}</button>}
+        <button type="submit" className="account-button" disabled={saving || !dirty} aria-busy={saving}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{copy.saveChanges}</button>
+      </div></footer>
+    </form>}
+    {["lawyer","business"].includes(accountType) && view === "profile" && <AccountDisclosure title={ui.professional} description={ui.professionalDescription} icon={UserRound}><LawyerProfessionalProfile locale={locale} /></AccountDisclosure>}
+    {view === "privacy" && <AnalyticsPreferences locale={locale} />}
     {view === "settings" && <NotificationPreferencesPanel locale={locale} />}
-    {view === "settings" && <section className="business-workspace-panel" id="business-workspace">
+    {view === "settings" && <AccountDisclosure title={copy.newBusinessWorkspace} description={ui.workspaceDescription} icon={Building2}><section className="business-workspace-panel" id="business-workspace">
       <div className="business-workspace-heading"><Building2 aria-hidden="true" /><div><h2>{copy.newBusinessWorkspace}</h2><p id="business-workspace-description">{copy.businessWorkspaceDescription}</p></div></div>
       <form onSubmit={createBusinessWorkspace} aria-describedby="business-workspace-description">
         <label>{copy.fullNameLabel}<input required minLength={2} maxLength={200} autoComplete="organization" value={businessWorkspace.fullName} onChange={(event) => setBusinessWorkspace(current => ({ ...current, fullName: event.target.value }))} /></label>
         <label>{copy.shortNameLabel}<input required minLength={2} maxLength={80} value={businessWorkspace.shortName} onChange={(event) => setBusinessWorkspace(current => ({ ...current, shortName: event.target.value }))} /></label>
         <button type="submit" disabled={creatingWorkspace || businessWorkspace.fullName.trim().length < 2 || businessWorkspace.shortName.trim().length < 2} aria-busy={creatingWorkspace}>{creatingWorkspace ? <LoaderCircle className="spin" aria-hidden="true" /> : <Building2 aria-hidden="true" />}{copy.createAndOpen}</button>
       </form>
-    </section>}    {(view === "profile" || view === "settings") && data && emailChange && <section className="email-change-panel">
-      <h2><MailCheck aria-hidden="true" />{copy.secureEmailChange}</h2>
+    </section></AccountDisclosure>}
+    {view === "security" && data && emailChange && <section className="email-change-panel">
+      <h2><MailCheck aria-hidden="true" />{ui.signIn}</h2>
+      <div className="account-email"><span>{ui.email}</span><strong>{data.profile.email}</strong></div>
       <p id="email-change-description">{copy.emailChangeDescription}</p>
       {!emailChange.canManage && <p>{copy.emailChangeLocalOnly}</p>}
       {emailChange.canManage && !emailChange.available && !emailChange.active && <p>{copy.emailChangeUnavailable}</p>}
@@ -1325,32 +1350,6 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
       </div>}
     </section>}
     {view === "security" && <div className="profile-panels">
-      <section>
-        <h2><MonitorSmartphone />{copy.sessionsTitle}</h2>
-        <p>{copy.sessionsDescription}</p>
-        {sessions.length
-          ? sessions.map(session => <div className="session-row" key={session.id}>
-            <span>
-              <strong>{session.deviceName || copy.unknownDevice}{Boolean(session.isCurrent) && <em>{copy.current}</em>}</strong>
-              <small>{copy.lastActivity}: {formatPlatformDateTime(session.lastSeenAt, locale)}</small>
-              <small>{copy.signIn}: {formatPlatformDateTime(session.authenticatedAt || session.createdAt, locale)} · {session.authMethod === "email_otp" ? "Email OTP" : session.authMethod}</small>
-              <small>{copy.approximateRegion}: {[session.regionCode, session.countryCode].filter(Boolean).join(", ") || copy.regionUnknown}</small>
-            </span>
-            <div className="session-actions">
-              <time>{copy.until} {formatPlatformDateTime(session.idleExpiresAt || session.expiresAt, locale)}</time>
-              <button type="button" disabled={loggingOut || sessionAction !== null} aria-busy={sessionAction === session.id || (loggingOut && Boolean(session.isCurrent))} onClick={() => void closeSession(session)} aria-label={localizedMessage(locale, {
-                ru: `Завершить сессию ${session.deviceName || copy.unknownDevice}`,
-                uz: `${session.deviceName || copy.unknownDevice} sessiyasini yakunlash`,
-                en: `End the ${session.deviceName || copy.unknownDevice} session`,
-              })}>{sessionAction === session.id || (loggingOut && Boolean(session.isCurrent)) ? <LoaderCircle className="spin" aria-hidden="true" /> : <LogOut />}{copy.endSession}</button>
-            </div>
-          </div>)
-          : <p>{copy.noSessions}</p>}
-        <div className="session-bulk-actions">
-          {sessions.some(session => !Boolean(session.isCurrent)) && <button className="danger-outline" type="button" disabled={loggingOut || sessionAction !== null} aria-busy={sessionAction === "others"} onClick={() => void closeOtherSessions()}>{sessionAction === "others" && <LoaderCircle className="spin" aria-hidden="true" />}{copy.endOtherSessions}</button>}
-          <button className="danger-outline" type="button" disabled={loggingOut || sessionAction !== null} aria-busy={loggingOut || sessionAction === "all"} onClick={() => void closeAllSessions()}>{(loggingOut || sessionAction === "all") && <LoaderCircle className="spin" aria-hidden="true" />}{copy.endAllSessions}</button>
-        </div>
-      </section>
       <section className="mfa-panel">
         <h2><KeyRound aria-hidden="true" />{copy.twoFactor}</h2>
         {mfa && !mfa.canManage && <p>{copy.mfaLocalOnly}</p>}
@@ -1422,13 +1421,31 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
         </div>}
       </section>
       <section>
-        <h2><ShieldCheck />{copy.securityMechanisms}</h2>
-        <ul>
-          <li>{copy.cookieSecurity}</li>
-          <li>{copy.sessionLifetime}</li>
-          <li>{copy.totpSecurity}</li>
-          <li>{copy.auditSecurity}</li>
-        </ul>
+        <h2><MonitorSmartphone />{ui.devices}</h2>
+        <p>{ui.devicesDescription}</p>
+        {sessions.length
+          ? [...sessions].sort((a, b) => Number(Boolean(b.isCurrent)) - Number(Boolean(a.isCurrent))).slice(0, showAllSessions ? undefined : 4).map(session => <div className="session-row" key={session.id}>
+            <span>
+              <strong>{session.deviceName || copy.unknownDevice}{Boolean(session.isCurrent) && <em>{copy.current}</em>}</strong>
+              <small>{copy.lastActivity}: {formatPlatformDateTime(session.lastSeenAt, locale)}</small>
+              <small>{copy.signIn}: {formatPlatformDateTime(session.authenticatedAt || session.createdAt, locale)} · {session.authMethod === "email_otp" ? ui.emailCode : session.authMethod === "password" ? ui.password : session.authMethod === "development_bypass" ? ui.developmentSignIn : ui.signIn}</small>
+              <small>{copy.approximateRegion}: {[session.regionCode, session.countryCode].filter(Boolean).join(", ") || copy.regionUnknown}</small>
+            </span>
+            <div className="session-actions">
+              <time>{copy.until} {formatPlatformDateTime(session.idleExpiresAt || session.expiresAt, locale)}</time>
+              <button type="button" disabled={loggingOut || sessionAction !== null} aria-busy={sessionAction === session.id || (loggingOut && Boolean(session.isCurrent))} onClick={() => void closeSession(session)} aria-label={localizedMessage(locale, {
+                ru: `Завершить сессию ${session.deviceName || copy.unknownDevice}`,
+                uz: `${session.deviceName || copy.unknownDevice} sessiyasini yakunlash`,
+                en: `End the ${session.deviceName || copy.unknownDevice} session`,
+              })}>{sessionAction === session.id || (loggingOut && Boolean(session.isCurrent)) ? <LoaderCircle className="spin" aria-hidden="true" /> : <LogOut />}{copy.endSession}</button>
+            </div>
+          </div>)
+          : <p>{copy.noSessions}</p>}
+        {sessions.length > 4 && <button className="account-button secondary account-show-devices" type="button" aria-expanded={showAllSessions} onClick={() => setShowAllSessions(value => !value)}>{showAllSessions ? ui.fewerDevices : `${ui.allDevices} (${sessions.length})`}</button>}
+        <div className="session-bulk-actions">
+          {sessions.some(session => !Boolean(session.isCurrent)) && <button className="danger-outline" type="button" disabled={loggingOut || sessionAction !== null} aria-busy={sessionAction === "others"} onClick={() => void closeOtherSessions()}>{sessionAction === "others" && <LoaderCircle className="spin" aria-hidden="true" />}{copy.endOtherSessions}</button>}
+          <button className="danger-outline" type="button" disabled={loggingOut || sessionAction !== null} aria-busy={loggingOut || sessionAction === "all"} onClick={() => void closeAllSessions()}>{(loggingOut || sessionAction === "all") && <LoaderCircle className="spin" aria-hidden="true" />}{copy.endAllSessions}</button>
+        </div>
       </section>
     </div>}
     {view === "privacy" && <MemoryPanel locale={locale} />}
@@ -1440,8 +1457,8 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
           <Download />{copy.downloadExport}
         </Link>
       </section>
-      <section>
-        <h2>{copy.consentHistory}</h2>
+      <AccountDisclosure title={copy.consentHistory} description={ui.historyDescription} icon={Database}>
+        <div className="account-consent-history">
         {data.acceptances.map(acceptance => <div className="consent-row" key={`${acceptance.type}-${acceptance.version}`}>
           <strong>{acceptance.type}</strong>
           <span>
@@ -1457,7 +1474,8 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
         {!data.acceptances.length && !data.consents.length && <p>
           {copy.noRecords}
         </p>}
-      </section>
+        </div>
+      </AccountDisclosure>
       {data.deletionRequest
         ? <section className="deletion-request-status" aria-live="polite">
           <h2><Trash2 aria-hidden="true" />{copy.deleteAccount}</h2>
@@ -1497,7 +1515,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
             {copy.retryDeletion}
           </button>}
         </section>
-        : <form className="delete-request" onSubmit={requestDeletion}>
+        : <AccountDisclosure title={copy.deleteAccount} description={ui.deleteDescription} icon={Trash2} danger><form className="delete-request" onSubmit={requestDeletion}>
         <Trash2 />
         <div>
           <h2>{copy.requestDeletion}</h2>
@@ -1581,7 +1599,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
               </div>
             </>}
         </div>
-        </form>}
+        </form></AccountDisclosure>}
     </div>}
-  </section>;
+  </AccountArea>;
 }
