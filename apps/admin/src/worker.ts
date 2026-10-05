@@ -107,7 +107,7 @@ function securityHeaders(): Headers {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "private, no-store",
     pragma: "no-cache",
-    "referrer-policy": "no-referrer",
+    "referrer-policy": "same-origin",
     "x-robots-tag": "noindex, nofollow, noarchive",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
