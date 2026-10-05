@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Check, Eye, RefreshCw, Scale, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type {
@@ -117,7 +119,7 @@ export function AiQualityConsole({ locale, reviewerName }: { locale: Locale; rev
     <header className="staff-topbar"><div className="staff-brand"><Scale aria-hidden="true"/><span><b>JURO</b><small>AI QUALITY</small></span></div><div className="staff-session"><span>{t.protected}</span><b>{reviewerName}</b></div><a href={`/${nextLocale}/admin/ai-quality`} hrefLang={nextLocale}>{nextLocale.toUpperCase()}</a></header>
     <main id="staff-main" className="staff-main">
       <section className="staff-heading"><div><span>JURO · LEGAL QUALITY</span><h1>{t.title}</h1><p>{t.description}</p></div><button type="button" onClick={() => void load()} disabled={busy}><RefreshCw aria-hidden="true"/>{t.refresh}</button></section>
-      <div className="staff-filters"><label>{t.status}<select value={status} onChange={(event) => setStatus(event.target.value as ReviewStatus)}><option value="pending">{t.pending}</option><option value="reviewed">{t.reviewed}</option><option value="all">{t.all}</option></select></label></div>
+      <div className="staff-filters"><label>{t.status}<Select value={status} onChange={(event) => setStatus(event.target.value as ReviewStatus)}><option value="pending">{t.pending}</option><option value="reviewed">{t.reviewed}</option><option value="all">{t.all}</option></Select></label></div>
       <div aria-live="polite" aria-atomic="true">{error && <p className="staff-error" role="alert">{error}<button type="button" onClick={() => void load()}>{t.refresh}</button></p>}{announcement && <p className="staff-verified"><ShieldCheck aria-hidden="true"/>{announcement}</p>}</div>
       {busy && rows.length === 0 && <p className="staff-loading" role="status">{t.loading}</p>}
       {!busy && rows.length === 0 && <section className="staff-empty"><ShieldCheck aria-hidden="true"/><h2>{t.empty}</h2></section>}
@@ -134,7 +136,7 @@ export function AiQualityConsole({ locale, reviewerName }: { locale: Locale; rev
         <article className="ai-quality-content"><h3>{t.answer}</h3><p>{detail.answer}</p></article>
         <article className="ai-quality-content"><h3>{t.comment}</h3><p>{detail.feedbackComment || t.noComment}</p></article>
         <form className="staff-decision ai-quality-decision" onSubmit={(event) => void resolve(event)}>
-          <label>{t.classification}<select value={classification} onChange={(event) => setClassification(event.target.value as AiQualityClassification)}>{Object.entries(classificationCopy[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>{t.classification}<Select value={classification} onChange={(event) => setClassification(event.target.value as AiQualityClassification)}>{Object.entries(classificationCopy[locale]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></label>
           <label>{t.notes}<textarea required minLength={1} maxLength={4000} value={notes} onChange={(event) => setNotes(event.target.value)}/></label>
           <label>{t.corrected}<textarea maxLength={50000} value={correctedAnswer} onChange={(event) => setCorrectedAnswer(event.target.value)}/></label>
           <label>{t.golden}<textarea maxLength={50000} value={goldenAnswer} onChange={(event) => setGoldenAnswer(event.target.value)}/></label>

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { usePlatformBasePath } from "./PlatformRouteContext";
 import Link from "next/link";
 import { ArrowRight, BookOpenCheck, Bot, ExternalLink, FilePenLine, HelpCircle, LoaderCircle, Scale, Search, ShieldCheck } from "lucide-react";
@@ -129,7 +131,7 @@ export function HelpClient({ locale }: { locale: PlatformLocale; accountType: Ac
       </div>
       <form className="help-support" onSubmit={(event) => void submitSupport(event)} aria-busy={sending}>
         <h2>{copy.supportTitle}</h2>
-        <div className="help-support-selects"><label>{support.category}<select value={category} onChange={(event) => setCategory(event.target.value as SupportCategory)}>{supportCategories.map((value) => <option key={value} value={value}>{support[value]}</option>)}</select></label><label>{support.severity}<select value={severity} onChange={(event) => setSeverity(event.target.value as SupportSeverity)}>{supportSeverities.map((value) => <option key={value} value={value}>{support[value]}</option>)}</select></label></div>
+        <div className="help-support-selects"><label>{support.category}<Select value={category} onChange={(event) => setCategory(event.target.value as SupportCategory)}>{supportCategories.map((value) => <option key={value} value={value}>{support[value]}</option>)}</Select></label><label>{support.severity}<Select value={severity} onChange={(event) => setSeverity(event.target.value as SupportSeverity)}>{supportSeverities.map((value) => <option key={value} value={value}>{support[value]}</option>)}</Select></label></div>
         <label>{copy.subject}<input value={subject} minLength={4} maxLength={180} required onChange={(event) => setSubject(event.target.value)} /></label>
         <label>{copy.message}<textarea value={message} minLength={10} maxLength={8000} required onChange={(event) => setMessage(event.target.value)} /></label>
         {supportStatus && <p role="status" aria-live="polite">{supportStatus}</p>}

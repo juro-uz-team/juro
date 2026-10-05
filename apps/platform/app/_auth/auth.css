@@ -257,7 +257,7 @@
   border-radius: 10px;
   color: inherit;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 600;
   text-decoration: none;
   transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
 }
@@ -465,7 +465,7 @@
   border-radius: 9px;
   background: transparent;
   color: var(--brand-gold-text);
-  font: 750 13px/1.3 var(--sans);
+  font: 600 13px/1.3 var(--sans);
 }
 
 .auth-back {
@@ -507,7 +507,7 @@
   border-radius: 14px;
   background: var(--soft);
   color: var(--ink);
-  font: 740 12px/1.25 var(--sans);
+  font: 600 12px/1.25 var(--sans);
   transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
@@ -554,23 +554,24 @@
   justify-content: center;
   gap: 9px;
   padding: 0 20px;
-  border: 1px solid color-mix(in srgb, var(--gold) 74%, #062844);
+  border: 1px solid var(--border-accent);
   border-radius: 13px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 88%, white), var(--gold));
-  color: #062844;
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--gold) 19%, transparent);
-  font: 820 15px/1 var(--sans);
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
+  box-shadow: none;
+  font: 600 15px/1 var(--sans);
   text-decoration: none;
   transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+  font-weight: 600;
 }
 
 .auth-submit:active:not(:disabled) {
-  box-shadow: 0 5px 14px color-mix(in srgb, var(--gold) 18%, transparent);
+  box-shadow: none;
   transform: translateY(1px) scale(.995);
 }
 
 .auth-submit:disabled {
-  filter: saturate(.55);
+  filter: none;
   opacity: .55;
 }
 
@@ -756,7 +757,7 @@
 .auth-error a {
   justify-self: start;
   color: inherit;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .auth-switch {
@@ -772,7 +773,7 @@
   align-items: center;
   padding: 0 5px;
   color: var(--brand-gold-text);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .auth-secondary-login {
@@ -870,9 +871,10 @@
   }
 
   .auth-submit:hover:not(:disabled) {
-    box-shadow: 0 13px 30px color-mix(in srgb, var(--gold) 27%, transparent);
-    filter: brightness(1.035);
+    box-shadow: none;
+    filter: none;
     transform: translateY(-1px);
+    background: var(--interactive-hover);
   }
 
 }

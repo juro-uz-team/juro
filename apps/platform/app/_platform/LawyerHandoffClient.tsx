@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated handoff records are loaded after the first browser render */
 
 import { LoaderCircle, ShieldCheck, UserRoundCheck } from "lucide-react";
@@ -321,7 +323,7 @@ export function LawyerHandoffClient({
       <form onSubmit={(event) => void submit(event)}>
         <label>
           {text("Дело", "Ish", "Case")}
-          <select
+          <Select
             value={caseId}
             onChange={(event) => setCaseId(event.target.value)}
             disabled={!entitlements?.lawyerHandoff || busy}
@@ -337,7 +339,7 @@ export function LawyerHandoffClient({
                 {text("Нет доступных дел", "Mavjud ish yo‘q", "No cases available")}
               </option>
             )}
-          </select>
+          </Select>
         </label>
         <fieldset className="lawyer-directory-filters">
           <legend>
@@ -345,7 +347,7 @@ export function LawyerHandoffClient({
           </legend>
           <label>
             {text("Специализация", "Mutaxassislik", "Practice area")}
-            <select
+            <Select
               value={specialtyFilter}
               onChange={(event) => setSpecialtyFilter(event.target.value)}
             >
@@ -355,11 +357,11 @@ export function LawyerHandoffClient({
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             {text("Язык", "Til", "Language")}
-            <select
+            <Select
               value={languageFilter}
               onChange={(event) => setLanguageFilter(event.target.value)}
             >
@@ -369,11 +371,11 @@ export function LawyerHandoffClient({
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             {text("Стаж от", "Tajriba, kamida", "Minimum experience")}
-            <select
+            <Select
               value={minimumExperience}
               onChange={(event) => setMinimumExperience(event.target.value)}
             >
@@ -382,22 +384,22 @@ export function LawyerHandoffClient({
               <option value="3">3</option>
               <option value="5">5</option>
               <option value="10">10</option>
-            </select>
+            </Select>
           </label>
           <label>
             {text("Рейтинг от", "Reyting, kamida", "Minimum rating")}
-            <select
+            <Select
               value={minimumRating}
               onChange={(event) => setMinimumRating(event.target.value)}
             >
               <option value="">{text("Любой", "Istalgan", "Any")}</option>
               <option value="4">4/5</option>
               <option value="4.5">4.5/5</option>
-            </select>
+            </Select>
           </label>
           <label>
             {text("Доступность", "Mavjudlik", "Availability")}
-            <select
+            <Select
               value={availabilityFilter}
               onChange={(event) => setAvailabilityFilter(event.target.value)}
             >
@@ -409,11 +411,11 @@ export function LawyerHandoffClient({
               <option value="unavailable">
                 {text("Недоступен", "Mavjud emas", "Unavailable")}
               </option>
-            </select>
+            </Select>
           </label>
           <label>
             {text("Статус адвоката", "Advokat maqomi", "Advocate status")}
-            <select
+            <Select
               value={advocateFilter}
               onChange={(event) => setAdvocateFilter(event.target.value)}
             >
@@ -422,7 +424,7 @@ export function LawyerHandoffClient({
                 {text("Подтверждён JURO", "JURO tasdiqlagan", "Verified by JURO")}
               </option>
               <option value="declared">{text("Заявлен", "Bildirilgan", "Declared")}</option>
-            </select>
+            </Select>
           </label>
           <label>
             {text("Фирма", "Firma", "Firm")}
@@ -435,7 +437,7 @@ export function LawyerHandoffClient({
         </fieldset>
         <label>
           {text("Юрист", "Yurist", "Lawyer")}
-          <select
+          <Select
             value={lawyerProfileId}
             onChange={(event) => setLawyerProfileId(event.target.value)}
             disabled={!entitlements?.lawyerHandoff || busy}
@@ -454,14 +456,14 @@ export function LawyerHandoffClient({
                   : ""}
               </option>
             ))}
-          </select>
+          </Select>
           <small>
             {text(`Найдено: ${filteredLawyers.length}`, `Topildi: ${filteredLawyers.length}`, `Found: ${filteredLawyers.length}`)}
           </small>
         </label>
         <label>
           {text("Услуга", "Xizmat", "Service")}
-          <select
+          <Select
             required
             value={serviceCode}
             onChange={(event) => setServiceCode(event.target.value)}
@@ -472,11 +474,11 @@ export function LawyerHandoffClient({
             <option value="case_strategy">{text("Стратегия по делу", "Ish strategiyasi", "Case strategy")}</option>
             <option value="representation">{text("Представительство", "Vakillik", "Representation")}</option>
             <option value="other">{text("Другая юридическая помощь", "Boshqa yuridik yordam", "Other legal assistance")}</option>
-          </select>
+          </Select>
         </label>
         <label>
           {text("Предпочтительный формат", "Afzal format", "Preferred format")}
-          <select
+          <Select
             required
             value={preferredFormat}
             onChange={(event) => setPreferredFormat(event.target.value)}
@@ -486,7 +488,7 @@ export function LawyerHandoffClient({
             <option value="phone">{text("Телефон", "Telefon", "Phone")}</option>
             <option value="office">{text("Очно", "Ofisda", "In person")}</option>
             <option value="chat">{text("Чат", "Chat", "Chat")}</option>
-          </select>
+          </Select>
         </label>
         <label>
           {text("Предложить дату и время", "Sana va vaqtni taklif qilish", "Propose a date and time")}

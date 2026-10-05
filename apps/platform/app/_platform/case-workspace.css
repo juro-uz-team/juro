@@ -57,15 +57,18 @@
   border-radius: 10px;
   color: var(--ink);
   font-size: 0.82rem;
-  font-weight: 750;
+  font-weight: 600;
   padding: 0 13px;
   text-decoration: none;
 }
 .case-workspace-actions a:first-child,
 .case-workspace-empty a {
   border-color: var(--navy);
-  background: var(--navy);
-  color: var(--text-inverse);
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
+  box-shadow: none;
+  border: 1px solid var(--border-accent);
+  font-weight: 600;
 }
 .case-workspace-actions svg {
   width: 17px;
@@ -129,7 +132,7 @@
 .case-workspace-section-head a {
   color: var(--brand-gold-text);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 .case-workspace-steps,
 .case-workspace-tasks {
@@ -264,7 +267,7 @@
   background: var(--white);
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 750;
+  font-weight: 600;
   padding: 0 14px;
   text-decoration: none;
   white-space: nowrap;
@@ -274,8 +277,11 @@
 }
 .case-workspace-tabs > a[aria-current="page"] {
   border-color: var(--navy);
-  background: var(--navy);
-  color: var(--text-inverse);
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
+  box-shadow: none;
+  border: 1px solid var(--border-accent);
+  font-weight: 600;
 }
 .case-workspace-tabs > a:focus-visible,
 .case-workspace-tab-panel a:focus-visible {

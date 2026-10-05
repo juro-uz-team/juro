@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../../_components/Select";
+
 import { CircleHelp } from "lucide-react";
 import { createContext, useContext, type ReactNode } from "react";
 import type { PlatformLocale } from "../../../lib/platform/routing";
@@ -30,7 +32,7 @@ export function InputField({ label, help, example, className = "", ...props }: B
 }
 
 export function SelectField({ label, help, example, className = "", children, ...props }: BaseProps & React.SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
-  return <label className={`dbt-field ${className}`}><FieldLabel label={label} help={help} example={example}/><select {...props}>{children}</select></label>;
+  return <label className={`dbt-field ${className}`}><FieldLabel label={label} help={help} example={example}/><Select {...props}>{children}</Select></label>;
 }
 
 export function TextAreaField({ label, help, example, className = "", ...props }: BaseProps & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {

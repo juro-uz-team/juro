@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
+import "./_components/select.css";
 import "./invite/invite.css";
 import "./legal/legal.css";
 import "./_platform/lawyer-workspace.css";
 import "./_platform/legal-answer.css";
+import "./_components/motion.css";
+import "./_components/brand.css";
 import { THEME_BOOTSTRAP_SCRIPT } from "./_theme/theme";
 import {
   INTERNAL_REQUEST_PATH_HEADER,

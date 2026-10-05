@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
 
 import { AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, RotateCcw, Send, Settings2, ShieldAlert, Square, ThumbsUp, Trash2, X } from "lucide-react";
@@ -759,7 +761,7 @@ function SourceBookmarkControl({ source, cases, locale }: { source: Source; case
   return <details className="ai-source-bookmark">
     <summary><BookmarkPlus aria-hidden="true" />{saved ? aiText(locale, "Сохранено", "Saqlandi", "Saved") : aiText(locale, "Сохранить норму", "Normani saqlash", "Save provision")}</summary>
     <form onSubmit={(event) => void save(event)}>
-      <label>{aiText(locale, "Добавить в дело — необязательно", "Ishga qo‘shish — ixtiyoriy", "Add to a matter — optional")}<select value={caseId} disabled={saving || saved} onChange={(event) => setCaseId(event.target.value)}><option value="">{aiText(locale, "Личные закладки", "Shaxsiy xatcho‘plar", "Personal bookmarks")}</option>{cases.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+      <label>{aiText(locale, "Добавить в дело — необязательно", "Ishga qo‘shish — ixtiyoriy", "Add to a matter — optional")}<Select value={caseId} disabled={saving || saved} onChange={(event) => setCaseId(event.target.value)}><option value="">{aiText(locale, "Личные закладки", "Shaxsiy xatcho‘plar", "Personal bookmarks")}</option>{cases.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
       <label>{aiText(locale, "Комментарий — необязательно", "Izoh — ixtiyoriy", "Comment — optional")}<textarea value={comment} disabled={saving || saved} maxLength={2_000} onChange={(event) => setComment(event.target.value)} placeholder={aiText(locale, "Почему эта норма важна для вашей ситуации", "Bu norma vaziyatingiz uchun nega muhim", "Why this provision matters to your situation")} /></label>
       <button type="submit" disabled={saving || saved}><BookmarkPlus aria-hidden="true" />{saving ? aiText(locale, "Сохраняем…", "Saqlanmoqda…", "Saving…") : saved ? aiText(locale, "Сохранено", "Saqlandi", "Saved") : aiText(locale, "Сохранить ответ", "Javobni saqlash", "Save answer")}</button>
       <output role={failed ? "alert" : "status"} aria-live="polite">{status}</output>

@@ -49,7 +49,7 @@ export default async function SharePage({ params, searchParams }: {
       uz: { title: "Havola haqiqiy emas", description: "Havola muddati tugagan yoki egasi kirishni bekor qilgan." },
       en: { title: "This link is no longer valid", description: "The link has expired or the owner has revoked access." },
     });
-    return <main className="dbt-public-message" lang={locale}><Image src="/juro-logo-primary.png" alt="JURO" width={140} height={137} unoptimized/><h1>{copy.title}</h1><p>{copy.description}</p></main>;
+    return <main className="dbt-public-message" lang={locale}><Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={140} height={137} unoptimized/><h1>{copy.title}</h1><p>{copy.description}</p></main>;
   }
   return <PublicDocumentView title={record.title} paragraphs={paragraphsFromFinalText(record.finalContent)} locale={locale} />;
 }

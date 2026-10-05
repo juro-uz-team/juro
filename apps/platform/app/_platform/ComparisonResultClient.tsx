@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { usePlatformBasePath } from "./PlatformRouteContext";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated comparison state is hydrated and polled after mount */
@@ -548,10 +550,10 @@ export function ComparisonResultClient({
         {cases.length ? (
           <>
             <label className="sr-only" htmlFor="comparison-case-select">{copy.chooseCase}</label>
-            <select id="comparison-case-select" value={selectedCaseId || detail.caseId || ""} onChange={(event) => { setSelectedCaseId(event.target.value); setCaseNotice(""); }}>
+            <Select id="comparison-case-select" value={selectedCaseId || detail.caseId || ""} onChange={(event) => { setSelectedCaseId(event.target.value); setCaseNotice(""); }}>
               <option value="">{copy.chooseCase}</option>
               {cases.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-            </select>
+            </Select>
             <button type="button" disabled={savingCase || !(selectedCaseId || detail.caseId)} onClick={() => void saveToCase()}>
               {savingCase ? <LoaderCircle className="spin" /> : <Check />}{copy.saveToCase}
             </button>
@@ -726,8 +728,8 @@ function FilterPanel({
           </label>
         ))}
       </div>
-      {sections.length > 0 && <label className="comparison-select-filter"><span>{copy.sectionFilter}</span><select value={section} onChange={(event) => setSection(event.target.value)}><option value="">{copy.allSections}</option>{sections.map((item) => <option key={item}>{item}</option>)}</select></label>}
-      {parties.length > 0 && <label className="comparison-select-filter"><span>{copy.partyFilter}</span><select value={party} onChange={(event) => setParty(event.target.value)}><option value="">{copy.allParties}</option>{parties.map((item) => <option key={item}>{item}</option>)}</select></label>}
+      {sections.length > 0 && <label className="comparison-select-filter"><span>{copy.sectionFilter}</span><Select value={section} onChange={(event) => setSection(event.target.value)}><option value="">{copy.allSections}</option>{sections.map((item) => <option key={item}>{item}</option>)}</Select></label>}
+      {parties.length > 0 && <label className="comparison-select-filter"><span>{copy.partyFilter}</span><Select value={party} onChange={(event) => setParty(event.target.value)}><option value="">{copy.allParties}</option>{parties.map((item) => <option key={item}>{item}</option>)}</Select></label>}
     </aside>
   );
 }

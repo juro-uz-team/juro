@@ -43,7 +43,7 @@ export function SignedShareAccessClient({ token, locale }: { token: string; loca
   };
   return <main className="dbt-signed-access" lang={locale}>
     <section>
-      <Image src="/juro-logo-primary.png" alt="JURO" width={125} height={122} unoptimized/>
+      <Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={125} height={122} unoptimized/>
       <span className="dbt-access-icon"><FileCheck2 size={30}/></span>
       <h1>{copy.title}</h1>
       <p>{copy.description}</p>

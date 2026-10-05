@@ -1,10 +1,10 @@
 .lawyer-directory-identity{display:flex;align-items:center;gap:.65rem;min-width:0}
-.lawyer-directory-identity img{width:3rem;height:3rem;border-radius:50%;object-fit:cover;border:1px solid var(--line);background:#f4f5f4}
-.lawyer-directory-pending{display:grid;gap:.7rem;padding:1rem;border:1px solid #d8c495;border-radius:1rem;background:#fffbf1}
-.lawyer-directory-pending>h2{margin:0;color:var(--navy);font-size:1.1rem}
-.lawyer-directory-pending>p{margin:0;max-width:48rem;color:#5b4d31;line-height:1.55}
-.lawyer-directory-card:has([aria-disabled="true"]){border-color:#d8c495;background:#fffdf7}
-.lawyer-directory-actions [aria-disabled="true"]{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border:1px solid #c8af72;border-radius:.65rem;padding:0 .8rem;color:#68572f;font-weight:750;background:#fff7df;cursor:not-allowed}
+.lawyer-directory-identity img{width:3rem;height:3rem;border-radius:50%;object-fit:cover;border:1px solid var(--line);background:var(--surface-subtle)}
+.lawyer-directory-pending{display:grid;gap:.7rem;padding:1rem;border:1px solid var(--border-accent);border-radius:1rem;background:var(--surface-selected)}
+.lawyer-directory-pending>h2{margin:0;color:var(--text-primary);font-size:1.1rem}
+.lawyer-directory-pending>p{margin:0;max-width:48rem;color:var(--brand-gold-text);line-height:1.55}
+.lawyer-directory-card:has([aria-disabled="true"]){border-color:var(--border-accent);background:var(--surface-subtle)}
+.lawyer-directory-actions [aria-disabled="true"]{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border:1px solid var(--border-accent);border-radius:.65rem;padding:0 .8rem;color:var(--brand-gold-text);font-weight:750;background:var(--surface-selected);cursor:not-allowed}
 .lawyer-directory-card:focus-within{outline:3px solid color-mix(in srgb,var(--gold) 45%,transparent);outline-offset:2px}
-@media (hover:hover) and (pointer:fine){.lawyer-directory-card{transition:transform 180ms ease,box-shadow 180ms ease}.lawyer-directory-card:hover{transform:translateY(-2px);box-shadow:0 .75rem 2rem rgba(6,40,68,.09)}}
+@media (hover:hover) and (pointer:fine){.lawyer-directory-card{transition:transform 180ms ease,box-shadow 180ms ease}.lawyer-directory-card:hover{transform:translateY(-2px);box-shadow:0 .75rem 2rem var(--shadow-color)}}
 @media (prefers-reduced-motion:reduce){.lawyer-directory-card{transition:none}}

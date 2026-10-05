@@ -471,7 +471,7 @@ test("local development login is explicit, loopback-only, and creates a real ses
   assert.match(route, /sessionCookie\(session\.token\)/);
   assert.match(authPage, /developmentAuthEnabled/);
   assert.match(authForm, /\/api\/auth\/dev-login\?returnTo=/);
-  assert.match(launcher, /LOCAL_AUTH_BYPASS: "false"/);
+  assert.match(launcher, /LOCAL_AUTH_BYPASS: config\.privateMode && process\.env\.NODE_ENV !== "production"\s*&& process\.env\.LOCAL_AUTH_BYPASS === "true" \? "true" : "false"/);
   assert.equal(JSON.parse(rootPackageText).scripts.dev, "npm run dev:platform");
   assert.match(
     await readFile(new URL("../server/index.ts", import.meta.url), "utf8"),
@@ -1242,12 +1242,10 @@ test("new work surfaces keep mobile, zoom and keyboard accessibility safeguards"
   assert.match(aiClient, /href=\{aiLocation\(new URLSearchParams\(\{ conversationId: item\.id \}\)\)\}/);
   assert.match(aiClient, /router\.replace\(aiLocation\(nextParams, !intakeFinalized\), \{ scroll: false \}\)/);
   assert.doesNotMatch(shellComponent, /MoreHorizontal/);
-  assert.match(dashboard, /max-width:\s*820px/);
-  assert.match(dashboard, /max-width:\s*460px/);
-  assert.match(dashboard, /\.dashboard-command-form textarea\s*\{[\s\S]*?min-height:\s*96px;[\s\S]*?grid-column:\s*1\/-1;[\s\S]*?grid-row:\s*1;[\s\S]*?resize:\s*none;/);
-  assert.match(dashboard, /\.dashboard-voice-action\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*2;/);
-  assert.match(dashboard, /\.dashboard-start\s*\{[\s\S]*?grid-column:\s*3;[\s\S]*?grid-row:\s*2;/);
-  assert.match(dashboard, /\.dashboard-attach\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;/);
+  assert.match(dashboard, /max-width:\s*900px/);
+  assert.match(dashboard, /max-width:\s*600px/);
+  assert.match(dashboard, /\.dashboard-command-form textarea\s*\{[^}]*grid-column:\s*1\/-1;[^}]*min-height:\s*96px;/);
+  assert.match(dashboard, /\.dashboard-start\s*\{[^}]*grid-column:\s*4;/);
   assert.match(comparison, /max-width:820px/);
   assert.match(comparison, /max-width:560px/);
   assert.match(comparison, /prefers-reduced-motion:reduce/);

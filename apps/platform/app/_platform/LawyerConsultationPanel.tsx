@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- consultation state is loaded from the authenticated API */
 
 import { CalendarClock, LoaderCircle } from "lucide-react";
@@ -260,7 +262,7 @@ export function LawyerConsultationPanel({
               </div>
               <label>
                 {text("Формат", "Format", "Format")}
-                <select
+                <Select
                   value={format}
                   onChange={(event) =>
                     setFormat(event.target.value as Consultation["format"])
@@ -269,7 +271,7 @@ export function LawyerConsultationPanel({
                   <option value="video">{text("Видеосвязь", "Video", "Video call")}</option>
                   <option value="phone">{text("Телефон", "Telefon", "Phone")}</option>
                   <option value="office">{text("В офисе", "Ofisda", "In person")}</option>
-                </select>
+                </Select>
               </label>
               <label>
                 {text("Внутренняя заметка", "Ichki izoh", "Internal note")}

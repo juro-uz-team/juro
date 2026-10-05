@@ -20,7 +20,7 @@ export function BuilderHeader({ user, signInPath, compact = false, variant = "st
   const embedded = variant === "embedded";
   return <header className={`dbt-header${embedded ? " dbt-header-embedded" : ""}`}>
     {embedded ? <div className="dbt-embedded-title"><FilePenLine aria-hidden="true"/><span><small>JURO</small><strong>{copy("Документы", "Hujjatlar", "Documents")}</strong></span></div> : <Link className="dbt-brand" href={paths.builder} aria-label={copy("JURO — Создать документ", "JURO — Hujjat yaratish", "JURO — Create a document")}>
-      <Image src="/juro-mark.png" alt="" width={38} height={38} aria-hidden="true" unoptimized/>
+      <Image src="/brand/JURO_avatar_1080.png" alt="" width={38} height={38} aria-hidden="true" unoptimized/>
       <b>JURO</b>
       {!compact && <span>{copy("Конструктор документов", "Hujjat konstruktori", "Document builder")}</span>}
     </Link>}

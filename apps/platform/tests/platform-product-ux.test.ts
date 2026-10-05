@@ -25,7 +25,7 @@ test("tablet shell uses the off-canvas navigation before content becomes cramped
   ]);
   assert.match(shell, /matchMedia\("\(max-width: 900px\)"\)/);
   assert.match(styles, /@media\s*\(min-width:\s*801px\)\s*and\s*\(max-width:\s*900px\)/);
-  const documentNav = shell.match(/const documentNav = \[(.*?)\];/s)?.[1] ?? "";
+  const documentNav = shell.match(/const primaryNav = \[(.*?)\] as const;/s)?.[1] ?? "";
   assert.doesNotMatch(documentNav, /\["document-builder",/);
   assert.doesNotMatch(documentNav, /\["document-review",/);
 });
@@ -99,9 +99,9 @@ test("mobile AI context sheet uses the shared focus lifecycle and keyboard tabs"
 test("guest AI keeps its workspace and interactive states legible in dark mode", async () => {
   const styles = await source("../app/_guest/guest-ai.css");
 
-  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-workspace\s*\{[^}]*background:\s*#102c3e/u);
-  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-form textarea\s*\{[^}]*background:\s*#081f30;[^}]*color:\s*#edf2f5/u);
-  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-header nav a:hover\s*\{[^}]*background:\s*#17384b;[^}]*color:\s*#f4f7f9/u);
+  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-workspace\s*\{[^}]*background:\s*var\(--surface-raised\)/u);
+  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-form textarea\s*\{[^}]*background:\s*var\(--control-background\);[^}]*color:\s*var\(--text-primary\)/u);
+  assert.match(styles, /html\[data-theme="dark"\] \.guest-ai-header nav a:hover\s*\{[^}]*background:\s*var\(--surface-hover\);[^}]*color:\s*var\(--text-primary\)/u);
 });
 
 test("history presents human labels without exposing opaque entity ids", async () => {
@@ -115,9 +115,9 @@ test("history presents human labels without exposing opaque entity ids", async (
 
 test("dashboard changes composition before the hero controls are squeezed", async () => {
   const styles = await source("../app/_platform/dashboard.css");
-  assert.match(styles, /@media\s*\(max-width:\s*1380px\)/);
-  assert.match(styles, /\.dashboard-command-hero\s*\{[\s\S]*?grid-template-columns:\s*1fr;[\s\S]*?min-height:\s*0;/);
-  assert.match(styles, /\.dashboard-quick-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(styles, /@media\s*\(max-width:\s*600px\)/);
+  assert.match(styles, /\.dashboard-command-hero\s*\{[^}]*display:\s*block;/);
+  assert.match(styles, /\.dashboard-quick-grid\s*\{[^}]*grid-template-columns:\s*1fr;/);
 });
 
 test("document review mode tabs remain usable at the narrowest supported width", async () => {

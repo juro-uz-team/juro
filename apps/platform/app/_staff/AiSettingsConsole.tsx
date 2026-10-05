@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { RefreshCw, Save, Settings2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
@@ -78,7 +80,7 @@ export function AiSettingsConsole({ locale, staffName }: { locale: Locale; staff
       setReason(""); setMessage(t.success); await load();
     } catch (value) { setError(value instanceof Error ? value.message : "REQUEST_FAILED"); setBusy(false); }
   };
-  const select = (field: keyof AiRuntimeSettings, values: string[], label: string) => <label>{label}<select value={String(form?.[field] ?? "")} onChange={(event) => setForm((current) => current ? { ...current, [field]: event.target.value } : current)}>{values.map((value) => <option key={value}>{value}</option>)}</select></label>;
+  const select = (field: keyof AiRuntimeSettings, values: string[], label: string) => <label>{label}<Select value={String(form?.[field] ?? "")} onChange={(event) => setForm((current) => current ? { ...current, [field]: event.target.value } : current)}>{values.map((value) => <option key={value}>{value}</option>)}</Select></label>;
   return <div className="staff-console ai-settings-console">
     <a className="staff-skip" href="#ai-settings-main">{t.skip}</a>
     <header className="staff-topbar"><div className="staff-brand"><Settings2 aria-hidden="true"/><span><b>JURO</b><small>AI SETTINGS</small></span></div><div className="staff-session"><span>{t.secure}</span><b>{staffName}</b></div><a href={`/${nextLocale}/admin/ai-settings`} hrefLang={nextLocale}>{nextLocale.toUpperCase()}</a></header>
@@ -94,7 +96,7 @@ export function AiSettingsConsole({ locale, staffName }: { locale: Locale; staff
             {select("anthropicChatFallbackModel", dashboard.allowlist.anthropic, t.anthropicChat)}
             {select("anthropicDocumentModel", dashboard.allowlist.anthropic, t.document)}
             {select("openaiDocumentFallbackModel", dashboard.allowlist.openai, t.openaiDocument)}
-            <label>{t.tone}<select value={form.responseTone} onChange={(event) => setForm({ ...form, responseTone: event.target.value as AiResponseTone })}><option value="clear">{t.clear}</option><option value="formal">{t.formal}</option><option value="concise">{t.concise}</option></select></label>
+            <label>{t.tone}<Select value={form.responseTone} onChange={(event) => setForm({ ...form, responseTone: event.target.value as AiResponseTone })}><option value="clear">{t.clear}</option><option value="formal">{t.formal}</option><option value="concise">{t.concise}</option></Select></label>
           </div>
           <label>{t.reason}<textarea required minLength={10} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
           <button className="staff-approve" type="submit" disabled={busy || reason.trim().length < 10}><Save aria-hidden="true"/>{t.save}</button>

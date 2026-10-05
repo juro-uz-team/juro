@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Bell,
-  Bot,
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
@@ -18,7 +17,6 @@ import {
   FilePenLine,
   Files,
   LoaderCircle,
-  MessageSquareText,
   Mic,
   Paperclip,
   RotateCcw,
@@ -156,17 +154,12 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
   }
 
   const quickActions = [
-    { href: `${base}/ai-chat`, icon: Bot, copy: copy.actions.ask },
     { href: `${base}/document-builder`, icon: FilePenLine, copy: copy.actions.create },
     { href: `${base}/document-review`, icon: ShieldCheck, copy: copy.actions.review },
-    {
-      href: `${base}/cases`,
-      icon: BriefcaseBusiness,
-      copy: {
-        title: copy.myMatters,
-        description: copy.myMattersDescription,
-      },
-    },
+    { href: `${base}/lawyers`, icon: BriefcaseBusiness, copy: {
+      title: locale === "ru" ? "Найти юриста" : locale === "uz" ? "Yurist topish" : "Find a lawyer",
+      description: locale === "ru" ? "Обсудите вопрос со специалистом" : locale === "uz" ? "Mutaxassis bilan maslahatlashing" : "Talk it through with a specialist",
+    } },
   ];
   const uploadPercent = uploadProgress?.phase === "uploading" && uploadProgress.total > 0
     ? Math.round((uploadProgress.loaded / uploadProgress.total) * 100)
@@ -242,32 +235,6 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
       time: item.updatedAt,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 7) : [];
-  const dayKey = (value: string) => new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tashkent",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
-  const todayKey = data ? dayKey(data.serverNow) : "";
-  const today = data ? [
-    ...data.deadlines.filter((item) => dayKey(item.dueAt) === todayKey).map((item) => ({
-      id: `today-deadline-${item.id}`,
-      href: `${base}/action-plan/${item.caseId}`,
-      icon: CalendarClock,
-      title: item.title,
-      detail: item.caseTitle,
-      time: item.dueAt,
-    })),
-    ...data.notifications.filter((item) => dayKey(item.createdAt) === todayKey).map((item) => ({
-      id: `today-notification-${item.id}`,
-      href: `${base}/notifications`,
-      icon: Bell,
-      title: item.title,
-      detail: item.body,
-      time: item.createdAt,
-    })),
-  ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()).slice(0, 4) : [];
-
   return (
     <div className="dashboard-command">
       <section className="dashboard-command-hero">
@@ -285,6 +252,7 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
               id="dashboard-legal-task"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
+              disabled={submitting}
               placeholder={copy.prompt}
               rows={2}
               maxLength={4_000}
@@ -299,6 +267,7 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
             <button
               type="button"
               className="dashboard-attach"
+              disabled={submitting}
               onClick={() => fileInputRef.current?.click()}
               aria-label={copy.attach}
             >
@@ -315,7 +284,7 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
               <div className="dashboard-file-chip">
                 <Files />
                 <span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(2)} MB</small></span>
-                <button type="button" onClick={() => chooseFile(null)} aria-label={copy.removeFile}><X /></button>
+                <button type="button" disabled={submitting} onClick={() => { chooseFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} aria-label={copy.removeFile}><X /></button>
               </div>
             )}
             {file && (
@@ -327,17 +296,6 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
             {uploadProgress && <><div className="dashboard-upload-progress" role="progressbar" aria-label={copy.uploadProgress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadPercent ?? undefined} aria-valuetext={uploadStatus}><span style={{ transform: `scaleX(${uploadPercent === null ? .08 : Math.max(.08, uploadPercent / 100)})` }} /></div><p className="dashboard-upload-status" role="status" aria-live="polite">{uploadStatus}</p></>}
           </form>
         </div>
-        <aside className="dashboard-today" aria-labelledby="dashboard-today-title">
-          <header><span>{copy.workday}</span><h2 id="dashboard-today-title">{copy.today}</h2></header>
-          {loading && !data ? <div className="dashboard-today-state"><LoaderCircle className="spin" /><span>{copy.synchronizing}</span></div> : today.length ? today.map((item) => (
-            <Link href={item.href} key={item.id}>
-              <item.icon aria-hidden="true" />
-              <span><strong>{item.title}</strong><small>{item.detail}</small></span>
-              <time>{formatDateTime(item.time, locale)}</time>
-            </Link>
-          )) : <div className="dashboard-today-state"><CheckCircle2 /><span>{copy.nothingUrgentToday}</span></div>}
-          <Link className="dashboard-today-calendar" href={`${base}/calendar`}>{copy.openCalendar}<ArrowRight aria-hidden="true" /></Link>
-        </aside>
       </section>
 
       {error && (
@@ -380,19 +338,8 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
         </div>
         {loading && !data ? (
           <div className="dashboard-command-loading" role="status"><LoaderCircle className="spin" /><span>{copy.loadingContext}</span></div>
-        ) : (
+        ) : data ? (
           <div className="dashboard-continuation-grid">
-            <section className="dashboard-work-list">
-              <header><span><CircleAlert /></span><div><h3>{copy.attentionTitle}</h3><p>{copy.attentionDescription}</p></div></header>
-              {attention.length ? attention.map((item) => (
-                <Link href={item.href} key={item.id} data-importance={item.importance}>
-                  <item.icon />
-                  <span><strong>{item.title}</strong><small>{item.detail}</small></span>
-                  <time>{formatDateTime(item.time, locale)}</time>
-                  <ArrowRight />
-                </Link>
-              )) : <DashboardEmpty text={copy.emptyAttention} />}
-            </section>
             <section className="dashboard-work-list">
               <header><span><Files /></span><div><h3>{copy.recentTitle}</h3><p>{copy.recentDescription}</p></div></header>
               {recent.length ? recent.map((item) => (
@@ -404,18 +351,22 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
                 </Link>
               )) : <DashboardEmpty text={copy.emptyRecent} />}
             </section>
+            <section className="dashboard-work-list">
+              <header><span><CircleAlert /></span><div><h3>{copy.attentionTitle}</h3><p>{copy.attentionDescription}</p></div></header>
+              {attention.length ? attention.map((item) => (
+                <Link href={item.href} key={item.id} data-importance={item.importance}>
+                  <item.icon />
+                  <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+                  <time>{formatDateTime(item.time, locale)}</time>
+                  <ArrowRight />
+                </Link>
+              )) : <DashboardEmpty text={copy.emptyAttention} />}
+            </section>
           </div>
-        )}
+        ) : null}
       </section>
 
-      {data && (
-        <section className="dashboard-context-summary" aria-label={copy.workspaceSummary}>
-          <span><BriefcaseBusiness /><b>{data.counts.activeCases}</b>{copy.activeMatters}</span>
-          <span><Files /><b>{data.counts.documents}</b>{copy.documentsCount}</span>
-          <span><MessageSquareText /><b>{data.counts.consultations}</b>{copy.consultationsCount}</span>
-          <span><Bell /><b>{data.counts.unreadNotifications}</b>{copy.newEvents}</span>
-        </section>
-      )}
+
     </div>
   );
 }

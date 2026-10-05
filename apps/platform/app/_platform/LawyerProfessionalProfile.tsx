@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Check, Send, Save } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -576,7 +578,7 @@ export function LawyerProfessionalProfile({
               </label>
               <label>
                 {text("Доступность", "Mavjudlik", "Availability")}
-                <select
+                <Select
                   required
                   value={form.availabilityStatus}
                   onChange={(event) =>
@@ -599,7 +601,7 @@ export function LawyerProfessionalProfile({
                   <option value="unavailable">
                     {text("Недоступен", "Mavjud emas", "Unavailable")}
                   </option>
-                </select>
+                </Select>
               </label>
               <label>
                 {text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")}
@@ -613,7 +615,7 @@ export function LawyerProfessionalProfile({
               </label>
               <label>
                 {text("Статус адвоката", "Advokat maqomi", "Advocate status")}
-                <select
+                <Select
                   value={form.advocateStatus}
                   onChange={(event) =>
                     setForm({
@@ -629,7 +631,7 @@ export function LawyerProfessionalProfile({
                   <option value="declared">
                     {text("Заявлен, не подтверждён JURO", "Bildirilgan, JURO tasdiqlamagan", "Declared, not verified by JURO")}
                   </option>
-                </select>
+                </Select>
               </label>
               <label>
                 {text("Описание цены", "Narx tavsifi", "Fee description")}

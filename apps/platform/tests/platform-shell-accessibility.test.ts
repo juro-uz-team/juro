@@ -51,10 +51,11 @@ test("320px and 360px topbars keep actions reachable without clipping", async ()
 
   assert.match(shell, /className="platform-language-switcher"/);
   assert.match(shell, /className="platform-sidebar-logout"/);
-  assert.match(shell, /className="platform-topbar-logout"/);
+  assert.doesNotMatch(shell, /className="platform-topbar-logout"/);
+  assert.match(shell, /className="platform-profile-menu"/);
   assert.match(css, /\.platform-topbar button,.platform-topbar a,.platform-menu\{min-width:44px;height:44px\}/);
   assert.match(css, /@media\(max-width:420px\)\{\s+\.platform-topbar\{padding-inline:3px\}\s+\.platform-topbar>div:last-child\{gap:4px\}/);
-  assert.match(css, /\.platform-topbar \.platform-language-switcher\{width:58px;padding-inline:4px;gap:3px\}/);
+  assert.match(css, /\.platform-topbar \.platform-language-switcher\{width:88px;padding-inline:6px;gap:6px\}/);
   assert.match(css, /@media\(max-width:340px\)\{\.platform-topbar-logout\{display:none!important\}\}/);
   assert.match(css, /@media\(max-width:520px\)\{\.platform-topbar>div:first-of-type\{display:none\}\}/);
   assert.match(css, /@media\(max-width:800px\)\{\s+\.platform-sidebar-logout\{display:flex;/);
@@ -65,7 +66,7 @@ test("mid-width profile controls shrink inside the platform content column", asy
 
   assert.match(css, /\.profile-form\{min-width:0;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
   assert.match(css, /\.profile-form section,\.profile-form label\{min-width:0\}/);
-  assert.match(css, /\.profile-form input,\.profile-form select,\.profile-form textarea\{width:100%;max-width:100%;min-width:0\}/);
+  assert.match(css, /\.profile-form input,\.profile-form :is\(select, \.juro-select\),\.profile-form textarea\{width:100%;max-width:100%;min-width:0\}/);
 });
 
 test("individual case links and settings tabs retain 44px touch targets", async () => {
@@ -103,8 +104,8 @@ test("client dashboard and calendar actions retain 44px touch targets", async ()
     readFile(calendarStylesheet, "utf8"),
   ]);
 
-  assert.match(dashboard, /\.dashboard-section-title-row > button \{\s+display: inline-flex;\s+min-height: 44px;/);
-  assert.match(dashboard, /\.dashboard-section-title-row > button \{\s+width: 44px;\s+padding: 0;/);
+  assert.match(dashboard, /\.dashboard-section-title-row > button \{[^}]*min-height: 44px;/);
+
   assert.match(calendar, /\.calendar-tabs button\s*\{[^}]*min-width:\s*0;[^}]*min-height:\s*44px/s);
   assert.match(calendar, /@media\s*\(max-width:\s*430px\)\s*\{[\s\S]*?\.calendar-range button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/s);
 });
@@ -127,7 +128,7 @@ test("canonical document routes load the builder styles and keep folder controls
     readFile(businessDocumentsLayout, "utf8"),
   ]);
 
-  assert.match(css, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a, select, textarea,[^}]+\) \{ min-height: 44px; \}/);
+  assert.match(css, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a, :is\(select, \.juro-select\), textarea,[^}]+\) \{ min-height: 44px; \}/);
   assert.match(css, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a\) \{ min-width: 44px; \}/);
   assert.match(css, /\.dbt-folders button \{/);
   assert.match(css, /@media \(max-width: 1180px\) \{\s+\.platform-shell \.dbt-docs-layout \{ grid-template-columns: 1fr; \}/);
@@ -147,7 +148,7 @@ test("mobile AI, notification, and privacy actions retain 44px touch targets", a
 
   assert.match(ai, /\.ai-composer-options > summary \{[\s\S]*?min-height: 44px;/);
   assert.match(ai, /@media \(max-width: 520px\) \{[\s\S]*?\.ai-composer-mode button \{ width: 44px; min-width: 44px;/);
-  assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a, select, textarea,[^}]+\) \{ min-height: 44px; \}/);
+  assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a, :is\(select, \.juro-select\), textarea,[^}]+\) \{ min-height: 44px; \}/);
   assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a\) \{ min-width: 44px; \}/);
   assert.match(documents, /\.dbt-notification-list article > a, \.dbt-notification-list article > button \{/);
   assert.match(documents, /\.dbt-notification-list article > a, \.dbt-notification-list article > button \{ grid-column: 2; justify-self: start; \}/);

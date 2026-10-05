@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- the persisted sidebar preference is restored after hydration */
 
 import Link from "next/link";
@@ -25,15 +27,18 @@ import {
   PanelLeftClose,
   MessageSquareText,
   PanelLeftOpen,
+  Layers3,
   ReceiptText,
   CreditCard,
   Scale,
   ShieldCheck,
+  Settings,
   UserRound,
   UsersRound,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   AUTHENTICATED_PLATFORM_UI_LOCALES,
   platformBasePath,
@@ -46,8 +51,18 @@ import { LogoutButton } from "./LogoutButton";
 import { PlatformRouteProvider } from "./PlatformRouteContext";
 import { useSessionRefresh } from "./useSessionRefresh";
 import { ThemeSwitcher } from "../_theme/ThemeSwitcher";
-import { SidebarSectionLabel } from "./SidebarSectionLabel";
+import { WorkspaceTools } from "./WorkspaceTools";
 import { platformApiError, platformLocaleValue } from "../../content/platform-ui";
+
+// CSS optimization can serialize milliseconds as seconds; WAAPI always uses milliseconds.
+function motionDuration(style: CSSStyleDeclaration, property: string, fallback: number): number {
+  const value = style.getPropertyValue(property).trim();
+  const amount = Number.parseFloat(value);
+  if (!Number.isFinite(amount) || amount < 0) return fallback;
+  if (value.endsWith("ms")) return amount;
+  if (value.endsWith("s")) return amount * 1000;
+  return fallback;
+}
 
 type Props = {
   locale: PlatformLocale;
@@ -59,14 +74,15 @@ type Props = {
 };
 
 const primaryNav = [
-  ["ai-chat", Bot, "Спросить AI", "AI’dan so‘rash", "Ask AI"],
-  ["document-builder", FilePenLine, "Создать документ", "Hujjat yaratish", "Create a document"],
-  ["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"],
+  ["dashboard", Home, "Главная", "Bosh sahifa", "Home"],
+  ["ai-chat", Bot, "Спросить Juro", "Juro’dan so‘rash", "Ask Juro"],
   ["cases", BriefcaseBusiness, "Мои дела", "Mening ishlarim", "My matters"],
+  ["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"],
 ] as const;
 
 const lawyerPrimaryNav = [
   ["dashboard", Home, "Главная", "Bosh sahifa", "Home"],
+  ["ai-chat", Bot, "Спросить Juro", "Juro’dan so‘rash", "Ask Juro"],
   ["consultations?view=requests", Bell, "Заявки", "So‘rovlar", "Requests"],
   [
     "consultations?view=schedule",
@@ -88,10 +104,12 @@ const lawyerClientNav = [
 const lawyerPracticeNav = [
   ["calendar", CalendarDays, "Календарь", "Kalendar", "Calendar"],
   ["profile", UserRound, "Публичный профиль", "Ommaviy profil", "Public profile"],
-  ["settings", ShieldCheck, "Настройки", "Sozlamalar", "Settings"],
+  ["settings", Settings, "Настройки", "Sozlamalar", "Settings"],
 ] as const;
 
 const documentNav = [
+  ["document-builder", FilePenLine, "Создать документ", "Hujjat yaratish", "Create a document"],
+  ["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"],
   ["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"],
   [
     "document-review?mode=compare",
@@ -141,10 +159,15 @@ export function PlatformShell({
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const sidebarSurfaceRef = useRef<HTMLDivElement>(null);
+  const sidebarAnimations = useRef<Animation[]>([]);
+  useEffect(() => () => sidebarAnimations.current.forEach(animation => animation.cancel()), []);
   const [moreOpen, setMoreOpen] = useState(false);
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
   const sidebarRef = useRef<HTMLElement>(null);
+  const profileMenuRef = useRef<HTMLDetailsElement>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   useSessionRefresh(locale);
@@ -153,11 +176,8 @@ export function PlatformShell({
   const lawyer = accountType === "lawyer";
   const text = (value: { ru: string; uz: string; en: string }) =>
     platformLocaleValue(locale, value);
-  const readyLocaleIndex = AUTHENTICATED_PLATFORM_UI_LOCALES.findIndex((candidate) => candidate === locale);
-  const nextLocale: PlatformLocale = AUTHENTICATED_PLATFORM_UI_LOCALES[
-    (Math.max(readyLocaleIndex, 0) + 1) % AUTHENTICATED_PLATFORM_UI_LOCALES.length
-  ] ?? "ru";
   const primaryItems = lawyer ? lawyerPrimaryNav : primaryNav;
+  const mobileItems = primaryItems.filter(([slug]) => !lawyer || slug !== "consultations?view=schedule");
   const toolGroups = lawyer
     ? ([
         {
@@ -198,7 +218,7 @@ export function PlatformShell({
     const href = `${base}/${route}`;
     const matchesRoute = pathname === href || pathname.startsWith(`${href}/`);
     if (!matchesRoute) return false;
-    if (!query) return true;
+    if (!query) return route !== "document-review" || searchParams.get("mode") !== "compare";
     const expectedParams = new URLSearchParams(query);
     return Array.from(expectedParams.entries()).every(
       ([key, value]) => searchParams.get(key) === value,
@@ -213,15 +233,39 @@ export function PlatformShell({
         !pathname.startsWith(`${href}/comparisons`))
     );
   };
-  const moreHasActiveRoute = toolGroups.some((group) =>
+  const moreHasActiveRoute = !primaryItems.some(([slug]) => routeIsActive(slug)) && toolGroups.some((group) =>
     group.items.some(([slug]) => documentRouteIsActive(slug)),
   );
   useEffect(() => {
     setCollapsed(localStorage.getItem("juro-sidebar-collapsed") === "1");
   }, []);
+
   useEffect(() => {
-    if (moreHasActiveRoute) setMoreOpen(true);
-  }, [moreHasActiveRoute]);
+    const dismissOutside = (event: PointerEvent) => {
+      const menu = profileMenuRef.current;
+      if (menu?.open && event.target instanceof Node && !menu.contains(event.target)) {
+        menu.open = false;
+      }
+    };
+    const dismissWithEscape = (event: KeyboardEvent) => {
+      const menu = profileMenuRef.current;
+      if (event.key === "Escape" && menu?.open) {
+        menu.open = false;
+        menu.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    document.addEventListener("keydown", dismissWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      document.removeEventListener("keydown", dismissWithEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (profileMenuRef.current) profileMenuRef.current.open = false;
+  }, [pathname]);
+
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
     const sync = () => setMobile(query.matches);
@@ -233,7 +277,9 @@ export function PlatformShell({
     document.documentElement.lang = locale;
   }, [locale]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !mobile) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
@@ -246,8 +292,9 @@ export function PlatformShell({
             "a[href],button:not(:disabled),select:not(:disabled),[tabindex]:not([tabindex='-1'])",
           ) ?? [],
         );
-        const first = focusable[0];
-        const last = focusable.at(-1);
+        const visible = focusable.filter(element => element.getClientRects().length > 0);
+        const first = visible[0];
+        const last = visible.at(-1);
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last?.focus();
@@ -259,9 +306,13 @@ export function PlatformShell({
     };
     document.addEventListener("keydown", handleKeyDown);
     closeButtonRef.current?.focus();
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
-  const switchLanguage = () => {
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, mobile]);
+  const switchLanguage = (nextLocale: PlatformLocale) => {
+    if (nextLocale === locale) return;
     document.documentElement.lang = nextLocale;
     document.cookie = `juro_locale=${nextLocale}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`;
     // Preserve the concrete object state (conversation, branch, comparison,
@@ -271,11 +322,33 @@ export function PlatformShell({
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.delete("prompt");
     const query = nextParams.toString();
-    router.push(query ? `${nextPath}?${query}` : nextPath);
+    router.push(`${nextPath}${query ? `?${query}` : ""}${window.location.hash}`);
   };
   const toggleCollapsed = () => {
     const next = !collapsed;
-    setCollapsed(next);
+    const main = mainRef.current;
+    const surface = sidebarSurfaceRef.current;
+    const previousLeft = main?.getBoundingClientRect().left ?? 0;
+    const previousWidth = surface?.getBoundingClientRect().width ?? 0;
+    sidebarAnimations.current.forEach(animation => animation.cancel());
+    sidebarAnimations.current = [];
+    flushSync(() => setCollapsed(next));
+    if (main && surface && !mobile && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const motion = getComputedStyle(main);
+      const duration = motionDuration(motion, "--motion-drawer", 220);
+      const easing = motion.getPropertyValue("--ease-out").trim() || "cubic-bezier(.16,1,.3,1)";
+      const delta = previousLeft - main.getBoundingClientRect().left;
+      const width = surface.getBoundingClientRect().width;
+      sidebarAnimations.current = [
+        main.animate([{ transform: `translateX(${delta}px)` }, { transform: "translateX(0)" }], { duration, easing }),
+        surface.animate([{ transform: `scaleX(${width ? previousWidth / width : 1})` }, { transform: "scaleX(1)" }], { duration, easing }),
+      ];
+      if (!next && sidebarRef.current) {
+        for (const element of sidebarRef.current.querySelectorAll<HTMLElement>("nav a span, .platform-account div, .platform-tools-trigger > span")) {
+          sidebarAnimations.current.push(element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: motionDuration(motion, "--motion-surface", 180), easing }));
+        }
+      }
+    }
     localStorage.setItem("juro-sidebar-collapsed", next ? "1" : "0");
   };
   const closeMobileMenu = () => {
@@ -326,26 +399,19 @@ export function PlatformShell({
           aria-hidden={mobile && !open ? true : undefined}
           inert={mobile && !open ? true : undefined}
         >
+          <div ref={sidebarSurfaceRef} className="platform-sidebar-surface" aria-hidden="true" />
           <div className="platform-brand">
             <Link href={`${base}/dashboard`} aria-label="JURO">
               <Image
-                className="platform-logo-on-dark"
-                src="/juro-logo-light.png"
+                className="platform-logo-avatar"
+                src="/brand/JURO_avatar_1080.png"
                 alt=""
-                width={236}
-                height={120}
+                width={1080}
+                height={1080}
                 priority
                 unoptimized
               />
-              <Image
-                className="platform-logo-on-light"
-                src="/juro-logo-primary.png"
-                alt=""
-                width={236}
-                height={120}
-                priority
-                unoptimized
-              />
+              <span className="platform-brand-wordmark" aria-hidden="true">JURO</span>
             </Link>
             <button
               type="button"
@@ -360,11 +426,11 @@ export function PlatformShell({
           <div
             className={`platform-account ${switchingWorkspace ? "switching" : ""}`}
           >
-            <span>{business ? <BriefcaseBusiness /> : <UserRound />}</span>
+            <span>{business ? <BriefcaseBusiness /> : <Layers3 />}</span>
             <div>
               <small>{text({ ru: "Пространство", uz: "Makon", en: "Workspace" })}</small>
               {!lawyer && workspaces.length > 1 ? (
-                <select
+                <Select
                   value={activeWorkspaceId}
                   disabled={switchingWorkspace}
                   onChange={(event) => void switchWorkspace(event.target.value)}
@@ -384,7 +450,7 @@ export function PlatformShell({
                       · {workspace.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               ) : (
                 <b>
                   {lawyer
@@ -422,78 +488,24 @@ export function PlatformShell({
                 );
               })}
             </div>
-            <details
-              className="platform-nav-more"
-              open={moreOpen}
-              onToggle={(event) => setMoreOpen(event.currentTarget.open)}
-            >
-              <summary
-                title={
-                  collapsed
-                    ? text({ ru: "Все инструменты", uz: "Barcha vositalar", en: "All tools" })
-                    : undefined
-                }
-              >
-                <Ellipsis />
-                <span>
-                  {text({ ru: "Все инструменты", uz: "Barcha vositalar", en: "All tools" })}
-                </span>
-                <ChevronDown
-                  className="platform-nav-more-chevron"
-                  aria-hidden="true"
-                />
-              </summary>
-              <div className="platform-nav-more-content">
-                {toolGroups.map((group) => (
-                  <section
-                    className="platform-nav-tool-group"
-                    key={group.key}
-                    aria-label={platformLocaleValue(locale, group)}
-                  >
-                    <SidebarSectionLabel
-                      locale={locale}
-                      ru={group.ru}
-                      uz={group.uz}
-                      en={group.en}
-                    />
-                    {group.items.map(([slug, Icon, ru, uz, en]) => {
-                      const href = `${base}/${slug}`;
-                      const active = documentRouteIsActive(slug);
-                      const label = platformLocaleValue(locale, { ru, uz, en });
-                      return (
-                        <Link
-                          key={slug}
-                          className={active ? "active" : ""}
-                          aria-current={active ? "page" : undefined}
-                          href={href}
-                          onClick={() => setOpen(false)}
-                          title={collapsed ? label : undefined}
-                        >
-                          <Icon />
-                          <span>{label}</span>
-                        </Link>
-                      );
-                    })}
-                  </section>
-                ))}
-              </div>
-            </details>
+            <button type="button" className={`platform-tools-trigger ${moreHasActiveRoute ? "active" : ""}`}
+              onClick={() => { setOpen(false); setMoreOpen(true); }} aria-haspopup="dialog"
+              title={text({ ru: "Все инструменты", uz: "Barcha vositalar", en: "All tools" })}>
+              <Ellipsis /><span>{text({ ru: "Все инструменты", uz: "Barcha vositalar", en: "All tools" })}</span>
+            </button>
           </nav>
-          <div className="platform-sidebar-bottom">
-            <Link href={`${base}/security`}>
-              <ShieldCheck />
-              <span>{text({ ru: "Безопасность", uz: "Xavfsizlik", en: "Security" })}</span>
-            </Link>
-            <Link href={`${base}/help`}>
-              <HelpCircle />
-              <span>{text({ ru: "Помощь", uz: "Yordam", en: "Help" })}</span>
-            </Link>
-            <LogoutButton
-              className="platform-sidebar-logout"
-              locale={locale}
-              label={text({ ru: "Выйти", uz: "Chiqish", en: "Sign out" })}
-            />
-          </div>
+          <details ref={profileMenuRef} className="platform-profile-menu">
+            <summary title={userName || text({ ru: "Аккаунт", uz: "Hisob", en: "Account" })}>
+              <Settings /><span>{userName.trim() && <strong>{userName}</strong>}<small>{text({ ru: "Аккаунт и настройки", uz: "Hisob va sozlamalar", en: "Account & settings" })}</small></span><ChevronDown />
+            </summary>
+            <div className="platform-sidebar-bottom">
+              <Link href={`${base}/profile`} onClick={() => setOpen(false)}><UserRound /><span>{text({ ru: "Профиль", uz: "Profil", en: "Profile" })}</span></Link>
+              <Link href={`${base}/settings`} onClick={() => setOpen(false)}><Settings /><span>{text({ ru: "Настройки", uz: "Sozlamalar", en: "Settings" })}</span></Link>
+              <Link href={`${base}/security`} onClick={() => setOpen(false)}><ShieldCheck /><span>{text({ ru: "Безопасность", uz: "Xavfsizlik", en: "Security" })}</span></Link>
+              <Link href={`${base}/help`} onClick={() => setOpen(false)}><HelpCircle /><span>{text({ ru: "Помощь", uz: "Yordam", en: "Help" })}</span></Link>
+              <LogoutButton className="platform-sidebar-logout" locale={locale} label={text({ ru: "Выйти", uz: "Chiqish", en: "Sign out" })} />
+            </div>
+          </details>
           <button
             className="platform-collapse"
             onClick={toggleCollapsed}
@@ -508,15 +520,22 @@ export function PlatformShell({
             <span>{text({ ru: "Свернуть", uz: "Yig‘ish", en: "Collapse" })}</span>
           </button>
         </aside>
-        {open && (
+        {mobile && (
           <button
             type="button"
-            className="platform-backdrop"
+            className={`platform-backdrop ${open ? "is-open" : ""}`}
+            aria-hidden={!open}
+            tabIndex={-1}
+            disabled={!open}
             aria-label={text({ ru: "Закрыть меню", uz: "Menyuni yopish", en: "Close menu" })}
             onClick={closeMobileMenu}
           />
         )}
-        <div className="platform-main">
+        {moreOpen && <WorkspaceTools locale={locale} base={base} groups={toolGroups} isActive={documentRouteIsActive} onClose={() => {
+          setMoreOpen(false);
+          if (mobile) window.requestAnimationFrame(() => openButtonRef.current?.focus());
+        }} />}
+        <div className="platform-main" ref={mainRef}>
           <header className="platform-topbar">
             <div>
               <small>
@@ -529,31 +548,27 @@ export function PlatformShell({
             <div>
               <GlobalSearch locale={locale} accountType={accountType} />
               <ThemeSwitcher locale={locale} compact />
-              <button
+              <Select
                 className="platform-language-switcher"
-                onClick={switchLanguage}
-                aria-label={
-                  {
-                    ru: { ru: "Переключить на русский", uz: "Переключить на узбекский", en: "Переключить на английский" },
-                    uz: { ru: "Rus tiliga o‘tish", uz: "O‘zbek tiliga o‘tish", en: "Ingliz tiliga o‘tish" },
-                    en: { ru: "Switch to Russian", uz: "Switch to Uzbek", en: "Switch to English" },
-                  }[locale][nextLocale]
-                }
+                value={locale}
+                aria-label={text({ ru: "Язык интерфейса", uz: "Interfeys tili", en: "Interface language" })}
+                displayValue={<span className="platform-language-value"><Languages aria-hidden="true" />{locale.toUpperCase()}</span>}
+                onChange={event => {
+                  const selected = AUTHENTICATED_PLATFORM_UI_LOCALES.find(value => value === event.target.value);
+                  if (selected) switchLanguage(selected);
+                }}
               >
-                <Languages />
-                {locale.toUpperCase()}
-              </button>
+                <option value="ru">RU</option>
+                <option value="uz">UZ</option>
+                <option value="en">EN</option>
+              </Select>
               <Link
                 href={`${base}/profile`}
                 aria-label={text({ ru: "Профиль", uz: "Profil", en: "Profile" })}
               >
                 <UserRound />
               </Link>
-              <LogoutButton
-                className="platform-topbar-logout"
-                locale={locale}
-                label={text({ ru: "Выйти", uz: "Chiqish", en: "Sign out" })}
-              />
+
             </div>
           </header>
           <main className="platform-content" id="main-content" tabIndex={-1}>
@@ -565,44 +580,8 @@ export function PlatformShell({
               text({ ru: "Мобильная навигация", uz: "Mobil navigatsiya", en: "Mobile navigation" })
             }
           >
-            {(lawyer
-              ? [
-                  ["dashboard", Home, text({ ru: "Главная", uz: "Bosh", en: "Home" })],
-                  [
-                    "consultations?view=requests",
-                    Bell,
-                    text({ ru: "Заявки", uz: "So‘rov", en: "Requests" }),
-                  ],
-                  [
-                    "consultations?view=schedule",
-                    CalendarCheck2,
-                    text({ ru: "Приёмы", uz: "Qabul", en: "Meetings" }),
-                  ],
-                  [
-                    "consultations?view=matters",
-                    BriefcaseBusiness,
-                    text({ ru: "Дела", uz: "Ishlar", en: "Matters" }),
-                  ],
-                ]
-              : [
-                  ["ai-chat", Bot, "AI"],
-                  [
-                    "document-builder",
-                    FilePenLine,
-                    text({ ru: "Создать", uz: "Yaratish", en: "Create" }),
-                  ],
-                  [
-                    "document-review",
-                    FileCheck2,
-                    text({ ru: "Проверить", uz: "Tekshirish", en: "Review" }),
-                  ],
-                  [
-                    "cases",
-                    BriefcaseBusiness,
-                    text({ ru: "Дела", uz: "Ishlar", en: "Matters" }),
-                  ],
-                ]
-            ).map(([slug, Icon, label]) => {
+            {mobileItems.map(([slug, Icon, ru, uz, en]) => {
+              const label = platformLocaleValue(locale, { ru, uz, en });
               const href = `${base}/${slug as string}`;
               const active = routeIsActive(slug as string);
               const NavIcon = Icon as typeof Home;

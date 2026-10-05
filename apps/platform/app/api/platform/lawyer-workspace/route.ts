@@ -33,7 +33,7 @@ export const GET = withApiErrors(async function GET() {
   const operational = profile.status === "public_approved" && profile.marketplaceStatus === "public_approved";
   if (!operational) return response({ profile, operational, unreadMessageCount: 0, requests: [], matters: [], messages: [], documents: [], ownDocuments: [], tasks: [], taskComments: [], consultations: [], caseEvents: [] });
   const now = new Date().toISOString();
-  const [requests, matters, messages, unreadMessages, documents, ownDocuments, tasks, taskComments, consultations, caseEvents] = await Promise.all([
+  const [requests, matters, messages, unreadMessages, documents, tasks, taskComments, ownDocuments, consultations, caseEvents] = await Promise.all([
     db.prepare(
       `SELECT r.id,r.status,r.anonymized_summary AS anonymizedSummary,r.created_at AS createdAt,r.updated_at AS updatedAt,
         CASE WHEN g.id IS NOT NULL THEN cs.id END AS caseId,
@@ -88,12 +88,12 @@ export const GET = withApiErrors(async function GET() {
     ).bind(profile.id, user.id, now).all(),
     db.prepare(
       `SELECT DISTINCT t.id,t.title,t.description,t.status,t.due_at AS dueAt,t.case_id AS caseId,
-        t.updated_at AS updatedAt,r.id AS requestId,
+        t.updated_at AS updatedAt,r.id AS requestId,COALESCE(t.due_at,t.updated_at) AS sortAt,
         CASE WHEN t.owner_user_id=? AND t.plan_step_id IS NULL THEN 1 ELSE 0 END AS isEditable
        FROM tasks t JOIN lawyer_access_grants g ON g.case_id=t.case_id
        JOIN lawyer_requests r ON r.id=g.lawyer_request_id AND r.lawyer_profile_id=?
        WHERE g.lawyer_user_id=? AND g.revoked_at IS NULL AND (g.expires_at IS NULL OR g.expires_at>?)
-       ORDER BY COALESCE(t.due_at,t.updated_at) ASC LIMIT 100`,
+       ORDER BY sortAt ASC LIMIT 100`,
     ).bind(user.id, profile.id, user.id, now).all(),
     db.prepare(
       `SELECT DISTINCT c.id,c.task_id AS taskId,c.body,c.created_at AS createdAt,u.full_name AS authorName

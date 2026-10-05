@@ -11,13 +11,13 @@
   gap: 24px;
   padding: 28px;
   border-radius: 20px;
-  background: linear-gradient(125deg, var(--navy), var(--navy-2));
-  color: var(--text-inverse);
-  box-shadow: 0 18px 42px rgba(6, 40, 68, 0.16);
+  background: var(--surface-brand);
+  color: var(--text-primary);
+  box-shadow: 0 18px 42px var(--shadow-color);
 }
 .calendar-eyebrow {
   margin: 0 0 8px;
-  color: var(--gold-soft);
+  color: var(--brand-gold-text);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -32,7 +32,7 @@
 .calendar-header p:not(.calendar-eyebrow) {
   max-width: 600px;
   margin: 8px 0 0;
-  color: color-mix(in srgb, var(--text-inverse) 78%, var(--navy));
+  color: var(--text-secondary);
 }
 .calendar-range {
   display: flex;
@@ -49,10 +49,10 @@
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-inverse);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 .calendar-tabs {
   display: flex;
@@ -69,13 +69,16 @@
   background: var(--white);
   color: var(--muted);
   font: inherit;
-  font-weight: 750;
+  font-weight: 600;
   padding: 0 16px;
 }
 .calendar-tabs button[aria-selected="true"] {
   border-color: var(--navy);
-  background: var(--navy);
-  color: var(--text-inverse);
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
+  box-shadow: none;
+  border: 1px solid var(--border-accent);
+  font-weight: 600;
 }
 .calendar-tabs button:focus-visible,
 .calendar-range button:focus-visible,
@@ -153,7 +156,7 @@
   background: var(--paper);
   color: var(--ink);
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
   padding: 5px;
   text-decoration: none;
 }

@@ -40,11 +40,11 @@ export function DocumentBuilderLoader(props: DocumentBuilderLoaderProps) {
 
   if (failed) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f6f7f8] p-6">
-        <section className="max-w-md rounded-3xl border border-red-100 bg-white p-8 text-center shadow-sm" role="alert">
-          <h1 className="text-xl font-semibold text-[#1b263b]">{copy.title}</h1>
-          <p className="mt-3 text-sm text-[#64748b]">{copy.body}</p>
-          <button className="mt-5 min-h-11 rounded-xl bg-[#159a9c] px-5 font-semibold text-white" onClick={() => window.location.reload()} type="button">
+      <main className="flex min-h-screen items-center justify-center bg-[var(--surface-canvas)] p-6">
+        <section className="max-w-md rounded-3xl border border-[var(--border-danger)] bg-[var(--surface-raised)] p-8 text-center shadow-sm" role="alert">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">{copy.title}</h1>
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">{copy.body}</p>
+          <button className="mt-5 min-h-11 rounded-xl bg-[var(--interactive-primary)] px-5 font-semibold text-[var(--text-on-action)]" onClick={() => window.location.reload()} type="button">
             {copy.retry}
           </button>
         </section>
@@ -54,8 +54,8 @@ export function DocumentBuilderLoader(props: DocumentBuilderLoaderProps) {
 
   if (!Client) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f6f7f8]" aria-busy="true" aria-label={copy.loading}>
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#d7eeee] border-t-[#159a9c]" />
+      <main className="flex min-h-screen items-center justify-center bg-[var(--surface-canvas)]" aria-busy="true" aria-label={copy.loading}>
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--border-subtle)] border-t-[var(--brand-gold-text)]" />
       </main>
     );
   }

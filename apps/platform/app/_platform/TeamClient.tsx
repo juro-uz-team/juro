@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated team data is hydrated after the first browser render */
 
 import { CircleAlert, LoaderCircle, MailPlus, ShieldCheck, Trash2, UserRound, UsersRound } from "lucide-react";
@@ -112,12 +114,12 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
         <form className="team-invite" onSubmit={invite}>
           <div><MailPlus /><div><h2>{copy.invite}</h2><p>{copy.inviteDescription}</p></div></div>
           <label><span>Email</span><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@company.uz" /></label>
-          <label><span>{copy.role}</span><select value={role} onChange={(event) => setRole(event.target.value as typeof role)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</select></label>
+          <label><span>{copy.role}</span><Select value={role} onChange={(event) => setRole(event.target.value as typeof role)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select></label>
           <button disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <MailPlus />}{copy.send}</button>
         </form>
       )}
       <div className="team-grid">
-        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{data?.members.map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canManage && member.role !== "owner" ? <select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canManage && member.role !== "owner" && <button className="team-remove" onClick={() => void removeMember(member.id)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div></article>
+        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{data?.members.map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canManage && member.role !== "owner" ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canManage && member.role !== "owner" && <button className="team-remove" onClick={() => void removeMember(member.id)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div></article>
         <article><div className="team-title"><h2>{copy.pending}</h2><span>{data?.invitations.length ?? 0}</span></div>{data?.invitations.length ? <div className="team-list">{data.invitations.map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}</article>
       </div>
     </section>

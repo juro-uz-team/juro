@@ -43,7 +43,9 @@ test("review exports inherit semantic raised, subtle, and hover surfaces", () =>
 });
 
 test("document builder separates dark-safe headings, controls, states, and paper", () => {
-  assert.match(documentBuilder, /:root\[data-theme="dark"\]\s*\{[^}]*--dbt-cta:\s*#185274/s);
+  assert.match(documentBuilder, /--dbt-cta:\s*var\(--interactive-primary\)/);
+  assert.match(documentBuilder, /--dbt-on-cta:\s*var\(--text-on-action\)/);
+  assert.doesNotMatch(documentBuilder, /--dbt-cta:\s*#/);
   assert.match(documentBuilder, /--dbt-ink:\s*var\(--text-primary/);
   assert.match(documentBuilder, /--dbt-ok-bg:\s*var\(--green-bg/);
   assert.match(documentBuilder, /--dbt-warn-bg:\s*var\(--amber-bg/);
@@ -60,8 +62,10 @@ test("document builder separates dark-safe headings, controls, states, and paper
   assert.doesNotMatch(documentBuilder, /var\(--dbt-navy(?:-2)?\)/);
 });
 
-test("dark primary actions retain WCAG AA text contrast", () => {
-  assert.ok(contrastRatio("#ffffff", "#185274") >= 4.5);
+test("brand primary actions retain WCAG AA text contrast in both themes", () => {
+  for (const [foreground, background] of [["#6c511f", "#f3ecdf"], ["#6c511f", "#eae0cd"], ["#f0ddb2", "#494638"], ["#f0ddb2", "#55503f"]]) {
+    assert.ok(contrastRatio(foreground, background) >= 4.5);
+  }
 });
 
 test("theme styles avoid broad transitions and preserve reduced-motion handling", () => {

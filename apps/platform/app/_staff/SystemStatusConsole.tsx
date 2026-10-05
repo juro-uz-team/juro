@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Activity, CircleCheckBig, Plus, RefreshCw, Send, ServerCog, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useCallback, useState, type FormEvent } from "react";
 import type {
@@ -287,7 +289,7 @@ export function SystemStatusConsole({ locale, staffName, initial }: { locale: St
           <label>{t.messageUz}<textarea name="messageUz" required minLength={10} maxLength={2000}/></label>
           <label>{t.messageEn}<textarea name="messageEn" required minLength={10} maxLength={2000}/></label>
           <label>{t.startedAt}<input name="startedAt" type="datetime-local" defaultValue={localInputNow()} required/></label>
-          <label>{t.impact}<select value={impact} onChange={(event) => setImpact(event.target.value as StatusImpact)}>{(["degraded", "partial_outage", "outage", "maintenance"] as StatusImpact[]).map((value) => <option key={value} value={value}>{t[value]}</option>)}</select></label>
+          <label>{t.impact}<Select value={impact} onChange={(event) => setImpact(event.target.value as StatusImpact)}>{(["degraded", "partial_outage", "outage", "maintenance"] as StatusImpact[]).map((value) => <option key={value} value={value}>{t[value]}</option>)}</Select></label>
           <fieldset><legend>{t.components}</legend><div className="status-component-checks">{componentKeys.map((key) => <label key={key}><input type="checkbox" checked={selectedComponents.includes(key)} onChange={(event) => setSelectedComponents((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))}/>{componentLabels[locale][key]}</label>)}</div></fieldset>
           <button className="staff-approve" disabled={busy || !selectedComponents.length}><Activity aria-hidden="true"/>{t.submit}</button>
         </form>
@@ -300,7 +302,7 @@ export function SystemStatusConsole({ locale, staffName, initial }: { locale: St
       </div>
       {selected && allowedNext.length ? <form className="staff-decision status-update-form" onSubmit={(event) => void update(event)}>
         <h2><Send aria-hidden="true"/>{t.update}: {selected.publicReference}</h2>
-        <label>{t.state}<select value={nextState} onChange={(event) => setNextState(event.target.value as typeof nextState)}>{allowedNext.map((state) => <option key={state} value={state}>{stateLabel(state)}</option>)}</select></label>
+        <label>{t.state}<Select value={nextState} onChange={(event) => setNextState(event.target.value as typeof nextState)}>{allowedNext.map((state) => <option key={state} value={state}>{stateLabel(state)}</option>)}</Select></label>
         <label>{t.messageRu}<textarea name="updateMessageRu" required minLength={10} maxLength={2000}/></label>
         <label>{t.messageUz}<textarea name="updateMessageUz" required minLength={10} maxLength={2000}/></label>
         <label>{t.messageEn}<textarea name="updateMessageEn" required minLength={10} maxLength={2000}/></label>

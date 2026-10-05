@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Brain, CircleAlert, LoaderCircle, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
@@ -275,15 +277,15 @@ function WorkspaceMemoryPanel({locale,workspaceId}:{locale:PlatformLocale;worksp
         <h3>{t.add}</h3>
         <div className="memory-fields">
           <label>{t.category}
-            <select value={create.category} onChange={(event) => setCreate(current => ({ ...current, category: event.target.value as Category }))}>
+            <Select value={create.category} onChange={(event) => setCreate(current => ({ ...current, category: event.target.value as Category }))}>
               {categories.map(category => <option value={category} key={category}>{categoryLabel(category, locale)}</option>)}
-            </select>
+            </Select>
           </label>
           <label>{t.scope}
-            <select value={create.scope} onChange={(event) => setCreate(current => ({ ...current, scope: event.target.value as "global" | "workspace" }))}>
+            <Select value={create.scope} onChange={(event) => setCreate(current => ({ ...current, scope: event.target.value as "global" | "workspace" }))}>
               <option value="global">{t.wholeAccount}</option>
               <option value="workspace">{t.currentWorkspace}</option>
-            </select>
+            </Select>
           </label>
         </div>
         <label>{t.remember}
@@ -311,9 +313,9 @@ function WorkspaceMemoryPanel({locale,workspaceId}:{locale:PlatformLocale;worksp
               <time dateTime={memory.updatedAt}>{formatDate(memory.updatedAt, locale)}</time>
             </div>
             <label className="memory-category">{t.category}
-              <select value={draft.category} onChange={(event) => setDrafts(current => ({ ...current, [memory.id]: { ...draft, category: event.target.value as Category } }))}>
+              <Select value={draft.category} onChange={(event) => setDrafts(current => ({ ...current, [memory.id]: { ...draft, category: event.target.value as Category } }))}>
                 {categories.map(category => <option value={category} key={category}>{categoryLabel(category, locale)}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="memory-statement">{t.statement}
               <textarea maxLength={500} value={draft.statement} onChange={(event) => setDrafts(current => ({ ...current, [memory.id]: { ...draft, statement: event.target.value } }))} />

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Check, Crown, LoaderCircle, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { lawyerText } from "../../lib/platform/lawyer-localization";
@@ -84,9 +86,9 @@ export function LawyerTrustDesignationPanel({ locale }: { locale: PlatformLocale
     {!profiles.length && !error && <p role="status">{text("Нет опубликованных профилей для отдельного статуса.", "Alohida maqom uchun nashr qilingan profillar yo‘q.", "There are no published profiles eligible for a trust designation.")}</p>}
     {error && <p className="staff-error" role="alert">{error}</p>}{notice && <p className="staff-verified" role="status"><Check aria-hidden="true" />{notice}</p>}
     {profiles.length > 0 && <form onSubmit={(event) => void submit(event)}>
-      <label>{text("Юрист", "Yurist", "Lawyer")}<select value={profileId} onChange={(event) => { const next = profiles.find((profile) => profile.id === event.target.value); setProfileId(event.target.value); preset(next, designation); }}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</select></label>
-      <label>{text("Статус", "Maqom", "Designation")}<select value={designation} onChange={(event) => preset(selected, event.target.value as "juro_approval" | "top_lawyer")}><option value="juro_approval">{text("Одобрен JURO", "JURO tomonidan ma’qullangan", "Approved by JURO")}</option><option value="top_lawyer">Top Lawyer</option></select></label>
-      <label>{text("Решение", "Qaror", "Decision")}<select value={decision} onChange={(event) => setDecision(event.target.value as "approved" | "revoked")}><option value="approved">{text("Присвоить", "Berish", "Grant")}</option><option value="revoked">{text("Снять", "Bekor qilish", "Revoke")}</option></select></label>
+      <label>{text("Юрист", "Yurist", "Lawyer")}<Select value={profileId} onChange={(event) => { const next = profiles.find((profile) => profile.id === event.target.value); setProfileId(event.target.value); preset(next, designation); }}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</Select></label>
+      <label>{text("Статус", "Maqom", "Designation")}<Select value={designation} onChange={(event) => preset(selected, event.target.value as "juro_approval" | "top_lawyer")}><option value="juro_approval">{text("Одобрен JURO", "JURO tomonidan ma’qullangan", "Approved by JURO")}</option><option value="top_lawyer">Top Lawyer</option></Select></label>
+      <label>{text("Решение", "Qaror", "Decision")}<Select value={decision} onChange={(event) => setDecision(event.target.value as "approved" | "revoked")}><option value="approved">{text("Присвоить", "Berish", "Grant")}</option><option value="revoked">{text("Снять", "Bekor qilish", "Revoke")}</option></Select></label>
       {designation === "top_lawyer" && decision === "approved" && <label>{text("Публичные критерии Top Lawyer", "Top yuristning ochiq mezonlari", "Public Top Lawyer criteria")}<textarea required minLength={20} maxLength={1200} value={criteria} onChange={(event) => setCriteria(event.target.value)} /></label>}
       <label>{text("Основание решения", "Qaror asosi", "Decision rationale")}<textarea required minLength={1} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <button className="staff-approve" disabled={busy || !reason.trim()}>{busy ? <LoaderCircle className="is-spinning" aria-hidden="true" /> : designation === "top_lawyer" ? <Crown aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}{text("Сохранить статус", "Maqomni saqlash", "Save designation")}</button>

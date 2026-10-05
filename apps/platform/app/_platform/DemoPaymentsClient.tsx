@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- tenant-scoped demo history is loaded after hydration */
 
 import { Ban, CheckCircle2, CircleAlert, CreditCard, LoaderCircle, RotateCcw, ShieldCheck, Undo2, WalletCards } from "lucide-react";
@@ -126,7 +128,7 @@ export function DemoPaymentsClient({ locale, accountType, workspaceId }: { local
         {(Object.keys(copy.flows) as DemoPaymentFlowType[]).map(flowType => <article key={flowType}>
           <small>DEMO · {flowType === "uzum_installment" ? "UZUM" : "JURO"}</small><h2>{copy.flows[flowType]}</h2>
           <label>{copy.amount}<input type="number" min="1" max="1000000000" step="1" inputMode="numeric" value={amounts[flowType]} onChange={event => setAmounts(current => ({ ...current, [flowType]: event.target.value }))}/></label>
-          {flowType === "uzum_installment" && <label>{copy.period}<select value={installments} onChange={event => setInstallments(Number(event.target.value) as 3 | 6 | 12)}><option value="3">3 {copy.month3}</option><option value="6">6 {copy.months}</option><option value="12">12 {copy.months}</option></select></label>}
+          {flowType === "uzum_installment" && <label>{copy.period}<Select value={installments} onChange={event => setInstallments(Number(event.target.value) as 3 | 6 | 12)}><option value="3">3 {copy.month3}</option><option value="6">6 {copy.months}</option><option value="12">12 {copy.months}</option></Select></label>}
           <button type="button" disabled={Boolean(busy)} onClick={() => void create(flowType)}>{busy === `create:${flowType}` ? <LoaderCircle className="spin"/> : <CreditCard/>}{copy.create}</button>
         </article>)}
       </div>

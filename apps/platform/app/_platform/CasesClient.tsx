@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { usePlatformBasePath } from "./PlatformRouteContext";
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, CircleAlert, LoaderCircle, Plus, Search } from "lucide-react";
@@ -62,12 +64,12 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
       </header>
       <div className="cases-live-tools">
         <label><Search /><span className="sr-only">{copy.searchLabel}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} /></label>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label={copy.filter}>
+        <Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label={copy.filter}>
           <option value="active">{copy.active}</option>
           <option value="all">{copy.all}</option>
           <option value="open">{copy.open}</option>
           <option value="completed">{copy.completed}</option>
-        </select>
+        </Select>
       </div>
       {error && <p className="cases-live-error" role="alert"><CircleAlert />{error}</p>}
       {loading ? <div className="cases-live-loading"><LoaderCircle className="spin" /></div> : filtered.length ? (

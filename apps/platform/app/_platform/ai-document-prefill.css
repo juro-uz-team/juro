@@ -11,14 +11,14 @@
 .ai-document-prefill-field label{display:grid;gap:5px;color:var(--ink,#102333);font-size:.77rem;font-weight:700}
 .ai-document-prefill-field label>span{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
 .ai-document-prefill-field label em{color:var(--muted,#5e6e79);font-size:.65rem;font-style:normal;font-weight:600}
-.ai-document-prefill-field input,.ai-document-prefill-field textarea{width:100%;min-height:44px;padding:10px 11px;border:1px solid var(--line,#d7dcd9);border-radius:9px;background:var(--white,#fff);color:var(--ink,#102333);font:inherit;font-weight:500;resize:vertical}
-.ai-document-prefill-field>button{min-height:44px;padding:0 12px;border:1px solid var(--line,#d7dcd9);border-radius:9px;background:var(--white,#fff);color:var(--red,#a63d3d);font-weight:700}
+.ai-document-prefill-field input,.ai-document-prefill-field textarea{width:100%;min-height:44px;padding:10px 11px;border:1px solid var(--control-border);border-radius:9px;background:var(--white,#fff);color:var(--ink,#102333);font:inherit;font-weight:500;resize:vertical}
+.ai-document-prefill-field>button{min-height:44px;padding:0 12px;border:1px solid var(--line,#d7dcd9);border-radius:9px;background:var(--white,#fff);color:var(--red,#a63d3d);font-weight:600}
 .ai-document-prefill>footer{display:flex;margin-top:16px;justify-content:flex-end;gap:8px}
-.ai-document-prefill>footer button{display:inline-flex;min-height:44px;padding:0 15px;align-items:center;justify-content:center;gap:7px;border:0;border-radius:10px;background:var(--navy,#062844);color:var(--white,#fff);font-weight:800}
+.ai-document-prefill>footer button{display:inline-flex;min-height:44px;padding:0 15px;align-items:center;justify-content:center;gap:7px;border:1px solid var(--border-accent);border-radius:10px;background:var(--interactive-primary);color:var(--text-on-action);font-weight:600;box-shadow:none}
 .ai-document-prefill>footer button.secondary{border:1px solid var(--line,#d7dcd9);background:var(--white,#fff);color:var(--ink,#102333)}
 .ai-document-prefill button:disabled{cursor:not-allowed;opacity:.55}
 .ai-document-prefill :focus-visible{outline:3px solid var(--focus-ring,#8a641a);outline-offset:2px}
-@media(hover:hover) and (pointer:fine){.ai-document-prefill button{transition:transform var(--motion-fast,140ms) cubic-bezier(.23,1,.32,1),background-color 160ms ease}.ai-document-prefill button:hover:not(:disabled){background:var(--navy-2,#0a3657)}.ai-document-prefill button.secondary:hover:not(:disabled),.ai-document-prefill-field>button:hover:not(:disabled),.ai-document-prefill>header>button:hover:not(:disabled){background:var(--paper,#f8f6f2)}.ai-document-prefill button:active:not(:disabled){transform:scale(.98)}}
+@media(hover:hover) and (pointer:fine){.ai-document-prefill button{transition:transform var(--motion-fast,140ms) cubic-bezier(.23,1,.32,1),background-color 160ms ease}.ai-document-prefill button:hover:not(:disabled){background:var(--interactive-hover);box-shadow:none;border:1px solid var(--border-accent);font-weight:600}.ai-document-prefill button.secondary:hover:not(:disabled),.ai-document-prefill-field>button:hover:not(:disabled),.ai-document-prefill>header>button:hover:not(:disabled){background:var(--paper,#f8f6f2)}.ai-document-prefill button:active:not(:disabled){transform:scale(.98)}}
 @media(max-width:620px){.ai-document-prefill{padding:14px}.ai-document-prefill-field{grid-template-columns:1fr}.ai-document-prefill-field>button{justify-self:start}.ai-document-prefill>footer{display:grid}.ai-document-prefill>footer button{width:100%}}
 @media(prefers-reduced-motion:reduce){.ai-document-prefill button{transition:none}}
 html[data-theme=dark] .ai-document-prefill-field>button{color:color-mix(in srgb,var(--danger) 48%,white)}

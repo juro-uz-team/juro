@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import {
   BarChart3,
   LockKeyhole,
@@ -301,7 +303,7 @@ export function CostConsole({
       <section className="cost-layout">
         <form className="cost-price-form" onSubmit={(event) => void submitPolicy(event)}>
           <h2><ShieldAlert aria-hidden="true"/>{t.policy}</h2>
-          <label>{t.provider}<select name="provider" defaultValue="openai"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label>
+          <label>{t.provider}<Select name="provider" defaultValue="openai"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></Select></label>
           <label>{t.dailyLimit}<input name="dailyLimit" type="number" min="0.000001" max="1000000000" step="0.000001" required/></label>
           <label>{t.failureLimit}<input name="failureLimit" type="number" min="2" max="100000" step="1" defaultValue="5" required/></label>
           <label>{t.window}<input name="window" type="number" min="1" max="1440" step="1" defaultValue="15" required/></label>
@@ -312,7 +314,7 @@ export function CostConsole({
 
         <form className="cost-price-form" onSubmit={(event) => void submitPrice(event)}>
           <h2><Plus aria-hidden="true"/>{t.addPrice}</h2>
-          <label>{t.provider}<select name="provider" defaultValue="openai"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label>
+          <label>{t.provider}<Select name="provider" defaultValue="openai"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></Select></label>
           <label>{t.model}<input name="model" defaultValue="text-embedding-3-large" required maxLength={120}/></label>
           <label>{t.operation}<input name="operation" defaultValue="embeddings" required pattern="[a-z0-9._-]+" maxLength={64}/></label>
           <label>{t.inputRate}<input name="inputRate" type="number" min="0" step="1" required/></label>

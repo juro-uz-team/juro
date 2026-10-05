@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- drafts and saved documents intentionally hydrate after mount */
 
 import Link from "next/link";
@@ -68,7 +70,7 @@ function FieldControl({ field, language, uiLocale, value, error, onChange }: { f
   }
   if (field.type === "checkbox") return <label className={`dbt-config-checkbox ${error ? "invalid" : ""}`}><input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)}/><span>{label}{field.required && " *"}</span>{help && <small>{help}</small>}</label>;
   if (field.type === "radio") return <fieldset className={`dbt-config-choice ${error ? "invalid" : ""}`}><legend>{label}{field.required && " *"}</legend><div>{field.options?.map((option) => <label key={option.value}><input type="radio" name={field.id} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)}/><span>{localize(option.label, language)}</span></label>)}</div>{help && <small>{help}</small>}{error && <em>{copy.required}</em>}</fieldset>;
-  if (field.type === "select" || field.type === "currency" || field.type === "clause-choice") return <label className={`dbt-config-field ${error ? "invalid" : ""}`}><span>{label}{field.required && " *"}</span><select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}><option value="">{copy.choose}</option>{field.options?.map((option) => <option value={option.value} key={option.value}>{localize(option.label, language)}</option>)}</select>{help && <small>{help}</small>}{error && <em>{copy.required}</em>}</label>;
+  if (field.type === "select" || field.type === "currency" || field.type === "clause-choice") return <label className={`dbt-config-field ${error ? "invalid" : ""}`}><span>{label}{field.required && " *"}</span><Select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}><option value="">{copy.choose}</option>{field.options?.map((option) => <option value={option.value} key={option.value}>{localize(option.label, language)}</option>)}</Select>{help && <small>{help}</small>}{error && <em>{copy.required}</em>}</label>;
   if (field.type === "long-text" || field.type === "bank-details") return <label className={`dbt-config-field wide ${error ? "invalid" : ""}`}><span>{label}{field.required && " *"}</span><textarea rows={4} value={String(value ?? "")} placeholder={field.placeholder ? localize(field.placeholder, language) : ""} onChange={(event) => onChange(event.target.value)}/>{help && <small>{help}</small>}{error && <em>{copy.required}</em>}</label>;
   return <label className={`dbt-config-field ${error ? "invalid" : ""}`}><span>{label}{field.required && " *"}</span><input type={fieldInputType(field)} value={String(value ?? "")} inputMode={["pinfl", "tin", "money", "percent", "number"].includes(field.type) ? "numeric" : undefined} maxLength={field.validation?.maxLength} pattern={field.validation?.pattern} placeholder={field.placeholder ? localize(field.placeholder, language) : ""} onChange={(event) => onChange(field.type === "pinfl" ? event.target.value.replace(/[^0-9]/g, "").slice(0, 14) : event.target.value)}/>{help && <small>{help}</small>}{error && <em>{field.validation?.message ? localize(field.validation.message, language) : copy.required}</em>}</label>;
 }

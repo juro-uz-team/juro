@@ -1,0 +1,86 @@
+/* Fast feedback for repeat interactions; restrained movement for new surfaces. */
+:root {
+  --motion-feedback: 200ms;
+  --ease-feedback: cubic-bezier(.2, .65, .3, 1);
+  --motion-surface: 180ms;
+  --motion-drawer: 220ms;
+}
+
+html body :is(button, a, summary, input, textarea, [role=button], [role=tab], [role=option]) {
+  transition: background-color var(--motion-feedback) var(--ease-feedback),
+    border-color var(--motion-feedback) var(--ease-feedback),
+    color var(--motion-feedback) var(--ease-feedback),
+    box-shadow var(--motion-feedback) var(--ease-feedback),
+    opacity var(--motion-feedback) var(--ease-feedback),
+    transform var(--motion-feedback) var(--ease-feedback);
+}
+
+@keyframes surface-appear {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes surface-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes surface-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+.juro-select-menu {
+  transform-origin: var(--radix-select-content-transform-origin);
+}
+.juro-select-menu[data-state=open] { animation: surface-fade-in 150ms var(--ease-out); }
+.juro-select-menu[data-state=closed] { animation: surface-fade-out 120ms var(--ease-out); }
+dialog[open], [role=dialog]:not(.global-search-dialog):not(.modal) {
+  animation: surface-appear var(--motion-surface) var(--ease-out);
+}
+dialog[open]::backdrop { animation: surface-fade-in var(--motion-surface) var(--ease-out); }
+.global-search-dialog { animation: none; }
+.modal[role=dialog] { animation: surface-fade-in var(--motion-surface) var(--ease-out); }
+.platform-profile-menu[open] > .platform-sidebar-bottom,
+.dbt-card-menu, .toast, [role=status]:not([aria-live=off]) {
+  animation: surface-fade-in var(--motion-surface) var(--ease-out);
+}
+
+.platform-sidebar-surface { display: none; }
+@media (min-width: 901px) {
+  .platform-shell { overflow-x: clip; }
+  /* Separate paint from layout so collapse animates without scaling readable text. */
+  html body .platform-shell .platform-sidebar.platform-sidebar {
+    background: transparent;
+    border-right-color: transparent;
+    isolation: isolate;
+  }
+  .platform-sidebar-surface {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--p-navigation-surface);
+    border-right: 1px solid var(--p-chrome-border);
+    transform-origin: left center;
+    pointer-events: none;
+  }
+}
+@media (max-width: 900px) {
+  html body .platform-sidebar { transition: transform var(--motion-drawer) var(--ease-out); }
+  html body .platform-backdrop {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity var(--motion-drawer) var(--ease-out), visibility 0s linear var(--motion-drawer);
+  }
+  html body .platform-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body *, html body *::before, html body *::after, dialog::backdrop {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: background-color, border-color, color, opacity !important;
+    transition-duration: 80ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

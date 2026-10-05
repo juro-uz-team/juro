@@ -1,0 +1,59 @@
+# Development services extend the existing private PostgreSQL deployment.
+services:
+  workspace:
+    build: ./scripts/local
+    init: true
+    env_file: .env.self-hosted
+    environment:
+      PRIVATE_DEVELOPMENT: "true"
+      NODE_ENV: development
+      LOCAL_AUTH_BYPASS: "${LOCAL_AUTH_BYPASS:-true}"
+      DATABASE_URL: postgresql://juro:${POSTGRES_PASSWORD}@postgres:5432/juro
+      OBJECT_STORAGE_PATH: /data/objects
+      APP_URL: http://localhost:3000
+      PUBLIC_SITE_URL: http://localhost:3001
+      ADMIN_CONSOLE_ORIGIN: http://localhost:3002
+      EMAIL_DELIVERY_MODE: capture
+      PORT: "3000"
+      WEBSITE_PORT: "3001"
+      ADMIN_PORT: "3002"
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Docker Desktop bind mounts can lose host filesystem notifications.
+      LOCAL_WATCH_POLLING: "true"
+      WATCHPACK_POLLING: "1000"
+      # The editable Docker Desktop mount is not a qualified corpus build.
+      # Avoid synchronous Git scans of the Windows checkout during each startup.
+      GIT_CEILING_DIRECTORIES: /workspace/apps
+    ports:
+      - "127.0.0.1:3000:3100"
+      - "127.0.0.1:3001:3101"
+      - "127.0.0.1:3002:3102"
+    volumes:
+      - .:/workspace
+      - local-root-modules:/workspace/node_modules
+      - local-platform-modules:/workspace/apps/platform/node_modules
+      - local-website-modules:/workspace/apps/website/node_modules
+      - local-platform-build:/workspace/apps/platform/.next
+      - local-website-build:/workspace/apps/website/.next
+      - local-npm-cache:/root/.npm
+      - local-objects:/data/objects
+      - local-clamav:/var/lib/clamav
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "scripts/local/health.mjs"]
+      interval: 15s
+      timeout: 10s
+      start_period: 300s
+      retries: 20
+    stop_grace_period: 30s
+volumes:
+  local-root-modules:
+  local-platform-modules:
+  local-website-modules:
+  local-platform-build:
+  local-website-build:
+  local-npm-cache:
+  local-objects:
+  local-clamav:

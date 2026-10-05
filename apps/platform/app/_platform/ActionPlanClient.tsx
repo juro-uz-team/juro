@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import Link from "next/link";
 import {
   CalendarDays,
@@ -501,7 +503,7 @@ export function ActionPlanClient({
                         </label>
                         <label className="plan-step-status">
                           <span className="sr-only">{t("Статус шага", "Qadam holati", "Step status")}</span>
-                          <select
+                          <Select
                             value={staged?.status ?? step.status}
                             disabled={saving}
                             onChange={(event) => stageStepChange(item, step, { status: event.target.value as StepStatus })}
@@ -513,7 +515,7 @@ export function ActionPlanClient({
                             <option value="overdue">{t("Просрочено", "Muddati o‘tgan", "Overdue")}</option>
                             <option value="completed">{t("Завершено", "Bajarilgan", "Completed")}</option>
                             <option value="cancelled">{t("Отменено", "Bekor qilingan", "Cancelled")}</option>
-                          </select>
+                          </Select>
                         </label>
                         <Link
                           href={`${base}/document-builder?${builderQuery}`}
@@ -532,18 +534,18 @@ export function ActionPlanClient({
                             </label>
                             <label>
                               <span>{t("Тип дней", "Kun turi", "Day type")}</span>
-                              <select value={deadlineDraft.dayType} onChange={(event) => updateDeadlineDraft(item, step, { dayType: event.target.value as DeadlineDraft["dayType"], result: undefined })}>
+                              <Select value={deadlineDraft.dayType} onChange={(event) => updateDeadlineDraft(item, step, { dayType: event.target.value as DeadlineDraft["dayType"], result: undefined })}>
                                 <option value="calendar_days">{t("Календарные", "Kalendar", "Calendar days")}</option>
                                 <option value="business_days">{t("Рабочие", "Ish kunlari", "Business days")}</option>
-                              </select>
+                              </Select>
                             </label>
                             <label>
                               <span>{t("Перенос", "Ko‘chirish", "Adjustment")}</span>
-                              <select value={deadlineDraft.rollRule} onChange={(event) => updateDeadlineDraft(item, step, { rollRule: event.target.value as DeadlineDraft["rollRule"], result: undefined })}>
+                              <Select value={deadlineDraft.rollRule} onChange={(event) => updateDeadlineDraft(item, step, { rollRule: event.target.value as DeadlineDraft["rollRule"], result: undefined })}>
                                 <option value="none">{t("Не переносить", "Ko‘chirmaslik", "Do not adjust")}</option>
                                 <option value="next_business_day">{t("На следующий рабочий день", "Keyingi ish kuniga", "Next business day")}</option>
                                 <option value="previous_business_day">{t("На предыдущий рабочий день", "Oldingi ish kuniga", "Previous business day")}</option>
-                              </select>
+                              </Select>
                             </label>
                             <label>
                               <span>{t("Безопасный запас, раб. дней", "Xavfsiz zaxira, ish kuni", "Safety margin, business days")}</span>

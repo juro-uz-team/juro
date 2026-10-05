@@ -32,17 +32,17 @@ export function AdminConsoleAccess({
   const t = copy[locale];
   const label = environment === "production" ? "JURO · ADMIN" : "JURO · STAGING ADMIN";
   const returnTo = `/${locale}/admin/console`;
-  return <main style={{ maxWidth: "44rem", margin: "4rem auto", padding: "1.5rem", fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" }}>
-    <p style={{ color: "#6b541f", fontWeight: 700, letterSpacing: ".08em" }}>{label}</p>
-    <h1 style={{ color: "#062844" }}>{t.title}</h1>
-    <p style={{ lineHeight: 1.6, color: "#334e68" }}>{t.description}</p>
+  return <main style={{ maxWidth: "44rem", margin: "4rem auto", padding: "1.5rem", fontFamily: "var(--font-primary)" }}>
+    <p style={{ color: "var(--brand-gold-text)", fontWeight: 700, letterSpacing: ".08em" }}>{label}</p>
+    <h1 style={{ color: "var(--text-primary)" }}>{t.title}</h1>
+    <p style={{ lineHeight: 1.6, color: "var(--text-secondary)" }}>{t.description}</p>
     <Link
       href={`/${locale}/auth/login?reauth=1&returnTo=${encodeURIComponent(returnTo)}`}
-      style={{ display: "inline-flex", minHeight: 44, alignItems: "center", borderRadius: 8, padding: "0 1rem", background: "#062844", color: "white", fontWeight: 700, textDecoration: "none" }}
+      style={{ display: "inline-flex", minHeight: 44, alignItems: "center", borderRadius: 8, padding: "0 1rem", background: "var(--interactive-primary)", color: "var(--text-on-action)", fontWeight: 600, textDecoration: "none" }}
     >
       {t.action}
     </Link>
-    <p style={{ marginTop: "1rem", color: "#667784", fontSize: ".875rem", lineHeight: 1.5 }}>
+    <p style={{ marginTop: "1rem", color: "var(--text-secondary)", fontSize: ".875rem", lineHeight: 1.5 }}>
       {t.privacy}
     </p>
   </main>;

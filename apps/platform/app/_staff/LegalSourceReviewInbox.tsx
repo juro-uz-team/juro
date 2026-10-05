@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import {
   ArchiveX,
   ArrowUpRight,
@@ -525,10 +527,10 @@ export function LegalSourceReviewInbox({ locale, reviewerName }: { locale: Local
           {syncConfirmation && <p className="staff-sync-confirmation" role="status">{syncConfirmation}</p>}
         </form>
         <section className="staff-filters" aria-label={l.filters}>
-          <label>{l.status}<select value={status} onChange={(event) => setStatus(event.target.value as ReviewStatus)}><option value="pending">{l.pending}</option><option value="in_review">{l.inReview}</option><option value="approved">{l.approved}</option><option value="rejected">{l.rejected}</option><option value="closed">{l.closed}</option></select></label>
-          <label>{l.scope}<select value={scope} onChange={(event) => setScope(event.target.value)}><option value="workable">{l.workable}</option><option value="mine">{l.mine}</option><option value="unassigned">{l.unassigned}</option><option value="all">{l.all}</option></select></label>
-          <label>{l.source}<select value={sourceKind} onChange={(event) => setSourceKind(event.target.value)}><option value="all">{l.allSources}</option><option value="lex">lex.uz</option></select></label>
-          <label>{l.language}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">{l.allLanguages}</option><option value="ru">{l.russian}</option><option value="uz">{l.uzbek}</option></select></label>
+          <label>{l.status}<Select value={status} onChange={(event) => setStatus(event.target.value as ReviewStatus)}><option value="pending">{l.pending}</option><option value="in_review">{l.inReview}</option><option value="approved">{l.approved}</option><option value="rejected">{l.rejected}</option><option value="closed">{l.closed}</option></Select></label>
+          <label>{l.scope}<Select value={scope} onChange={(event) => setScope(event.target.value)}><option value="workable">{l.workable}</option><option value="mine">{l.mine}</option><option value="unassigned">{l.unassigned}</option><option value="all">{l.all}</option></Select></label>
+          <label>{l.source}<Select value={sourceKind} onChange={(event) => setSourceKind(event.target.value)}><option value="all">{l.allSources}</option><option value="lex">lex.uz</option></Select></label>
+          <label>{l.language}<Select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">{l.allLanguages}</option><option value="ru">{l.russian}</option><option value="uz">{l.uzbek}</option></Select></label>
         </section>
         <div className="staff-count">{items.length} {l.count}</div>
         {status === "pending" && eligibleItems.length > 0 && <section className="staff-bulk-toolbar" aria-label={l.bulkTitle}>

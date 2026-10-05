@@ -353,7 +353,7 @@ html[data-theme="dark"] {
   --status-error: color-mix(in srgb, var(--danger) 48%, white);
 }
 html[data-theme="dark"] .public-status-brand svg {
-  background: #062844;
+  background: var(--surface-brand);
 }
 .public-status-header {
   height: auto;

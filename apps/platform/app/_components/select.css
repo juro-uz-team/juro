@@ -1,0 +1,117 @@
+:root {
+  --select-background: #f7f7f4;
+  --select-border: #849096;
+  --select-menu: var(--surface-elevated);
+  --select-shadow: 0 8px 24px rgb(16 35 51 / 10%);
+}
+
+html[data-theme=dark] {
+  --select-background: var(--surface-elevated);
+  --select-border: #91a0ab;
+  --select-menu: var(--surface-hover);
+  --select-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+}
+
+/* Match the field's existing layout, with one appearance across product modules. */
+:root body .juro-select.juro-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  height: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--select-border);
+  border-radius: 10px;
+  background: var(--select-background);
+  color: var(--text-primary);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: start;
+  cursor: pointer;
+  transform: none;
+}
+
+:root body .juro-select.juro-select > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font: inherit;
+}
+
+:root body .juro-select.juro-select > svg {
+  position: static;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--text-secondary);
+  transform: none;
+}
+
+:root body .juro-select.juro-select:hover:not(:disabled) { border-color: var(--text-secondary); }
+:root body .juro-select.juro-select:is(:focus-visible, [data-state=open]) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+:root body .juro-select.juro-select:disabled { opacity: .55; cursor: not-allowed; }
+:root body .juro-select.juro-select[aria-invalid=true] { border-color: var(--status-danger); }
+.ai-select > .juro-select { width: 100%; }
+
+.juro-select-menu {
+  z-index: 1200;
+  min-width: var(--radix-select-trigger-width);
+  max-width: min(440px, calc(100vw - 24px));
+  max-height: min(320px, var(--radix-select-content-available-height));
+  overflow: hidden;
+  border: 1px solid var(--select-border);
+  border-radius: 12px;
+  background: var(--select-menu);
+  color: var(--text-primary);
+  box-shadow: var(--select-shadow);
+  font-family: var(--font-manrope), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.juro-select-options { padding: 4px; }
+.juro-select-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 36px 10px 12px;
+  border-radius: 8px;
+  outline: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  user-select: none;
+}
+.juro-select-option[data-state=checked] { background: var(--surface-selected); color: var(--text-on-action); font-weight: 600; }
+.juro-select-option[data-highlighted] { background: var(--interactive-hover); color: var(--text-on-action); box-shadow: inset 0 0 0 1px var(--border-accent); }
+.juro-select-option[data-disabled] { opacity: .45; cursor: not-allowed; }
+.juro-select-check { position: absolute; right: 12px; display: flex; }
+.juro-select-check svg, .juro-select-scroll svg { width: 16px; height: 16px; }
+.juro-select-scroll { display: flex; justify-content: center; padding: 4px; color: var(--text-secondary); }
+.juro-select-error { display: block; color: var(--status-danger); font-size: 12px; line-height: 1.5; }
+
+/* Keep real form events/validation without a second visible or accessible field. */
+:root body select.juro-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  pointer-events: none;
+}

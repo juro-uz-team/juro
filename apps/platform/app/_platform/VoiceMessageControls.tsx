@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Mic, Pause, Play, RotateCcw, Square, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -253,7 +255,7 @@ export function AssistantSpeechControls(props: { locale: PlatformLocale; assista
     void audioRef.current.play().catch(() => {setError(t.playbackBlocked); onPhaseChange?.("error");});}
   function handleAudioPause() {onPhaseChange?.(audioRef.current?.ended ? "completed" : "paused");}
   return <div className="ai-speech-controls">
-    <label>{t.aiVoice}<select value={voice} onChange={(event) => setVoice(event.target.value as "marin" | "cedar")}><option value="marin">Marin</option><option value="cedar">Cedar</option></select></label>
+    <label>{t.aiVoice}<Select value={voice} onChange={(event) => setVoice(event.target.value as "marin" | "cedar")}><option value="marin">Marin</option><option value="cedar">Cedar</option></Select></label>
     <button type="button" disabled={props.disabled || loading} onClick={() => void speak()}><Volume2 />{loading ? t.preparingAudio : t.speakAnswer}</button>
     {audioUrl && <>
       <audio

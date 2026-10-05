@@ -4,6 +4,8 @@ This package contains localized account routes, password and OTP authentication,
 
 ## Run privately
 
+For local development, run `npm run local` from the repository root. Next.js and background services run on your PC; only PostgreSQL runs in Docker Desktop. See [local development](../../docs/local-development.md) for service URLs, document-tool prerequisites, captured verification emails, persistent storage and stop/start commands.
+
 Follow the repository [self-hosted operations guide](../../docs/self-hosted-operations.md) to prepare PostgreSQL, document tools and the private environment file. Node.js 22.13 or newer is required. Install dependencies with `npm ci`, apply migrations with `npm run db:migrate`, and start the platform with `npm run dev`. Use `npm run jobs` for background processing.
 
 Build with `npm run build` before running `npm start` or rendered application tests. `npm run type-check` checks TypeScript. `npm test` runs tests with a sanitized environment that retains the local database URL and excludes provider credentials. Tests requiring PostgreSQL and document tools must run on a prepared host.

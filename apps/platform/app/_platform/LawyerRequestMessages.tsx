@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated request history is loaded after initial browser render */
 
 import { LoaderCircle, Paperclip, Send } from "lucide-react";
@@ -196,14 +198,14 @@ export function LawyerRequestMessages({
         </label>
         <label>
           {text("Прикрепить свой документ", "O‘z hujjatingizni biriktiring", "Attach one of your documents")}
-          <select value={documentId} onChange={(event) => setDocumentId(event.target.value)}>
+          <Select value={documentId} onChange={(event) => setDocumentId(event.target.value)}>
             <option value="">{text("Без документа", "Hujjatsiz", "No document")}</option>
             {documents.map((document) => (
               <option value={document.id} key={document.id}>
                 {document.title} · {lawyerDocumentStatus(document.status, locale)}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <button type="submit" disabled={busy || (!body.trim() && !documentId)}>
           {busy ? <LoaderCircle className="spin" /> : <Send aria-hidden="true" />}

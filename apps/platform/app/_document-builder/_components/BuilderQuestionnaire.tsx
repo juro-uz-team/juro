@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../../_components/Select";
+
 import { Children, cloneElement, isValidElement, useState, type ReactElement, type ReactNode } from "react";
 import { Plus, Trash2, UserRoundCheck, UsersRound } from "lucide-react";
 import { newScheduleItem, newWitness } from "../../../lib/document-builder/defaults";
@@ -325,10 +327,10 @@ function PartyForm({ title, side, party, update, contacts, profile, canUseProfil
     <div className="dbt-party-heading"><div><h3>{title}</h3><p>Можно продолжить и при неполных данных — JURO покажет предупреждение.</p></div><div className="dbt-party-actions">
       {profile && canUseProfile && <button type="button" className="dbt-mini-button" onClick={() => update(side, partyFromProfile(profile))}><UserRoundCheck size={16}/>Данные профиля</button>}
       {profile && canUseProfile && <button type="button" className="dbt-mini-button" disabled={busy} onClick={async () => { setBusy(true); try { await onSaveProfile(party); } finally { setBusy(false); } }}><UserRoundCheck size={16}/>{busy ? "Сохраняем…" : "Сохранить в профиль"}</button>}
-      {contacts.length > 0 && <label className="dbt-contact-picker"><UsersRound size={16}/><select value={contactId} onChange={(event) => {
+      {contacts.length > 0 && <label className="dbt-contact-picker"><UsersRound size={16}/><Select value={contactId} onChange={(event) => {
         const contact = contacts.find((item) => item.id === event.target.value);
         if (contact) update(side, partyFromContact(contact));
-      }}><option value="">Выбрать контакт</option>{contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.label} — {contact.fullName}</option>)}</select></label>}
+      }}><option value="">Выбрать контакт</option>{contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.label} — {contact.fullName}</option>)}</Select></label>}
     </div></div>
     {party.contactId && <div className="dbt-contact-update"><p className="dbt-inline-note">Изменения здесь не меняют сохранённый контакт автоматически.</p><button type="button" className="dbt-mini-button" onClick={() => setContactChoice((value) => !value)}>Выбрать, где применить изменения</button>{contactChoice && originalContact && <div className="dbt-contact-choice" role="group" aria-label="Применение изменений контакта"><button type="button" onClick={() => setContactChoice(false)}>Обновить только текущий документ</button><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onUpdateContact(originalContact.id, party); update(side, partyFromContact(originalContact)); setContactChoice(false); } finally { setBusy(false); } }}>Применять новые данные только к будущим документам</button><button type="button" onClick={() => { update(side, partyFromContact(originalContact)); setContactChoice(false); }}>Оставить текущий документ без изменений</button></div>}</div>}
     <div className="dbt-fields-grid">

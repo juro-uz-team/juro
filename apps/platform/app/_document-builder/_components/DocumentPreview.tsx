@@ -19,7 +19,7 @@ export function DocumentPreview({ document, locale = "ru", mobileOpen = false, o
         {document.paragraphs.map((paragraph) => paragraph.kind === "spacer"
           ? <div className="dbt-doc-spacer" key={paragraph.id}/>
           : <p id={paragraph.id} className={`dbt-doc-${paragraph.kind}`} key={paragraph.id}>{paragraph.kind === "list" && <span aria-hidden="true">• </span>}{paragraph.text}</p>)}
-        <footer><Image src="/juro-mark.png" alt="" width={18} height={18} unoptimized/><span>{copy.created}</span><span>{copy.page} 1 / ~{Math.max(1, Math.ceil(document.plainText.length / 3_500))}</span></footer>
+        <footer><Image src="/brand/JURO_avatar_1080.png" alt="" width={18} height={18} unoptimized/><span>{copy.created}</span><span>{copy.page} 1 / ~{Math.max(1, Math.ceil(document.plainText.length / 3_500))}</span></footer>
       </article>
     </div>
   </aside>;

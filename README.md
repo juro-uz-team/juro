@@ -191,6 +191,8 @@ Report a vulnerability privately through [SECURITY.md](SECURITY.md). Do not put 
 
 ## Quick start
 
+For local development, run `npm run local` from the repository root. The platform, website, admin service and background jobs run on your PC; only PostgreSQL runs in Docker Desktop. See [local development](docs/local-development.md) for host document-tool prerequisites, verification emails and stop/start commands.
+
 This branch runs privately on a Linux server with Node.js 22.13+, PostgreSQL 17 with pgvector, Poppler, Tesseract and ClamAV. See [Self-hosted operations](docs/self-hosted-operations.md) for installation, configuration, migrations, service startup and backup verification.
 
     npm run install:all

@@ -48,15 +48,15 @@ export function AdminConsoleLaunch({
     }
   }
 
-  return <main style={{ maxWidth: "44rem", margin: "4rem auto", padding: "1.5rem", fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" }}>
-    <p style={{ color: "#6b541f", fontWeight: 700, letterSpacing: ".08em" }}>
+  return <main style={{ maxWidth: "44rem", margin: "4rem auto", padding: "1.5rem", fontFamily: "var(--font-primary)" }}>
+    <p style={{ color: "var(--brand-gold-text)", fontWeight: 700, letterSpacing: ".08em" }}>
       {isProduction ? "JURO · ADMIN" : "JURO · STAGING ADMIN"}
     </p>
-    <h1 style={{ color: "#062844" }}>{copy.title}</h1>
-    <p style={{ lineHeight: 1.6, color: "#334e68" }}>{copy.body}</p>
-    <button type="button" onClick={() => void launch()} disabled={state === "working"} style={{ minHeight: 44, border: 0, borderRadius: 8, padding: "0.75rem 1rem", background: "#062844", color: "white", fontWeight: 700, cursor: state === "working" ? "wait" : "pointer" }}>
+    <h1 style={{ color: "var(--text-primary)" }}>{copy.title}</h1>
+    <p style={{ lineHeight: 1.6, color: "var(--text-secondary)" }}>{copy.body}</p>
+    <button type="button" onClick={() => void launch()} disabled={state === "working"} style={{ minHeight: 44, border: 0, borderRadius: 8, padding: "0.75rem 1rem", background: "var(--interactive-primary)", color: "var(--text-on-action)", fontWeight: 600, cursor: state === "working" ? "wait" : "pointer" }}>
       {state === "working" ? "…" : copy.button}
     </button>
-    {state === "error" && <p role="alert" style={{ color: "#9b2c2c", marginTop: "1rem" }}>{copy.error}</p>}
+    {state === "error" && <p role="alert" style={{ color: "var(--status-danger)", marginTop: "1rem" }}>{copy.error}</p>}
   </main>;
 }

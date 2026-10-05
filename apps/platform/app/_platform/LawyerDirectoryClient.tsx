@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import Link from "next/link";
 import Image from "next/image";
 import { CircleAlert, Crown, LoaderCircle, Scale, ShieldCheck, Star, UserRound, UserRoundCheck } from "lucide-react";
@@ -107,9 +109,9 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
 
     <form className="lawyer-directory-controls" onSubmit={(event) => event.preventDefault()} aria-label={text("Фильтры каталога", "Katalog filtrlari", "Directory filters")}>
       <label><span>{text("Поиск", "Qidiruv", "Search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} maxLength={160} placeholder={text("Имя, специализация, фирма", "Ism, mutaxassislik, firma", "Name, practice area, or firm")} /></label>
-      <label><span>{text("Специализация", "Mutaxassislik", "Practice area")}</span><select value={specialty} onChange={(event) => setSpecialty(event.target.value)}><option value="">{text("Все направления", "Barcha yo‘nalishlar", "All practice areas")}</option>{specialties.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-      <label><span>{text("Доступность", "Mavjudlik", "Availability")}</span><select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)}><option value="">{text("Любая", "Istalgan", "Any")}</option><option value="available">{localized(availability.available)}</option><option value="limited">{localized(availability.limited)}</option></select></label>
-      <label><span>{text("Рейтинг", "Reyting", "Rating")}</span><select value={minimumRating} onChange={(event) => setMinimumRating(event.target.value)}><option value="">{text("Любой", "Istalgan", "Any")}</option><option value="4">4.0+</option><option value="4.5">4.5+</option></select></label>
+      <label><span>{text("Специализация", "Mutaxassislik", "Practice area")}</span><Select value={specialty} onChange={(event) => setSpecialty(event.target.value)}><option value="">{text("Все направления", "Barcha yo‘nalishlar", "All practice areas")}</option>{specialties.map((value) => <option key={value} value={value}>{value}</option>)}</Select></label>
+      <label><span>{text("Доступность", "Mavjudlik", "Availability")}</span><Select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)}><option value="">{text("Любая", "Istalgan", "Any")}</option><option value="available">{localized(availability.available)}</option><option value="limited">{localized(availability.limited)}</option></Select></label>
+      <label><span>{text("Рейтинг", "Reyting", "Rating")}</span><Select value={minimumRating} onChange={(event) => setMinimumRating(event.target.value)}><option value="">{text("Любой", "Istalgan", "Any")}</option><option value="4">4.0+</option><option value="4.5">4.5+</option></Select></label>
     </form>
 
     {loading && <p className="lawyer-directory-state" aria-busy="true"><LoaderCircle className="spin" aria-hidden="true" />{text("Загружаем одобренные профили…", "Tasdiqlangan profillar yuklanmoqda…", "Loading approved profiles…")}</p>}

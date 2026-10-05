@@ -10,11 +10,6 @@ type Props = {
   persistAccount?: boolean;
 };
 
-const options = [
-  ["light", Sun, "Светлая", "Yorug‘", "Light"],
-  ["dark", Moon, "Тёмная", "Qorong‘i", "Dark"],
-] as const;
-
 const THEME_CHANGE_EVENT = "juro-theme-change";
 
 function readThemeInteractionRevision() {
@@ -103,24 +98,16 @@ export function ThemeSwitcher({ locale, compact = false, persistAccount = true }
     }
   }
 
-  return (
-    <div className={`theme-switcher ${compact ? "is-compact" : ""}`} role="group" aria-label={locale === "ru" ? "Тема оформления" : locale === "uz" ? "Ko‘rinish mavzusi" : "Appearance theme"}>
-      {options.map(([value, Icon, ru, uz, en]) => {
-        const label = locale === "ru" ? ru : locale === "uz" ? uz : en;
-        return (
-          <button
-            type="button"
-            key={value}
-            aria-label={label}
-            aria-pressed={mode === value}
-            title={label}
-            onClick={() => void select(value)}
-          >
-            <Icon aria-hidden="true" />
-            {!compact && <span>{label}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
+  const next = mode === "dark" ? "light" : "dark";
+  const Icon = next === "dark" ? Moon : Sun;
+  const label = next === "dark"
+    ? (locale === "ru" ? "Включить тёмную тему" : locale === "uz" ? "Qorong‘i mavzuni yoqish" : "Switch to dark theme")
+    : (locale === "ru" ? "Включить светлую тему" : locale === "uz" ? "Yorug‘ mavzuni yoqish" : "Switch to light theme");
+
+  return <div className={`theme-switcher ${compact ? "is-compact" : ""}`}>
+    <button type="button" aria-label={label} title={label} onClick={() => void select(next)}>
+      <Icon aria-hidden="true" />
+      {!compact && <span>{label}</span>}
+    </button>
+  </div>;
 }

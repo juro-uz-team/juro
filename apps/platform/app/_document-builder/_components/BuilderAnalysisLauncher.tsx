@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../../_components/Select";
+
 import { FileSearch, LoaderCircle } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -69,7 +71,7 @@ export function BuilderAnalysisLauncher({
       <FileSearch aria-hidden="true" />
       <span><strong id="builder-analysis-title">{copy.title}</strong><small>{copy.description}</small></span>
     </div>
-    <label><span>{copy.depth}</span><select value={mode} onChange={(event) => setMode(event.target.value as Mode)} disabled={busy}><option value="quick">{copy.quick}</option><option value="full">{copy.full}</option><option value="expert">{copy.expert}</option></select></label>
+    <label><span>{copy.depth}</span><Select value={mode} onChange={(event) => setMode(event.target.value as Mode)} disabled={busy}><option value="quick">{copy.quick}</option><option value="full">{copy.full}</option><option value="expert">{copy.expert}</option></Select></label>
     <button type="button" onClick={() => void start()} disabled={busy} aria-busy={busy} aria-describedby="builder-analysis-status">{busy ? <LoaderCircle className="spin" aria-hidden="true" /> : <FileSearch aria-hidden="true" />}{busy ? copy.saving : copy.start}</button>
     <p id="builder-analysis-status" className={`dbt-builder-analysis-status${error ? " error" : ""}`} aria-live="polite">{error || (busy ? copy.status : "")}</p>
   </section>;

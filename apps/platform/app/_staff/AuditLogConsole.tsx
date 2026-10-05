@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { Download, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import type {
@@ -172,8 +174,8 @@ export function AuditLogConsole({ locale, staffName }: { locale: OperationalLoca
       {error ? <p className="staff-error" role="alert">{error}</p> : null}
       {accessEventId ? <p className="audit-integrity"><ShieldCheck aria-hidden="true"/><span>{t.integrity} · {integrityCount}<small>{t.event}: <code>{accessEventId}</code></small></span></p> : null}
       <form className="audit-filters" onSubmit={(event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void runQuery(event.currentTarget); }}>
-        <label>{t.source}<select name="source"><option value="">{t.all}</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}</select></label>
-        <label>{t.severity}<select name="severity"><option value="">{t.all}</option>{severities.map((severity) => <option key={severity} value={severity}>{severity}</option>)}</select></label>
+        <label>{t.source}<Select name="source"><option value="">{t.all}</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}</Select></label>
+        <label>{t.severity}<Select name="severity"><option value="">{t.all}</option>{severities.map((severity) => <option key={severity} value={severity}>{severity}</option>)}</Select></label>
         <label>{t.action}<input name="action" maxLength={80} pattern="[A-Za-z0-9._:-]+"/></label>
         <label>{t.actor}<input name="actorUserId" maxLength={180} pattern="[A-Za-z0-9:_-]+"/></label>
         <label>{t.scope}<input name="scopeId" maxLength={180} pattern="[A-Za-z0-9:_-]+"/></label>

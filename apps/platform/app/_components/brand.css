@@ -1,0 +1,13 @@
+/* The supplied PNGs stay unchanged; only their on-screen canvas and ink adapt. */
+img[src="/brand/JURO_logo_transparent.png"],
+img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-light"); }
+html[data-theme=dark] img[src="/brand/JURO_logo_transparent.png"],
+html[data-theme=dark] img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-dark"); }
+.auth-brand img[src="/brand/JURO_logo_transparent.png"] { filter: url("/brand/logo-filters.svg#on-dark"); }
+html[data-theme] .dbt-a4 img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-light"); }
+.platform-shell .platform-brand img.platform-logo-avatar { width:60px; height:60px; object-fit:contain; object-position:center; }
+.platform-brand > a { display:flex; align-items:center; gap:4px; min-height:48px; flex:none; }
+.platform-brand-wordmark { color:#caa45a; font-size:24px; font-weight:750; line-height:1; letter-spacing:.025em; }
+@media(min-width:901px) { .platform-shell.is-collapsed .platform-brand-wordmark { display:none; } }
+.platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width:48px; height:48px; }
+@media(max-width:900px) { .platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width:60px; height:60px; } }

@@ -10,32 +10,32 @@
 }
 
 .plan-step-date > span {
-  color: #657187;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 750;
 }
 
 .plan-step-date input,
-.plan-step-status select {
+.plan-step-status :is(select, .juro-select) {
   width: 100%;
   min-height: 42px;
-  border: 1px solid #d5dbe4;
+  border: 1px solid var(--control-border);
   border-radius: 9px;
-  background: #fff;
-  color: #142230;
+  background: var(--control-background);
+  color: var(--text-primary);
   font: inherit;
   padding: 8px 9px;
 }
 
 .plan-step-date input:focus-visible,
-.plan-step-status select:focus-visible,
+.plan-step-status :is(select, .juro-select):focus-visible,
 .plan-step > a:focus-visible {
-  outline: 3px solid #87631f;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .plan-step-date input:disabled,
-.plan-step-status select:disabled {
+.plan-step-status :is(select, .juro-select):disabled {
   cursor: wait;
   opacity: .62;
 }
@@ -49,10 +49,10 @@
 .deadline-calculator {
   grid-column: 2 / -1;
   margin-top: 4px;
-  border: 1px solid #d7dfe7;
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: #fbfcfd;
-  color: #273a51;
+  background: var(--surface-subtle);
+  color: var(--text-primary);
 }
 
 .deadline-calculator > summary {
@@ -64,10 +64,10 @@
 
 .deadline-calculator > summary:focus-visible,
 .deadline-calculator input:focus-visible,
-.deadline-calculator select:focus-visible,
+.deadline-calculator :is(select, .juro-select):focus-visible,
 .deadline-calculator textarea:focus-visible,
 .deadline-calculate:focus-visible {
-  outline: 3px solid #87631f;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -82,20 +82,20 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: #4a586d;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
 
 .deadline-calculator-grid input,
-.deadline-calculator-grid select,
+.deadline-calculator-grid :is(select, .juro-select),
 .deadline-calculator-grid textarea {
   width: 100%;
   min-height: 44px;
-  border: 1px solid #cbd4df;
+  border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: #fff;
-  color: #142230;
+  background: var(--control-background);
+  color: var(--text-primary);
   padding: 9px 10px;
   font: inherit;
   font-size: 14px;
@@ -126,10 +126,10 @@
   gap: 8px;
   min-height: 44px;
   margin: 0 14px 14px;
-  border: 1px solid #173c60;
+  border: 1px solid var(--border-strong);
   border-radius: 9px;
-  background: #173c60;
-  color: #fff;
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
   padding: 0 14px;
   font: inherit;
   font-weight: 750;
@@ -137,15 +137,15 @@
 
 .deadline-calculate svg { width: 18px; height: 18px; }
 .deadline-calculate:disabled { cursor: wait; opacity: .62; }
-.deadline-calculator-error { margin: 0 14px 14px; color: #9a3228; }
+.deadline-calculator-error { margin: 0 14px 14px; color: var(--status-danger); }
 
 .deadline-result {
   display: grid;
   gap: 10px;
   margin: 0 14px 14px;
   padding: 14px;
-  border-left: 3px solid #be974f;
-  background: #fffaf0;
+  border-left: 3px solid var(--border-accent);
+  background: var(--surface-selected);
 }
 
 .deadline-result dl {
@@ -156,41 +156,41 @@
 }
 
 .deadline-result dl > div { display: grid; gap: 2px; }
-.deadline-result dt { color: #657187; font-size: 12px; }
-.deadline-result dd { margin: 0; color: #172a40; font-weight: 750; }
-.deadline-result p { margin: 0; color: #4a586d; }
-.deadline-result ul { margin: 0; padding-left: 20px; color: #765617; }
-.deadline-stored-evidence { margin: 0 14px 14px; color: #4a586d; font-size: 13px; }
+.deadline-result dt { color: var(--text-secondary); font-size: 12px; }
+.deadline-result dd { margin: 0; color: var(--text-primary); font-weight: 750; }
+.deadline-result p { margin: 0; color: var(--text-secondary); }
+.deadline-result ul { margin: 0; padding-left: 20px; color: var(--brand-gold-text); }
+.deadline-stored-evidence { margin: 0 14px 14px; color: var(--text-secondary); font-size: 13px; }
 
 .plan-change-preview {
   display: grid;
   gap: 14px;
   margin: 14px 0;
   padding: 18px;
-  border: 1px solid #d8c18b;
+  border: 1px solid var(--border-accent);
   border-radius: 12px;
-  background: #fffaf0;
+  background: var(--surface-selected);
 }
 
-.plan-change-preview small { color: #71551d; font-weight: 750; }
-.plan-change-preview h3 { margin: 3px 0 0; color: #142230; font-size: 17px; }
-.plan-change-preview p { margin: 5px 0 0; color: #4a586d; }
+.plan-change-preview small { color: var(--brand-gold-text); font-weight: 750; }
+.plan-change-preview h3 { margin: 3px 0 0; color: var(--text-primary); font-size: 17px; }
+.plan-change-preview p { margin: 5px 0 0; color: var(--text-secondary); }
 .plan-change-preview ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.plan-change-preview li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 8px; background: #fff; color: #273a51; }
-.plan-change-preview li span { color: #607088; font-size: 13px; }
+.plan-change-preview li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 8px; background: var(--surface-raised); color: var(--text-primary); }
+.plan-change-preview li span { color: var(--text-secondary); font-size: 13px; }
 .plan-change-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.plan-change-actions > button:not(.plan-primary) { min-height: 42px; border: 1px solid #b7c0cc; border-radius: 9px; background: #fff; color: #253850; padding: 0 14px; font: inherit; font-weight: 700; }
-.plan-change-actions > button:focus-visible { outline: 3px solid #87631f; outline-offset: 2px; }
+.plan-change-actions > button:not(.plan-primary) { min-height: 42px; border: 1px solid var(--text-secondary); border-radius: 9px; background: var(--surface-raised); color: var(--text-primary); padding: 0 14px; font: inherit; font-weight: 600; }
+.plan-change-actions > button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 
 .plan-history ol { display: grid; gap: 8px; padding: 0; list-style: none; }
-.plan-history li > button { display: grid; width: 100%; gap: 3px; border: 1px solid #d7dfe7; border-radius: 9px; background: #fff; color: #273a51; padding: 10px 12px; text-align: left; font: inherit; }
-.plan-history li > button[aria-pressed=true] { border-color: #8c6c2c; background: #fffaf0; }
-.plan-history li > button:focus-visible { outline: 3px solid #87631f; outline-offset: 2px; }
-.plan-history li > button span,.plan-history li > button small,.plan-history-empty { color: #607088; font-size: 13px; }
-.plan-history-diff { margin-top: 10px; border-left: 3px solid #be974f; background: #f8f6f2; padding: 12px; }
-.plan-history-diff h4 { margin: 0 0 8px; color: #26394f; font-size: 14px; }
-.plan-history-diff ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: #42556c; font-size: 13px; }
-.plan-history-diff p { margin: 0; color: #607088; font-size: 13px; }
+.plan-history li > button { display: grid; width: 100%; gap: 3px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--surface-raised); color: var(--text-primary); padding: 10px 12px; text-align: left; font: inherit; }
+.plan-history li > button[aria-pressed=true] { border-color: var(--border-accent); background: var(--surface-selected); }
+.plan-history li > button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.plan-history li > button span,.plan-history li > button small,.plan-history-empty { color: var(--text-secondary); font-size: 13px; }
+.plan-history-diff { margin-top: 10px; border-left: 3px solid var(--border-accent); background: var(--surface-subtle); padding: 12px; }
+.plan-history-diff h4 { margin: 0 0 8px; color: var(--text-primary); font-size: 14px; }
+.plan-history-diff ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; }
+.plan-history-diff p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 
 @media (max-width: 1180px) {
   .plan-step {
@@ -255,9 +255,9 @@
 
 html[data-theme="dark"] :is(
   .plan-step-date input,
-  .plan-step-status select,
+  .plan-step-status :is(select, .juro-select),
   .deadline-calculator-grid input,
-  .deadline-calculator-grid select,
+  .deadline-calculator-grid :is(select, .juro-select),
   .deadline-calculator-grid textarea,
   .plan-change-actions > button:not(.plan-primary),
   .plan-history li > button,

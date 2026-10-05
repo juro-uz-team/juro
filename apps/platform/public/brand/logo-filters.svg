@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Render the supplied artwork without its navy canvas. RGB stays intact. -->
+  <filter id="on-dark" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  6 0 0 0 -0.8"/>
+  </filter>
+  <!-- Isolate the pale strokes, then recolor them; the gold cap is untouched. -->
+  <filter id="on-light" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  6 0 0 0 -0.8" result="artwork"/>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -6 0 10 0 -2" result="pale"/>
+    <feComposite in="pale" in2="artwork" operator="in" result="strokes"/>
+    <feFlood flood-color="#102333" result="ink"/>
+    <feComposite in="ink" in2="strokes" operator="in" result="inkStrokes"/>
+    <feMerge><feMergeNode in="artwork"/><feMergeNode in="inkStrokes"/></feMerge>
+  </filter>
+</svg>

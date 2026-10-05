@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../_components/Select";
+
 import { usePlatformBasePath } from "./PlatformRouteContext";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated comparison lists are hydrated after mount */
@@ -344,7 +346,7 @@ function ComparisonFileSlot({
       </div>
       <label className="comparison-stored-select">
         <span><FolderOpen />{copy.chooseStored}</span>
-        <select
+        <Select
           value={selection?.kind === "stored" ? selection.file.id : ""}
           onChange={(event) => {
             const file = reusableFiles.find((item) => item.id === event.target.value);
@@ -353,7 +355,7 @@ function ComparisonFileSlot({
         >
           <option value="">—</option>
           {reusableFiles.map((file) => <option value={file.id} key={file.id}>{file.fileName} · {formatSize(file.sizeBytes)}</option>)}
-        </select>
+        </Select>
       </label>
     </fieldset>
   );

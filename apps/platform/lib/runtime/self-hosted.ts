@@ -63,7 +63,9 @@ export function getSelfHostedRuntime(): Runtime {
     ACCOUNT_DELETION_PURGE_ENABLED: "true", PAYMENT_FOUNDATION_ENABLED: "false", PAYMENT_PRODUCTION_APPROVED: "false",
     STAGING_LEGAL_EVALUATION_ENABLED: "false", STAGING_SYNTHETIC_PROBES_ENABLED: "false", PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
     NATIVE_DEPENDENCY_PROBES_ENABLED: config.privateMode ? "false" : "true",
-    LOCAL_AUTH_BYPASS: "false", ALLOW_PLATFORM_AUTH_HEADERS: "false",
+    LOCAL_AUTH_BYPASS: config.privateMode && process.env.NODE_ENV !== "production"
+      && process.env.LOCAL_AUTH_BYPASS === "true" ? "true" : "false",
+    ALLOW_PLATFORM_AUTH_HEADERS: "false",
     TURNSTILE_SECRET_KEY: config.privateMode ? "private-local" : process.env.AUTH_CHALLENGE_SECRET,
     TURNSTILE_SITE_KEY: config.privateMode ? "private-local" : "native-altcha",
     RESEND_API_KEY: email.apiKey, EMAIL_FROM: email.from,

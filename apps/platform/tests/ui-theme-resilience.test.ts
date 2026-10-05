@@ -37,11 +37,12 @@ test("compact theme controls retain a 44px touch target", () => {
   assert.match(globals, /\.theme-switcher\.is-compact button\s*\{[^}]*width:\s*44px;/s);
 });
 
-test("the single global theme picker exposes only light and dark choices", () => {
+test("the global theme picker is one button switching light and dark", () => {
   const switcher = source("app/_theme/ThemeSwitcher.tsx");
-  assert.match(switcher, /\["light", Sun/);
-  assert.match(switcher, /\["dark", Moon/);
-  assert.doesNotMatch(switcher, /\["system", Laptop/);
+  assert.match(switcher, /const next = mode === "dark" \? "light" : "dark"/);
+  assert.equal((switcher.match(/<button\b/g) ?? []).length, 1);
+  assert.match(switcher, /aria-label=\{label\}/);
+  assert.match(switcher, /select\(next\)/);
 });
 
 test("first visit and legacy system preferences resolve to explicit light before paint", () => {
@@ -126,7 +127,7 @@ test("calendar, case workspace, and document builder use shared dark-safe surfac
   const cases = source("app/_platform/case-workspace.css");
   const builder = source("app/_document-builder/document-builder.css");
 
-  assert.match(globals, /--surface-hover:\s*#1a3040/);
+  assert.match(globals, /--surface-hover:\s*#3a4c5c/);
   assert.match(globals, /--surface-document:\s*#eeeae2/);
   assert.match(calendar, /\.calendar-month > span\s*\{[^}]*background:\s*var\(--(?:surface-subtle|soft)\)/s);
   assert.match(calendar, /\.status-overdue\s*\{[^}]*background:\s*var\(--red-bg\)/s);

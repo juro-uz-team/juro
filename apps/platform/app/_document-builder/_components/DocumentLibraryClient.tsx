@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from "../../_components/Select";
+
 /* eslint-disable react-hooks/set-state-in-effect -- document-language preference follows the route and saved browser choice */
 
 import Link from "next/link";
@@ -261,7 +263,7 @@ export function DocumentLibraryClient({
       return <Link href={paths.category(category.slug)} key={category.slug}><span>{category.code}</span><div><h2>{localize(category.title, language)}</h2><p>{localize(category.description, language)}</p><small>{count} {copy.templateCount}</small></div><ArrowRight size={20}/></Link>;
     })}</nav>}
     {activeCategory && <div className="dbt-library-breadcrumb"><Link href={paths.library}>{copy.allCategories}</Link><span>/</span><b>{localize(activeCategory.title, language)}</b></div>}
-    <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => { setSearch(event.target.value); setLimit(TEMPLATE_PAGE_SIZE); }} placeholder={copy.search} aria-label={copy.searchLabel}/></label><select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setLimit(TEMPLATE_PAGE_SIZE); }} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></select></div>
+    <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => { setSearch(event.target.value); setLimit(TEMPLATE_PAGE_SIZE); }} placeholder={copy.search} aria-label={copy.searchLabel}/></label><Select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setLimit(TEMPLATE_PAGE_SIZE); }} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></Select></div>
     {activeCategory && publishedCount > 0 && <section className="dbt-popular-section"><h2>{copy.popular}</h2><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></section>}
     <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><span aria-live="polite">{visible.length} / {filtered.length}</span></div><div className="dbt-template-grid">{cards(visible)}</div>{visible.length < filtered.length && <button type="button" className="dbt-load-more" onClick={() => setLimit((current) => current + TEMPLATE_PAGE_SIZE)}>{copy.showMore(Math.min(TEMPLATE_PAGE_SIZE, filtered.length - visible.length))}</button>}{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
   </div>;

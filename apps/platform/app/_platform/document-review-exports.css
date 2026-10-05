@@ -40,7 +40,7 @@
   color: var(--review-navy);
   font: inherit;
   font-size: .68rem;
-  font-weight: 800;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
   transition: transform 120ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
