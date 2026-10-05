@@ -150,8 +150,8 @@ test("lawyer service details and six-step application are persisted and reviewab
   assert.doesNotMatch(migration, /DROP\s+TABLE|DELETE\s+FROM/iu);
   assert.match(profileRoute, /consultation_duration_minutes/);
   assert.match(profileRoute, /additional_services_json/);
-  assert.match(application, /Стандартная длительность консультации/);
-  assert.match(application, /Дополнительные услуги через запятую/);
+  assert.match(application, /<DurationInput[^>]*value=\{form\.consultationDurationMinutes\}/);
+  assert.match(application, /<ChoiceInput[^>]*value=\{form\.additionalServices\}[^>]*multiple/);
   assert.match(application, /Шаг 4 · Расписание/);
   assert.match(application, /Отправить профиль на проверку/);
   assert.match(adminDetail, /lawyer_profile_moderation/);
