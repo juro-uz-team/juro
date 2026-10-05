@@ -122,6 +122,19 @@ function run(command, args, cwd, capture = false) {
 function tip() {
   return run("git", ["ls-remote", config.repository, `refs/heads/${branch}`], root, true).split(/\s/)[0];
 }
+function corpusHook(target, evidence) {
+  return async phase => {
+    const result = spawnSync(config.corpusCommand, [phase, environment, revision, target.release, target.previous ?? ""], {
+      cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 150_000,
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    });
+    const path = join(evidence, `corpus-${phase}.json`);
+    await writeFile(path, JSON.stringify({ phase, status: result.status, error: result.error?.message,
+      stdout: result.stdout ?? "", stderr: result.stderr ?? "" }, null, 2), { flag: "wx", mode: 0o600 });
+    if (result.error || result.status !== 0) throw new Error(`Corpus ${phase} command failed; operator evidence: ${path}`);
+    return JSON.parse(result.stdout);
+  };
+}
 await mkdir(join(root, "releases"), { recursive: true, mode: 0o700 });
 const lock = join(root, ".deploy-lock");
 await mkdir(lock, { mode: 0o700 }); // Atomic host-side lock; stale locks require operator inspection.
@@ -135,6 +148,23 @@ try {
     if (!previous.startsWith(join(root, "releases") + "/")) throw new Error("Previous release escapes environment root");
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   if (tip() !== revision) throw new Error("The branch has moved beyond the validated revision");
+  if (config.corpusCommand && previous && run("git", ["rev-parse", "HEAD"], previous, true) === revision) {
+    const saved = JSON.parse(await readFile(join(previous, ".scratch/deployment/corpus-activate.json"), "utf8"));
+    if (saved.status !== 0) throw new Error("Existing release lacks successful corpus activation evidence");
+    const receipt = JSON.parse(saved.stdout);
+    const target = { environment, revision, release: previous, previous: receipt.previous };
+    corpusReceipt(receipt, "activate", target);
+    if (receipt.selectionState !== "committed") throw new Error("Existing release corpus activation was not confirmed");
+    await writeFile(join(lock, "owner.json"), JSON.stringify({ version: 1, ...target }), { flag: "wx", mode: 0o600 });
+    const evidence = join(previous, ".scratch/deployment", `retry-${Date.now()}`);
+    await mkdir(evidence, { recursive: true, mode: 0o700 });
+    run(config.qualifyCommand, [environment, revision, previous], root);
+    const verified = corpusReceipt(await corpusHook(target, evidence)("verify"), "verify", target, receipt.originalSelectionSha256);
+    if (verified.selectionState !== "committed") throw new Error("Existing release corpus verification failed");
+    if (tip() !== revision) throw new Error("A newer branch revision superseded retry verification");
+    console.log(`Verified already active ${environment} revision ${revision}; no services or corpus selection changed`);
+    return;
+  }
   const release = join(root, "releases", `${revision}-${Date.now()}`);
   await writeFile(join(lock, "owner.json"), JSON.stringify({ version: 1, environment, revision, release, previous: previous ?? null }), { flag: "wx", mode: 0o600 });
   run("git", ["clone", "--single-branch", "--branch", branch, "--no-checkout", config.repository, release], root);
@@ -163,18 +193,7 @@ try {
   const evidence = join(release, ".scratch", "deployment");
   await mkdir(evidence, { recursive: true, mode: 0o700 });
   const target = { environment, revision, release, previous };
-  const hook = config.corpusCommand ? async phase => {
-    const result = spawnSync(config.corpusCommand, [phase, environment, revision, release, previous ?? ""], {
-      cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 150_000,
-      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
-    });
-    await writeFile(join(evidence, `corpus-${phase}.json`), JSON.stringify({
-      phase, status: result.status, error: result.error?.message,
-      stdout: result.stdout ?? "", stderr: result.stderr ?? "",
-    }, null, 2), { flag: "wx", mode: 0o600 });
-    if (result.error || result.status !== 0) throw new Error(`Corpus ${phase} command failed`);
-    return JSON.parse(result.stdout);
-  } : undefined;
+  const hook = config.corpusCommand ? corpusHook(target, evidence) : undefined;
   await coordinateDeploymentActivation(target, {
     hook,
     beforeInstall: async () => { if (tip() !== revision) throw new Error("A newer branch revision superseded corpus preparation"); },
