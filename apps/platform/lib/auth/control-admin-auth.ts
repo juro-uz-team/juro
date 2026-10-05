@@ -34,8 +34,16 @@ export async function requestAdminCode(emailInput: string, ip: string, delivery:
  try {
   await client.query("BEGIN");
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`control-admin:${email}`]);
-  const recent = await client.query("SELECT 1 FROM control_admin_challenges WHERE email=$1 AND created_at > now()-$2*interval '1 second' LIMIT 1", [email,bounded("ADMIN_OTP_RESEND_SECONDS",60,3600)]);
-  if (recent.rowCount) { await client.query("ROLLBACK"); return {challengeId}; }
+  const recent = await client.query("SELECT id,consumed_at,expires_at,attempts FROM control_admin_challenges WHERE email=$1 AND created_at > now()-$2*interval '1 second' ORDER BY created_at DESC LIMIT 1", [email,bounded("ADMIN_OTP_RESEND_SECONDS",60,3600)]);
+  if (recent.rowCount) {
+   // A throttled resend must keep the form attached to the still-active code.
+   // Do not extend expiry, reset attempts, or send another email.
+   const active = recent.rows[0];
+   const usable = !active.consumed_at && new Date(active.expires_at).getTime() > Date.now()
+     && active.attempts < bounded("ADMIN_OTP_MAX_ATTEMPTS",5,5);
+   await client.query("ROLLBACK");
+   return {challengeId: usable ? active.id as string : challengeId};
+  }
   if (!await rate(`email:${email}`,5,3600)) {await client.query("ROLLBACK"); return {challengeId};}
   code = String(randomInt(0,1_000_000)).padStart(6,"0");
   await client.query("UPDATE control_admin_challenges SET consumed_at=now() WHERE email=$1 AND consumed_at IS NULL",[email]);
