@@ -33,6 +33,6 @@ test("comparison entry always opens comparison mode instead of the document rout
   assert.match(legacyEntry, /redirectLegacyBusinessRoute\(locale, \["document-review"\], \{ mode: "compare" \}\)/);
   assert.match(businessEntry, /\/document-review\?mode=compare/);
   assert.match(css, /\.platform-nav-documents summary,\.platform-nav-more summary\{display:flex;min-height:44px/);
-  assert.match(css, /\.platform-nav-documents\.is-active>summary\{box-shadow:inset 3px 0 var\(--p-gold\)\}/);
+  assert.match(css, /\.platform-nav-documents\.is-active>summary\{box-shadow:none\}/);
   assert.doesNotMatch(css, /platform-nav-documents[^\n]*transition:/);
 });
