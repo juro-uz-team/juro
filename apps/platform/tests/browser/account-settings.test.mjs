@@ -176,7 +176,8 @@ test("professional choices support keyboard options, custom chips, removal, and 
   await formats.fill("chat"); await formats.press("Enter"); await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("button", {name: "Remove: Chat", exact:true}).count(),1);
   const city = page.getByRole("combobox", {name: "City", exact:true});
-  await city.click(); await city.fill("Samar"); await page.getByRole("option", {name: "Samarkand",exact:true}).click();
+  await city.click(); await city.fill("Samar"); await city.press("ArrowDown");
+  await page.getByRole("option", {name: "Samarkand",exact:true}).click();
   await page.getByRole("combobox", {name: "Region",exact:true}).fill("Custom region");
   await page.keyboard.press("Tab");
   await page.getByRole("combobox", {name:"Additional services",exact:true}).fill("Custom service");
@@ -184,7 +185,7 @@ test("professional choices support keyboard options, custom chips, removal, and 
   await page.getByRole("button", {name: "45 min",exact:true}).click();
   await page.getByRole("button", {name: "3 years",exact:true}).click();
   const education = page.getByRole("combobox", {name:"Education",exact:true});
-  await education.click(); await education.fill("Bachelor");
+  await education.click(); await education.fill("Bachelor"); await education.press("ArrowDown");
   await page.getByRole("option", {name:"Bachelor’s degree in law",exact:true}).click();
   await education.fill("Bachelor’s degree in law — Example University");
   await page.keyboard.press("Tab");
