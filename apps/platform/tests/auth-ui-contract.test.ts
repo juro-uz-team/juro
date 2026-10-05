@@ -143,8 +143,9 @@ test("English auth routing and supporting controls are complete", () => {
   assert.match(login, /lang === "en" \? "en"/);
   assert.match(register, /lang === "en" \? "en"/);
   assert.match(turnstile, /locale: "ru" \| "uz" \| "en"/);
-  assert.match(theme, /\["light", Sun, "Светлая", "Yorug‘", "Light"\]/);
-  assert.match(theme, /Appearance theme/);
+  assert.match(theme, /Switch to dark theme/);
+  assert.match(theme, /Switch to light theme/);
+  assert.match(theme, /aria-label=\{label\}[^>]*onClick=\{\(\) => void select\(next\)\}/);
   assert.equal(form.match(/"x-juro-locale": locale/g)?.length, 5);
   assert.match(localizedLogin, /generateMetadata[\s\S]*authPageMetadata\(locale, "login"\)/u);
   assert.match(localizedRegister, /generateMetadata[\s\S]*authPageMetadata\(locale, "register"\)/u);
