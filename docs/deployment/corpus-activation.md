@@ -97,6 +97,15 @@ the qualified corpus without one environment invalidating the other's selection.
 Any relevant behavior or dependency change requires fresh qualification and the
 normal acceptance workflow. Approval is never inferred from a successful build.
 
+Systemd user services using `PrivateTmp` may run in a UID namespace where host
+root appears as the kernel's unmapped UID. The runtime translates host root
+through `/proc/self/uid_map` and rejects mapped application owners, symlinks and
+group/other writable paths. The privileged deployment hook still validates actual
+host root ownership. Do not disable service isolation to make these checks pass.
+Installed platform and lawyer listeners must render a login form before service
+installation succeeds; a healthy static file alone does not prove the runtime
+can initialize inside that sandbox.
+
 Before deployment, the operator installs a root-owned bundle at
 `/etc/juro/corpus-deployment/<environment>/<revision>.json`. Its ancestors,
 manifest file and credential file must also be root-owned and not writable by

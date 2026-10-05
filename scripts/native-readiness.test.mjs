@@ -1,8 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
-import { nativeListenerReady, nativeAdminHealthReady, verifyNativeAdminBoundary } from "./native-readiness.mjs";
+import { nativeListenerReady, nativeLoginReady, nativeAdminHealthReady, verifyNativeAdminBoundary } from "./native-readiness.mjs";
 import { nativeHttpConfiguration, normalizeNativeRequest } from "./native-http.mjs";
+
+test("installed application readiness requires a rendered login, not healthy static files", async () => {
+  let state="failed";
+  const server=createServer((request,response)=>{
+    if(request.url==="/robots.txt"){response.end("User-agent: *");return;}
+    assert.equal(request.headers.host,"app.juro.uz");
+    response.statusCode=state==="failed"?500:200;
+    response.end(state==="ready"?'<form><input type="email" name="email"></form>':'This page couldn’t load');
+  });
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+  const port=server.address().port,headers={host:"app.juro.uz"};
+  try{
+    assert.equal(await nativeListenerReady(port,"/robots.txt",headers),true);
+    assert.equal(await nativeLoginReady(port,headers),false);
+    state="streamed-error";assert.equal(await nativeLoginReady(port,headers),false);
+    state="ready";assert.equal(await nativeLoginReady(port,headers),true);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
 
 test("readiness reaches the real public Host gate over loopback", async () => {
   const config = nativeHttpConfiguration({NODE_ENV:"production",DEPLOYMENT_ENVIRONMENT:"production",APP_URL:"https://app.juro.uz"},"platform");

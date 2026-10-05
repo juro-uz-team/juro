@@ -1,9 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {deploymentRequest,bindOperatorBundle,runDeploymentPhase,selectionState} from "./corpus-deployment-contract.mjs";
-import {validateCorpusCompatibility} from "./corpus-compatibility.mjs";
+import {validateCorpusCompatibility,operatorRootUid} from "./corpus-compatibility.mjs";
 const revision="a".repeat(40),original="b".repeat(64),acceptance="c".repeat(64);
 const args=["prepare","production",revision,`/srv/juro/production/releases/${revision}-123`,""];
+test("operator ownership respects host and restricted service UID namespaces",()=>{
+ assert.equal(operatorRootUid("0 0 4294967295\n",65534),0);
+ assert.equal(operatorRootUid("995 995 1\n",65534),65534);
+ assert.equal(operatorRootUid("0 995 1\n",65534),65534);
+ assert.equal(operatorRootUid("1000 0 1\n",65534),1000);
+ assert.throws(()=>operatorRootUid("65534 995 1\n",65534),/application user/);
+ for(const map of ["", "0 -1 1", "0 0 0", "bad"])assert.throws(()=>operatorRootUid(map,65534));
+});
 const bundle={version:1,environment:"production",revision,previous:null,expectedParent:original,acceptanceSha256:acceptance,manifest:{file:"/etc/juro/corpus-deployment/production/manifest.json",sha256:"d".repeat(64),sizeBytes:100},environmentFile:"/etc/juro/corpus-operator.env"};
 function fixture(phase="prepare"){
  const request=deploymentRequest([phase,...args.slice(1)]),events=[];let actual=original;

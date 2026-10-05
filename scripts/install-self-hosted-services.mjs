@@ -6,7 +6,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import { parseEnv } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nativeListenerReady } from "./native-readiness.mjs";
+import { nativeListenerReady, nativeLoginReady } from "./native-readiness.mjs";
 
 if (process.platform !== "linux") throw new Error("Install these private services on the Linux server");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,7 +77,8 @@ for (const [name, port, path] of [
       const publicOrigin = name === "platform" ? configuration.APP_URL : name === "lawyer" ? configuration.LAWYER_URL : name === "status" ? configuration.STATUS_URL : configuration.PUBLIC_SITE_URL;
       const headers = configuration.PRIVATE_DEVELOPMENT !== "true" && name !== "admin"
         ? { host: new URL(publicOrigin).host, "x-real-ip": "127.0.0.1" } : {};
-      if (await nativeListenerReady(port, path, headers)) { ready = true; break; }
+      if (await (name === "platform" || name === "lawyer"
+        ? nativeLoginReady(port, headers) : nativeListenerReady(port, path, headers))) { ready = true; break; }
     } catch { /* The newly started HTTP listener may not be ready yet. */ }
     await pause(500);
   }
