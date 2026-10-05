@@ -56,7 +56,11 @@ test("first visit and legacy system preferences resolve to explicit light before
   assert.match(theme, /var m=r==="dark"\?"dark":"light"/);
   assert.match(theme, /dataset\.themeMode="light"/);
   assert.doesNotMatch(theme, /matchMedia/);
-  assert.match(layout, /<body[^>]*>\s*<script dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/s);
+  const bootstrap = source("app/_theme/DocumentBootstrap.tsx");
+  assert.match(layout, /<DocumentBootstrap\s*\/>/);
+  assert.match(bootstrap, /useServerInsertedHTML\(\(\) =>/);
+  assert.match(bootstrap, /<script id="theme-bootstrap" dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
+  assert.doesNotMatch(layout, /<script\b/);
   assert.match(switcher, /readThemeMode,\s*\(\) => "light"/s);
   assert.doesNotMatch(switcher, /prefers-color-scheme|matchMedia/);
   assert.match(globals, /:root\s*\{\s*color-scheme:\s*light;/s);

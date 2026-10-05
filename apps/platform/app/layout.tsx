@@ -10,7 +10,7 @@ import "./_platform/lawyer-workspace.css";
 import "./_platform/legal-answer.css";
 import "./_components/motion.css";
 import "./_components/brand.css";
-import { THEME_BOOTSTRAP_SCRIPT } from "./_theme/theme";
+import { DocumentBootstrap } from "./_theme/DocumentBootstrap";
 import {
   INTERNAL_REQUEST_PATH_HEADER,
   isLocale,
@@ -45,7 +45,7 @@ export default async function RootLayout({
   const routeLocale = requestPath.split(/[/?#]/u).filter(Boolean)[0] ?? "";
   const initialLocale = isLocale(routeLocale) ? routeLocale : "ru";
 
-  // The Worker supplies a trusted canonical request path, so localized routes
+  // The request server supplies a trusted canonical path, so localized routes
   // have the correct language in the server-rendered document. The inline
   // fallback covers direct local development and legacy ?lang= entry points.
   return (
@@ -60,8 +60,7 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body className="antialiased">
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
-        <script dangerouslySetInnerHTML={{ __html: `(function(){var m=location.pathname.match(/^\\/(ru|uz|en)(?:\\/|$)/);var q=new URLSearchParams(location.search).get("lang");document.documentElement.lang=m?m[1]:(q==="uz"?"uz":q==="en"?"en":"ru");})();` }} />
+        <DocumentBootstrap />
         <ProductAnalytics/>
         {children}
       </body>

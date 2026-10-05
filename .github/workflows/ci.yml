@@ -55,6 +55,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Authentication browser tests
         run: npm run test:auth-browser --prefix apps/platform
+      - name: Account settings browser tests
+        working-directory: apps/platform
+        run: node --test tests/browser/account-settings.test.mjs
       - name: Native HTTP boundary tests
         run: node --test scripts/native-http.test.mjs scripts/native-admin-http.test.mjs scripts/public-build-origins.test.mjs scripts/native-readiness.test.mjs scripts/deployment-gateway.test.mjs scripts/check-migration-recovery.test.mjs scripts/deploy-self-hosted.test.mjs scripts/corpus-deployment-hook.test.mjs scripts/public-dns-readiness.test.mjs
       - name: Website tests
