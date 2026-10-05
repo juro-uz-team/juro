@@ -389,7 +389,7 @@ test("OTP, MFA, and logout writes require the application CSRF contract", async 
     "/api/auth/reset-password",
     "/api/auth/verify-mfa",
   ]) {
-    assert.match(authForm, new RegExp(`fetch\\("${endpoint.replaceAll("/", "\\/")}"`));
+    assert.match(authForm, new RegExp(`requestAuthentication\\("${endpoint.replaceAll("/", "\\/")}"`));
   }
   assert.match(logoutButton, /performLogout\(locale\)/);
   assert.match(logoutClient, /"x-juro-csrf"\s*:\s*"1"/);
