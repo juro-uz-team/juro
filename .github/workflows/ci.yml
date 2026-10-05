@@ -56,7 +56,7 @@ jobs:
       - name: Authentication browser tests
         run: npm run test:auth-browser --prefix apps/platform
       - name: Native HTTP boundary tests
-        run: node --test scripts/native-http.test.mjs scripts/native-admin-http.test.mjs scripts/public-build-origins.test.mjs scripts/native-readiness.test.mjs scripts/deployment-gateway.test.mjs scripts/check-migration-recovery.test.mjs scripts/public-dns-readiness.test.mjs
+        run: node --test scripts/native-http.test.mjs scripts/native-admin-http.test.mjs scripts/public-build-origins.test.mjs scripts/native-readiness.test.mjs scripts/deployment-gateway.test.mjs scripts/check-migration-recovery.test.mjs scripts/deploy-self-hosted.test.mjs scripts/corpus-deployment-hook.test.mjs scripts/public-dns-readiness.test.mjs
       - name: Website tests
         working-directory: apps/website
         run: node --test tests/*.test.mjs

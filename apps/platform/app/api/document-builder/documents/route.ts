@@ -1,3 +1,4 @@
+import { resolvedDocument } from "../../../../lib/document-builder/registry/published";
 import { assertSafeWrite, requireApiUser } from "../../../../lib/document-builder/auth/api";
 import { apiError, badRequest, jsonResponse } from "../../../../lib/document-builder/auth/responses";
 import { createStoredDocument } from "../../../../lib/document-builder/storage/documents";
@@ -117,14 +118,14 @@ export async function POST(request: Request): Promise<Response> {
     if (!body.sourceDocumentId) return badRequest("Не указан исходный документ.");
     const db = requireD1();
     const source = await db.prepare(
-      `SELECT d.title, d.template_code AS templateCode, d.language, a.answers_json AS answersJson, c.auto_content AS autoContent,
+      `SELECT d.title, d.template_code AS templateCode,d.template_version AS templateVersion, d.language, a.answers_json AS answersJson, c.auto_content AS autoContent,
        c.final_content AS finalContent, c.manually_edited AS manuallyEdited
        FROM documents d JOIN document_answers a ON a.document_id = d.id
        JOIN document_current_content c ON c.document_id = d.id
        WHERE d.id = ? AND d.owner_user_id = ? AND d.workspace_id = ? LIMIT 1`,
-    ).bind(body.sourceDocumentId, user.id, workspace.id).first<{ title: string; templateCode: string | null; language: string; answersJson: string; autoContent: string; finalContent: string; manuallyEdited: number }>();
+    ).bind(body.sourceDocumentId, user.id, workspace.id).first<{ title: string; templateCode: string | null; templateVersion:string; language: string; answersJson: string; autoContent: string; finalContent: string; manuallyEdited: number }>();
     if (!source) return jsonResponse({ error: "Документ не найден." }, { status: 404 });
-    const definition = source.templateCode ? getDocumentByCode(source.templateCode) : undefined;
+    const definition = source.templateCode ? await resolvedDocument(source.templateCode,source.templateVersion) : undefined;
     if (definition) {
       const document = await createConfiguredDocument(user, {
         definition,

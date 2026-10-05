@@ -1,3 +1,4 @@
+import { projectControlCenter } from "./sqlite-d1";
 import { DatabaseSync } from "node:sqlite";
 
 class SqliteD1Statement {
@@ -22,6 +23,7 @@ export function aiDatabase(): { sqlite: DatabaseSync; d1: D1Database } {
     CREATE TABLE ai_runs (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,conversation_id TEXT,request_message_id TEXT,response_message_id TEXT,idempotency_key TEXT NOT NULL,correlation_id TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,provider_response_id TEXT,fallback_from_provider TEXT,answer_mode TEXT NOT NULL,reasoning_mode TEXT NOT NULL,status TEXT NOT NULL,legal_database_as_of TEXT NOT NULL,instruction_hash TEXT NOT NULL,source_version_hash TEXT NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,cached_input_tokens INTEGER NOT NULL,estimated_cost_microusd INTEGER,attempt_count INTEGER NOT NULL,latency_ms INTEGER,error_code TEXT,started_at TEXT NOT NULL,completed_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(workspace_id,user_id,idempotency_key));
     CREATE TABLE ai_usage_ledger (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,ai_run_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,feature TEXT NOT NULL,period_start TEXT NOT NULL,period_end TEXT NOT NULL,units INTEGER NOT NULL,status TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,cached_input_tokens INTEGER NOT NULL,estimated_cost_microusd INTEGER,released_at TEXT,consumed_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(ai_run_id),UNIQUE(workspace_id,user_id,idempotency_key));
   `);
+  projectControlCenter(sqlite);
   const d1 = {
     prepare(sql: string) { return new SqliteD1Statement(sqlite, sql); },
     async batch(statements: D1PreparedStatement[]) {

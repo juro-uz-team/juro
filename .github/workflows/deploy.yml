@@ -66,6 +66,22 @@ jobs:
             -o ConnectTimeout=15 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "/usr/local/bin/juro-deploy $DEPLOY_ENVIRONMENT $DEPLOY_REVISION"
+      - name: Verify public Control Center
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in {1..18}; do
+            if curl --fail --silent --show-error --max-time 10 https://admin.juro.uz/health | python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("status")=="ok" and value.get("environment")=="production"'; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          [[ "$ready" == true ]] || { echo 'Production services deployed, but admin DNS/TLS/proxy readiness is not confirmed.'; exit 1; }
+          status=$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' https://admin.juro.uz/api/users)
+          [[ "$status" == 403 ]] || { echo 'Public admin API did not reject an anonymous request.'; exit 1; }
       - name: Remove ephemeral SSH material
         if: always()
         shell: bash

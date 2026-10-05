@@ -21,7 +21,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
     environment:CorpusSessionInput["environment"];
     requestId:string;
     safetyIdentifier?:string;
-    responseTone?:AiResponseTone;
+    responseTone?:AiResponseTone;systemInstructions?:string;
     onAttempt?:(input:{model:string})=>void|Promise<void>;
     onAttemptFinished?:(input:AiProviderAttemptObservation)=>void|Promise<void>;
   }):Promise<Saved> {
@@ -31,7 +31,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
   const interpretationDeadlineAt=Date.now()+INDEXED_RETRIEVAL_TIMEOUT_MS;
   const options={requestId:input.requestId,deadlineAt:Date.now()+LEGAL_CHAT_EXECUTION_TIMEOUT_MS,
     safetyIdentifier:input.safetyIdentifier,onAttempt:input.onAttempt,onAttemptFinished:input.onAttemptFinished};
-  const model=createLegalResearchModel({...options,responseTone:input.responseTone});
+  const model=createLegalResearchModel({...options,responseTone:input.responseTone,systemInstructions:input.systemInstructions});
   const corpus=createRemoteCorpusResearch({service:input.service,environment:input.environment,
     requestId:input.requestId,formulate:model.formulateIndexed,retrievalExpiresAt});
   const official=createOfficialResearch({formulate:model.formulate});
@@ -55,7 +55,7 @@ export async function executeRuntimeLegalChat<Saved>(input:
         // every admitted provision; known retrieval gaps remain unresolved.
         assess:request=>fitsLegalEvidenceBudget(request.evidence.map(item=>item.text))
           ? Promise.resolve({needs:[],resolved:[]}) : model.assess(request)},
-      model:createLegalAnswerModel({...options,responseTone:input.responseTone}),
+      model:createLegalAnswerModel({...options,responseTone:input.responseTone,systemInstructions:input.systemInstructions}),
       observeSource:observeCurrentLexDocument,
     });
   } finally {await corpus.close();}

@@ -1,4 +1,5 @@
 "use client";
+import {trackProductEvent} from "../_platform/product-analytics";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -656,6 +657,7 @@ export function AuthForm({
       privacyInput.current?.focus();
       return;
     }
+    trackProductEvent("registration_started");
     await requestEmailCode("register");
   }
 

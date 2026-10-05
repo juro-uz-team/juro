@@ -78,6 +78,18 @@ function statements(sql: string): string[] {
     .filter(Boolean);
 }
 
+export function projectControlCenter(sqlite: DatabaseSync): void {
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS control_account_blocks(user_id TEXT PRIMARY KEY,reason TEXT,actor_email TEXT);
+    CREATE TABLE IF NOT EXISTS control_settings(key TEXT PRIMARY KEY,value TEXT);
+    CREATE TABLE IF NOT EXISTS control_ai_versions(id TEXT PRIMARY KEY,version INTEGER,settings TEXT,system_instructions TEXT,created_at TEXT,applied_at TEXT);
+    CREATE TABLE IF NOT EXISTS control_professional_documents(id TEXT PRIMARY KEY,profile_id TEXT,object_key TEXT);`);
+  for (const table of ["lawyer_profile_moderation", "lawyer_profile_lifecycle_events", "support_messages"]) {
+    const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all();
+    if (columns.length && !columns.some(column => column.name === "admin_session_id"))
+      sqlite.exec(`ALTER TABLE ${table} ADD COLUMN admin_session_id TEXT`);
+  }
+}
+
 function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, localDocumentConversion = false): {
   sqlite: DatabaseSync;
   d1: D1Database;
@@ -98,6 +110,8 @@ function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, lo
     }
     for (const statement of statements(sql)) sqlite.exec(statement);
   }
+  // Historical migrations remain immutable; current fixtures include native additions.
+  if (lastMigrationIndex === Number.POSITIVE_INFINITY) projectControlCenter(sqlite);
   const d1 = {
     prepare(sql: string) {
       return new SqliteStatement(sqlite, sql);
@@ -133,6 +147,7 @@ export function sqliteD1FixtureFromDirectory(root: URL): {
     const sql = readFileSync(new URL(migrationFile, root), "utf8");
     for (const statement of statements(sql)) sqlite.exec(statement);
   }
+  projectControlCenter(sqlite);
   const d1 = {
     prepare(sql: string) {
       return new SqliteStatement(sqlite, sql);

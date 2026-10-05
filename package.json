@@ -14,13 +14,14 @@
     "dev:admin": "npm --prefix apps/admin run dev",
     "lint": "npm --prefix apps/website run lint && npm --prefix apps/platform run lint",
     "type-check": "npm --prefix apps/website run type-check && npm --prefix apps/platform run type-check && npm --prefix apps/admin run type-check",
-    "build": "npm --prefix apps/website run build && npm --prefix apps/platform run build",
+    "build": "npm --prefix apps/website run build && npm --prefix apps/platform run build && npm --prefix apps/admin run type-check",
     "test": "npm --prefix apps/website test && npm --prefix apps/platform test",
     "services:install": "node scripts/install-self-hosted-services.mjs",
     "local": "node scripts/local.mjs up",
     "local:stop": "node scripts/local.mjs down",
     "local:logs": "node scripts/local.mjs logs",
     "local:status": "node scripts/local.mjs status",
-    "local:mail": "node scripts/local.mjs mail"
+    "local:mail": "node scripts/local.mjs mail",
+    "build:admin": "npm --prefix apps/admin run type-check"
   }
 }

@@ -1,3 +1,4 @@
+import { projectControlCenter } from "./helpers/sqlite-d1";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -103,6 +104,7 @@ function fixture(): { sqlite: DatabaseSync; d1: D1Database } {
     );
     for (const statement of migrationStatements(sql)) sqlite.exec(statement);
   }
+  projectControlCenter(sqlite);
   const d1 = {
     prepare(sql: string) {
       return new SqliteStatement(sqlite, sql);

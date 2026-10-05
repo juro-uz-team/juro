@@ -1,3 +1,4 @@
+import {initializeControlCenterEnvironment} from "../../../../scripts/control-center-runtime.mjs";
 import { localDocumentConverter } from "./document-converter";
 import { localMalwareScanner } from "./scanner";
 import { operationalMetrics } from "./metrics";
@@ -36,6 +37,7 @@ export function getSelfHostedRuntime(): Runtime {
       &&state.juroRuntimeProductRevision!==executingProductRevision())throw Error("NATIVE_RUNTIME_BUILD_MISMATCH");
     return state.juroRuntime;
   }
+  initializeControlCenterEnvironment(process.env);
   const productRevision=runtimeProductRevision();
   const config = nativeHttpConfiguration(process.env, "platform");
   if (!config.privateMode) {
@@ -92,6 +94,7 @@ export function getSelfHostedRuntime(): Runtime {
           if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
           return handleCustomSearchRequest(new Request(input, init), {
             ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog, BUDGET_DB: observations,
+            CUSTOM_QUERY_BUDGET_MODE: "metered",
             ARTIFACTS: corpusBucket(configuration.artifactNamespace),
             RUNTIME_CACHE: cache,
             PREPARED_ORDINALS:createPreparedOrdinalReader(corpus.pool),

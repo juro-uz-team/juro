@@ -1,0 +1,6 @@
+import {ApiAuthError} from "../auth/safe-write";
+import {database} from '../storage/connection';
+import {DOCUMENT_CATEGORIES} from '../document-builder/registry/categories';
+import type {DocumentCategory,DocumentDefinition} from '../document-builder/registry/types';
+export async function resolvedCategories():Promise<DocumentCategory[]>{const rows=(await database().pool.query('SELECT * FROM control_template_categories ORDER BY position,slug')).rows;const categories=new Map<string,DocumentCategory>(DOCUMENT_CATEGORIES.map(v=>[v.slug,v]));for(const r of rows){if(!r.active)categories.delete(r.slug);else categories.set(r.slug,{code:'99',slug:r.slug,title:{ru:r.title_ru,uz:r.title_uz},description:{ru:'',uz:''},icon:categories.get(r.slug)?.icon??'FileText'});}return [...categories.values()];}
+export async function assertTemplatePlan(definition:DocumentDefinition,userId:string){if(!definition.allowedPlans?.length)return;const rows=await database().pool.query("SELECT coalesce((SELECT s.plan_code FROM subscriptions s WHERE s.workspace_id=u.default_workspace_id AND s.status IN ('active','trialing') LIMIT 1),'free') AS plan FROM user_profiles u WHERE u.id=$1",[userId]);if(!rows.rows[0]||!definition.allowedPlans.includes(rows.rows[0].plan))throw new ApiAuthError('Шаблон недоступен на текущем тарифе.',403);}

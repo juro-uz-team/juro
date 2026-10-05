@@ -177,7 +177,7 @@ function serialize(
 async function accountIsLawyer(userId: string) {
   return requireD1()
     .prepare(
-      "SELECT 1 AS permitted FROM user_profiles WHERE id=? AND account_type='lawyer' LIMIT 1",
+      "SELECT 1 AS permitted FROM user_profiles WHERE id=? AND account_type IN ('lawyer','business') LIMIT 1",
     )
     .bind(userId)
     .first<{ permitted: number }>();

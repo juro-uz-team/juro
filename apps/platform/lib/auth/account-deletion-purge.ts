@@ -392,8 +392,9 @@ async function userObjectKeys(
       UNION
       SELECT profile_photo_key AS objectKey
       FROM lawyer_profiles
-      WHERE user_id=? AND profile_photo_key IS NOT NULL`,
-  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId, userId, userId).all<ObjectKeyRow>();
+      WHERE user_id=? AND profile_photo_key IS NOT NULL
+      UNION SELECT d.object_key AS objectKey FROM control_professional_documents d JOIN lawyer_profiles p ON p.id=d.profile_id WHERE p.user_id=?`,
+  ).bind(userId, userId, userId, userId, userId, userId, userId, userId, userId, userId, userId, userId).all<ObjectKeyRow>();
   const keys = [...new Set(
     rows.results
       .map(row => row.objectKey)

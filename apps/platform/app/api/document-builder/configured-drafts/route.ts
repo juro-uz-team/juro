@@ -1,3 +1,5 @@
+import {assertTemplatePlan} from "../../../../lib/control-center/template-access";
+import { resolvedDocument } from "../../../../lib/document-builder/registry/published";
 import { assertSafeWrite, requireApiUser } from "../../../../lib/document-builder/auth/api";
 import { apiError, badRequest, jsonResponse } from "../../../../lib/document-builder/auth/responses";
 import { getDocumentByCode } from "../../../../lib/document-builder/registry";
@@ -13,8 +15,9 @@ export async function POST(request: Request): Promise<Response> {
     const user = await requireApiUser();
     const parsed = configuredDraftSchema.safeParse(await request.json());
     if (!parsed.success) return badRequest("Не удалось проверить данные конструктора.", "INVALID_CONFIGURED_DRAFT");
-    const definition = getDocumentByCode(parsed.data.templateCode);
+    const definition = await resolvedDocument(parsed.data.templateCode);
     if (!definition || definition.status !== "published") return badRequest("Шаблон недоступен или ещё находится на проверке.", "TEMPLATE_UNAVAILABLE");
+    await assertTemplatePlan(definition,user.id);
     if (parsed.data.caseId) {
       const { requireD1 } = await import("../../../../lib/document-builder/storage/runtime");
       const workspace = await workspaceForContentEditor(user);

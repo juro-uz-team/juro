@@ -205,14 +205,14 @@ export async function getKnowledgeBaseAdminArticle(input: {
 
 export async function saveKnowledgeBaseDraft(input: {
   db: D1Database;
-  actorUserId: string;
+  actorUserId: string | null;
   articleId?: string;
   versionId?: string;
   content: KnowledgeBaseDraftContent;
   now?: Date;
 }): Promise<{ articleId: string; versionId: string; versionNumber: number; created: boolean }> {
   const content = knowledgeBaseDraftContentSchema.parse(input.content);
-  assertId(input.actorUserId);
+  if(input.actorUserId !== null) assertId(input.actorUserId);
   if (input.articleId) assertId(input.articleId);
   if (input.versionId) assertId(input.versionId);
   const now = validNow(input.now);
@@ -296,12 +296,12 @@ export async function saveKnowledgeBaseDraft(input: {
 
 export async function publishKnowledgeBaseDraft(input: {
   db: D1Database;
-  actorUserId: string;
+  actorUserId: string | null;
   articleId: string;
   versionId: string;
   now?: Date;
 }): Promise<{ articleId: string; versionId: string; status: "published" }> {
-  assertId(input.actorUserId);
+  if(input.actorUserId !== null) assertId(input.actorUserId);
   assertId(input.articleId);
   assertId(input.versionId);
   const now = validNow(input.now);
@@ -352,12 +352,12 @@ export async function publishKnowledgeBaseDraft(input: {
 
 export async function setKnowledgeBaseArticleStatus(input: {
   db: D1Database;
-  actorUserId: string;
+  actorUserId: string | null;
   articleId: string;
   status: "archived" | "restored";
   now?: Date;
 }): Promise<{ articleId: string; status: "draft" | "published" | "archived" }> {
-  assertId(input.actorUserId);
+  if(input.actorUserId !== null) assertId(input.actorUserId);
   assertId(input.articleId);
   const now = validNow(input.now);
   const article = await input.db.prepare(

@@ -1,3 +1,4 @@
+import {configureControlCenterProxy} from "./control-center-proxy.mjs";
 import { execFileSync } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -82,4 +83,5 @@ for (const [name, port, path] of [
   }
   if (!ready) throw new Error(`${name} did not become HTTP-ready; inspect its user service journal`);
 }
+if(deploymentEnvironment==="production"){try{const result=await configureControlCenterProxy(configuration);console.log(`Control Center proxy: ${result.state}`);}catch{console.warn("Control Center proxy requires operator configuration: local Caddy admin API unavailable or route rejected. Application services are running.");}}
 console.log(`Installed ${deploymentEnvironment ?? "private"} ${production ? "production" : "development"} services from ${root}`);

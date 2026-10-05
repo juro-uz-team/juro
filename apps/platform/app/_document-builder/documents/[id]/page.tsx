@@ -1,3 +1,4 @@
+import { resolvedDocument } from "../../../../lib/document-builder/registry/published";
 import { requireChatGPTUser } from "../../../chatgpt-auth";
 import { getDocumentByCode } from "../../../../lib/document-builder/registry";
 import { getOrCreateUserProfile } from "../../../../lib/document-builder/storage/db";
@@ -13,9 +14,9 @@ export default async function DocumentPage({ params, searchParams }: { params: P
   const query = await searchParams;
   const user = await requireChatGPTUser(`/document-builder/documents/${id}${query.print === "1" ? "?print=1" : ""}`);
   const profile = await getOrCreateUserProfile(user);
-  const stored = await requireD1().prepare("SELECT template_code AS templateCode FROM documents WHERE id = ? AND owner_user_id = ? LIMIT 1")
-    .bind(id, profile.id).first<{ templateCode: string | null }>();
-  const configured = stored?.templateCode ? getDocumentByCode(stored.templateCode) : undefined;
+  const stored = await requireD1().prepare("SELECT template_code AS templateCode,template_version AS templateVersion FROM documents WHERE id = ? AND owner_user_id = ? LIMIT 1")
+    .bind(id, profile.id).first<{ templateCode: string | null;templateVersion:string }>();
+  const configured = stored?.templateCode ? await resolvedDocument(stored.templateCode,stored.templateVersion) : undefined;
   if (configured) {
     return <div className="dbt-root"><BuilderHeader user={user}/><ConfigurableDocumentBuilder definition={configured} initialUser={user} signInPath="" initialDocumentId={id}/></div>;
   }

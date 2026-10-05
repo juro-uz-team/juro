@@ -11,7 +11,8 @@ export type AuthEmailPurpose =
   | "new_region"
   | "account_deletion"
   | "critical_action"
-  | "login_code";
+  | "login_code"
+  | "admin_login";
 
 export type AuthEmailDetail = {
   label: string;
@@ -55,6 +56,7 @@ const copy: Record<AuthEmailLocale, Record<AuthEmailPurpose, Omit<Copy, "footer"
     new_region: { subject: "Вход в JURO из нового региона", title: "Вход из нового региона", intro: "Знакомое устройство вошло в ваш аккаунт JURO из региона, отличающегося от предыдущего входа.", expiry: "", security: "Если это были не вы, завершите неизвестные сессии и измените пароль.", ignored: "" },
     account_deletion: { subject: "Подтвердите удаление аккаунта — JURO", title: "Подтверждение удаления аккаунта", intro: "Используйте код ниже, чтобы подтвердить запрос на удаление аккаунта JURO.", expiry: "Код действует 10 минут и может быть использован только один раз.", security: "Никому не сообщайте этот код. Сотрудники JURO никогда не запрашивают его в переписке или по телефону.", ignored: "Если вы не запрашивали удаление аккаунта, не используйте код, завершите неизвестные сессии и обратитесь в поддержку." },
     critical_action: { subject: "Подтвердите действие — JURO", title: "Подтверждение действия", intro: "Используйте код ниже для подтверждения важного действия в JURO.", expiry: "Код действует 10 минут и используется один раз.", security: "Никому не сообщайте этот код.", ignored: "Если вы не выполняли это действие, проигнорируйте письмо и обратитесь в поддержку." },
+    admin_login: {subject:"Код входа в JURO Control Center",title:"Вход в Control Center",intro:"Введите этот код на admin.juro.uz, чтобы открыть административную платформу JURO.",expiry:"Код действует 5 минут.",security:"Никому не передавайте этот код. Сотрудники JURO никогда не запрашивают его.",ignored:"Если вы не запрашивали вход, проигнорируйте письмо."},
     login_code: { subject: "Код входа — JURO", title: "Код входа JURO", intro: "Используйте код ниже только для дополнительной проверки входа.", expiry: "Код действует 10 минут.", security: "Никому не сообщайте этот код.", ignored: "Если вы не пытались войти, проигнорируйте письмо." },
     codeLabel: "Код подтверждения",
     support: "Нужна помощь? Напишите в поддержку: admin@juro.uz",
@@ -71,6 +73,7 @@ const copy: Record<AuthEmailLocale, Record<AuthEmailPurpose, Omit<Copy, "footer"
     new_region: { subject: "JURO hisobiga yangi hududdan kirish", title: "Yangi hududdan kirish", intro: "Tanish qurilma avvalgi kirishdan boshqa hududdan JURO hisobingizga kirdi.", expiry: "", security: "Agar bu siz bo‘lmasangiz, noma’lum seanslarni yakunlang va parolni o‘zgartiring.", ignored: "" },
     account_deletion: { subject: "Hisobni o‘chirishni tasdiqlang — JURO", title: "Hisobni o‘chirishni tasdiqlash", intro: "JURO hisobini o‘chirish so‘rovini tasdiqlash uchun quyidagi koddan foydalaning.", expiry: "Kod 10 daqiqa amal qiladi va faqat bir marta ishlatiladi.", security: "Kodni hech kimga bermang. JURO xodimlari uni yozishmada yoki telefon orqali hech qachon so‘ramaydi.", ignored: "Agar hisobni o‘chirishni so‘ramagan bo‘lsangiz, koddan foydalanmang, noma’lum seanslarni yakunlang va yordam xizmatiga murojaat qiling." },
     critical_action: { subject: "Amalni tasdiqlang — JURO", title: "Amalni tasdiqlash", intro: "JUROdagi muhim amalni tasdiqlash uchun quyidagi koddan foydalaning.", expiry: "Kod 10 daqiqa amal qiladi va bir marta ishlatiladi.", security: "Kodni hech kimga bermang.", ignored: "Agar bu amalni bajarmagan bo‘lsangiz, xatni e’tiborsiz qoldiring va yordam xizmatiga murojaat qiling." },
+    admin_login: {subject:"JURO Control Center kirish kodi",title:"Control Center kirish",intro:"Ushbu kodni admin.juro.uz saytida kiriting.",expiry:"Kod 5 daqiqa amal qiladi.",security:"Kodni hech kimga bermang.",ignored:"Kirishni so‘ramagan bo‘lsangiz, xatni e’tiborsiz qoldiring."},
     login_code: { subject: "Kirish kodi — JURO", title: "JURO kirish kodi", intro: "Kirishni qo‘shimcha tekshirish uchun quyidagi koddan foydalaning.", expiry: "Kod 10 daqiqa amal qiladi.", security: "Kodni hech kimga bermang.", ignored: "Agar kirishga urinmagan bo‘lsangiz, xatni e’tiborsiz qoldiring." },
     codeLabel: "Tasdiqlash kodi",
     support: "Yordam kerakmi? admin@juro.uz manziliga yozing",
@@ -87,6 +90,7 @@ const copy: Record<AuthEmailLocale, Record<AuthEmailPurpose, Omit<Copy, "footer"
     new_region: { subject: "Sign-in to JURO from a new region", title: "Sign-in from a new region", intro: "A recognized device signed in to your JURO account from a region different from its previous sign-in.", expiry: "", security: "If this was not you, end unknown sessions and change your password.", ignored: "" },
     account_deletion: { subject: "Confirm account deletion — JURO", title: "Confirm account deletion", intro: "Use the code below to confirm your request to delete your JURO account.", expiry: "The code expires in 10 minutes and can be used only once.", security: "Never share this code. JURO staff will never ask for it by message or phone.", ignored: "If you did not request account deletion, do not use the code, end unknown sessions, and contact support." },
     critical_action: { subject: "Confirm an action — JURO", title: "Confirm this action", intro: "Use the code below to confirm a sensitive action in JURO.", expiry: "The code expires in 10 minutes and can be used once.", security: "Never share this code.", ignored: "If you did not request this action, ignore this email and contact support." },
+    admin_login: {subject:"JURO Control Center sign-in code",title:"Control Center sign-in",intro:"Enter this code at admin.juro.uz to open JURO Control Center.",expiry:"The code expires in 5 minutes.",security:"Never share this code. JURO staff will never ask for it.",ignored:"If you did not request sign-in, ignore this email."},
     login_code: { subject: "Sign-in code — JURO", title: "Your JURO sign-in code", intro: "Use the code below only for an additional sign-in check.", expiry: "The code expires in 10 minutes.", security: "Never share this code.", ignored: "If you did not try to sign in, ignore this email." },
     codeLabel: "Verification code",
     support: "Need help? Contact support at admin@juro.uz",
@@ -114,11 +118,12 @@ function singleLineText(value: string): string {
 export function renderJuroAuthEmail(input: {
   locale: AuthEmailLocale;
   purpose: AuthEmailPurpose;
+  expirySeconds?:number;
   code?: string;
   details?: readonly AuthEmailDetail[];
 }): { subject: string; html: string; text: string } {
   const language = copy[input.locale];
-  const message = language[input.purpose];
+  const message = {...language[input.purpose],...(input.expirySeconds?{expiry:input.locale==='ru'?`Код действует ${input.expirySeconds} секунд.`:input.locale==='uz'?`Kod ${input.expirySeconds} soniya amal qiladi.`:`The code expires in ${input.expirySeconds} seconds.`}:{})};
   const plainCode = input.code ? singleLineText(input.code) : null;
   const code = plainCode ? escapeHtml(plainCode) : null;
   const details = (input.details ?? []).map(detail => ({

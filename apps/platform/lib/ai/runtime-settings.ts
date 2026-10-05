@@ -1,3 +1,4 @@
+import { controlAiSettings } from "../control-center/ai-settings";
 import { z } from "zod";
 
 import type { PlatformStaffAccess } from "../auth/staff-access";
@@ -22,6 +23,7 @@ export const aiRuntimeConfigInputSchema = z.object({
 
 export type AiResponseTone = z.infer<typeof aiResponseToneSchema>;
 export type AiRuntimeSettings = {
+  systemInstructions?: string;
   environment: "development" | "staging" | "production";
   version: number;
   openaiChatModel: string;
@@ -112,10 +114,10 @@ export async function resolveAiRuntimeSettings(input: {
     if (error instanceof Error && /no such table:\s*ai_runtime_config_versions/i.test(error.message)) return defaults;
     throw new AiRuntimeSettingsError("AI_SETTINGS_UNAVAILABLE", 503);
   }
-  if (!rows.length) return defaults;
+  if (!rows.length) return controlAiSettings(defaults,input.db);
   await verifyChain(rows, env);
   const latest = rows.at(-1)!;
-  return rowToSettings(latest);
+  return controlAiSettings(await rowToSettings(latest),input.db);
 }
 
 export async function listAiRuntimeSettingsHistory(input: {
@@ -135,7 +137,7 @@ export async function listAiRuntimeSettingsHistory(input: {
   ).bind(environment).all<ConfigRow>();
   if (rows.results.length) await verifyChain(rows.results, env);
   return {
-    current: rows.results.length ? await rowToSettings(rows.results.at(-1)!) : await defaultSettings(env, environment),
+    current: await controlAiSettings(rows.results.length ? await rowToSettings(rows.results.at(-1)!) : await defaultSettings(env, environment),input.db),
     allowlist: aiRuntimeModelAllowlist(env),
     history: [...rows.results].reverse().slice(0, 50),
   };

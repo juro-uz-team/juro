@@ -1,4 +1,5 @@
 "use client";
+import {ProfessionalCredentials} from "./ProfessionalCredentials";
 
 import { Select } from "../_components/Select";
 
@@ -374,6 +375,7 @@ export function LawyerProfessionalProfile({
 
   return (
     <section className="profile-panels lawyer-professional-profile">
+      <ProfessionalCredentials locale={locale} profileId={profile?.id}/>
       <section>
         <div
           className="lawyer-application-steps"

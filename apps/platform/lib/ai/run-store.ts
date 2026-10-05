@@ -87,7 +87,10 @@ export async function reserveAiRun(input: ReserveInput): Promise<AiRunReservatio
   const ledgerId = crypto.randomUUID();
   const correlationId = crypto.randomUUID();
   const { periodStart, periodEnd } = monthlyPeriod(new Date());
-  const limit = input.monthlyLimit === undefined ? FREE_MONTHLY_CYCLES : input.monthlyLimit;
+  const configured=await input.db.prepare("SELECT value FROM control_settings WHERE key='ai.max_monthly_cycles'").first<{value:string}>();
+  const ceiling=configured?Number(JSON.parse(configured.value)):null;
+  const planLimit = input.monthlyLimit === undefined ? FREE_MONTHLY_CYCLES : input.monthlyLimit;
+  const limit = ceiling!==null&&Number.isInteger(ceiling)&&ceiling>0?Math.min(planLimit??ceiling,ceiling):planLimit;
   const [runResult, ledgerResult] = await input.db.batch([
     input.db.prepare(
       `INSERT INTO ai_runs
