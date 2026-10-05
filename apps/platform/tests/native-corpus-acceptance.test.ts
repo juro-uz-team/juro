@@ -1,8 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {verifyNativeCorpusQualification} from "../lib/storage/native-corpus-acceptance";
+import {verifyNativeCorpusQualification,readSelectedNativeCorpus} from "../lib/storage/native-corpus-acceptance";
+import {createHash} from "node:crypto";
+import type {Pool} from "pg";
 
 import {nativeAcceptanceFixture as fixture} from "./helpers/native-corpus-acceptance";
+
+test("operator compatibility retains measured revision and rejects changed selection or candidate",async()=>{
+ const {manifest}=fixture();const bytes=Buffer.from(JSON.stringify(manifest));
+ const sha256=createHash("sha256").update(bytes).digest("hex");
+ let rows=[{sha256,manifest_bytes:bytes}];
+ const pool={query:async()=>({rows})} as unknown as Pool;
+ const candidate="e".repeat(40);
+ const approval={version:1 as const,environment:"production" as const,revision:candidate,acceptedRevision:manifest.productRevision,acceptanceSha256:sha256,reviewSha256:"f".repeat(64)};
+ await assert.rejects(readSelectedNativeCorpus(pool,candidate),/PRODUCT_CHANGED/);
+ assert.equal((await readSelectedNativeCorpus(pool,candidate,approval))?.productRevision,manifest.productRevision);
+ for(const changed of [{...approval,revision:"d".repeat(40)},{...approval,acceptedRevision:candidate},{...approval,acceptanceSha256:"f".repeat(64)}])await assert.rejects(readSelectedNativeCorpus(pool,candidate,changed),/COMPATIBILITY_CHANGED/);
+ rows=[];await assert.rejects(readSelectedNativeCorpus(pool,candidate,approval),/COMPATIBILITY_CHANGED/);
+});
 
 
 test("native qualification requires every declared query, cold attempt, complete outcome and check",async()=>{

@@ -1,4 +1,5 @@
 import type {Pool} from "pg";
+import type {CorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
 import type {PostgresDatabase} from "../storage/postgres";
 import {LocalObjectStore} from "../storage/objects";
 import {PostgresVectorIndex} from "../storage/vectors";
@@ -86,13 +87,13 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
 
 /** Fetch/citation paths retain their original evidence stores. Each new turn
  * selects both retrieval endpoints once; its repairs keep that same selection. */
-export function createNativeCorpusService(input:Dependencies&{productRevision:string;
+export function createNativeCorpusService(input:Dependencies&{productRevision:string;compatibility?:CorpusCompatibility;
   fallback:Pick<LegalCorpusService,"fetch"|"openLegalResearch">}) {
   let cached:{binding:string;runtime:ReturnType<typeof createNativeCorpusResearchRuntime>}|undefined;
   return {
     fetch:input.fallback.fetch.bind(input.fallback),
     async openLegalResearch(scope:CorpusSessionInput){
-      const selected=await readSelectedNativeCorpus(input.pool,input.productRevision);
+      const selected=await readSelectedNativeCorpus(input.pool,input.productRevision,input.compatibility);
       if(!selected)return input.fallback.openLegalResearch(scope);
       if(!input.candidateUrl)throw Error("NATIVE_CORPUS_CANDIDATE_SERVICE_MISSING");
       const binding=nativeCorpusBinding(selected);

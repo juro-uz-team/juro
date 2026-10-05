@@ -20,7 +20,7 @@ process.once("message",async input=>{
  const {LocalObjectStore}=await imported("apps/platform/lib/storage/objects.ts");
  const pg=await imported("apps/platform/node_modules/pg/lib/index.js");
  stage="parse-manifest";
- const manifest=api.nativeCorpusAcceptanceSchema.parse(JSON.parse(bytes.toString()));assert.equal(manifest.productRevision,request.revision);assert.equal(manifest.environment,request.environment);assert.equal(digest(stableSourceSnapshotJson(manifest)),bundle.acceptanceSha256);
+ const manifest=api.nativeCorpusAcceptanceSchema.parse(JSON.parse(bytes.toString()));assert.equal(manifest.productRevision,bundle.mode==="retain"?bundle.acceptedRevision:request.revision);assert.equal(manifest.environment,bundle.mode==="retain"?"production":request.environment);assert.equal(digest(stableSourceSnapshotJson(manifest)),bundle.acceptanceSha256);
  const pool=new pg.Pool({connectionString:settings.CORPUS_DATABASE_URL,max:2,connectionTimeoutMillis:10000,statement_timeout:30000,idle_in_transaction_session_timeout:15000});
  const stores=new Map();const read=async ref=>{if(!stores.has(ref.bucket))stores.set(ref.bucket,new LocalObjectStore(pool,settings.CORPUS_OBJECT_STORAGE_PATH,ref.bucket,true));const object=await stores.get(ref.bucket).get(ref.key);assert(object,"Prepublished proof/object missing");const value=await object.bytes();assert.equal(value.length,ref.sizeBytes);assert.equal(digest(value),ref.sha256);return value;};
  const selected=async()=> {stage="selection-read";return (await pool.query("SELECT acceptance_sha256 FROM storage.native_corpus_selections ORDER BY id DESC LIMIT 1")).rows[0]?.acceptance_sha256;};

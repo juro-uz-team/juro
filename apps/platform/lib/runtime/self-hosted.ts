@@ -1,4 +1,5 @@
 import {initializeControlCenterEnvironment} from "../../../../scripts/control-center-runtime.mjs";
+import {readCorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
 import { localDocumentConverter } from "./document-converter";
 import { localMalwareScanner } from "./scanner";
 import { operationalMetrics } from "./metrics";
@@ -116,7 +117,7 @@ export function getSelfHostedRuntime(): Runtime {
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
   const retrieval=createNativeCorpusService({pool:corpus.pool,catalog,observations,objectRoot:corpusRoot,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
-    productRevision,fallback:legal});
+    productRevision,compatibility:readCorpusCompatibility(process.env.DEPLOYMENT_ENVIRONMENT,productRevision),fallback:legal});
   state.juroRuntimeProductRevision=productRevision;
   state.juroRuntime = { ...env, ...queues, ...deadLetters,
     NATIVE_HEALTH_QUEUE: config.privateMode ? undefined : new PostgresQueue(application.pool, nativeHealthQueueName(appEnvironment)),

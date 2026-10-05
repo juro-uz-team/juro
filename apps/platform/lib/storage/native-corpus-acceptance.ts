@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import type {Pool} from "pg";
+import type {CorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
 import {z} from "zod";
 import {stableSourceSnapshotJson} from "../legal-corpus/source-snapshot";
 import {parseCustomBm25RuntimeDescriptor} from "../legal-corpus/custom-bm25-runtime";
@@ -177,12 +178,14 @@ export async function activateNativeCorpus(input:{pool:Pool;manifest:NativeCorpu
 }
 
 /** A single MVCC read pins both endpoints, including their rollback identity. */
-export async function readSelectedNativeCorpus(pool:Pool,productRevision:string):Promise<NativeCorpusAcceptance|null> {
+export async function readSelectedNativeCorpus(pool:Pool,productRevision:string,compatibility?:CorpusCompatibility):Promise<NativeCorpusAcceptance|null> {
   const row=(await retrievalQuery(pool,`SELECT a.sha256,a.manifest_bytes FROM storage.native_corpus_selections s
     JOIN storage.native_corpus_acceptances a ON a.sha256=s.acceptance_sha256 ORDER BY s.id DESC LIMIT 1`)).rows[0];
-  if(!row)return null;
+  if(!row){if(compatibility)throw Error("NATIVE_CORPUS_COMPATIBILITY_CHANGED");return null;}
   if(sha(row.manifest_bytes)!==row.sha256)throw Error("NATIVE_CORPUS_ACCEPTANCE_CORRUPT");
   const manifest=nativeCorpusAcceptanceSchema.parse(JSON.parse(Buffer.from(row.manifest_bytes).toString("utf8")));
-  if(manifest.productRevision!==productRevision)throw Error("NATIVE_CORPUS_PRODUCT_CHANGED");
+  if(compatibility && (compatibility.revision!==productRevision || compatibility.acceptanceSha256!==row.sha256
+    || compatibility.acceptedRevision!==manifest.productRevision))throw Error("NATIVE_CORPUS_COMPATIBILITY_CHANGED");
+  if(manifest.productRevision!==productRevision && !compatibility)throw Error("NATIVE_CORPUS_PRODUCT_CHANGED");
   return manifest;
 }

@@ -1229,7 +1229,7 @@ test("new work surfaces keep mobile, zoom and keyboard accessibility safeguards"
   assert.match(shellComponent, /const nextParams = new URLSearchParams\(searchParams\.toString\(\)\)/);
   assert.match(shellComponent, /nextParams\.delete\("prompt"\)/);
   assert.doesNotMatch(shellComponent, /nextParams\.delete\("intake"\)/);
-  assert.match(shellComponent, /router\.push\(query \? `\$\{nextPath\}\?\$\{query\}` : nextPath\)/);
+  assert.ok(shellComponent.includes('router.push(`${nextPath}${query ? `?${query}` : ""}${window.location.hash}`)'));
   assert.match(shellComponent, /window\.matchMedia\("\(max-width: 900px\)"\)/);
   assert.match(shell, /min-width:801px\) and \(max-width:900px/);
   assert.match(shellComponent, /aria-hidden=\{mobile && !open \? true : undefined\}/);
@@ -1237,7 +1237,7 @@ test("new work surfaces keep mobile, zoom and keyboard accessibility safeguards"
   assert.match(shellComponent, /window\.requestAnimationFrame\(\(\) => openButtonRef\.current\?\.focus\(\)\)/);
   assert.match(shell, /platform-brand button\{width:44px;height:44px/);
   assert.match(shell, /platform-sidebar nav a\{min-height:44px\}/);
-  assert.match(shell, /platform-account select\{width:100%;min-height:44px/);
+  assert.match(shell, /platform-account :is\(select, \.juro-select\)\{width:100%;min-height:44px/);
   const aiClient = await readFile(new URL("../app/_platform/AiLawyerClient.tsx", import.meta.url), "utf8");
   assert.match(aiClient, /href=\{aiLocation\(new URLSearchParams\(\{ conversationId: item\.id \}\)\)\}/);
   assert.match(aiClient, /router\.replace\(aiLocation\(nextParams, !intakeFinalized\), \{ scroll: false \}\)/);

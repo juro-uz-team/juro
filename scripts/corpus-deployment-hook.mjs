@@ -8,6 +8,7 @@ import {join,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {parseEnv} from "node:util";
 import {deploymentRequest,bindOperatorBundle,digest,runDeploymentPhase} from "./corpus-deployment-contract.mjs";
+import {readCorpusCompatibility} from "./corpus-compatibility.mjs";
 const run=(command,args)=>execFileSync(command,args,{encoding:"utf8",timeout:10000,stdio:["ignore","pipe","pipe"],env:{PATH:"/usr/local/bin:/usr/bin:/bin",HOME:"/root"}}).trim();
 async function protectedPath(path){
  for(let current=path;current!=="/";current=dirname(current)){
@@ -24,6 +25,11 @@ async function main(){
  const request=deploymentRequest(process.argv.slice(2));
  const bundlePath=`/etc/juro/corpus-deployment/${request.environment}/${request.revision}.json`;
  await protectedPath(bundlePath);const bundle=bindOperatorBundle(request,JSON.parse(await readFile(bundlePath,"utf8")));
+ if(bundle.mode==="retain"){
+  const approval=readCorpusCompatibility(request.environment,request.revision);
+  assert(approval);assert.equal(approval.acceptedRevision,bundle.acceptedRevision);
+  assert.equal(approval.acceptanceSha256,bundle.acceptanceSha256);
+ }
  await protectedPath(bundle.environmentFile);await protectedPath(bundle.manifest.file);
  const settings=parseEnv(await readFile(bundle.environmentFile,"utf8"));assert(settings.CORPUS_DATABASE_URL&&settings.CORPUS_OBJECT_STORAGE_PATH);
  const bytes=await readFile(bundle.manifest.file);assert.equal(bytes.length,bundle.manifest.sizeBytes);assert.equal(digest(bytes),bundle.manifest.sha256);

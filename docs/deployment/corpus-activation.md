@@ -69,6 +69,34 @@ The worker cannot access root SSH keys or production's private application DB.
 
 ## Immutable revision bundle
 
+### Compatible application releases
+
+An application release that does not change corpus retrieval, model execution,
+source interpretation or their dependencies can retain the existing acceptance.
+The operator must review the exact candidate diff and dependency changes, retain
+that evidence, and issue a root-owned approval at
+`/etc/juro/corpus-compatibility/<environment>/<revision>.json` (readable by the
+application, with no symlinks or non-root writable ancestors):
+
+```json
+{"version":1,"environment":"staging","revision":"<candidate SHA>","acceptedRevision":"<measured SHA>","acceptanceSha256":"<selected manifest SHA256>","reviewSha256":"<review evidence SHA256>"}
+```
+
+The deployment bundle below then uses `mode: "retain"`, `acceptedRevision`, and
+sets both `expectedParent` and `acceptanceSha256` to the current selection. Its
+manifest is the original, unchanged acceptance. Install `corpus-compatibility.mjs`
+beside the operator hook. Both phases still authenticate original proof objects,
+live vector/membership fences, exact candidate build and service process pins.
+Activation does not publish a new acceptance or claim new measurements. Status
+reports `original` while that selection is unchanged, allowing safe rollback.
+
+The runtime accepts the measured revision only for the exact approved candidate
+and manifest hash. Missing approval preserves strict revision matching; a changed
+or missing selection fails closed. This allows staging and production to share
+the qualified corpus without one environment invalidating the other's selection.
+Any relevant behavior or dependency change requires fresh qualification and the
+normal acceptance workflow. Approval is never inferred from a successful build.
+
 Before deployment, the operator installs a root-owned bundle at
 `/etc/juro/corpus-deployment/<environment>/<revision>.json`. Its ancestors,
 manifest file and credential file must also be root-owned and not writable by
