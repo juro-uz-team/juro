@@ -1,0 +1,51 @@
+.juro-file-picker { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; min-height: 52px; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-background); cursor: pointer; }
+.juro-file-action { display: flex; align-items: center; gap: 8px; color: var(--brand-gold-text); font-size: 13px; font-weight: 600; }
+.juro-file-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+.juro-file-picker input[type=file] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.juro-file-picker:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.juro-file-picker:hover { border-color: var(--border-accent); }
+.juro-file-picker[data-disabled] { opacity: .5; cursor: default; }
+.juro-choice,.juro-date-picker,.juro-duration { min-width: 0; display: grid; gap: 8px; }
+.juro-choice .react-aria-ComboBox { display: grid; gap: 8px; }
+.juro-choice .react-aria-Label,.juro-date-picker .react-aria-Label { display: block; font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.juro-choice-input,.juro-date-input { display: flex; align-items: center; min-height: 48px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-background); min-width: 0; }
+.juro-choice .juro-choice-input input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; outline: none; padding: 8px 12px; font-size: 13px; font-weight: 400; }
+.juro-choice-input:focus-within,.juro-date-input:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.juro-choice-input > button,.juro-date-input > button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; background: transparent; border: 0; border-radius: 8px; color: var(--text-secondary); }
+.juro-control-hint { font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-secondary); }
+.juro-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.juro-chips > span { display: inline-flex; align-items: center; max-width: 100%; overflow-wrap: anywhere; gap: 4px; padding-left: 10px; border: 1px solid var(--border-accent); border-radius: 6px; background: var(--surface-brand); color: var(--text-primary); font-size: 12px; font-weight: 500; }
+.juro-chips button { display: grid; place-items: center; width: 40px; min-height: 40px; flex: none; background: transparent; border: 0; color: var(--text-secondary); border-radius: 4px; }
+.juro-control-popover { z-index: 150; max-width: calc(100vw - 32px); min-width: var(--trigger-width); padding: 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-elevated); color: var(--text-primary); font: 13px var(--font-ui),sans-serif; }
+.juro-control-popover [role=dialog] { outline: none; }
+.juro-choice-list { max-height: 260px; overflow: auto; outline: none; }
+.juro-choice-list [role=option] { min-height: 44px; display: flex; align-items: center; padding: 8px 12px; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+.juro-choice-list [data-focused],.juro-control-popover button:hover,.juro-control-popover [data-hovered],.juro-chips button:hover { background: var(--surface-brand); }
+.juro-date-input .react-aria-DateInput { display: flex; flex: 1; flex-wrap: wrap; padding: 8px 12px; min-width: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.juro-date-input .react-aria-DateSegment { padding: 2px; border-radius: 3px; outline: none; }
+.juro-date-input [data-placeholder] { color: var(--text-secondary); }
+.juro-date-input .react-aria-DateSegment:focus { background: var(--interactive-primary); color: var(--text-on-action); }
+.juro-control-popover .react-aria-Calendar header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.juro-control-popover h2 { font-size: 14px; font-weight: 600; }
+.juro-control-popover button { display: grid; place-items: center; height: 40px; width: 40px; border: 0; border-radius: 8px; background: transparent; color: inherit; }
+.juro-control-popover table { border-collapse: collapse; }
+.juro-control-popover th { font-weight: 400; color: var(--text-secondary); height: 32px; font-size: 11px; }
+.juro-control-popover .react-aria-CalendarCell { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.juro-control-popover [data-outside-month] { color: var(--text-secondary); opacity: .5; }
+.juro-control-popover [data-selected] { background: var(--interactive-primary); color: var(--text-on-action); font-weight: 700; }
+.juro-control-popover [data-focus-visible],.juro-chips button:focus-visible,.juro-duration button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.juro-clear-date { justify-self: start; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; min-height: 40px; padding: 0 4px; }
+.juro-duration-input { display: flex; align-items: center; border: 1px solid var(--control-border); background: var(--control-background); border-radius: 10px; }
+.juro-duration .juro-duration-input input { border: 0; background: transparent; appearance: textfield; }
+.juro-duration input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.juro-duration-input > span { padding: 0 16px; color: var(--text-secondary); font-weight: 400; }
+.juro-duration-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.juro-duration-presets button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-raised); color: var(--text-secondary); font-size: 12px; }
+.juro-duration-presets button[aria-pressed=true] { background: var(--surface-brand); border-color: var(--border-accent); color: var(--brand-gold-text); }
+.juro-duration-presets button:hover,.juro-choice-input > button:hover,.juro-date-input > button:hover { background: var(--surface-brand); }
+.juro-clear-date:hover { color: var(--text-primary); text-decoration: underline; }
+.juro-duration-input:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.juro-duration .juro-duration-input input:focus { outline: 0; }
+.juro-choice button:disabled,.juro-duration button:disabled,.juro-date-picker[data-disabled] { opacity: .5; cursor: default; }
+fieldset:disabled :is(.juro-choice,.juro-duration,.juro-date-picker) { opacity: .65; }
+@media(max-width:380px) { .juro-control-popover .react-aria-CalendarCell { width: 36px; } }

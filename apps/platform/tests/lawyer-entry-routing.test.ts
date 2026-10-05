@@ -53,6 +53,19 @@ const client: LawyerEntryProfile = {
   lawyerMarketplaceStatus: null,
 };
 
+test("shared local hosts retain the lawyer account segment through login and account switching", () => {
+  for (const host of ["localhost:3000", "127.0.0.1:3000", null]) {
+    const profile = { ...approvedLawyer, locale: "en" as const };
+    assert.equal(lawyerLandingDestination(profile, false, host), "/en/lawyer/dashboard");
+    assert.equal(lawyerLandingDestination({ ...pendingLawyer, locale: "en" }, false, host), "/en/lawyer/profile");
+    assert.equal(lawyerLandingDestination({ ...profile, onboardingCompleted: false }, false, host), "/en/onboarding");
+    assert.equal(accountModuleRedirect({
+      requestedLocale: "en", requestedAccountType: "individual", module: "dashboard",
+      lawyerHost: false, requestHost: host, profile,
+    }), "/en/lawyer/dashboard");
+  }
+});
+
 test("lawyer public origin uses the dedicated production host and canonical shared staging host", () => {
   assert.equal(lawyerPublicOrigin("app.juro.uz"), "https://lawyer.juro.uz");
   assert.equal(lawyerPublicOrigin("lawyer.juro.uz:443"), "https://lawyer.juro.uz");

@@ -43,3 +43,7 @@ margin-top:1rem;
 padding:1rem 0 .35rem
 }
 html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(--success) 48%,white);--review-error:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.review-message.error,.review-revision-list article[data-status=rejected]){color:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.review-message.success,.review-disclaimer){color:color-mix(in srgb,var(--success) 48%,white)}
+
+/* The native file control covers the complete upload target. */
+.review-upload .review-drop input[type=file] { width: 100%; height: 100%; }
+.review-drop:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 3px; }

@@ -76,14 +76,15 @@ function lawyerPublicDestination(
   const path = `/${locale}/${page}`;
   if (lawyerHost) return path;
   const origin = lawyerPublicOrigin(requestHost);
-  if (origin === sharedStagingOrigin) {
-    if (page === "onboarding") return `${origin}/${locale}/onboarding`;
+  if (!origin || origin === sharedStagingOrigin) {
+    const sharedOrigin = origin ?? "";
+    if (page === "onboarding") return `${sharedOrigin}/${locale}/onboarding`;
     const sharedPage = page === "application"
       ? "lawyer/profile"
       : page.startsWith("lawyer/")
         ? page
         : `lawyer/${page}`;
-    return `${origin}/${locale}/${sharedPage}`;
+    return `${sharedOrigin}/${locale}/${sharedPage}`;
   }
   return origin ? `${origin}${path}` : path;
 }

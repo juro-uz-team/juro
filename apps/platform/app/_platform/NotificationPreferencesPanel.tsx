@@ -2,6 +2,8 @@
 
 /* eslint-disable react-hooks/set-state-in-effect -- preferences must hydrate after authenticated browser render. */
 
+import { accountSettingsCopy } from "./account-settings-copy";
+
 import { BellRing, LoaderCircle, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { PlatformLocale } from "../../lib/platform/routing";
@@ -57,11 +59,14 @@ const panelCopy = {
 
 export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocale }) {
   const copy = panelCopy[locale];
+  const ui = accountSettingsCopy[locale];
+  const [savedPreferences, setSavedPreferences] = useState<Preferences | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(emptyPreferences);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const dirty = savedPreferences !== null && keys.some(key => savedPreferences[key] !== preferences[key]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +79,7 @@ export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocal
       const body = await response.json() as { preferences?: Preferences; error?: string };
       if (!response.ok || !body.preferences) throw new Error(body.error || copy.loadFailed);
       setPreferences(body.preferences);
+      setSavedPreferences(body.preferences);
     } catch (value) {
       setError(value instanceof Error ? value.message : copy.loadFailed);
     } finally {
@@ -100,6 +106,7 @@ export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocal
       const body = await response.json() as { preferences?: Preferences; error?: string };
       if (!response.ok || !body.preferences) throw new Error(body.error || copy.saveFailed);
       setPreferences(body.preferences);
+      setSavedPreferences(body.preferences);
       setMessage(copy.saved);
     } catch (value) {
       setError(value instanceof Error ? value.message : copy.saveFailed);
@@ -114,12 +121,15 @@ export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocal
     {loading ? <p className="notification-preferences-state" role="status"><LoaderCircle className="spin" aria-hidden="true" />{copy.loading}</p> : <fieldset className="notification-preferences-list">
       <legend className="sr-only">{copy.legend}</legend>
       {keys.map((key) => <label key={key}>
-        <input type="checkbox" checked={preferences[key]} onChange={(event) => setPreferences(current => ({ ...current, [key]: event.target.checked }))} disabled={saving} />
+        <input type="checkbox" checked={preferences[key]} onChange={(event) => { setPreferences(current => ({ ...current, [key]: event.target.checked })); setMessage(""); }} disabled={saving || savedPreferences === null} />
         <span><strong>{preferenceCopy[locale][key].title}</strong><small>{preferenceCopy[locale][key].description}</small></span>
       </label>)}
     </fieldset>}
-    {error && <p className="notification-preferences-state error" role="alert">{error}</p>}
+    {error && <p className="notification-preferences-state error" role="alert">{error} <button type="button" className="account-button secondary" onClick={() => void load()} disabled={loading || saving}>{ui.retry}</button></p>}
     {message && <p className="notification-preferences-state success" role="status">{message}</p>}
-    <button type="button" onClick={() => void save()} disabled={loading || saving} aria-busy={saving}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{copy.save}</button>
+    <footer className="account-save-bar"><span>{dirty ? ui.unsaved : ui.saved}</span><div>
+      {dirty && <button type="button" className="account-button secondary" disabled={saving} onClick={() => { if (savedPreferences) setPreferences(savedPreferences); setError(""); setMessage(""); }}>{ui.discard}</button>}
+      <button type="button" className="account-button" onClick={() => void save()} disabled={loading || saving || !dirty} aria-busy={saving}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{copy.save}</button>
+    </div></footer>
   </section>;
 }

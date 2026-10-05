@@ -1,4 +1,6 @@
 "use client";
+import { ChoiceInput, DateTimePicker, DurationInput, ExperienceInput, FilePicker } from "../_components/ProfileControls";
+import { profileOptions } from "../../lib/platform/profile-options";
 import {ProfessionalCredentials} from "./ProfessionalCredentials";
 
 import { Select } from "../_components/Select";
@@ -102,7 +104,7 @@ const toForm = (profile: Profile): Form => ({
   additionalServices: profile.additionalServices.join(", "),
   availabilityStatus: profile.availabilityStatus,
   nextAvailableAt: profile.nextAvailableAt
-    ? profile.nextAvailableAt.slice(0, 16)
+    ? new Date(new Date(profile.nextAvailableAt).getTime() - new Date(profile.nextAvailableAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
     : "",
   advocateStatus:
     profile.advocateStatus === "verified" ? "declared" : profile.advocateStatus,
@@ -130,6 +132,7 @@ export function LawyerProfessionalProfile({
 }) {
   const text = (russian: string, uzbek: string, english: string) => lawyerText(locale, russian, uzbek, english);
   const base = usePlatformBasePath();
+  const options = profileOptions(locale);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [form, setForm] = useState<Form>(blank);
   const [scheduleConfigured, setScheduleConfigured] = useState(false);
@@ -450,7 +453,7 @@ export function LawyerProfessionalProfile({
         )}
         <form className="profile-form" onSubmit={(event) => void save(event)}>
           <fieldset disabled={editingLocked}>
-            <section className="lawyer-profile-photo">
+            <section className="lawyer-profile-photo"><h3>{text("Личные данные и опыт", "Shaxsiy ma’lumot va tajriba", "Identity & experience")}</h3>
               <label>
                 {text("Фото профиля (JPEG, PNG или WebP до 2 МБ)", "Profil rasmi (2 MB gacha JPEG, PNG yoki WebP)", "Profile photo (JPEG, PNG, or WebP up to 2 MB)")}
                 {profile?.profilePhotoUrl && (
@@ -462,8 +465,8 @@ export function LawyerProfessionalProfile({
                     unoptimized
                   />
                 )}
-                <input
-                  type="file"
+                <FilePicker locale={locale}
+
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(event) => void uploadPhoto(event)}
                   disabled={!profile || uploadingPhoto}
@@ -483,74 +486,12 @@ export function LawyerProfessionalProfile({
                   }
                 />
               </label>
-              <label>
-                {text("Город", "Shahar", "City")}
-                <input
-                  required
-                  maxLength={100}
-                  value={form.city}
-                  onChange={(event) =>
-                    setForm({ ...form, city: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                {text("Регион", "Hudud", "Region")}
-                <input
-                  required
-                  maxLength={100}
-                  value={form.region}
-                  onChange={(event) =>
-                    setForm({ ...form, region: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                {text("Специализации через запятую", "Mutaxassisliklar, vergul bilan", "Practice areas, separated by commas")}
-                <input
-                  required
-                  value={form.specialties}
-                  onChange={(event) =>
-                    setForm({ ...form, specialties: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                {text("Языки через запятую", "Tillar, vergul bilan", "Languages, separated by commas")}
-                <input
-                  required
-                  value={form.languages}
-                  onChange={(event) =>
-                    setForm({ ...form, languages: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                {text("Стаж, лет", "Tajriba, yil", "Years of experience")}
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={form.experienceYears}
-                  onChange={(event) =>
-                    setForm({ ...form, experienceYears: event.target.value })
-                  }
-                />
-              </label>
-            </section>
-            <section>
-              <label>
-                {text("Образование", "Ta’lim", "Education")}
-                <input
-                  required
-                  maxLength={500}
-                  value={form.education}
-                  onChange={(event) =>
-                    setForm({ ...form, education: event.target.value })
-                  }
-                />
-              </label>
+              <ChoiceInput locale={locale} label={text("Город", "Shahar", "City")} value={form.city} options={options.cities} required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, city: value }))}/>
+              <ChoiceInput locale={locale} label={text("Регион", "Hudud", "Region")} value={form.region} options={options.regions} required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, region: value }))}/>
+              <ChoiceInput locale={locale} label={text("Специализации", "Mutaxassisliklar", "Practice areas")} value={form.specialties} options={options.specialties} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, specialties: value }))}/>
+              <ChoiceInput locale={locale} label={text("Языки", "Tillar", "Languages")} value={form.languages} options={options.languages} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, languages: value }))}/>
+              <ExperienceInput locale={locale} label={text("Стаж работы", "Ish tajribasi", "Years of experience")} value={form.experienceYears} onChange={value => setForm(current => ({ ...current, experienceYears: value }))}/>
+              <ChoiceInput locale={locale} label={text("Образование", "Ta’lim", "Education")} value={form.education} options={options.education} required maxLength={500} disabled={editingLocked} onChange={value => setForm(current => ({ ...current, education: value }))}/>
               <label>
                 {text("Фирма или место работы", "Firma yoki ish joyi", "Firm or place of work")}
                 <input
@@ -562,22 +503,9 @@ export function LawyerProfessionalProfile({
                   }
                 />
               </label>
-              <label>
-                {text("Форматы консультаций через запятую", "Maslahat formatlari, vergul bilan", "Consultation formats, separated by commas")}
-                <input
-                  required
-                  value={form.consultationFormats}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      consultationFormats: event.target.value,
-                    })
-                  }
-                  placeholder={
-                    text("Чат, телефон, очно", "Chat, telefon, oflayn", "Chat, phone, in person")
-                  }
-                />
-              </label>
+            </section>
+            <section><h3>{text("Услуги и консультации", "Xizmatlar va maslahatlar", "Services & consultations")}</h3>
+              <ChoiceInput locale={locale} label={text("Форматы консультаций", "Maslahat formatlari", "Consultation formats")} value={form.consultationFormats} options={options.consultationFormats} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, consultationFormats: value }))}/>
               <label>
                 {text("Доступность", "Mavjudlik", "Availability")}
                 <Select
@@ -605,16 +533,7 @@ export function LawyerProfessionalProfile({
                   </option>
                 </Select>
               </label>
-              <label>
-                {text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")}
-                <input
-                  type="datetime-local"
-                  value={form.nextAvailableAt}
-                  onChange={(event) =>
-                    setForm({ ...form, nextAvailableAt: event.target.value })
-                  }
-                />
-              </label>
+              <div><DateTimePicker locale={locale} label={text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")} value={form.nextAvailableAt} disabled={editingLocked} onChange={value => setForm(current => ({ ...current, nextAvailableAt: value }))}/><small className="juro-control-hint">{text("Время в вашем часовом поясе", "Vaqt sizning vaqt mintaqangizda", "Time in your local time zone")} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</small></div>
               <label>
                 {text("Статус адвоката", "Advokat maqomi", "Advocate status")}
                 <Select
@@ -646,42 +565,26 @@ export function LawyerProfessionalProfile({
                   }
                 />
               </label>
-              <label>
-                {text("Стандартная длительность консультации, минут", "Maslahatning standart davomiyligi, daqiqa", "Standard consultation duration, minutes")}
-                <input
-                  required
-                  type="number"
-                  min="15"
-                  max="480"
-                  step="15"
-                  value={form.consultationDurationMinutes}
-                  onChange={(event) =>
-                    setForm({ ...form, consultationDurationMinutes: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                {text("Дополнительные услуги через запятую", "Qo‘shimcha xizmatlar, vergul bilan", "Additional services, separated by commas")}
-                <input
-                  value={form.additionalServices}
-                  onChange={(event) =>
-                    setForm({ ...form, additionalServices: event.target.value })
-                  }
-                  placeholder={text("Письменное заключение, проверка договора", "Yozma xulosa, shartnomani tekshirish", "Written opinion, contract review")}
-                />
-              </label>
-              <label>
-                {text("О себе", "O‘zingiz haqingizda", "About you")}
+              <DurationInput locale={locale} label={text("Длительность консультации", "Maslahat davomiyligi", "Consultation duration")} value={form.consultationDurationMinutes} onChange={value => setForm(current => ({ ...current, consultationDurationMinutes: value }))}/>
+              <ChoiceInput locale={locale} label={text("Дополнительные услуги", "Qo‘shimcha xizmatlar", "Additional services")} value={form.additionalServices} options={options.additionalServices} multiple disabled={editingLocked} onChange={value => setForm(current => ({ ...current, additionalServices: value }))}/>
+              <div className="lawyer-bio-field">
+                <label htmlFor="lawyer-profile-bio">{text("О себе", "O‘zingiz haqingizda", "About you")}</label>
                 <textarea
+                  id="lawyer-profile-bio"
+                  rows={6}
                   maxLength={2000}
+                  aria-describedby="lawyer-bio-hint lawyer-bio-count"
+                  placeholder={text("Расскажите, с какими вопросами вы помогаете клиентам и как строите работу.", "Mijozlarga qaysi masalalarda yordam berishingiz va qanday ishlashingiz haqida yozing.", "Describe the matters you help clients with and how you approach your work.")}
                   value={form.bio}
-                  onChange={(event) =>
-                    setForm({ ...form, bio: event.target.value })
-                  }
+                  onChange={event => setForm(current => ({ ...current, bio: event.target.value }))}
                 />
-              </label>
+                <div className="lawyer-bio-footer">
+                  <small id="lawyer-bio-hint">{text("Ваш подход, опыт и чем вы можете помочь. Этот текст увидят клиенты.", "Yondashuvingiz, tajribangiz va qanday yordam bera olishingiz. Bu matn mijozlarga ko‘rinadi.", "Share your approach, experience, and how you can help. Clients will see this introduction.")}</small>
+                  <small id="lawyer-bio-count">{form.bio.length.toLocaleString(lawyerIntlLocale(locale))} / {Number(2000).toLocaleString(lawyerIntlLocale(locale))}</small>
+                </div>
+              </div>
             </section>
-            <section className="lawyer-profile-preview">
+            <section className="lawyer-schedule-callout">
               <div>
                 <strong>{text("Шаг 4 · Расписание", "4-bosqich · Jadval", "Step 4 · Schedule")}</strong>
                 <p>{text("Рабочие дни, свободное время, перерывы и временная недоступность настраиваются в календаре. Часовой пояс: Asia/Tashkent.", "Ish kunlari, bo‘sh vaqt, tanaffuslar va vaqtincha bandlik kalendarda sozlanadi. Vaqt mintaqasi: Asia/Tashkent.", "Set working days, available times, breaks, and temporary unavailability in the calendar. Time zone: Asia/Tashkent.")}</p>
@@ -718,20 +621,22 @@ export function LawyerProfessionalProfile({
               )}
               <div>
                 <h4>{form.displayName.trim() || text("Имя юриста", "Yurist ismi", "Lawyer name")}</h4>
-                <p>{[form.city, form.region].filter(Boolean).join(" · ") || "—"}</p>
+                <p>{[form.city, form.region].filter(Boolean).join(" · ") || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</p>
                 <div className="lawyer-profile-preview-tags">
                   {list(form.specialties).map((value) => <span key={value}>{value}</span>)}
                   {list(form.languages).map((value) => <span key={value}>{value}</span>)}
                 </div>
               </div>
+              {!form.specialties.trim() && !form.bio.trim() && <p className="lawyer-preview-empty">{text("Добавьте специализации, опыт и услуги выше — здесь появится ваша карточка для клиентов.", "Yuqorida mutaxassislik, tajriba va xizmatlarni kiriting — mijozlar uchun kartangiz shu yerda ko‘rinadi.", "Add your practice areas, experience, and services above to see your client-facing profile take shape.")}</p>}
               <dl>
-                <div><dt>{text("Стаж", "Tajriba", "Experience")}</dt><dd>{form.experienceYears ? text(`${form.experienceYears} лет`, `${form.experienceYears} yil`, `${form.experienceYears} years`) : "—"}</dd></div>
-                <div><dt>{text("Образование", "Ta’lim", "Education")}</dt><dd>{form.education || "—"}</dd></div>
-                <div><dt>{text("Место работы", "Ish joyi", "Place of work")}</dt><dd>{form.firmName || "—"}</dd></div>
-                <div><dt>{text("Форматы", "Formatlar", "Formats")}</dt><dd>{list(form.consultationFormats).join(", ") || "—"}</dd></div>
-                <div><dt>{text("Стоимость", "Narx", "Fees")}</dt><dd>{form.priceDescription || "—"}</dd></div>
+                {form.experienceYears.trim() && <div><dt>{text("Стаж", "Tajriba", "Experience")}</dt><dd>{form.experienceYears ? text(`${form.experienceYears} лет`, `${form.experienceYears} yil`, `${form.experienceYears} years`) : "—"}</dd></div>}
+                {form.education.trim() && <div><dt>{text("Образование", "Ta’lim", "Education")}</dt><dd>{form.education || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
+                {form.firmName.trim() && <div><dt>{text("Место работы", "Ish joyi", "Place of work")}</dt><dd>{form.firmName || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
+                {form.consultationFormats.trim() && <div><dt>{text("Форматы", "Formatlar", "Formats")}</dt><dd>{list(form.consultationFormats).join(", ") || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
+                {form.priceDescription.trim() && <div><dt>{text("Стоимость", "Narx", "Fees")}</dt><dd>{form.priceDescription || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
                 <div><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{form.consultationDurationMinutes ? text(`${form.consultationDurationMinutes} мин.`, `${form.consultationDurationMinutes} daq.`, `${form.consultationDurationMinutes} min`) : "—"}</dd></div>
-                <div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{availabilityLabel(form.availabilityStatus, locale)}</dd></div>
+                {form.availabilityStatus !== "unknown" && <div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{availabilityLabel(form.availabilityStatus, locale)}</dd></div>}
+                {form.nextAvailableAt && <div><dt>{text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")}</dt><dd>{formatProfileDate(form.nextAvailableAt, locale)}</dd></div>}
               </dl>
               {list(form.additionalServices).length > 0 && <p className="lawyer-profile-preview-bio"><strong>{text("Дополнительные услуги: ", "Qo‘shimcha xizmatlar: ", "Additional services: ")}</strong>{list(form.additionalServices).join(" · ")}</p>}
               {form.bio && <p className="lawyer-profile-preview-bio">{form.bio}</p>}
