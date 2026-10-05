@@ -31,6 +31,7 @@ import {
   type AuthFieldErrorCode,
 } from "./auth-field-validation";
 import { TurnstileWidget } from "./TurnstileWidget";
+import { AuthRequestTimeoutError, requestAuthJson } from "./auth-request";
 
 type AccountType = "individual" | "entrepreneur" | "lawyer";
 type Locale = "ru" | "uz" | "en";
@@ -461,11 +462,25 @@ export function AuthForm({
     window.location.replace(destination);
   }
 
-  async function readResponse(response: Response): Promise<AuthResponse> {
+  async function requestAuthentication(url: string, init: RequestInit) {
     try {
-      return await response.json() as AuthResponse;
-    } catch {
-      return {};
+      return await requestAuthJson<AuthResponse>(url, init);
+    } catch (error) {
+      if (error instanceof AuthRequestTimeoutError) {
+        throw new Error(tr({
+          ru: "Время ожидания истекло. Проверьте соединение и повторите попытку.",
+          uz: "Kutish vaqti tugadi. Ulanishni tekshiring va qayta urinib ko‘ring.",
+          en: "The request timed out. Check your connection and try again.",
+        }));
+      }
+      if (error instanceof TypeError) {
+        throw new Error(tr({
+          ru: "Не удалось подключиться. Проверьте соединение и повторите попытку.",
+          uz: "Ulanib bo‘lmadi. Ulanishni tekshiring va qayta urinib ko‘ring.",
+          en: "Could not connect. Check your connection and try again.",
+        }));
+      }
+      throw error;
     }
   }
 
@@ -487,12 +502,11 @@ export function AuthForm({
     const generation = requestGeneration.current + 1;
     requestGeneration.current = generation;
     try {
-      const response = await fetch("/api/auth/password-login", {
+      const { response, data } = await requestAuthentication("/api/auth/password-login", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
         body: JSON.stringify({ email: normalizedEmail, password, locale, rememberMe, turnstileToken }),
       });
-      const data = await readResponse(response);
       if (requestGeneration.current !== generation) return;
       if (!response.ok) {
         if (data.code === "EMAIL_NOT_VERIFIED") {
@@ -573,12 +587,11 @@ export function AuthForm({
               turnstileToken,
             }
         : { purpose, email: normalizedEmail, locale, accountType: requestedAccountType, turnstileToken };
-      const response = await fetch("/api/auth/request-otp", {
+      const { response, data } = await requestAuthentication("/api/auth/request-otp", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
         body: JSON.stringify(body),
       });
-      const data = await readResponse(response);
       if (requestGeneration.current !== generation) return;
       if (!response.ok || !data.challengeId) {
         if (purpose === "registration_resend" && data.code === "REGISTRATION_RESTART_REQUIRED") {
@@ -681,7 +694,7 @@ export function AuthForm({
     clearFeedback();
     setPending(true);
     try {
-      const response = await fetch("/api/auth/verify-otp", {
+      const { response, data } = await requestAuthentication("/api/auth/verify-otp", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
         body: JSON.stringify({
@@ -698,7 +711,6 @@ export function AuthForm({
           rememberMe,
         }),
       });
-      const data = await readResponse(response);
       if (!response.ok) {
         if (["OTP_USED", "REGISTRATION_RESTART_REQUIRED"].includes(data.code ?? "")) {
           setStep("details");
@@ -730,12 +742,11 @@ export function AuthForm({
     }
     setPending(true);
     try {
-      const response = await fetch("/api/auth/reset-password", {
+      const { response, data } = await requestAuthentication("/api/auth/reset-password", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
         body: JSON.stringify({ challengeId, email: challengeEmail, code, password, locale }),
       });
-      const data = await readResponse(response);
       if (!response.ok) {
         throw new Error(data.error || tr({ ru: "Не удалось обновить пароль.", uz: "Parolni yangilab bo‘lmadi.", en: "The password could not be updated." }));
       }
@@ -757,12 +768,11 @@ export function AuthForm({
     clearFeedback();
     setPending(true);
     try {
-      const response = await fetch("/api/auth/verify-mfa", {
+      const { response, data } = await requestAuthentication("/api/auth/verify-mfa", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
         body: JSON.stringify({ code: mfaCode.trim(), locale, rememberMe }),
       });
-      const data = await readResponse(response);
       if (!response.ok) {
         const terminal = ["MFA_CHALLENGE_INVALID", "MFA_CHALLENGE_EXPIRED", "MFA_CHALLENGE_USED", "MFA_ATTEMPTS_EXCEEDED", "MFA_RATE_LIMITED"].includes(data.code ?? "");
         if (terminal) returnToDetails();
