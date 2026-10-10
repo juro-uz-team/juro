@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 
 test("brand artwork follows theme and fixed surfaces without filters or layout shift", async () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
-  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {BrandImage} from './app/_components/BrandImage'; createRoot(document.getElementById('root')).render(<><section id="adaptive"><BrandImage alt="JURO" width={112} height={112}/></section><section id="fixed"><BrandImage tone="dark" mark width={40} height={48}/></section><section className="dbt-a4"><BrandImage mark width={18} height={18}/></section></>);`, resolveDir: root, loader: "tsx" }, bundle: true, write: false, jsx: "automatic" });
-  const css = await readFile(root + "app/_components/brand.css", "utf8");
+  const bundle = await build({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {BrandImage} from './app/_components/BrandImage'; createRoot(document.getElementById('root')).render(<><section id="adaptive"><BrandImage alt="JURO" width={112} height={112}/></section><section id="fixed"><BrandImage tone="dark" mark width={40} height={48}/></section><section className="dbt-a4"><BrandImage mark width={18} height={18}/></section><div className="platform-shell"><a className="dbt-brand"><BrandImage mark width={38} height={38}/><b>JURO</b><span>Documents</span></a></div></>);`, resolveDir: root, loader: "tsx" }, bundle: true, write: false, jsx: "automatic" });
+  const css = await readFile(root + "app/_components/brand.css", "utf8") + await readFile(root + "app/_document-builder/document-builder.css", "utf8");
   const server = createServer(async (req, res) => {
     if (req.url.startsWith("/brand/")) {
       try { res.setHeader("Content-Type", "image/png"); res.end(await readFile(root + "public" + req.url)); }
@@ -38,6 +38,11 @@ test("brand artwork follows theme and fixed surfaces without filters or layout s
       bounds = current;
       assert.match(await page.locator("#fixed img:visible").getAttribute("src"), /on-dark/);
       assert.match(await page.locator(".dbt-a4 img:visible").getAttribute("src"), /on-light/);
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        assert.equal(await page.locator(".dbt-brand img:visible").count(), 1);
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
     }
   } finally {
     await browser?.close();
