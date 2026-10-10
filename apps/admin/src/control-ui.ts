@@ -13,6 +13,8 @@ export function table(rows:Record<string,unknown>[],columns:string[],link?:{key:
 }
 export const navItems=[["/","Обзор"],["/users","Пользователи"],["/lawyers","Профессиональные аккаунты"],["/lawyers?status=pending_review","Модерация"],["/analytics","Аналитика"],["/finance","Финансы"],["/ai","AI"],["/documents","Документы"],["/content","Контент"],["/support","Обращения"],["/system","Система"]];
 export const css=`
+.brand-art{display:contents}.brand .brand-light{display:none}.brand .brand-dark{display:block}.login .brand-light{display:block}.login .brand-dark{display:none}:root[data-theme=dark] .login .brand-light{display:none}:root[data-theme=dark] .login .brand-dark{display:block}
+
 @font-face{font-family:Manrope;font-style:normal;font-weight:200 800;src:url(/assets/manrope-cyrillic.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1;}@font-face{font-family:Manrope;font-style:normal;font-weight:200 800;src:url(/assets/manrope-latin.woff2) format("woff2");unicode-range:U+0000-00FF;}
 :root{color-scheme:light;--canvas:#f8f6f2;--surface:#fff;--ink:#102333;--muted:#596b78;--line:#d9dee1;--wash:#f0f3f4;--nav:#062844;--accent:#be974f;font-family:Manrope,Inter,system-ui,sans-serif;background:var(--canvas);color:var(--ink)}
 :root[data-theme=dark]{color-scheme:dark;--canvas:#0d1720;--surface:#15232e;--ink:#edf2f5;--muted:#a2b4c2;--line:#324450;--wash:#1c2e3b;--nav:#07121b;--accent:#d8b36b}

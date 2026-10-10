@@ -1,13 +1,16 @@
-/* The supplied PNGs stay unchanged; only their on-screen canvas and ink adapt. */
-img[src="/brand/JURO_logo_transparent.png"],
-img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-light"); }
-html[data-theme=dark] img[src="/brand/JURO_logo_transparent.png"],
-html[data-theme=dark] img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-dark"); }
-.auth-brand img[src="/brand/JURO_logo_transparent.png"] { filter: url("/brand/logo-filters.svg#on-dark"); }
-html[data-theme] .dbt-a4 img[src="/brand/JURO_avatar_1080.png"] { filter: url("/brand/logo-filters.svg#on-light"); }
-.platform-shell .platform-brand img.platform-logo-avatar { width:60px; height:60px; object-fit:contain; object-position:center; }
-.platform-brand > a { display:flex; align-items:center; gap:4px; min-height:48px; flex:none; }
-.platform-brand-wordmark { color:#caa45a; font-size:24px; font-weight:750; line-height:1; letter-spacing:.025em; }
-@media(min-width:901px) { .platform-shell.is-collapsed .platform-brand-wordmark { display:none; } }
-.platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width:48px; height:48px; }
-@media(max-width:900px) { .platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width:60px; height:60px; } }
+/* Asset choice follows the surface, including fixed dark auth and white paper. */
+.brand-image { display: contents; }
+.brand-image > img { object-fit: contain; object-position: center; }
+.brand-image > .brand-on-dark { display: none; }
+html[data-theme=dark] .brand-image > .brand-on-light { display: none; }
+html[data-theme=dark] .brand-image > .brand-on-dark { display: block; }
+html .brand-image[data-brand-tone=dark] > .brand-on-light { display: none; }
+html .brand-image[data-brand-tone=dark] > .brand-on-dark { display: block; }
+html .dbt-a4 .brand-image > .brand-on-light, html .brand-image[data-brand-tone=light] > .brand-on-light { display: block; }
+html .dbt-a4 .brand-image > .brand-on-dark, html .brand-image[data-brand-tone=light] > .brand-on-dark { display: none; }
+.platform-shell .platform-brand img.platform-logo-avatar { width: 40px; height: 48px; object-fit: contain; }
+.platform-brand > a { display: flex; align-items: center; gap: 12px; min-height: 48px; flex: none; }
+.platform-brand-wordmark { color: var(--text-primary); font-size: 24px; font-weight: 750; line-height: 1; letter-spacing: .025em; }
+@media(min-width:901px) { .platform-shell.is-collapsed .platform-brand-wordmark { display: none; } }
+.platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width: 32px; height: 40px; }
+@media(max-width:900px) { .platform-shell.is-collapsed .platform-brand img.platform-logo-avatar { width: 40px; height: 48px; } }

@@ -1,6 +1,7 @@
 "use client";
 
-import Image from "next/image";
+import { BrandImage } from "../../../_components/BrandImage";
+
 import { FormEvent, useState } from "react";
 import { ArrowRight, FileCheck2, LockKeyhole } from "lucide-react";
 import type { PlatformLocale } from "../../../../lib/platform/routing";
@@ -43,7 +44,7 @@ export function SignedShareAccessClient({ token, locale }: { token: string; loca
   };
   return <main className="dbt-signed-access" lang={locale}>
     <section>
-      <Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={125} height={122} unoptimized/>
+      <BrandImage alt="JURO" width={125} height={122}/>
       <span className="dbt-access-icon"><FileCheck2 size={30}/></span>
       <h1>{copy.title}</h1>
       <p>{copy.description}</p>

@@ -29,8 +29,9 @@ createServer(async (request, response) => {
   try {
     const font=/^\/assets\/manrope-(latin|cyrillic)\.woff2$/.exec(request.url??"");
     if(request.method==="GET" && font){const bytes=await readFile(new URL(`../../website/node_modules/@fontsource-variable/manrope/files/manrope-${font[1]}-wght-normal.woff2`,import.meta.url));response.writeHead(200,{"content-type":"font/woff2","cache-control":"public,max-age=86400"});response.end(bytes);return;}
-    if (request.method === "GET" && request.url === "/assets/juro-logo.svg") {
-      const logo = await readFile(new URL("../../website/public/brand/JURO_logo_transparent.png",import.meta.url)).catch(()=>null);
+    const brandAsset = /^\/assets\/(juro-mark-on-(?:light|dark)\.png|juro-app-icon\.png)$/.exec(request.url ?? "");
+    if (request.method === "GET" && brandAsset) {
+      const logo = await readFile(new URL(`../../website/public/brand/${brandAsset[1]}`,import.meta.url)).catch(()=>null);
       if(logo){response.writeHead(200,{"content-type":"image/png","cache-control":"public, max-age=86400"});response.end(logo);return;}
     }
     const chunks: Buffer[] = [];

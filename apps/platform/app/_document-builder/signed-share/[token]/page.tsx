@@ -1,5 +1,5 @@
+import { BrandImage } from "../../../_components/BrandImage";
 import type { Metadata } from "next";
-import Image from "next/image";
 import { sha256 } from "../../../../lib/document-builder/share-links/crypto";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { SignedShareAccessClient } from "./SignedShareAccessClient";
@@ -47,7 +47,7 @@ export default async function SignedSharePage({ params, searchParams }: {
     uz: { expired: "Havola muddati tugagan", expiredDescription: "Bu faylga kirish endi taqdim etilmaydi.", denied: "Kirish taqiqlangan", deniedDescription: "Fayl egasi kirishni yopgan." },
     en: { expired: "This link has expired", expiredDescription: "Access to this file is no longer available.", denied: "Access denied", deniedDescription: "The file owner has closed access." },
   });
-  if (!record || Boolean(record.deletedAt) || record.expiresAt <= new Date().toISOString()) return <main className="dbt-public-message" lang={locale}><Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={140} height={137} unoptimized/><h1>{copy.expired}</h1><p>{copy.expiredDescription}</p></main>;
-  if (record.deactivatedAt || record.archivedAt) return <main className="dbt-public-message" lang={locale}><Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={140} height={137} unoptimized/><h1>{copy.denied}</h1><p>{copy.deniedDescription}</p></main>;
+  if (!record || Boolean(record.deletedAt) || record.expiresAt <= new Date().toISOString()) return <main className="dbt-public-message" lang={locale}><BrandImage alt="JURO" width={140} height={137}/><h1>{copy.expired}</h1><p>{copy.expiredDescription}</p></main>;
+  if (record.deactivatedAt || record.archivedAt) return <main className="dbt-public-message" lang={locale}><BrandImage alt="JURO" width={140} height={137}/><h1>{copy.denied}</h1><p>{copy.deniedDescription}</p></main>;
   return <SignedShareAccessClient token={token} locale={locale}/>;
 }

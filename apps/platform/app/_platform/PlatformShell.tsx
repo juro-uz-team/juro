@@ -1,11 +1,12 @@
 "use client";
 
+import { BrandImage } from "../_components/BrandImage";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- the persisted sidebar preference is restored after hydration */
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
@@ -402,14 +403,13 @@ export function PlatformShell({
           <div ref={sidebarSurfaceRef} className="platform-sidebar-surface" aria-hidden="true" />
           <div className="platform-brand">
             <Link href={`${base}/dashboard`} aria-label="JURO">
-              <Image
+              <BrandImage
                 className="platform-logo-avatar"
-                src="/brand/JURO_avatar_1080.png"
+                mark
                 alt=""
                 width={1080}
                 height={1080}
                 priority
-                unoptimized
               />
               <span className="platform-brand-wordmark" aria-hidden="true">JURO</span>
             </Link>

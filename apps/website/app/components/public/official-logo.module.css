@@ -1,11 +1,9 @@
-.lockup.lockup{position:relative;display:block;width:64px;height:64px;flex:none;overflow:visible}
-.lockup.lockup img{position:absolute;inset:0;width:100%;height:100%;max-width:100%;object-fit:contain;transform:none;filter:url("/brand/logo-filters.svg#on-light")}
-.lockup .inverse{display:none}.lockup[data-inverse] .primary{display:none}.lockup[data-inverse] .inverse{display:block}
-:global(html[data-theme="dark"]) .lockup .primary{display:none}:global(html[data-theme="dark"]) .lockup .inverse{display:block}
-@media(max-width:620px){.lockup.lockup{width:54px;height:54px}}
-
-/* The transparent artwork is the 786 x 771 crop at (234, 253) in the
-   supplied 1254 x 1254 navy canvas. Match its visible scale in both themes. */
-.lockup.lockup img.inverse{inset:auto;left:calc(100% * 234 / 1254);top:calc(100% * 253 / 1254);width:calc(100% * 786 / 1254);height:calc(100% * 771 / 1254)}
-
-.lockup.lockup img.inverse{filter:url("/brand/logo-filters.svg#on-dark")}
+.lockup.lockup { display: grid; width: 64px; height: 64px; flex: none; }
+.lockup.lockup img { grid-area: 1 / 1; width: 100%; height: 100%; max-width: 100%; object-fit: contain; transform: none; }
+.lockup .inverse { display: none; }
+.lockup[data-inverse] .primary { display: none; }
+.lockup[data-inverse] .inverse { display: block; }
+:global(html[data-theme="dark"]) .lockup .primary { display: none; }
+:global(html[data-theme="dark"]) .lockup .inverse { display: block; }
+@media(max-width:620px) { .lockup.lockup { width: 56px; height: 56px; } }
+.lockup.lockup[data-loading] { width: 112px; height: 112px; }
