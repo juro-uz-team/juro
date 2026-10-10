@@ -1,7 +1,8 @@
 "use client";
 
+import { BrandImage } from "../../_components/BrandImage";
+
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Bell, BookOpenText, BookUser, FilePenLine, Files, LogIn, Plus, UserRound } from "lucide-react";
 import { builderNavigationPaths } from "../../../lib/platform/builder-paths";
@@ -20,7 +21,7 @@ export function BuilderHeader({ user, signInPath, compact = false, variant = "st
   const embedded = variant === "embedded";
   return <header className={`dbt-header${embedded ? " dbt-header-embedded" : ""}`}>
     {embedded ? <div className="dbt-embedded-title"><FilePenLine aria-hidden="true"/><span><small>JURO</small><strong>{copy("Документы", "Hujjatlar", "Documents")}</strong></span></div> : <Link className="dbt-brand" href={paths.builder} aria-label={copy("JURO — Создать документ", "JURO — Hujjat yaratish", "JURO — Create a document")}>
-      <Image src="/brand/JURO_avatar_1080.png" alt="" width={38} height={38} aria-hidden="true" unoptimized/>
+      <BrandImage mark alt="" width={38} height={38} aria-hidden="true"/>
       <b>JURO</b>
       {!compact && <span>{copy("Конструктор документов", "Hujjat konstruktori", "Document builder")}</span>}
     </Link>}

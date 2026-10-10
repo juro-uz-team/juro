@@ -55,6 +55,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Authentication browser tests
         run: npm run test:auth-browser --prefix apps/platform
+      - name: Brand artwork browser tests
+        working-directory: apps/platform
+        run: node --test tests/browser/brand.test.mjs
       - name: Account settings browser tests
         working-directory: apps/platform
         run: node --test tests/browser/account-settings.test.mjs

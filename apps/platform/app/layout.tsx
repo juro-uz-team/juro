@@ -55,9 +55,9 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <link rel="icon" href="/favicon.png" />
-        <link rel="shortcut icon" href="/favicon.png" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" href="/brand/juro-app-icon.png" />
+        <link rel="shortcut icon" href="/brand/juro-app-icon.png" />
+        <link rel="apple-touch-icon" href="/brand/juro-app-icon.png" />
       </head>
       <body className="antialiased">
         <DocumentBootstrap />

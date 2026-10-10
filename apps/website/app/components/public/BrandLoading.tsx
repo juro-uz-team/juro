@@ -7,7 +7,7 @@ import styles from "./brand-loading.module.css";
 export function LoadingMark({ label = "JURO · Loading" }: { label?: string }) {
   return <div className={styles.mark} role="status" aria-label={label}>
     <span className={styles.halo} aria-hidden="true" />
-    <span className={styles.logo}><OfficialLogo priority /></span>
+    <span className={styles.logo}><OfficialLogo priority loading /></span>
     <span className={styles.track} aria-hidden="true"><i /></span>
   </div>;
 }

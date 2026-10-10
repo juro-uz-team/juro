@@ -1,5 +1,5 @@
+import { BrandImage } from "../../../_components/BrandImage";
 import type { Metadata } from "next";
-import Image from "next/image";
 import { sha256 } from "../../../../lib/document-builder/share-links/crypto";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { paragraphsFromFinalText } from "../../../../lib/document-builder/generation/paragraphs";
@@ -49,7 +49,7 @@ export default async function SharePage({ params, searchParams }: {
       uz: { title: "Havola haqiqiy emas", description: "Havola muddati tugagan yoki egasi kirishni bekor qilgan." },
       en: { title: "This link is no longer valid", description: "The link has expired or the owner has revoked access." },
     });
-    return <main className="dbt-public-message" lang={locale}><Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={140} height={137} unoptimized/><h1>{copy.title}</h1><p>{copy.description}</p></main>;
+    return <main className="dbt-public-message" lang={locale}><BrandImage alt="JURO" width={140} height={137}/><h1>{copy.title}</h1><p>{copy.description}</p></main>;
   }
   return <PublicDocumentView title={record.title} paragraphs={paragraphsFromFinalText(record.finalContent)} locale={locale} />;
 }

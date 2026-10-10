@@ -1,7 +1,8 @@
 "use client";
+
+import { BrandImage } from "../_components/BrandImage";
 import {trackProductEvent} from "../_platform/product-analytics";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -1084,7 +1085,7 @@ function BrandPanel({ locale, mode, lawyerProduct }: { locale: Locale; mode: "lo
       : { ru: "Продолжайте с того места, где остановились", uz: "To‘xtagan joyingizdan davom eting", en: "Continue where you left off" };
   return (
     <section className="auth-brand" data-product={lawyerProduct ? "lawyer" : "client"}>
-      <div className="auth-brand-top"><Link href={`https://juro.uz/${locale}`} aria-label="JURO"><Image src="/brand/JURO_logo_transparent.png" alt="JURO" width={1268} height={1240} priority unoptimized /></Link><span>{lawyerProduct ? copy(locale, { ru: "Кабинет юриста", uz: "Yurist kabineti", en: "Lawyer workspace" }) : "AI LegalTech"}</span></div>
+      <div className="auth-brand-top"><Link href={`https://juro.uz/${locale}`} aria-label="JURO"><BrandImage tone="dark" alt="JURO" width={1268} height={1240} priority /></Link><span>{lawyerProduct ? copy(locale, { ru: "Кабинет юриста", uz: "Yurist kabineti", en: "Lawyer workspace" }) : "AI LegalTech"}</span></div>
       <div className="auth-brand-content">
         <span className="auth-brand-kicker"><ShieldCheck aria-hidden="true" />{copy(locale, { ru: "Защищённая платформа JURO", uz: "Himoyalangan JURO platformasi", en: "Secure JURO platform" })}</span>
         <h1>{copy(locale, headline)}</h1>

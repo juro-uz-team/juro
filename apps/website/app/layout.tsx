@@ -38,8 +38,8 @@ export default async function RootLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/brand/JURO_avatar_1080.png" type="image/png" />
-        <link rel="apple-touch-icon" href="/brand/JURO_avatar_1080.png" />
+        <link rel="icon" href="/brand/juro-app-icon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/brand/juro-app-icon.png" />
         <link rel="manifest" href="/manifest.webmanifest" />
       </head>
       <body>

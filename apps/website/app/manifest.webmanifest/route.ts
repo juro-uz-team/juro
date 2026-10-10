@@ -8,7 +8,7 @@ const manifest = {
   theme_color: "#061827",
   lang: "ru",
   icons: [
-    { src: "/brand/JURO_avatar_1080.png", sizes: "1080x1080", type: "image/png" },
+    { src: "/brand/juro-app-icon.png", sizes: "512x512", type: "image/png" },
   ],
 };
 
