@@ -50,7 +50,7 @@
 .dbt-brand { display: flex; align-items: center; gap: 14px; text-decoration: none; color: var(--dbt-ink); min-width: 0; }
 .dbt-brand img { width: 38px; height: 38px; object-fit: contain; flex: 0 0 auto; }
 .dbt-brand b { color: var(--dbt-ink); font-family: var(--sans); font-size: 24px; letter-spacing: .06em; }
-.dbt-brand span { padding-left: 14px; border-left: 1px solid var(--dbt-line); color: var(--dbt-muted); font-size: 13px; white-space: nowrap; }
+.dbt-brand span:not(.brand-image) { padding-left: 14px; border-left: 1px solid var(--dbt-line); color: var(--dbt-muted); font-size: 13px; white-space: nowrap; }
 .dbt-header nav { display: flex; align-items: center; gap: 6px; }
 .dbt-header nav a { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-radius: 10px; color: var(--dbt-muted); text-decoration: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .dbt-header nav a:hover { background: var(--dbt-hover); color: var(--dbt-text); } }
@@ -545,7 +545,7 @@
 
 @media (max-width: 1180px) {
   .dbt-header { grid-template-columns: auto 1fr auto; gap: 10px; }
-  .dbt-brand span, .dbt-user small, .dbt-nav-wide { display: none; }
+  .dbt-brand span:not(.brand-image), .dbt-user small, .dbt-nav-wide { display: none; }
   .dbt-header nav { justify-content: center; }
   .dbt-header nav a { padding: 9px; }
   .dbt-intro { grid-template-columns: .78fr 1.22fr; gap: 28px; }
@@ -893,7 +893,7 @@
   padding-inline: 24px;
 }
 .platform-shell .dbt-header nav { justify-content: flex-end; }
-.platform-shell .dbt-brand span,
+.platform-shell .dbt-brand span:not(.brand-image),
 .platform-shell .dbt-user { display: none; }
 
 @media (max-width: 1180px) {
