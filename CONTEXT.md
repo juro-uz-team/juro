@@ -84,6 +84,10 @@ _Avoid_: legal proposition, Citation, source-freshness state
 JURO's integrity-verified and indexed collection of public official-source snapshots eligible for a named retrieval capability, searched before any online source.
 _Avoid_: knowledge base, local data, internal search
 
+**Daily Corpus Maintenance**:
+The recurring process that checks official sources each day for new documents and changes, incorporates verified updates into the Indexed Official Corpus, and carries unresolved work forward with visible gaps. Daily discovery is distinct from a source's currentness and a Search Release's publication time.
+_Avoid_: daily full rebuild, daily re-embedding, guaranteed change feed
+
 **Sparse Candidate Lane**:
 The required lexical-retrieval channel that ranks official-corpus candidates by agreement with the question's normalized legal terms and structural fields.
 _Avoid_: database search, exact lookup, dense fallback
