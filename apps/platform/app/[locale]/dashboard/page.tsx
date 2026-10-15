@@ -17,7 +17,7 @@ export default async function DashboardEntry({ params }: {
   const user = await getChatGPTUser();
   if (!user) redirect(`/${locale}/auth/login?returnTo=${encodeURIComponent(`/${locale}/dashboard`)}`);
   const profile = await workspaceProfile(user.email);
-  if (!profile?.onboardingCompleted) redirect(`/${locale}/onboarding`);
+  if (!profile) redirect(`/${locale}/individual/dashboard`);
   if (profile.accountType === "lawyer") {
     const requestHeaders = await headers();
     redirect(lawyerLandingDestination(

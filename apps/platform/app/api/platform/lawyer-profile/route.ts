@@ -52,6 +52,7 @@ type LawyerProfile = {
 
 type ModerationHistoryItem = {
   profileRevision: number;
+  submissionVersion: number;
   decision: string;
   reason: string | null;
   createdAt: string;
@@ -213,11 +214,12 @@ async function ownProfile(userId: string) {
 
 async function ownModerationHistory(profileId: string) {
   const history = await requireD1().prepare(
-    `SELECT profile_revision AS profileRevision,decision,reason,
-      created_at AS createdAt
-     FROM lawyer_profile_moderation
-     WHERE lawyer_profile_id=?
-     ORDER BY created_at DESC,id DESC LIMIT 25`,
+    `SELECT m.profile_revision AS profileRevision,v.submission_version AS submissionVersion,m.decision,m.reason,
+      m.created_at AS createdAt
+     FROM lawyer_profile_moderation m
+     JOIN lawyer_profile_submission_versions v ON v.lawyer_profile_id=m.lawyer_profile_id AND v.profile_revision=m.profile_revision
+     WHERE m.lawyer_profile_id=?
+     ORDER BY m.created_at DESC,m.id DESC LIMIT 25`,
   ).bind(profileId).all<ModerationHistoryItem>();
   return history.results;
 }

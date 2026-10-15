@@ -169,16 +169,16 @@
 .lawyer-profile-preview-card dd { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 600; overflow-wrap: anywhere; }
 .lawyer-profile-preview-bio { grid-column: 1/-1; margin: 0; padding-top: 20px; border-top: 1px solid var(--border-subtle); font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lawyer-preview-empty { grid-column: 1/-1; margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
-.lawyer-bio-field { display: grid; gap: 8px; min-width: 0; }
+.profile-form section.lawyer-services-fields { display: flex; flex-direction: column; }
+.lawyer-bio-field { display: grid; grid-template-rows: auto minmax(160px, 1fr); flex: 1; gap: 8px; min-width: 0; }
 .account-content .lawyer-bio-field textarea { display: block; width: 100%; min-height: 160px; resize: vertical; padding: 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-background); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.7; }
 .lawyer-bio-field textarea::placeholder { color: var(--text-secondary); opacity: .8; }
 .lawyer-bio-field textarea:hover { border-color: var(--border-strong); }
 .lawyer-bio-field textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .lawyer-bio-field textarea:disabled { opacity: .6; cursor: not-allowed; }
-.lawyer-bio-footer { display: flex; align-items: start; gap: 12px; }
-.lawyer-bio-footer small { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
-.lawyer-bio-footer small:first-child { flex: 1; }
-.lawyer-bio-footer small:last-child { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lawyer-bio-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.lawyer-bio-heading small { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.lawyer-bio-heading small:last-child { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .account-content .lawyer-required-fields { padding: 16px; border: 1px solid var(--border-accent); background: var(--surface-brand); border-radius: 10px; color: var(--text-secondary); }
 @media(max-width:1100px) { .account-content .lawyer-professional-profile .profile-form { grid-template-columns: minmax(0,1fr); } }
 @media(max-width:600px) {
@@ -227,3 +227,63 @@
   .account-content .email-change-panel form, .account-content .email-change-actions { grid-template-columns: minmax(0,1fr); }
   .account-content .lawyer-application-steps { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+/* Use the document scrollbar while account navigation remains in view. */
+.profile-workspace.account-area {
+  --account-toolbar-height: 76px;
+  --account-heading-height: 128px;
+  --account-nav-height: 0px;
+  --account-page-bottom-space: 64px;
+  gap: 0;
+  padding-top: 0;
+  padding-bottom: var(--account-page-bottom-space);
+}
+.account-heading {
+  position: sticky;
+  top: var(--account-toolbar-height);
+  z-index: 22;
+  padding-block: 32px 24px;
+  background: var(--surface-canvas);
+}
+.account-layout { align-items: start; }
+.account-rail {
+  position: sticky;
+  top: calc(var(--account-toolbar-height) + var(--account-heading-height));
+  background: var(--surface-canvas);
+}
+.account-content { position: relative; }
+.account-content :is([id], input, button, textarea, summary, select) {
+  scroll-margin-top: calc(var(--account-toolbar-height) + var(--account-heading-height) + var(--account-nav-height) + 16px);
+}
+@media (max-width: 900px) {
+  .profile-workspace.account-area { --account-toolbar-height: 70px; }
+}
+@media (max-width: 800px) {
+  .profile-workspace.account-area { padding-top: 0; --account-page-bottom-space: 48px; }
+  .account-heading > p { display: none; }
+  .account-heading h1 { margin-bottom: 4px; }
+  .account-heading { padding-block: 16px; }
+  .account-layout { gap: 0; }
+  .account-rail { z-index: 21; padding-bottom: 16px; }
+  .account-rail nav a { min-height: 56px; padding-block: 8px; gap: 4px; }
+}
+@media (max-height: 600px) {
+  .account-heading > :is(p, span) { display: none; }
+  .account-heading { padding-block: 12px; }
+}
+/* Keep the sticky rail inside the visible area, including at the page end. */
+@media (min-width: 801px) {
+  .account-rail {
+    max-height: calc(100dvh - var(--account-toolbar-height) - var(--account-heading-height) - var(--account-page-bottom-space));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+  }
+}
+.account-document-details { border-top: 1px solid var(--border-subtle); padding-top: 16px; margin-bottom: 20px; }
+.account-document-details summary { min-height: 44px; cursor: pointer; color: var(--text-primary); font-size: 14px; font-weight: 600; }
+.account-document-details summary small { margin-left: 12px; font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+.account-document-details > p, .account-field-hint { color: var(--text-secondary); font-size: 12px; line-height: 1.6; font-weight: 400; }
+.account-details-note { display: flex; align-items: flex-start; gap: 8px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; margin: 0 0 20px; }
+.account-details-note svg { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--brand-gold-text); }
+.account-birth-date { min-width: 0; }
+.account-birth-date .juro-date-picker > label { margin-bottom: 8px; }

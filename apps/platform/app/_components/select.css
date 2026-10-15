@@ -8,7 +8,7 @@
 html[data-theme=dark] {
   --select-background: var(--surface-elevated);
   --select-border: #91a0ab;
-  --select-menu: var(--surface-hover);
+  --select-menu: var(--surface-elevated);
   --select-shadow: 0 8px 24px rgb(0 0 0 / 20%);
 }
 
@@ -55,7 +55,7 @@ html[data-theme=dark] {
   transform: none;
 }
 
-:root body .juro-select.juro-select:hover:not(:disabled) { border-color: var(--text-secondary); }
+:root body .juro-select.juro-select:hover:not(:disabled):not([aria-invalid=true]) { border-color: var(--control-border-hover); }
 :root body .juro-select.juro-select:is(:focus-visible, [data-state=open]) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -93,7 +93,7 @@ html[data-theme=dark] {
   user-select: none;
 }
 .juro-select-option[data-state=checked] { background: var(--surface-selected); color: var(--text-on-action); font-weight: 600; }
-.juro-select-option[data-highlighted] { background: var(--interactive-hover); color: var(--text-on-action); box-shadow: inset 0 0 0 1px var(--border-accent); }
+.juro-select-option[data-highlighted] { background: var(--surface-hover); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-accent); }
 .juro-select-option[data-disabled] { opacity: .45; cursor: not-allowed; }
 .juro-select-check { position: absolute; right: 12px; display: flex; }
 .juro-select-check svg, .juro-select-scroll svg { width: 16px; height: 16px; }

@@ -36,6 +36,7 @@ type SubmissionProfile = {
   hasPhone: number;
   marketplaceStatus: string;
   profileRevision: number;
+  submissionRevision: number;
 };
 
 function response(body: unknown, status = 200) {
@@ -78,6 +79,8 @@ export const POST = withApiErrors(async function POST(request: Request) {
       p.consultation_formats_json AS consultationFormatsJson,p.availability_status AS availabilityStatus,
       p.profile_photo_key AS profilePhotoKey,p.marketplace_status AS marketplaceStatus,
       p.profile_revision AS profileRevision,
+      CASE WHEN EXISTS (SELECT 1 FROM lawyer_profile_moderation m WHERE m.lawyer_profile_id=p.id AND m.profile_revision=p.profile_revision)
+        THEN p.profile_revision+1 ELSE p.profile_revision END AS submissionRevision,
       CASE WHEN u.phone IS NOT NULL AND length(trim(u.phone))>0 THEN 1 ELSE 0 END AS hasPhone
      FROM lawyer_profiles p JOIN user_profiles u ON u.id=p.user_id
      WHERE p.user_id=? AND u.account_type IN ('lawyer','business') LIMIT 1`,
@@ -151,10 +154,10 @@ export const POST = withApiErrors(async function POST(request: Request) {
   const results = await db.batch([
     db
       .prepare(
-        `UPDATE lawyer_profiles SET status='pending',marketplace_status='pending_review',public_approved_at=NULL,updated_at=?
+        `UPDATE lawyer_profiles SET status='pending',marketplace_status='pending_review',public_approved_at=NULL,updated_at=?,profile_revision=?
        WHERE id=? AND user_id=? AND profile_revision=? AND marketplace_status IN ('profile_incomplete','changes_requested','rejected')`,
       )
-      .bind(now, profile.id, user.id, profile.profileRevision),
+      .bind(now, profile.submissionRevision, profile.id, user.id, profile.profileRevision),
     db
       .prepare(
         `INSERT INTO notifications (id,workspace_id,user_id,document_id,type,title,body,read_at,created_at)
@@ -171,7 +174,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
         now,
         profile.id,
         user.id,
-        profile.profileRevision,
+        profile.submissionRevision,
         now,
       ),
     db
@@ -187,11 +190,11 @@ export const POST = withApiErrors(async function POST(request: Request) {
         workspace.id,
         user.id,
         profile.id,
-        JSON.stringify({ profileRevision: profile.profileRevision }),
+        JSON.stringify({ profileRevision: profile.submissionRevision }),
         now,
         profile.id,
         user.id,
-        profile.profileRevision,
+        profile.submissionRevision,
         now,
       ),
   ]);

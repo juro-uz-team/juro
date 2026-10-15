@@ -66,3 +66,5 @@ Stopping terminates the managed host processes and stops PostgreSQL, preserving 
 Ports 3000, 3001, 3002 and 55432 must be free. All services bind to host loopback; application origin and session checks remain intact.
 
 For native Linux installation, corpus provisioning and backup procedures, see [self-hosted operations](self-hosted-operations.md).
+
+On Windows, a host preview can use an existing ClamAV container by setting LOCAL_CLAMAV_CONTAINER in the ignored .env.self-hosted file. Start the container with the official signature database mounted, then restart the host applications. This setting is used only for clamscan in private Windows development; file bytes are streamed over docker exec, and unavailable scans still block uploads. Other document tools continue to use the host PATH.

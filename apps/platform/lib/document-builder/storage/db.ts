@@ -91,10 +91,10 @@ export async function getOrCreateUserProfile(user: ChatGPTUser): Promise<UserPro
       registeredAddress: existing.registeredAddress,
       phone: identity.phone,
     };
-    // Once onboarding is complete, the name entered in JURO is canonical.
+    // A name entered in JURO is canonical, even without optional onboarding.
     // Refreshing an auth session must not replace it with the provider label.
     if (
-      !existing.onboardingCompletedAt
+      !existing.fullName?.trim()
       && user.fullName
       && user.fullName !== existing.fullName
     ) {

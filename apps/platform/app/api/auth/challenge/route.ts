@@ -7,7 +7,7 @@ const requests = new Map<string, { count: number; until: number }>();
 export async function GET(request: Request) {
   const headers = { "Cache-Control": "no-store" };
   const secret = process.env.AUTH_CHALLENGE_SECRET;
-  if (process.env.PRIVATE_DEVELOPMENT === "true" || !challengeSecretConfigured(secret)) return new Response(null, { status: 503, headers });
+  if ((process.env.PRIVATE_DEVELOPMENT === "true" && process.env.LOCAL_AUTH_PREVIEW !== "true") || !challengeSecretConfigured(secret)) return new Response(null, { status: 503, headers });
   const url = new URL(request.url);
   const allowedOrigins = [process.env.APP_URL, process.env.LAWYER_URL].filter(Boolean);
   const action = url.searchParams.get("action") ?? "";

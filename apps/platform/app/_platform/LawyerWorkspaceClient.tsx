@@ -1,5 +1,8 @@
 "use client";
 
+import { ProfileSetupCard } from "./ProfileSetupCard";
+import { profileReadiness } from "../../lib/platform/profile-readiness";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated lawyer data is loaded after hydration */
@@ -79,6 +82,12 @@ export function LawyerDashboardClient({ locale, userName }: { locale: PlatformLo
   const openRequests = data?.requests.filter((item) => !["completed", "conflict_declined", "access_revoked"].includes(item.status)) ?? [];
   const nextConsultation = data?.consultations.filter((item) => new Date(item.endsAt).getTime() >= referenceTime && item.status !== "cancelled")[0];
   const dueTasks = data?.tasks.filter((item) => item.dueAt && new Date(item.dueAt).getTime() <= referenceTime + 86_400_000) ?? [];
+  if (loading && !data) return <div className="lawyer-workspace-loading" role="status"><LoaderCircle className="spin" />{text("Загружаем кабинет", "Kabinet yuklanmoqda", "Loading workspace")}</div>;
+  if (error && !data) return <p className="lawyer-workspace-error" role="alert">{error}</p>;
+  if (data && !data.operational) return <section className="lawyer-welcome" aria-labelledby="lawyer-welcome-title">
+    <header><h1 id="lawyer-welcome-title">{text("Добро пожаловать в JURO", "JURO’ga xush kelibsiz", "Welcome to JURO")}</h1><p>{text("Ваш кабинет готов. Начните с профессионального профиля — в удобном для вас темпе.", "Kabinetingiz tayyor. Professional profilingizni o‘zingizga qulay vaqtda tayyorlang.", "Your workspace is ready. Set up your professional profile at your own pace.")}</p></header>
+    <ProfileSetupCard state={profileReadiness({ accountType: "lawyer", lawyerProfileStatus: data.profile?.status ?? null, lawyerMarketplaceStatus: data.profile?.marketplaceStatus ?? null, hasBusinessWorkspace: false }) ?? "lawyer_draft"} locale={locale} base={base} />
+  </section>;
   return <section className="lawyer-workspace lawyer-dashboard" aria-labelledby="lawyer-dashboard-title">
     <header className="lawyer-workspace-hero"><div><span>JURO · {text("кабинет юриста", "yurist kabineti", "lawyer workspace")}</span><h1 id="lawyer-dashboard-title">{userName ? text(`Добрый день, ${userName}`, `Xayrli kun, ${userName}`, `Welcome, ${userName}`) : text("Рабочий кабинет юриста", "Yurist ish kabineti", "Lawyer workspace")}</h1><p>{text("Заявки, консультации, клиенты и дела — только из подтверждённых записей JURO.", "So‘rovlar, maslahatlar, mijozlar va ishlar — faqat tasdiqlangan JURO yozuvlaridan.", "Requests, consultations, clients, and cases are shown only from verified JURO records.")}</p></div><BriefcaseBusiness aria-hidden="true" /></header>
     <Link className="lawyer-ai-entry" href={`${base}/ai-chat`}>

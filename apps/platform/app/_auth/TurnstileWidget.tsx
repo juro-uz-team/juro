@@ -70,7 +70,7 @@ export function TurnstileWidget({ siteKey, action, locale, onToken, resetSignal 
     return () => { active = false; if (refresh) clearTimeout(refresh); if (deadline) clearTimeout(deadline); widget?.remove(); callback.current(""); };
   }, [siteKey, action, locale, resetSignal, attempt]);
   if (siteKey === "private-local") return null;
-  return <div>
+  return <div className="auth-challenge">
     <div ref={container} />
     {failed && <div>
       <p role="alert">{locale === "ru" ? "Проверка безопасности не завершилась. Повторите попытку." : locale === "uz" ? "Xavfsizlik tekshiruvi tugamadi. Qayta urinib ko‘ring." : "The security check could not finish. Try again."}</p>

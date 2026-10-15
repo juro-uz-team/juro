@@ -1,3 +1,4 @@
+import { personalDetailsSchema, personalDetailColumns } from "../../../../lib/platform/personal-details";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../lib/document-builder/auth/api";
 import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
@@ -37,7 +38,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
     await db.batch([
     db.prepare(
       `SELECT id,${userIdentitySelect("user_profiles")},
-        full_name AS fullName,locale,account_type AS accountType,
+        full_name AS fullName,first_name AS firstName,last_name AS lastName,middle_name AS middleName,
+        birth_date AS birthDate,registered_address AS registeredAddress,locale,account_type AS accountType,
         company_name AS companyName,organization_role AS organizationRole,primary_goal AS primaryGoal,
         timezone,onboarding_completed_at AS onboardingCompletedAt,created_at AS createdAt
        FROM user_profiles WHERE id=? LIMIT 1`,
@@ -91,6 +93,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
   ]);
   const profileRow = profile.results[0] as (UserIdentityRow & {
     fullName: string | null;
+    firstName: string | null; lastName: string | null; middleName: string | null;
+    birthDate: string | null; registeredAddress: string | null;
     locale: string;
     accountType: string;
     companyName: string | null;
@@ -114,6 +118,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
       id: profileRow.id,
       email: identity.email,
       fullName: profileRow.fullName,
+      firstName: profileRow.firstName, lastName: profileRow.lastName, middleName: profileRow.middleName,
+      birthDate: profileRow.birthDate, registeredAddress: profileRow.registeredAddress,
       phone: identity.phone,
       locale: profileLocale,
       accountType: profileRow.accountType,
@@ -146,10 +152,22 @@ export const PATCH = withApiErrors(async function PATCH(request: Request) {
   const user = await requireApiUser(request);
   const workspace = await workspaceForUser(user);
   const body = await request.json().catch(() => null) as { fullName?: string; phone?: string; locale?: string; timezone?: string; companyName?: string; organizationRole?: string } | null;
-  if (!body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return response({ error: localizedRequestFormatError(request) }, 400);
   }
-  const fullName = body.fullName?.trim().slice(0, 160);
+  const details = personalDetailsSchema.safeParse(body);
+  if (!details.success) return response({ code: "INVALID_PERSONAL_DETAILS", error: localized(requestLocale, {
+    ru: "Проверьте личные данные: имя — до 80 символов, адрес — до 500. Дата рождения должна быть действительной и не в будущем.",
+    uz: "Shaxsiy ma’lumotlarni tekshiring: ism — 80, manzil — 500 belgigacha. Tug‘ilgan sana haqiqiy va kelajakda bo‘lmasligi kerak.",
+    en: "Check your personal details: names allow 80 characters and address 500. Date of birth must be valid and not in the future.",
+  }) }, 400);
+  const db = requireD1();
+  const storedNames = details.data.firstName ? await db.prepare(
+    "SELECT last_name AS lastName,middle_name AS middleName FROM user_profiles WHERE id=?",
+  ).bind(user.id).first<{ lastName: string | null; middleName: string | null }>() : null;
+  const fullName = details.data.firstName
+    ? [details.data.firstName, details.data.middleName ?? storedNames?.middleName, details.data.lastName ?? storedNames?.lastName].filter(Boolean).join(" ")
+    : typeof body.fullName === "string" ? body.fullName.trim().slice(0, 160) : "";
   if (!fullName) {
     return response({
       code: "FULL_NAME_REQUIRED",
@@ -176,7 +194,6 @@ export const PATCH = withApiErrors(async function PATCH(request: Request) {
   const companyName = body.companyName?.trim().slice(0, 180) || null;
   const organizationRole = body.organizationRole?.trim().slice(0, 120) || null;
   const now = isoNow();
-  const db = requireD1();
   const identityContext = runtimeIdentityProtection();
   const currentIdentity = await userIdentityById(
     db,
@@ -245,6 +262,11 @@ export const PATCH = withApiErrors(async function PATCH(request: Request) {
       now,
       user.id,
     );
+  const detailKeys = (Object.keys(personalDetailColumns) as Array<keyof typeof personalDetailColumns>)
+    .filter(key => details.data[key] !== undefined);
+  const detailUpdates = detailKeys.length ? [db.prepare(
+    `UPDATE user_profiles SET ${detailKeys.map(key => `${personalDetailColumns[key]}=?`).join(",")} WHERE id=?`,
+  ).bind(...detailKeys.map(key => details.data[key] || null), user.id)] : [];
   const workspaceUpdates = canManageTeam(workspace.role)
     ? [db.prepare(`UPDATE workspaces SET locale=?,
         name=CASE WHEN type='business' AND ? IS NOT NULL THEN ? ELSE name END,
@@ -254,6 +276,7 @@ export const PATCH = withApiErrors(async function PATCH(request: Request) {
     : [];
   await db.batch([
     profileUpdate,
+    ...detailUpdates,
     ...workspaceUpdates,
     db.prepare(
       "INSERT INTO workspace_audit_events (id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at) VALUES (?,?,?,'user',?,'profile_updated',?,?)",

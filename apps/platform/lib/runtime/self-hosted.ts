@@ -41,6 +41,10 @@ export function getSelfHostedRuntime(): Runtime {
   initializeControlCenterEnvironment(process.env);
   const productRevision=runtimeProductRevision();
   const config = nativeHttpConfiguration(process.env, "platform");
+  const authPreview = config.privateMode && process.env.LOCAL_AUTH_PREVIEW === "true";
+  if (authPreview && !challengeSecretConfigured(process.env.AUTH_CHALLENGE_SECRET)) {
+    throw new Error("Authentication preview requires AUTH_CHALLENGE_SECRET");
+  }
   if (!config.privateMode) {
     if (!challengeSecretConfigured(process.env.AUTH_CHALLENGE_SECRET)) throw new Error("Public authentication requires AUTH_CHALLENGE_SECRET");
     if (!parseIdentityKeyring(process.env.IDENTITY_KEYRING)) throw new Error("Public authentication requires IDENTITY_KEYRING");
@@ -66,11 +70,11 @@ export function getSelfHostedRuntime(): Runtime {
     ACCOUNT_DELETION_PURGE_ENABLED: "true", PAYMENT_FOUNDATION_ENABLED: "false", PAYMENT_PRODUCTION_APPROVED: "false",
     STAGING_LEGAL_EVALUATION_ENABLED: "false", STAGING_SYNTHETIC_PROBES_ENABLED: "false", PRODUCTION_SYNTHETIC_PROBES_ENABLED: "false",
     NATIVE_DEPENDENCY_PROBES_ENABLED: config.privateMode ? "false" : "true",
-    LOCAL_AUTH_BYPASS: config.privateMode && process.env.NODE_ENV !== "production"
+    LOCAL_AUTH_BYPASS: config.privateMode && !authPreview && process.env.NODE_ENV !== "production"
       && process.env.LOCAL_AUTH_BYPASS === "true" ? "true" : "false",
     ALLOW_PLATFORM_AUTH_HEADERS: "false",
-    TURNSTILE_SECRET_KEY: config.privateMode ? "private-local" : process.env.AUTH_CHALLENGE_SECRET,
-    TURNSTILE_SITE_KEY: config.privateMode ? "private-local" : "native-altcha",
+    TURNSTILE_SECRET_KEY: config.privateMode && !authPreview ? "private-local" : process.env.AUTH_CHALLENGE_SECRET,
+    TURNSTILE_SITE_KEY: config.privateMode && !authPreview ? "private-local" : "native-altcha",
     RESEND_API_KEY: email.apiKey, EMAIL_FROM: email.from,
     EMAIL_DELIVERY: email.mode === "capture" ? localEmailCapture : createResendDelivery(email.apiKey),
     OCR: localDocumentConverter, MALWARE_SCANNER: localMalwareScanner, MALWARE_SCAN_ENABLED: "true",

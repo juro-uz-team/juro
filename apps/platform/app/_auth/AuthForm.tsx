@@ -305,7 +305,6 @@ export function AuthForm({
   const [code, setCode] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -568,7 +567,6 @@ export function AuthForm({
             accountType: requestedAccountType,
             password,
             firstName: firstName.trim(),
-            lastName: lastName.trim() || undefined,
             acceptTerms,
             acceptPrivacy,
             acceptPersonalData: acceptPrivacy,
@@ -791,9 +789,9 @@ export function AuthForm({
   if (!authAvailable) {
     return (
       <main className="auth-page" lang={locale}>
-        <BrandPanel locale={locale} mode={mode} lawyerProduct={lawyerProduct} />
+        <div className="auth-entry">
+        <BrandPanel locale={locale} hrefFor={localeHref} />
         <section className="auth-card auth-card-unavailable">
-          <AuthUtilities locale={locale} hrefFor={localeHref} />
           <header className="auth-unavailable">
             <LockKeyhole aria-hidden="true" />
             <div>
@@ -807,20 +805,21 @@ export function AuthForm({
               ? <a className="auth-submit" href={`/signin-with-chatgpt?return_to=${encodeURIComponent(protectedReturnTo)}`}><ArrowRight aria-hidden="true" />{tr({ ru: "Продолжить защищённый вход", uz: "Himoyalangan kirishni davom ettirish", en: "Continue secure sign-in" })}</a>
               : <p className="auth-error" role="status">{tr({ ru: "Повторите попытку позднее или обратитесь в поддержку JURO.", uz: "Keyinroq qayta urinib ko‘ring yoki JURO yordam xizmatiga murojaat qiling.", en: "Try again later or contact JURO support." })}</p>}
         </section>
+        </div>
       </main>
     );
   }
 
   return (
     <main className="auth-page" lang={locale}>
-      <BrandPanel locale={locale} mode={mode} lawyerProduct={lawyerProduct} />
+        <div className="auth-entry">
+      <BrandPanel locale={locale} hrefFor={localeHref} />
       <section className="auth-card">
-        <AuthUtilities locale={locale} hrefFor={localeHref} />
         {authNotice && <AuthNotice {...authNotice} />}
 
         {step === "details" && mode === "login" && (
-          <form onSubmit={login} noValidate>
-            <AuthHeading icon={<KeyRound aria-hidden="true" />} eyebrow={tr({ ru: "Безопасная сессия", uz: "Xavfsiz sessiya", en: "Secure session" })} title={tr({ ru: "Войдите в JURO", uz: "JURO hisobiga kiring", en: "Sign in to JURO" })} description={tr({ ru: "Используйте email и пароль. Код понадобится только для особых проверок.", uz: "Email va paroldan foydalaning. Kod faqat maxsus tekshiruvlar uchun kerak.", en: "Use your email and password. A code is only needed for special checks." })} />
+          <form className="auth-details" onSubmit={login} noValidate>
+            <AuthHeading icon={<KeyRound aria-hidden="true" />} eyebrow={tr({ ru: "Безопасная сессия", uz: "Xavfsiz sessiya", en: "Secure session" })} title={tr({ ru: "Войдите в JURO", uz: "JURO hisobiga kiring", en: "Sign in to JURO" })} description={tr({ ru: "Войдите, чтобы продолжить работу с документами и делами.", uz: "Hujjatlar va ishlar bilan ishlashni davom ettirish uchun kiring.", en: "Sign in to continue with your documents and matters." })} />
             <AuthTextField inputRef={emailInput} id="auth-email" name="email" label="Email" type="email" value={email} onChange={setEmail} onBlur={() => { setEmailTouched(true); setEmail(normalizeEmailInput(email)); }} required autoComplete="username" autoCapitalize="none" inputMode="email" enterKeyHint="next" placeholder="name@example.com" spellCheck={false} maxLength={254} error={emailError} disabled={pending} />
             <PasswordField locale={locale} id="auth-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="current-password" disabled={pending} />
             <div className="auth-form-options">
@@ -829,23 +828,29 @@ export function AuthForm({
             </div>
             {turnstileSiteKey && <TurnstileWidget siteKey={turnstileSiteKey} locale={locale} resetSignal={turnstileReset} onToken={setTurnstileToken} action="auth_password_login" />}
             <SubmitButton pending={pending} disabled={!turnstileToken || !passwordValid} label={tr({ ru: "Войти", uz: "Kirish", en: "Sign in" })} />
-            <p className="auth-migration-note"><ShieldCheck aria-hidden="true" />{tr({ ru: "Раньше входили по коду? Установите пароль через восстановление — аккаунт и данные сохранятся.", uz: "Avval kod bilan kirganmisiz? Tiklash orqali parol o‘rnating — hisob va ma’lumotlar saqlanadi.", en: "Previously signed in by code? Set a password through recovery—your account and data stay intact." })}</p>
+            <details className="auth-migration-note"><summary>{tr({ ru: "Раньше входили по коду?", uz: "Avval kod bilan kirganmisiz?", en: "Previously signed in by code?" })}</summary><p>{tr({ ru: "Раньше входили по коду? Установите пароль через восстановление — аккаунт и данные сохранятся.", uz: "Avval kod bilan kirganmisiz? Tiklash orqali parol o‘rnating — hisob va ma’lumotlar saqlanadi.", en: "Previously signed in by code? Set a password through recovery—your account and data stay intact." })}</p></details>
           </form>
         )}
 
         {step === "details" && mode === "register" && (
-          <form onSubmit={register} noValidate>
-            <AuthHeading icon={<Sparkles aria-hidden="true" />} eyebrow={tr({ ru: "Один компактный экран", uz: "Bitta ixcham ekran", en: "One compact screen" })} title={tr({ ru: "Создайте аккаунт", uz: "Hisob yarating", en: "Create your account" })} description={tr({ ru: "Только данные, необходимые для безопасного старта. Остальное — позже в профиле.", uz: "Xavfsiz boshlash uchun zarur ma’lumotlargina. Qolganini keyin profilga qo‘shasiz.", en: "Only what is needed for a secure start. Add everything else later in your profile." })} />
+          <form className="auth-details" onSubmit={register} noValidate>
+            <AuthHeading icon={<Sparkles aria-hidden="true" />} eyebrow={tr({ ru: "Ваше пространство JURO", uz: "Sizning JURO makoningiz", en: "Your JURO workspace" })} title={tr({ ru: "Создайте аккаунт", uz: "Hisob yarating", en: "Create your account" })} description={tr({ ru: "Заполните данные, затем подтвердите email кодом из письма.", uz: "Ma’lumotlarni kiriting, so‘ng emailni xatdagi kod bilan tasdiqlang.", en: "Enter your details, then verify your email with a code." })} />
             {!lawyerProduct && <AccountTypePicker locale={locale} value={accountType} onChange={setAccountType} disabled={pending} />}
             <div className="auth-row">
               <AuthTextField inputRef={firstNameInput} id="first-name" name="given-name" label={tr({ ru: "Имя", uz: "Ism", en: "First name" })} value={firstName} onChange={setFirstName} onBlur={() => { setFirstNameTouched(true); setFirstName(firstName.trim()); }} required autoComplete="given-name" enterKeyHint="next" maxLength={80} error={firstNameError} disabled={pending} />
-              <AuthTextField id="last-name" name="family-name" label={tr({ ru: "Фамилия (необязательно)", uz: "Familiya (ixtiyoriy)", en: "Last name (optional)" })} value={lastName} onChange={setLastName} onBlur={() => setLastName(lastName.trim())} autoComplete="family-name" enterKeyHint="next" maxLength={80} disabled={pending} />
+              <AuthTextField inputRef={emailInput} id="auth-email" name="email" label="Email" type="email" value={email} onChange={setEmail} onBlur={() => { setEmailTouched(true); setEmail(normalizeEmailInput(email)); }} required autoComplete="username" autoCapitalize="none" inputMode="email" enterKeyHint="next" placeholder="name@example.com" spellCheck={false} maxLength={254} error={emailError} disabled={pending} />
             </div>
-            <AuthTextField inputRef={emailInput} id="auth-email" name="email" label="Email" type="email" value={email} onChange={setEmail} onBlur={() => { setEmailTouched(true); setEmail(normalizeEmailInput(email)); }} required autoComplete="username" autoCapitalize="none" inputMode="email" enterKeyHint="next" placeholder="name@example.com" spellCheck={false} maxLength={254} error={emailError} disabled={pending} />
-            <PasswordField locale={locale} id="new-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="new-password" describedBy="password-strength" disabled={pending} />
-            <PasswordStrength locale={locale} password={password} score={strength} />
-            <PasswordField locale={locale} id="confirm-password" name="password-confirmation" label={tr({ ru: "Подтвердите пароль", uz: "Parolni tasdiqlang", en: "Confirm password" })} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" describedBy="password-match" invalid={Boolean(confirmPassword) && !passwordsMatch} disabled={pending} />
-            {confirmPassword && <small id="password-match" className={passwordsMatch ? "auth-valid" : "auth-field-error"}>{passwordsMatch ? tr({ ru: "Пароли совпадают", uz: "Parollar mos", en: "Passwords match" }) : tr({ ru: "Пароли не совпадают", uz: "Parollar mos emas", en: "Passwords do not match" })}</small>}
+
+            <div className="auth-row">
+              <div className="auth-password-fields">
+                <PasswordField locale={locale} id="new-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="new-password" describedBy="password-strength" disabled={pending} />
+                <PasswordStrength locale={locale} password={password} score={strength} />
+              </div>
+              <div className="auth-password-fields">
+                <PasswordField locale={locale} id="confirm-password" name="password-confirmation" label={tr({ ru: "Подтвердите пароль", uz: "Parolni tasdiqlang", en: "Confirm password" })} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" describedBy="password-match" invalid={Boolean(confirmPassword) && !passwordsMatch} disabled={pending} />
+                {confirmPassword && <small id="password-match" className={passwordsMatch ? "auth-valid" : "auth-field-error"}>{passwordsMatch ? tr({ ru: "Пароли совпадают", uz: "Parollar mos", en: "Passwords match" }) : tr({ ru: "Пароли не совпадают", uz: "Parollar mos emas", en: "Passwords do not match" })}</small>}
+              </div>
+            </div>
             <div className="auth-consents">
               <Consent name="accept-terms" checked={acceptTerms} onChange={setAcceptTerms} onTouched={() => setTermsTouched(true)} inputRef={termsInput} error={termsError} disabled={pending}>
                 {tr({ ru: "Принимаю", uz: "", en: "I accept the" })}{locale === "uz" ? null : " "}
@@ -958,6 +963,7 @@ export function AuthForm({
           ? <><a className="auth-secondary-login" href={`/api/auth/dev-login?returnTo=${encodeURIComponent(`/${locale}/individual/dashboard`)}&accountType=individual`}>{tr({ ru: "Локальный вход: личный кабинет", uz: "Mahalliy kirish: shaxsiy kabinet", en: "Local developer sign-in: personal" })}</a><a className="auth-secondary-login" href={`/api/auth/dev-login?returnTo=${encodeURIComponent(`/${locale}/lawyer/dashboard`)}&accountType=lawyer`}>{tr({ ru: "Локальный вход: кабинет юриста", uz: "Mahalliy kirish: yurist kabineti", en: "Local developer sign-in: lawyer" })}</a></>
           : platformAuthEnabled && <a className="auth-secondary-login" href={`/signin-with-chatgpt?return_to=${encodeURIComponent(protectedReturnTo)}`}>{tr({ ru: "Войти через защищённую учётную запись", uz: "Himoyalangan hisob orqali kirish", en: "Sign in with a secure account" })}</a>)}
       </section>
+      </div>
     </main>
   );
 }
@@ -1059,7 +1065,7 @@ function PasswordStrength({ locale, password, score }: { locale: Locale; passwor
     copy(locale, { ru: "Надёжный", uz: "Ishonchli", en: "Strong" }),
     copy(locale, { ru: "Очень надёжный", uz: "Juda ishonchli", en: "Very strong" }),
   ];
-  return <div className="auth-strength" id="password-strength" data-score={tooLong ? 0 : score}><span role="progressbar" aria-label={copy(locale, { ru: "Надёжность пароля", uz: "Parol ishonchliligi", en: "Password strength" })} aria-valuemin={0} aria-valuemax={4} aria-valuenow={tooLong ? 0 : score}><i /></span><small className={tooLong ? "auth-field-error" : undefined}>{tooLong ? copy(locale, { ru: "Пароль не должен превышать 256 символов — значение не было обрезано.", uz: "Parol 256 belgidan oshmasligi kerak — qiymat qisqartirilmadi.", en: "The password must not exceed 256 characters—the value was not truncated." }) : <>{password ? labels[score] : labels[0]}. {copy(locale, { ru: "Длинная фраза лучше сложного короткого пароля.", uz: "Uzun ibora murakkab qisqa paroldan yaxshiroq.", en: "A long passphrase is better than a short complex password." })}</>}</small></div>;
+  return <div className="auth-strength" id="password-strength" data-empty={!password} data-score={tooLong ? 0 : score}><span role="progressbar" aria-label={copy(locale, { ru: "Надёжность пароля", uz: "Parol ishonchliligi", en: "Password strength" })} aria-valuemin={0} aria-valuemax={4} aria-valuenow={tooLong ? 0 : score}><i /></span><small className={tooLong ? "auth-field-error" : undefined}>{tooLong ? copy(locale, { ru: "Пароль не должен превышать 256 символов — значение не было обрезано.", uz: "Parol 256 belgidan oshmasligi kerak — qiymat qisqartirilmadi.", en: "The password must not exceed 256 characters—the value was not truncated." }) : <>{password ? labels[score] : labels[0]}. {copy(locale, { ru: "Длинная фраза лучше сложного короткого пароля.", uz: "Uzun ibora murakkab qisqa paroldan yaxshiroq.", en: "A long passphrase is better than a short complex password." })}</>}</small></div>;
 }
 
 function AccountTypePicker({ locale, value, onChange, disabled = false }: { locale: Locale; value: AccountType; onChange: (value: AccountType) => void; disabled?: boolean }) {
@@ -1075,27 +1081,14 @@ function ResendControl({ locale, pending, cooldown, enabled, onResend }: { local
   return <button type="button" className="auth-resend" onClick={onResend} disabled={pending || cooldown > 0 || !enabled}><RotateCcw aria-hidden="true" />{cooldown > 0 ? copy(locale, { ru: `Повторить через ${cooldown} с`, uz: `${cooldown} s dan keyin`, en: `Resend in ${cooldown}s` }) : copy(locale, { ru: "Отправить код повторно", uz: "Kodni qayta yuborish", en: "Resend code" })}</button>;
 }
 
-function BrandPanel({ locale, mode, lawyerProduct }: { locale: Locale; mode: "login" | "register"; lawyerProduct: boolean }) {
-  const headline = mode === "register"
-    ? lawyerProduct
-      ? { ru: "Практика начинается с доверия", uz: "Amaliyot ishonchdan boshlanadi", en: "Practice starts with trust" }
-      : { ru: "Юридическая ясность — в одном пространстве", uz: "Huquqiy aniqlik — bitta makonda", en: "Legal clarity, in one workspace" }
-    : lawyerProduct
-      ? { ru: "Вернитесь к своей практике", uz: "Amaliyotingizga qayting", en: "Return to your practice" }
-      : { ru: "Продолжайте с того места, где остановились", uz: "To‘xtagan joyingizdan davom eting", en: "Continue where you left off" };
-  return (
-    <section className="auth-brand" data-product={lawyerProduct ? "lawyer" : "client"}>
-      <div className="auth-brand-top"><Link href={`https://juro.uz/${locale}`} aria-label="JURO"><BrandImage tone="dark" alt="JURO" width={1268} height={1240} priority /></Link><span>{lawyerProduct ? copy(locale, { ru: "Кабинет юриста", uz: "Yurist kabineti", en: "Lawyer workspace" }) : "AI LegalTech"}</span></div>
-      <div className="auth-brand-content">
-        <span className="auth-brand-kicker"><ShieldCheck aria-hidden="true" />{copy(locale, { ru: "Защищённая платформа JURO", uz: "Himoyalangan JURO platformasi", en: "Secure JURO platform" })}</span>
-        <h1>{copy(locale, headline)}</h1>
-        <p>{lawyerProduct ? copy(locale, { ru: "Заявки, консультации и материалы клиентов доступны только после проверки профиля и явного разрешения клиента.", uz: "So‘rovlar, maslahatlar va mijoz materiallari faqat profil tekshiruvi va mijozning aniq ruxsatidan keyin ochiladi.", en: "Requests, consultations, and client materials open only after profile verification and explicit client permission." }) : copy(locale, { ru: "Документы, дела и AI-инструменты связаны с вашей учётной записью и защищены серверной проверкой сессии.", uz: "Hujjatlar, ishlar va AI vositalari hisobingizga bog‘langan va server sessiya tekshiruvi bilan himoyalangan.", en: "Documents, matters, and AI tools stay connected to your account and protected by server-side session checks." })}</p>
-        <div className="auth-brand-features" aria-label={copy(locale, { ru: "Возможности", uz: "Imkoniyatlar", en: "Capabilities" })}><span><Check aria-hidden="true" />{copy(locale, { ru: "Документы", uz: "Hujjatlar", en: "Documents" })}</span><span><Check aria-hidden="true" />{copy(locale, { ru: "Правовой AI", uz: "Huquqiy AI", en: "Legal AI" })}</span><span><Check aria-hidden="true" />{copy(locale, { ru: "Юристы", uz: "Yuristlar", en: "Counsel" })}</span></div>
-      </div>
-      <div className="auth-orbit" aria-hidden="true"><i /><i /><i /><span>J</span></div>
-      <small>{copy(locale, { ru: "JURO не является государственным органом или нотариусом.", uz: "JURO davlat organi yoki notarius emas.", en: "JURO is not a government authority or notary." })}</small>
-    </section>
-  );
+function BrandPanel({ locale, hrefFor }: { locale: Locale; hrefFor: (locale: Locale) => string }) {
+  return <header className="auth-brand">
+    <Link href={`https://juro.uz/${locale}`} aria-label="JURO" className="auth-wordmark">
+      <BrandImage mark alt="" width={40} height={40} />
+      <span>JURO</span>
+    </Link>
+    <AuthUtilities locale={locale} hrefFor={hrefFor} />
+  </header>;
 }
 
 function LanguageSwitch({ locale, hrefFor }: { locale: Locale; hrefFor: (value: Locale) => string }) {

@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, type InputHTMLAttributes } from "react";
+import { memo, useContext, useState, type InputHTMLAttributes } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, FileUp, X } from "lucide-react";
-import { Button, Calendar, CalendarCell, CalendarGrid, ComboBox, DateInput, DatePicker, DateSegment, Dialog, Group, Heading, I18nProvider, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
-import { parseDateTime } from "@internationalized/date";
+import { Button, Calendar, CalendarCell, CalendarGrid, ComboBox, DateInput, DatePicker, DatePickerStateContext, TimeField, DateSegment, Dialog, Group, Heading, I18nProvider, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
+import { parseDateTime, parseDate, today, getLocalTimeZone } from "@internationalized/date";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import "./profile-controls.css";
 
 const copy = {
-  en: { choose: "Choose file", empty: "No file selected", search: "Choose or type your own", add: "Add", remove: "Remove", options: "Show options", hint: "Choose an option or type and press Enter.", clear: "Clear date", calendar: "Open calendar", minutes: "min" },
-  ru: { choose: "Выбрать файл", empty: "Файл не выбран", search: "Выберите или введите свой вариант", add: "Добавить", remove: "Удалить", options: "Показать варианты", hint: "Выберите вариант или введите свой и нажмите Enter.", clear: "Очистить дату", calendar: "Открыть календарь", minutes: "мин" },
-  uz: { choose: "Fayl tanlash", empty: "Fayl tanlanmagan", search: "Tanlang yoki o‘z variantingizni kiriting", add: "Qo‘shish", remove: "O‘chirish", options: "Variantlarni ko‘rsatish", hint: "Variantni tanlang yoki yozib, Enter bosing.", clear: "Sanani tozalash", calendar: "Kalendarni ochish", minutes: "daq" },
+  en: { choose: "Choose file", empty: "No file selected", search: "Choose or type your own", add: "Add", remove: "Remove", options: "Show options", hint: "Choose an option or type and press Enter.", clear: "Clear date", calendar: "Open calendar", time: "Time", done: "Done", minutes: "min" },
+  ru: { choose: "Выбрать файл", empty: "Файл не выбран", search: "Выберите или введите свой вариант", add: "Добавить", remove: "Удалить", options: "Показать варианты", hint: "Выберите вариант или введите свой и нажмите Enter.", clear: "Очистить дату", calendar: "Открыть календарь", time: "Время", done: "Готово", minutes: "мин" },
+  uz: { choose: "Fayl tanlash", empty: "Fayl tanlanmagan", search: "Tanlang yoki o‘z variantingizni kiriting", add: "Qo‘shish", remove: "O‘chirish", options: "Variantlarni ko‘rsatish", hint: "Variantni tanlang yoki yozib, Enter bosing.", clear: "Sanani tozalash", calendar: "Kalendarni ochish", time: "Vaqt", done: "Tayyor", minutes: "daq" },
 };
 
 export function FilePicker({ locale, onChange, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { locale: PlatformLocale }) {
@@ -19,7 +19,7 @@ export function FilePicker({ locale, onChange, ...props }: Omit<InputHTMLAttribu
   return <span className="juro-file-picker" data-disabled={props.disabled || undefined}>
     <span className="juro-file-action"><FileUp size={18} aria-hidden="true"/>{t.choose}</span>
     <span className="juro-file-name" aria-live="polite">{names || t.empty}</span>
-    <input {...props} type="file" onChange={(event) => { setNames(Array.from(event.currentTarget.files ?? []).map(file => file.name).join(", ")); onChange?.(event); }} ref={(node) => {
+    <input title="" {...props} type="file" onChange={(event) => { setNames(Array.from(event.currentTarget.files ?? []).map(file => file.name).join(", ")); onChange?.(event); }} ref={(node) => {
       if (!node?.form) return;
       const reset = () => setNames("");
       node.form.addEventListener("reset", reset);
@@ -28,7 +28,7 @@ export function FilePicker({ locale, onChange, ...props }: Omit<InputHTMLAttribu
   </span>;
 }
 
-export function ChoiceInput({ locale, label, value, onChange, options, multiple = false, required = false, disabled = false, maxLength }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; options: string[]; multiple?: boolean; required?: boolean; disabled?: boolean; maxLength?: number }) {
+export const ChoiceInput = memo(function ChoiceInput({ locale, label, value, onChange, options, multiple = false, required = false, disabled = false, maxLength }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; options: string[]; multiple?: boolean; required?: boolean; disabled?: boolean; maxLength?: number }) {
   const [query, setQuery] = useState("");
   const t = copy[locale];
   const selected = multiple ? value.split(",").map(v => v.trim()).filter(Boolean) : [];
@@ -52,19 +52,31 @@ export function ChoiceInput({ locale, label, value, onChange, options, multiple 
     </ComboBox>
     <small className="juro-control-hint">{t.hint}</small>
   </div></I18nProvider>;
+});
+
+function CalendarTime({ locale }: { locale: PlatformLocale }) {
+  const state = useContext(DatePickerStateContext)!;
+  const t = copy[locale];
+  return <div className="juro-calendar-time">
+    <TimeField value={state.timeValue} onChange={next => { if (next) state.setTimeValue(next); }} hourCycle={24} granularity="minute">
+      <Label>{t.time}</Label>
+      <DateInput>{segment => <DateSegment segment={segment}/>}</DateInput>
+    </TimeField>
+    <Button className="juro-calendar-done" onPress={() => state.setOpen(false)}>{t.done}</Button>
+  </div>;
 }
 
-export function DateTimePicker({ locale, label, value, onChange, disabled }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+export const DateTimePicker = memo(function DateTimePicker({ locale, label, value, onChange, disabled, dateOnly = false }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; disabled?: boolean; dateOnly?: boolean }) {
   const t = copy[locale];
   return <I18nProvider locale={locale === "uz" ? "uz-Latn" : locale}>
-    <DatePicker className="juro-date-picker" granularity="minute" hourCycle={24} value={value ? parseDateTime(value) : null} onChange={next => onChange(next?.toString().slice(0,16) ?? "")} isDisabled={disabled}>
+    <DatePicker className="juro-date-picker" shouldCloseOnSelect={dateOnly} granularity={dateOnly ? "day" : "minute"} hourCycle={24} maxValue={dateOnly ? today(getLocalTimeZone()) : undefined} value={value ? (dateOnly ? parseDate(value) : parseDateTime(value)) : null} onChange={next => onChange(next?.toString().slice(0,16) ?? "")} isDisabled={disabled}>
       <Label>{label}</Label>
       <Group className="juro-date-input"><DateInput>{segment => <DateSegment segment={segment}/>}</DateInput><Button aria-label={t.calendar}><CalendarDays size={18}/></Button></Group>
-      <Popover className="juro-control-popover"><Dialog><Calendar><header><Button slot="previous" aria-label={locale === "ru" ? "Предыдущий месяц" : locale === "uz" ? "Oldingi oy" : "Previous month"}><ChevronLeft size={18}/></Button><Heading/><Button slot="next" aria-label={locale === "ru" ? "Следующий месяц" : locale === "uz" ? "Keyingi oy" : "Next month"}><ChevronRight size={18}/></Button></header><CalendarGrid>{date => <CalendarCell date={date}/>}</CalendarGrid></Calendar></Dialog></Popover>
+      <Popover className="juro-control-popover juro-calendar-popover"><Dialog><Calendar><header><Button slot="previous" aria-label={locale === "ru" ? "Предыдущий месяц" : locale === "uz" ? "Oldingi oy" : "Previous month"}><ChevronLeft size={18}/></Button><Heading/><Button slot="next" aria-label={locale === "ru" ? "Следующий месяц" : locale === "uz" ? "Keyingi oy" : "Next month"}><ChevronRight size={18}/></Button></header><CalendarGrid>{date => <CalendarCell date={date}/>}</CalendarGrid></Calendar>{!dateOnly && <CalendarTime locale={locale}/>}</Dialog></Popover>
     </DatePicker>
     {value && <button className="juro-clear-date" type="button" disabled={disabled} onClick={() => onChange("")}>{t.clear}</button>}
   </I18nProvider>;
-}
+});
 
 type NumberPresetProps = {
   label: string;
@@ -89,15 +101,15 @@ function NumberPresetInput({ label, value, onChange, min, max, step, presets, un
   </div>;
 }
 
-export function DurationInput({ locale, ...props }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void }) {
+export const DurationInput = memo(function DurationInput({ locale, ...props }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void }) {
   return <NumberPresetInput {...props} min={15} max={480} step={15} presets={[30,45,60,90]} unit={() => copy[locale].minutes}/>;
-}
+});
 
-export function ExperienceInput({ locale, ...props }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void }) {
+export const ExperienceInput = memo(function ExperienceInput({ locale, ...props }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void }) {
   function unit(value: number) {
     if (locale === "uz") return "yil";
     const category = new Intl.PluralRules(locale).select(value);
     return locale === "ru" ? category === "one" ? "год" : category === "few" ? "года" : "лет" : category === "one" ? "year" : "years";
   }
   return <NumberPresetInput {...props} min={0} max={99} step={1} presets={[1,3,5,10]} unit={unit}/>;
-}
+});
