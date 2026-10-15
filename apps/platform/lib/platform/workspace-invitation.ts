@@ -49,6 +49,18 @@ export async function acceptWorkspaceInvitation(
     now: string;
   },
 ): Promise<boolean> {
+  const { withPracticeSeat } = await import("../practice/limits");
+  return withPracticeSeat(input.invitationId, input.userId, () => acceptWorkspaceInvitationRecord(db, input));
+}
+
+async function acceptWorkspaceInvitationRecord(
+  db: D1Database,
+  input: {
+    invitationId: string; tokenHash: string; expectedEmailHash: string;
+    expectedEmailLookupHash: string | null; expectedEmailLookupKeyVersion: string | null;
+    userId: string; now: string;
+  },
+): Promise<boolean> {
   const claimId = crypto.randomUUID();
   const membershipId = crypto.randomUUID();
   const auditEventId = `workspace-invitation:${input.invitationId}:accepted`;

@@ -1,4 +1,4 @@
-export const workspaceRoles = ["owner", "admin", "lawyer", "employee", "viewer", "external"] as const;
+export const workspaceRoles = ["owner", "admin", "lawyer", "employee", "viewer", "external", "assistant", "accountant"] as const;
 export type WorkspaceRole = typeof workspaceRoles[number];
 
 export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
