@@ -730,7 +730,8 @@ test(
             if (init?.method === "POST") {
               posts++;
               const value = JSON.parse(String(init.body));
-              if (remoteEvents.some(event => event.id === value.id)) return Response.json({}, { status: 409 });
+              if (remoteEvents.some((event) => event.id === value.id))
+                return Response.json({}, { status: 409 });
               remoteEvents = [{ ...value, etag: `etag-${posts}` }];
               return Response.json(remoteEvents[0]);
             }
@@ -746,8 +747,12 @@ test(
               return new Response(null, { status: 204 });
             }
             if (url.pathname.split("/").at(-1) !== "events") {
-              const event = remoteEvents.find(event => event.id === url.pathname.split("/").at(-1));
-              return event ? Response.json(event) : Response.json({}, { status: 404 });
+              const event = remoteEvents.find(
+                (event) => event.id === url.pathname.split("/").at(-1),
+              );
+              return event
+                ? Response.json(event)
+                : Response.json({}, { status: 404 });
             }
             return Response.json({
               items: remoteEvents,
@@ -845,10 +850,24 @@ test(
               "remote",
             ),
           );
-          await pool.query(`DELETE FROM practice_google_events WHERE connection_id=$1`, [conn.id]);
-          remoteEvents[0] = { id: remoteEvents[0].id, etag: "cancelled-after-reconnect", status: "cancelled" };
+          await pool.query(
+            `DELETE FROM practice_google_events WHERE connection_id=$1`,
+            [conn.id],
+          );
+          remoteEvents[0] = {
+            id: remoteEvents[0].id,
+            etag: "cancelled-after-reconnect",
+            status: "cancelled",
+          };
           assert.equal((await synchronize()).conflicts.length, 1);
-          await transaction(async client => resolveGoogleConflict(client, await practiceActor(client, users.lawyer, ws, true), event.id, "remote"));
+          await transaction(async (client) =>
+            resolveGoogleConflict(
+              client,
+              await practiceActor(client, users.lawyer, ws, true),
+              event.id,
+              "remote",
+            ),
+          );
           await request("lawyer", "commands", {
             action: "event.cancel",
             eventId: event.id,
@@ -1243,6 +1262,22 @@ test(
         invitationId: invitation.id,
       });
       await request("client", `files/${file.id}`, undefined, 403);
+      const roleKey = crypto.randomUUID(),
+        roleInput = {
+          action: "contact.create",
+          name: "Role-bound retry",
+          kind: "person",
+        };
+      await request("lawyer", "commands", roleInput, 200, roleKey);
+      await pool.query(
+        `UPDATE workspace_members SET role='accountant' WHERE workspace_id=$1 AND user_id=$2`,
+        [ws, users.lawyer],
+      );
+      await request("lawyer", "commands", roleInput, 409, roleKey);
+      await pool.query(
+        `UPDATE workspace_members SET role='lawyer' WHERE workspace_id=$1 AND user_id=$2`,
+        [ws, users.lawyer],
+      );
       await pool.query(
         `UPDATE practice_workspaces SET pilot_until=now()-interval '1 minute' WHERE workspace_id=$1`,
         [ws],

@@ -15,6 +15,9 @@ export async function idempotent<T>(
 ): Promise<T> {
   if (!/^[A-Za-z0-9._:-]{16,180}$/.test(key))
     throw new PracticeError("IDEMPOTENCY_KEY_REQUIRED");
+  // Cached responses can include imported template text or invitation tokens.
+  // A changed role must not recover a response authorized under its old role.
+  requestHash = hash(`${actor.role}:${requestHash}`);
   // A workspace lock serializes financial postings and role changes; the same
   // request cannot post twice even when it arrives in parallel.
   await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [

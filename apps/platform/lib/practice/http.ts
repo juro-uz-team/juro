@@ -5,7 +5,7 @@ import {
   ApiAuthError,
 } from "../document-builder/auth/api";
 import { parseJsonRequest } from "../auth/input";
-import { practiceActor, transaction } from "./access";
+import { practiceActor, requireCase, transaction } from "./access";
 import { executeCommand, idempotent } from "./service";
 import { readPractice } from "./read";
 import { documentAllowed } from "./documents";
@@ -342,10 +342,19 @@ export async function practiceHttp(request: Request, segments: string[]) {
       if (
         ["uploads", "imports/preview", "templates/import"].includes(resource)
       ) {
+        if (resource !== "uploads" && !isLegal(actor))
+          throw new PracticeError("ACCESS_DENIED", 403);
         const form = await request.formData(),
           file = form.get("file");
         if (!(file instanceof File) || file.size > 10_000_000)
           throw new PracticeError("FILE_TOO_LARGE", 413);
+        if (resource === "uploads")
+          await requireCase(
+            client,
+            actor,
+            String(form.get("caseId") ?? ""),
+            form.get("purpose") === "payment_evidence" ? "finance" : "legal",
+          );
         const bytes = new Uint8Array(await file.arrayBuffer());
         return json(
           await idempotent(
