@@ -5,6 +5,7 @@ import { constants } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
+import { pruneInactiveReleases } from "./release-retention.mjs";
 
 function corpusReceipt(value, phase, target, original) {
   if (value?.version !== 1 || value.phase !== phase
@@ -122,6 +123,15 @@ function run(command, args, cwd, capture = false) {
 function tip() {
   return run("git", ["ls-remote", config.repository, `refs/heads/${branch}`], root, true).split(/\s/)[0];
 }
+async function retainCurrentRelease(release) {
+  try {
+    const result = await pruneInactiveReleases(root, release);
+    console.log(JSON.stringify({ releaseRetention: "current-only", ...result }));
+  } catch (error) {
+    // Cleanup failure must not roll back a successfully activated application.
+    console.warn(`Release cleanup deferred: ${error.message}`);
+  }
+}
 function corpusHook(target, evidence) {
   return async phase => {
     const result = spawnSync(config.corpusCommand, [phase, environment, revision, target.release, target.previous ?? ""], {
@@ -162,6 +172,7 @@ try {
     const verified = corpusReceipt(await corpusHook(target, evidence)("verify"), "verify", target, receipt.originalSelectionSha256);
     if (verified.selectionState !== "committed") throw new Error("Existing release corpus verification failed");
     if (tip() !== revision) throw new Error("A newer branch revision superseded retry verification");
+    await retainCurrentRelease(previous);
     console.log(`Verified already active ${environment} revision ${revision}; no services or corpus selection changed`);
     return;
   }
@@ -204,6 +215,7 @@ try {
       await rename(next, current);
     },
   });
+  await retainCurrentRelease(release);
   console.log(`Activated ${environment} revision ${revision}`);
 } catch (error) {
   preserveLock = error.preserveDeploymentLock === true;
