@@ -2,7 +2,7 @@
 
 import * as Primitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
-import { Children, Fragment, isValidElement, useEffect, useId, useRef, useState, type ReactNode, type SelectHTMLAttributes } from "react";
+import { memo, Children, Fragment, isValidElement, useEffect, useId, useRef, useState, type ReactNode, type SelectHTMLAttributes } from "react";
 
 type Option = { value: string; label: ReactNode; disabled?: boolean };
 
@@ -16,7 +16,7 @@ function readOptions(children: ReactNode): Option[] {
 }
 
 /** Shared single-choice field. The native select retains form values and real change events. */
-export function Select({ children, value, defaultValue, onChange, className = "", id, style, displayValue, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { displayValue?: ReactNode }) {
+export const Select = memo(function Select({ children, value, defaultValue, onChange, className = "", id, style, displayValue, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { displayValue?: ReactNode }) {
   const options = readOptions(children);
   const initialValue = String(defaultValue ?? options.find(option => !option.disabled)?.value ?? "");
   const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
@@ -89,4 +89,15 @@ export function Select({ children, value, defaultValue, onChange, className = ""
     </select>
     {validationMessage && <span id={validationId} className="juro-select-error" role="alert">{validationMessage}</span>}
   </>;
-}
+}, (previous, next) => {
+  // JSX option elements are recreated by parents. Compare their actual content,
+  // while still respecting every handler and native-select prop.
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (key === "children") continue;
+    if (!Object.is(previous[key as keyof typeof previous], next[key as keyof typeof next])) return false;
+  }
+  const before = readOptions(previous.children), after = readOptions(next.children);
+  return before.length === after.length && before.every((option, index) =>
+    option.value === after[index].value && option.label === after[index].label && option.disabled === after[index].disabled);
+});

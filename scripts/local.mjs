@@ -25,6 +25,7 @@ async function configure() {
   if (!existing.DATABASE_URL) values.DATABASE_URL = `postgresql://juro:${password}@127.0.0.1:55432/juro`;
   if (!existing.IDENTITY_KEYRING) values.IDENTITY_KEYRING = JSON.stringify({ active: "local-v1", versions: { "local-v1": { aead: randomBytes(32).toString("base64url"), hmac: randomBytes(32).toString("base64url") } } });
   if (!existing.ADMIN_INTERNAL_TOKEN) values.ADMIN_INTERNAL_TOKEN = token();
+  if (!existing.ADMIN_OTP_SECRET) values.ADMIN_OTP_SECRET = token();
   if (!existing.AUTH_CHALLENGE_SECRET) values.AUTH_CHALLENGE_SECRET = token();
   const defaults = { PRIVATE_DEVELOPMENT: "true", IDENTITY_PROTECTION_MODE: "dual_write", APP_URL: "http://localhost:3000", PUBLIC_SITE_URL: "http://localhost:3001", ADMIN_CONSOLE_ORIGIN: "http://localhost:3002", OBJECT_STORAGE_PATH: fileURLToPath(new URL("../.data/objects", import.meta.url)).replaceAll("\\", "/") };
   for (const [key, value] of Object.entries(defaults)) if (!existing[key]) values[key] = value;

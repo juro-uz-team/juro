@@ -37,7 +37,7 @@ function localizedNavigationTarget(
   const login = serverConfirmed
     ? `/${locale}/auth/login`
     : `/${locale}/auth/login?reauth=1&logout=server-unconfirmed`;
-  return `/signout-with-chatgpt?return_to=${encodeURIComponent(login)}`;
+  return login;
 }
 
 function isSameOriginNavigation(request: Request): boolean {

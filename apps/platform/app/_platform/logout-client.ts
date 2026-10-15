@@ -51,7 +51,7 @@ export function localizedSignOutPath(
   const login = serverConfirmed
     ? localizedLoginPath(locale)
     : `${localizedLoginPath(locale)}?reauth=1&logout=server-unconfirmed`;
-  return `/signout-with-chatgpt?return_to=${encodeURIComponent(login)}`;
+  return login;
 }
 
 function browserRuntime(): LogoutRuntime {

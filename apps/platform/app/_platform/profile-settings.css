@@ -310,32 +310,36 @@
   color: var(--p-warn);
 }
 
+/* A deliberate choice: timing leads, consequences remain easy to read. */
 .deletion-mode-options {
   display: grid;
-  max-width: 620px;
-  margin: 2px 0 6px;
+  min-width: 0;
+  width: 100%;
+  margin: 0 0 8px;
   padding: 0;
   border: 0;
-  gap: 8px;
+  gap: 12px;
 }
 
 .deletion-mode-options legend {
-  margin-bottom: 7px;
-  color: var(--p2);
-  font-size: 12px;
-  font-weight: 820;
+  margin-bottom: 12px;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .delete-request .deletion-mode-options label {
   display: grid;
   max-width: none;
-  min-height: 52px;
-  padding: 10px 12px;
-  border: 1px solid var(--p4);
-  border-radius: 10px;
-  grid-template-columns: 22px 1fr;
+  min-height: 76px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
+  gap: 12px;
   cursor: pointer;
 }
 
@@ -343,24 +347,38 @@
   width: 20px;
   min-height: 20px;
   height: 20px;
-  margin: 1px 0 0;
+  margin: 0;
   padding: 0;
-  accent-color: var(--p7);
+  accent-color: var(--brand-gold-text);
 }
 
+.deletion-mode-options:not(:disabled) label:hover {
+  border-color: var(--control-border);
+  background: var(--surface-subtle);
+}
 .deletion-mode-options label:has(input:checked) {
-  border-color:var(--p7);
-  background: var(--p8);
+  border-color: var(--border-accent);
+  background: var(--surface-brand);
 }
-.deletion-mode-options label:focus-within {
-  outline: 3px solid color-mix(in srgb,var(--pb) 54%,transparent);
-  outline-offset: 2px;
+.deletion-mode-options label:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
 }
-
-.deletion-mode-options label span {
-  line-height: 1.45;
+.deletion-mode-copy {
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
 }
-
+.deletion-mode-copy strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.deletion-mode-copy > span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
 .deletion-mode-options:disabled label {
   cursor: default;
   opacity: .68;
@@ -720,11 +738,39 @@
 
 .lawyer-professional-profile > section { display: grid; gap: 15px; }
 .lawyer-application-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-.lawyer-application-steps span { display: flex; min-width: 0; min-height: 48px; align-items: center; gap: 7px; padding: 9px; border: 1px solid var(--p4); border-radius: 10px; background: var(--p1); color: var(--p3); font-size: 11px; }
-.lawyer-application-steps span > svg { width: 16px; }
-.lawyer-application-steps span.done { border-color: color-mix(in srgb, var(--success) 35%, var(--p4)); color: var(--success); }
-.lawyer-application-status { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; padding: 13px; border: 1px solid var(--p4); border-radius: 11px; background: var(--p1); }
-.lawyer-application-status span { color: var(--p3); font-size: 12px; }
+.lawyer-application-steps a { display: flex; min-width: 0; min-height: 48px; align-items: center; gap: 7px; padding: 9px; border: 1px solid var(--p4); border-radius: 10px; background: var(--p1); color: var(--p3); font-size: 11px; }
+.lawyer-application-steps a > svg { width: 16px; }
+.lawyer-application-steps a.done { border-color: color-mix(in srgb, var(--success) 35%, var(--p4)); color: var(--success); }
+.lawyer-application-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 18px 20px; border: 1px solid var(--p4); border-radius: 12px; background: var(--p1); }
+.lawyer-status-copy { display: grid; gap: 6px; min-width: 0; }
+.lawyer-status-copy strong { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.lawyer-status-copy strong svg { width: 18px; height: 18px; flex: none; }
+.lawyer-status-copy p { margin: 0; color: var(--p3); font-size: 13px; line-height: 1.5; }
+.lawyer-application-status[data-published] { border-color: color-mix(in srgb, var(--success) 28%, var(--p4)); }
+.lawyer-application-status[data-published] strong { color: var(--success); }
+.lawyer-application-status time { color: var(--p3); font-size: 12px; line-height: 1.5; }
+.lawyer-moderation-history { margin-block: 8px; }
+.lawyer-moderation-history h3 { margin: 0 0 12px; font-size: 15px; }
+.lawyer-moderation-history ol { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.lawyer-moderation-history li { min-width: 0; padding: 16px 20px; border: 1px solid var(--p4); border-radius: 12px; background: var(--p1); }
+.lawyer-moderation-entry-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.lawyer-moderation-entry-heading strong { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.lawyer-moderation-version { padding: 3px 8px; border: 1px solid var(--p4); border-radius: 6px; color: var(--p3); font-size: 11px; white-space: nowrap; }
+.lawyer-moderation-entry-heading time { margin-inline-start: auto; color: var(--p3); font-size: 12px; line-height: 1.5; }
+.lawyer-moderation-history li > p { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--p4); color: var(--text-primary); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lawyer-moderation-archive { margin-top: 10px; }
+.lawyer-moderation-archive summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--p4); border-radius: 10px; color: var(--p3); cursor: pointer; font-size: 13px; list-style: none; }
+.lawyer-moderation-archive summary::-webkit-details-marker { display: none; }
+.lawyer-moderation-archive summary:hover { background: var(--interactive-hover); color: var(--text-primary); border-color: var(--border-accent); }
+.lawyer-moderation-archive summary:focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
+.lawyer-moderation-count { padding: 2px 7px; border-radius: 5px; background: var(--p1); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lawyer-moderation-archive summary svg { margin-inline-start: auto; width: 16px; height: 16px; }
+.lawyer-moderation-archive[open] summary svg { transform: rotate(180deg); }
+.lawyer-moderation-archive > ol { margin-top: 10px; }
+@media (max-width: 620px) {
+  .lawyer-application-status, .lawyer-moderation-history li { padding: 16px; }
+  .lawyer-moderation-entry-heading time { flex-basis: 100%; margin-inline-start: 0; }
+}
 .lawyer-professional-profile .profile-form > fieldset { display: contents; min-width: 0; padding: 0; border: 0; }
 .lawyer-professional-profile .profile-form > fieldset:disabled { opacity: .7; }
 
@@ -760,3 +806,8 @@
 .session-actions button { min-height: 44px; }
 .delete-request button { min-height: 44px; }
 .profile-workspace{--p0:var(--white);--p1:var(--soft);--p2:var(--ink);--p3:var(--muted);--p4:var(--line);--p5:var(--navy);--p6:var(--brand-gold-text);--p7:var(--gold);--p8:var(--amber-bg);--p9:var(--red-bg);--pa:var(--green-bg);--pb:var(--focus-ring);--p-ok:var(--success);--p-err:var(--danger);--p-warn:var(--warning)}html[data-theme=dark] .profile-workspace{--p-ok:color-mix(in srgb,var(--success) 44%,white);--p-err:color-mix(in srgb,var(--danger) 46%,white);--p-warn:var(--p6)}.profile-form>button{color:var(--text-on-action)}@media(max-width:360px){.profile-workspace{padding-inline:10px}}
+
+.lawyer-application-steps a { text-decoration: none; transition: background .15s, border-color .15s; }
+.lawyer-application-steps a:hover { background: var(--interactive-hover); border-color: var(--border-accent); }
+.lawyer-application-steps a:focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
+.lawyer-professional-profile [id^='lawyer-'] { scroll-margin-top: calc(var(--account-toolbar-height, 72px) + var(--account-heading-height, 128px) + 24px); }

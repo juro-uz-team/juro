@@ -23,11 +23,13 @@ test("authentication surfaces inherit semantic light and dark theme tokens", () 
   assert.match(globals, /html\[data-theme=dark\]/);
   assert.match(globals, /--background:var\(--surface-canvas\)/);
   assert.match(globals, /--border-default:var\(--border-subtle\)/);
-  assert.match(auth, /\.auth-page\s*\{[^}]*background:[^;]*var\(--background\)/s);
-  assert.match(auth, /\.auth-card\s*\{[^}]*min-width:\s*0;[^}]*background:[^;]*var\(--(?:surface-raised|white)\)/s);
-  assert.match(auth, /\.auth-brand\s*\{[\s\S]*?min-width:\s*0/);
+  assert.match(auth, /--auth-canvas:\s*var\(--surface-canvas\)/);
+  assert.match(auth, /--auth-paper:\s*var\(--surface-raised\)/);
+  assert.match(auth, /\.auth-page\s*\{[^}]*background:[^;]*var\(--auth-canvas\)/s);
+  assert.match(auth, /\.auth-card\s*\{[^}]*min-width:\s*0;[^}]*background:[^;]*var\(--auth-paper\)/s);
+  assert.match(auth, /\.auth-entry\s*\{[^}]*min-width:\s*0/);
   assert.match(auth, /\.auth-card input\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%/s);
-  assert.match(auth, /\[data-theme="dark"\] \.auth-card\s*\{/);
+  assert.match(auth, /\[data-theme="dark"\] \.auth-page\s*\{[^}]*--auth-paper:/s);
 });
 
 test("compact theme controls retain a 44px touch target", () => {
@@ -131,7 +133,7 @@ test("calendar, case workspace, and document builder use shared dark-safe surfac
   const cases = source("app/_platform/case-workspace.css");
   const builder = source("app/_document-builder/document-builder.css");
 
-  assert.match(globals, /--surface-hover:\s*#3a4c5c/);
+  assert.match(globals, /--surface-hover:\s*#455969/);
   assert.match(globals, /--surface-document:\s*#eeeae2/);
   assert.match(calendar, /\.calendar-month > span\s*\{[^}]*background:\s*var\(--(?:surface-subtle|soft)\)/s);
   assert.match(calendar, /\.status-overdue\s*\{[^}]*background:\s*var\(--red-bg\)/s);

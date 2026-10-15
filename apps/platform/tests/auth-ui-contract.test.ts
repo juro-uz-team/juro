@@ -112,7 +112,7 @@ test("auth details expose localized inline validation and accessible error owner
   assert.match(form, /termsInput\.current\?\.focus\(\)/u);
   assert.match(form, /privacyInput\.current\?\.focus\(\)/u);
   assert.match(form, /autoComplete="given-name"/u);
-  assert.match(form, /autoComplete="family-name"/u);
+  assert.doesNotMatch(form, /id="last-name"/u);
   assert.match(styles, /input\[aria-invalid="true"\]/u);
 });
 
@@ -162,7 +162,7 @@ test("private authentication challenge clears tokens on reset without loading a 
 test("auth layout protects 320px width, touch targets, and reduced motion", () => {
   const styles = source("app/_auth/auth.css");
 
-  assert.match(styles, /@media \(max-width: 340px\)[\s\S]*?\.auth-card\s*\{[^}]*width:\s*calc\(100% - 12px\);[^}]*padding-inline:\s*12px;/);
+  assert.match(styles, /@media \(max-width: 560px\)[\s\S]*?\.auth-card\s*\{[^}]*width:\s*100%;[^}]*padding:\s*20px 16px;/);
   assert.match(styles, /\.auth-card input\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%/s);
   assert.match(styles, /\.auth-language a\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s);
   assert.match(styles, /@media \(hover: hover\) and \(pointer: fine\)/);

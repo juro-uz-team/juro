@@ -1,5 +1,8 @@
 "use client";
 
+import { ProfileSetupCard, profileReadinessLabel } from "./ProfileSetupCard";
+import type { ProfileReadiness } from "../../lib/platform/profile-readiness";
+
 import { BrandImage } from "../_components/BrandImage";
 
 import { Select } from "../_components/Select";
@@ -71,6 +74,7 @@ type Props = {
   userName: string;
   activeWorkspaceId: string;
   workspaces: WorkspaceOption[];
+  profileSetup?: ProfileReadiness | null;
   children: React.ReactNode;
 };
 
@@ -152,6 +156,7 @@ export function PlatformShell({
   userName,
   activeWorkspaceId,
   workspaces,
+  profileSetup = null,
   children,
 }: Props) {
   const pathname = usePathname();
@@ -177,7 +182,10 @@ export function PlatformShell({
   const lawyer = accountType === "lawyer";
   const text = (value: { ru: string; uz: string; en: string }) =>
     platformLocaleValue(locale, value);
-  const primaryItems = lawyer ? lawyerPrimaryNav : primaryNav;
+  const pendingLawyer = lawyer && profileSetup !== null;
+  const primaryItems = pendingLawyer
+    ? [lawyerPrimaryNav[0], lawyerPracticeNav[1], lawyerPracticeNav[2]]
+    : lawyer ? lawyerPrimaryNav : primaryNav;
   const mobileItems = primaryItems.filter(([slug]) => !lawyer || slug !== "consultations?view=schedule");
   const toolGroups = lawyer
     ? ([
@@ -186,14 +194,14 @@ export function PlatformShell({
           ru: "Клиенты и работа",
           uz: "Mijozlar va ish",
           en: "Clients and work",
-          items: lawyerClientNav,
+          items: pendingLawyer ? [] : lawyerClientNav,
         },
         {
           key: "practice",
           ru: "Практика",
           uz: "Amaliyot",
           en: "Practice",
-          items: lawyerPracticeNav,
+          items: pendingLawyer ? lawyerPracticeNav.filter(([slug]) => slug !== "calendar") : lawyerPracticeNav,
         },
       ] as const)
     : ([
@@ -213,7 +221,7 @@ export function PlatformShell({
           en: "Management",
           items: managementNav.filter(([slug]) => slug !== "team" || business),
         },
-      ] as const);
+      ] as const).filter(group => group.items.length > 0);
   const routeIsActive = (slug: string) => {
     const [route, query] = slug.split("?");
     const href = `${base}/${route}`;
@@ -494,6 +502,7 @@ export function PlatformShell({
               <Ellipsis /><span>{text({ ru: "Все инструменты", uz: "Barcha vositalar", en: "All tools" })}</span>
             </button>
           </nav>
+          {profileSetup && <Link className="platform-profile-readiness" href={`${base}/${profileSetup === "business_optional" ? "settings#business-workspace" : "profile#professional-profile"}`} title={profileReadinessLabel(profileSetup, locale)}><ShieldCheck aria-hidden="true" /><span>{profileReadinessLabel(profileSetup, locale)}</span></Link>}
           <details ref={profileMenuRef} className="platform-profile-menu">
             <summary title={userName || text({ ru: "Аккаунт", uz: "Hisob", en: "Account" })}>
               <Settings /><span>{userName.trim() && <strong>{userName}</strong>}<small>{text({ ru: "Аккаунт и настройки", uz: "Hisob va sozlamalar", en: "Account & settings" })}</small></span><ChevronDown />
@@ -572,6 +581,7 @@ export function PlatformShell({
             </div>
           </header>
           <main className="platform-content" id="main-content" tabIndex={-1}>
+            {profileSetup === "business_optional" && pathname.endsWith("/dashboard") && <ProfileSetupCard state={profileSetup} locale={locale} base={base} />}
             {children}
           </main>
           <nav

@@ -1,7 +1,6 @@
 "use client";
 
-/* eslint-disable react-hooks/set-state-in-effect -- authenticated credentials are loaded after mount. */
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { memo, useCallback, useEffect, useState, type FormEvent } from "react";
 import { FileCheck2, LoaderCircle, Plus, Save, Trash2, Upload } from "lucide-react";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { FilePicker } from "../_components/ProfileControls";
@@ -14,7 +13,7 @@ type Credentials = {
   documents: { id: string; file_name: string; kind: string }[];
 };
 
-export function ProfessionalCredentials({ locale, profileId }: { locale: PlatformLocale; profileId?: string }) {
+export const ProfessionalCredentials = memo(function ProfessionalCredentials({ locale, profileId }: { locale: PlatformLocale; profileId?: string }) {
   const [data, setData] = useState<Credentials | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -97,4 +96,4 @@ export function ProfessionalCredentials({ locale, profileId }: { locale: Platfor
     {error && <p className="profile-message error" role="alert">{error}</p>}
     {notice && <p className="profile-message success" role="status">{notice}</p>}
   </section>;
-}
+});

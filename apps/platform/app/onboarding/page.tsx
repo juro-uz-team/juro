@@ -1,82 +1,23 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { isLocalDevelopmentSession } from "../../lib/auth/development-auth";
-import { getSessionUser } from "../../lib/auth/session";
 import { requireChatGPTUser } from "../chatgpt-auth";
 import { getOrCreateUserProfile } from "../../lib/document-builder/storage/db";
-import { requireD1 } from "../../lib/document-builder/storage/runtime";
-import { OnboardingForm } from "./OnboardingForm";
-import {
-  accountPersonas,
-  type AccountPersona,
-} from "../../lib/platform/onboarding";
 import { isLocale, type PlatformLocale } from "../../lib/platform/routing";
-import "./onboarding.css";
 import { workspaceProfile } from "../../lib/platform/profile";
-import {
-  isLawyerHostRequest,
-  lawyerLandingDestination,
-} from "../../lib/platform/lawyer-entry-routing";
+import { isLawyerHostRequest, lawyerLandingDestination } from "../../lib/platform/lawyer-entry-routing";
 
 export const dynamic = "force-dynamic";
 
-export async function OnboardingScreen({ locale: requestedLocale }: {
-  locale: PlatformLocale;
-}) {
-  const authUser = await requireChatGPTUser(
-    `/${requestedLocale}/onboarding`,
-  );
-  const [user, session] = await Promise.all([
-    getOrCreateUserProfile(authUser),
-    getSessionUser(),
-  ]);
-  const profile = await requireD1().prepare(
-    `SELECT locale,account_type AS accountType,full_name AS fullName,
-       last_name AS lastName,first_name AS firstName,
-       middle_name AS middleName,onboarding_completed_at AS completedAt
-     FROM user_profiles WHERE id = ? LIMIT 1`,
-  ).bind(user.id).first<{
-    locale: string;
-    accountType: string;
-    fullName: string | null;
-    lastName: string | null;
-    firstName: string | null;
-    middleName: string | null;
-    completedAt: string | null;
-  }>();
-  const locale = requestedLocale;
-  const legacyName = (profile?.fullName ?? user.fullName ?? "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  const accountPersona = accountPersonas.includes(
-      profile?.accountType as AccountPersona,
-    )
-    ? profile?.accountType as AccountPersona
-    : "individual";
-  if (profile?.completedAt) {
-    const routingProfile = await workspaceProfile(authUser.email);
-    if (routingProfile?.accountType === "lawyer") {
-      const requestHeaders = await headers();
-      redirect(lawyerLandingDestination(
-        routingProfile,
-        isLawyerHostRequest(requestHeaders),
-        requestHeaders.get("host"),
-      ));
-    }
-    redirect(`/${locale}/${accountPersona}/dashboard`);
+/** Older bookmarks enter the workspace without a second registration form. */
+export async function OnboardingScreen({ locale }: { locale: PlatformLocale }) {
+  const user = await requireChatGPTUser(`/${locale}/dashboard`);
+  await getOrCreateUserProfile(user);
+  const profile = await workspaceProfile(user.email);
+  if (profile?.accountType === "lawyer") {
+    const requestHeaders = await headers();
+    redirect(lawyerLandingDestination({ ...profile, locale }, isLawyerHostRequest(requestHeaders), requestHeaders.get("host")));
   }
-  return (
-    <OnboardingForm
-      initialLocale={locale}
-      initialAccountPersona={accountPersona}
-      initialLastName={profile?.lastName ?? legacyName.slice(1).join(" ")}
-      initialFirstName={profile?.firstName ?? legacyName[0] ?? ""}
-      initialMiddleName={profile?.middleName ?? ""}
-      initialPhone={user.phone ?? ""}
-      developmentPolicyBypass={isLocalDevelopmentSession(session)}
-    />
-  );
+  return redirect(`/${locale}/${profile?.accountType ?? "individual"}/dashboard`);
 }
 
 export default async function Onboarding({ searchParams }: {

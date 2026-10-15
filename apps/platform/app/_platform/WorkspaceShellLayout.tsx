@@ -29,6 +29,8 @@ import {
   lawyerLandingDestination,
 } from "../../lib/platform/lawyer-entry-routing";
 
+import { profileReadiness } from "../../lib/platform/profile-readiness";
+
 export async function WorkspaceShellLayout({
   children,
   locale,
@@ -58,15 +60,6 @@ export async function WorkspaceShellLayout({
   const profile = await workspaceProfile(user.email);
   const requestHeaders = await headers();
   const lawyerHost = isLawyerHostRequest(requestHeaders);
-  if (profile && !profile.onboardingCompleted) {
-    redirect(profile.accountType === "lawyer"
-      ? lawyerLandingDestination(
-          profile,
-          lawyerHost,
-          requestHeaders.get("host"),
-        )
-      : `/${profile.locale}/onboarding`);
-  }
   if (accountType === "lawyer" && profile?.accountType !== "lawyer") {
     if (lawyerHost) {
       const query = new URLSearchParams({
@@ -130,6 +123,7 @@ export async function WorkspaceShellLayout({
       userName={safeDisplayName(user.fullName ?? user.displayName)}
       activeWorkspaceId={activeWorkspace.id}
       workspaces={availableWorkspaces}
+      profileSetup={profileReadiness({ accountType, lawyerProfileStatus: profile?.lawyerProfileStatus ?? null, lawyerMarketplaceStatus: profile?.lawyerMarketplaceStatus ?? null, hasBusinessWorkspace: availableWorkspaces.some(workspace => workspace.type === "business") })}
     >
       {children}
     </PlatformShell>

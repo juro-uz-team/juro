@@ -115,9 +115,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
           lawyerProfileStatus: lawyerProfile?.lawyerProfileStatus ?? null,
           lawyerMarketplaceStatus: lawyerProfile?.lawyerMarketplaceStatus ?? null,
         }, lawyerHost, requestHostname)
-      : result.onboardingCompletedAt
-        ? `/${userLocale}/${accountType}/dashboard`
-        : `/${userLocale}/onboarding`;
+      : `/${userLocale}/${accountType}/dashboard`;
     const redirectTo = accountType !== "lawyer" && lawyerHost
       ? `https://app.juro.uz${accountRedirect}`
       : accountRedirect;
