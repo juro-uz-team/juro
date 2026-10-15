@@ -21,7 +21,7 @@ test("legacy root and main redirects preserve an explicitly saved English locale
     assert.doesNotMatch(page, /redirect\("\/uz\/auth\/login/);
   }
   assert.match(rootPage, /profile\?\.locale \?\? fallbackLocale/);
-  assert.match(mainPage, /`\/\$\{profile\.locale\}\/onboarding`/);
+  assert.match(mainPage, /`\/\$\{profile\.locale\}\/\$\{profile\.accountType\}\/dashboard`/);
 });
 
 test("legacy document-builder routing treats en as a canonical UI locale", async () => {
