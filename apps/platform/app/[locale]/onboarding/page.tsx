@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { isAuthenticatedPlatformLocaleReady } from "../../../lib/platform/routing";
-import { OnboardingScreen } from "../../onboarding/page";
+import { OnboardingScreen } from "../../onboarding/OnboardingScreen";
 
 export const dynamic = "force-dynamic";
 
