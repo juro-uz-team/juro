@@ -29,6 +29,7 @@ type AccountModuleRouteInput = {
 };
 
 const pendingLawyerModules = new Set<PlatformModule>([
+  "dashboard",
   "profile",
   "settings",
   "security",
@@ -94,14 +95,9 @@ export function lawyerLandingDestination(
   lawyerHost: boolean,
   requestHost: string | null,
 ): string {
-  const page = !profile.onboardingCompleted
-    ? "onboarding"
-    : operationalLawyer(profile)
-      ? "dashboard"
-      : "application";
   return lawyerPublicDestination(
     profile.locale,
-    page,
+    "dashboard",
     lawyerHost,
     requestHost,
   );
@@ -149,11 +145,6 @@ export function accountModuleRedirect({
   profile,
 }: AccountModuleRouteInput): string | null {
   if (!profile) return null;
-  if (!profile.onboardingCompleted) {
-    return profile.accountType === "lawyer"
-      ? lawyerLandingDestination(profile, lawyerHost, requestHost)
-      : `/${profile.locale}/onboarding`;
-  }
   if (requestedAccountType !== profile.accountType) {
     if (lawyerHost && requestedAccountType === "lawyer") {
       const login = new URL(`https://lawyer.juro.uz/${requestedLocale}/auth/login`);

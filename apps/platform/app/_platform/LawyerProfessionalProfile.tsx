@@ -5,10 +5,11 @@ import {ProfessionalCredentials} from "./ProfessionalCredentials";
 
 import { Select } from "../_components/Select";
 
-import { Check, Send, Save } from "lucide-react";
+import { Check, ChevronDown, Send, Save, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { lawyerIntlLocale, lawyerText } from "../../lib/platform/lawyer-localization";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -49,6 +50,7 @@ type Profile = {
   updatedAt: string;
   moderationHistory: Array<{
     profileRevision: number;
+    submissionVersion: number;
     decision: "approved" | "changes_requested" | "rejected";
     reason: string | null;
     createdAt: string;
@@ -125,16 +127,32 @@ const list = (value: string) => [
   ),
 ];
 
-export function LawyerProfessionalProfile({
+export const LawyerProfessionalProfile = memo(function LawyerProfessionalProfile({
   locale,
+  accountName,
 }: {
   locale: PlatformLocale;
+  accountName?: string | null;
 }) {
   const text = (russian: string, uzbek: string, english: string) => lawyerText(locale, russian, uzbek, english);
   const base = usePlatformBasePath();
-  const options = profileOptions(locale);
+  const router = useRouter();
+  const options = useMemo(() => profileOptions(locale), [locale]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [form, setForm] = useState<Form>(blank);
+  const fieldChanges = useMemo(() => {
+    const change = (key: keyof Form) => (value: string) => setForm(current => ({ ...current, [key]: value }));
+    return {
+      availabilityStatus: (event: ChangeEvent<HTMLSelectElement>) => setForm(current => ({ ...current, availabilityStatus: event.target.value as Form["availabilityStatus"] })),
+      advocateStatus: (event: ChangeEvent<HTMLSelectElement>) => setForm(current => ({ ...current, advocateStatus: event.target.value as Form["advocateStatus"] })),
+      city: change("city"), region: change("region"), specialties: change("specialties"),
+      languages: change("languages"), education: change("education"),
+      consultationFormats: change("consultationFormats"), nextAvailableAt: change("nextAvailableAt"),
+      additionalServices: change("additionalServices"), experienceYears: change("experienceYears"),
+      consultationDurationMinutes: change("consultationDurationMinutes"),
+    };
+  }, []);
+  const previewName = form.displayName.trim() || accountName?.trim() || "";
   const [scheduleConfigured, setScheduleConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
@@ -142,6 +160,13 @@ export function LawyerProfessionalProfile({
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const statusRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (profile?.marketplaceStatus === "pending_review" && notice) {
+      statusRef.current?.scrollIntoView({ block: "start" });
+      statusRef.current?.focus({ preventScroll: true });
+    }
+  }, [profile?.marketplaceStatus, notice]);
   const editingLocked = profile
     ? ["pending_review", "suspended", "blocked", "archived"].includes(
         profile.marketplaceStatus,
@@ -217,9 +242,20 @@ export function LawyerProfessionalProfile({
     { label: text("Профессия", "Kasbiy ma’lumot", "Professional details"), done: professionalStepDone },
     { label: text("Услуги", "Xizmatlar", "Services"), done: servicesStepDone },
     { label: text("Расписание", "Jadval", "Schedule"), done: scheduleConfigured },
-    { label: text("Предпросмотр", "Ko‘rib chiqish", "Preview"), done: true },
+    { label: text("Предпросмотр", "Ko‘rib chiqish", "Preview"), done: false },
     { label: text("Отправка", "Yuborish", "Submission"), done: submittedStepDone },
   ];
+  const sectionTargets = ["lawyer-identity", "lawyer-profession", "lawyer-services", "lawyer-schedule", "lawyer-preview", "lawyer-submission"];
+  function moderationEntry(item: Profile["moderationHistory"][number]) {
+    return <li key={`${item.profileRevision}:${item.createdAt}`}>
+      <div className="lawyer-moderation-entry-heading">
+        <strong>{moderationDecisionLabel(item.decision, locale)}</strong>
+        <span className="lawyer-moderation-version">{text(`Версия ${item.submissionVersion}`, `${item.submissionVersion}-versiya`, `Version ${item.submissionVersion}`)}</span>
+        <time dateTime={item.createdAt}>{formatProfileDate(item.createdAt, locale)}</time>
+      </div>
+      {item.reason && <p>{item.reason}</p>}
+    </li>;
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -317,17 +353,44 @@ export function LawyerProfessionalProfile({
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
+      router.refresh();
       setSaving(false);
     }
   }
 
   async function uploadPhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file || !profile) return;
+    if (!file || editingLocked || saving || uploadingPhoto) return;
     setUploadingPhoto(true);
     setError("");
     setNotice("");
     try {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024) {
+        throw new Error(text("Выберите JPEG, PNG или WebP размером до 2 МБ.", "2 MB gacha JPEG, PNG yoki WebP faylini tanlang.", "Choose a JPEG, PNG, or WebP image up to 2 MB."));
+      }
+      if (!profile) {
+        let displayName = previewName;
+        if (!displayName) {
+          const accountResponse = await fetch("/api/platform/profile", { cache: "no-store" });
+          if (accountResponse.ok) {
+            const account = await accountResponse.json() as { profile?: { fullName?: string } };
+            displayName = account.profile?.fullName?.trim() || "";
+          }
+        }
+        const draftResponse = await fetch("/api/platform/lawyer-profile", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+          body: JSON.stringify({ displayName, specialties: [], languages: [], consultationDurationMinutes: 60, availabilityStatus: "unknown", advocateStatus: "not_declared", locale }),
+        });
+        // Another tab may have created the draft while the file chooser was open.
+        const response = draftResponse.status === 409
+          ? await fetch("/api/platform/lawyer-profile", { cache: "no-store" })
+          : draftResponse;
+        const draft = await response.json() as { profile?: Profile };
+        if (!response.ok || !draft.profile) throw new Error(text("Не удалось подготовить профиль для фото. Попробуйте ещё раз.", "Rasm uchun profilni tayyorlab bo‘lmadi. Qayta urinib ko‘ring.", "We could not prepare your profile for the photo. Please try again."));
+        setProfile(draft.profile);
+        setForm(current => ({ ...current, displayName: current.displayName || draft.profile!.displayName }));
+      }
       const result = await fetch("/api/platform/lawyer-profile/photo", {
         method: "POST",
         headers: { "content-type": file.type, "x-juro-csrf": "1" },
@@ -335,10 +398,14 @@ export function LawyerProfessionalProfile({
       });
       const body = (await result.json()) as {
         profilePhotoUrl?: string;
+        code?: string;
         marketplaceStatus?: Profile["marketplaceStatus"];
         missingRequiredFields?: string[];
       };
       if (!result.ok || !body.profilePhotoUrl || !body.marketplaceStatus) {
+        if (body.code === "MALWARE_SCANNER_UNAVAILABLE") {
+          throw new Error(text("Проверка файлов временно недоступна. Попробуйте загрузить фото позже.", "Fayllarni tekshirish vaqtincha ishlamayapti. Rasmni keyinroq yuklab ko‘ring.", "File checking is temporarily unavailable. Try uploading your photo again later."));
+        }
         throw new Error(text("Не удалось загрузить фото.", "Rasmni yuklab bo‘lmadi.", "We could not upload the photo."));
       }
       setProfile((current) =>
@@ -385,26 +452,23 @@ export function LawyerProfessionalProfile({
           aria-label={text("Этапы заявки", "Ariza bosqichlari", "Application steps")}
         >
           {applicationSteps.map((step, index) => (
-            <span
+            <a
               key={step.label}
+              href={`#${sectionTargets[index]}`}
               className={step.done ? "done" : ""}
             >
               {step.done ? <Check aria-hidden="true" /> : index + 1}
               <b>{step.label}</b>
-            </span>
+            </a>
           ))}
         </div>
         <h2>{text("Заявка юриста", "Yurist arizasi", "Lawyer application")}</h2>
-        <p>
-          {text("Телефон хранится в защищённом профиле и не публикуется в каталоге. Запись открывается только после отдельного одобрения JURO.", "Telefon himoyalangan profilda saqlanadi va katalogda ko‘rsatilmaydi. So‘rov faqat JURO alohida tasdiqlagandan keyin ochiladi.", "Your phone number is stored in your protected account and is never published in the directory. Client requests become available only after separate JURO approval.")}
-        </p>
-        <p>
-          {text("Статус адвоката «подтверждён» нельзя установить самостоятельно: его присваивает только JURO после проверки.", "«Tasdiqlangan» advokat maqomini mustaqil belgilab bo‘lmaydi: uni faqat JURO tekshiruvdan keyin beradi.", "You cannot mark your own advocate status as verified. Only JURO can verify it after review.")}
-        </p>
         {profile && (
-          <div className="lawyer-application-status" role="status">
-            <strong>{statusLabel(profile.marketplaceStatus, locale)}</strong>
-            <span>{statusDescription(profile.marketplaceStatus, locale)}</span>
+          <div id="lawyer-review-status" ref={statusRef} tabIndex={-1} className="lawyer-application-status" data-published={profile.marketplaceStatus === "public_approved" || undefined} role="status">
+            <div className="lawyer-status-copy">
+              <strong>{profile.marketplaceStatus === "public_approved" && <Check aria-hidden="true" />}{statusLabel(profile.marketplaceStatus, locale)}</strong>
+              <p>{statusDescription(profile.marketplaceStatus, locale)}</p>
+            </div>
             <time dateTime={profile.updatedAt}>
               {text("Обновлено ", "Yangilandi ", "Updated ")}
               {formatProfileDate(profile.updatedAt, locale)}
@@ -416,18 +480,15 @@ export function LawyerProfessionalProfile({
             <h3 id="lawyer-moderation-history-title">
               {text("История модерации", "Moderatsiya tarixi", "Moderation history")}
             </h3>
-            <ol>
-              {profile.moderationHistory.map((item) => (
-                <li key={`${item.profileRevision}:${item.createdAt}`}>
-                  <div>
-                    <strong>{moderationDecisionLabel(item.decision, locale)}</strong>
-                    <span>{text(`Версия ${item.profileRevision}`, `${item.profileRevision}-versiya`, `Version ${item.profileRevision}`)}</span>
-                  </div>
-                  {item.reason && <p>{item.reason}</p>}
-                  <time dateTime={item.createdAt}>{formatProfileDate(item.createdAt, locale)}</time>
-                </li>
-              ))}
-            </ol>
+            <ol>{profile.moderationHistory.slice(0, 1).map(moderationEntry)}</ol>
+            {profile.moderationHistory.length > 1 && <details className="lawyer-moderation-archive">
+              <summary>
+                <span>{text("Предыдущие решения", "Oldingi qarorlar", "Previous decisions")}</span>
+                <span className="lawyer-moderation-count">{profile.moderationHistory.length - 1}</span>
+                <ChevronDown aria-hidden="true" />
+              </summary>
+              <ol start={2}>{profile.moderationHistory.slice(1).map(moderationEntry)}</ol>
+            </details>}
           </section>
         ) : null}
         {profile?.marketplaceStatus === "changes_requested" && (
@@ -453,7 +514,7 @@ export function LawyerProfessionalProfile({
         )}
         <form className="profile-form" onSubmit={(event) => void save(event)}>
           <fieldset disabled={editingLocked}>
-            <section className="lawyer-profile-photo"><h3>{text("Личные данные и опыт", "Shaxsiy ma’lumot va tajriba", "Identity & experience")}</h3>
+            <section id="lawyer-identity" className="lawyer-profile-photo"><h3>{text("Личные данные и опыт", "Shaxsiy ma’lumot va tajriba", "Identity & experience")}</h3>
               <label>
                 {text("Фото профиля (JPEG, PNG или WebP до 2 МБ)", "Profil rasmi (2 MB gacha JPEG, PNG yoki WebP)", "Profile photo (JPEG, PNG, or WebP up to 2 MB)")}
                 {profile?.profilePhotoUrl && (
@@ -469,7 +530,7 @@ export function LawyerProfessionalProfile({
 
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(event) => void uploadPhoto(event)}
-                  disabled={!profile || uploadingPhoto}
+                  disabled={editingLocked || saving || uploadingPhoto}
                 />
                 {uploadingPhoto && (
                   <span>{text("Загружаем фото…", "Rasm yuklanmoqda…", "Uploading photo…")}</span>
@@ -486,12 +547,12 @@ export function LawyerProfessionalProfile({
                   }
                 />
               </label>
-              <ChoiceInput locale={locale} label={text("Город", "Shahar", "City")} value={form.city} options={options.cities} required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, city: value }))}/>
-              <ChoiceInput locale={locale} label={text("Регион", "Hudud", "Region")} value={form.region} options={options.regions} required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, region: value }))}/>
-              <ChoiceInput locale={locale} label={text("Специализации", "Mutaxassisliklar", "Practice areas")} value={form.specialties} options={options.specialties} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, specialties: value }))}/>
-              <ChoiceInput locale={locale} label={text("Языки", "Tillar", "Languages")} value={form.languages} options={options.languages} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, languages: value }))}/>
-              <ExperienceInput locale={locale} label={text("Стаж работы", "Ish tajribasi", "Years of experience")} value={form.experienceYears} onChange={value => setForm(current => ({ ...current, experienceYears: value }))}/>
-              <ChoiceInput locale={locale} label={text("Образование", "Ta’lim", "Education")} value={form.education} options={options.education} required maxLength={500} disabled={editingLocked} onChange={value => setForm(current => ({ ...current, education: value }))}/>
+              <ChoiceInput locale={locale} label={text("Город", "Shahar", "City")} value={form.city} options={options.cities} required disabled={editingLocked} onChange={fieldChanges.city}/>
+              <ChoiceInput locale={locale} label={text("Регион", "Hudud", "Region")} value={form.region} options={options.regions} required disabled={editingLocked} onChange={fieldChanges.region}/>
+              <ChoiceInput locale={locale} label={text("Специализации", "Mutaxassisliklar", "Practice areas")} value={form.specialties} options={options.specialties} multiple required disabled={editingLocked} onChange={fieldChanges.specialties}/>
+              <ChoiceInput locale={locale} label={text("Языки", "Tillar", "Languages")} value={form.languages} options={options.languages} multiple required disabled={editingLocked} onChange={fieldChanges.languages}/>
+              <div id="lawyer-profession"><ExperienceInput locale={locale} label={text("Стаж работы", "Ish tajribasi", "Years of experience")} value={form.experienceYears} onChange={fieldChanges.experienceYears}/></div>
+              <ChoiceInput locale={locale} label={text("Образование", "Ta’lim", "Education")} value={form.education} options={options.education} required maxLength={500} disabled={editingLocked} onChange={fieldChanges.education}/>
               <label>
                 {text("Фирма или место работы", "Firma yoki ish joyi", "Firm or place of work")}
                 <input
@@ -504,20 +565,14 @@ export function LawyerProfessionalProfile({
                 />
               </label>
             </section>
-            <section><h3>{text("Услуги и консультации", "Xizmatlar va maslahatlar", "Services & consultations")}</h3>
-              <ChoiceInput locale={locale} label={text("Форматы консультаций", "Maslahat formatlari", "Consultation formats")} value={form.consultationFormats} options={options.consultationFormats} multiple required disabled={editingLocked} onChange={value => setForm(current => ({ ...current, consultationFormats: value }))}/>
+            <section id="lawyer-services" className="lawyer-services-fields"><h3>{text("Услуги и консультации", "Xizmatlar va maslahatlar", "Services & consultations")}</h3>
+              <ChoiceInput locale={locale} label={text("Форматы консультаций", "Maslahat formatlari", "Consultation formats")} value={form.consultationFormats} options={options.consultationFormats} multiple required disabled={editingLocked} onChange={fieldChanges.consultationFormats}/>
               <label>
                 {text("Доступность", "Mavjudlik", "Availability")}
                 <Select
                   required
                   value={form.availabilityStatus}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      availabilityStatus: event.target
-                        .value as Form["availabilityStatus"],
-                    })
-                  }
+                  onChange={fieldChanges.availabilityStatus}
                 >
                   <option value="unknown">
                     {text("Выберите доступность", "Mavjudlikni tanlang", "Select availability")}
@@ -533,18 +588,12 @@ export function LawyerProfessionalProfile({
                   </option>
                 </Select>
               </label>
-              <div><DateTimePicker locale={locale} label={text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")} value={form.nextAvailableAt} disabled={editingLocked} onChange={value => setForm(current => ({ ...current, nextAvailableAt: value }))}/><small className="juro-control-hint">{text("Время в вашем часовом поясе", "Vaqt sizning vaqt mintaqangizda", "Time in your local time zone")} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</small></div>
+              <div><DateTimePicker locale={locale} label={text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")} value={form.nextAvailableAt} disabled={editingLocked} onChange={fieldChanges.nextAvailableAt}/><small className="juro-control-hint">{text("Время в вашем часовом поясе", "Vaqt sizning vaqt mintaqangizda", "Time in your local time zone")} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</small></div>
               <label>
                 {text("Статус адвоката", "Advokat maqomi", "Advocate status")}
                 <Select
                   value={form.advocateStatus}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      advocateStatus: event.target
-                        .value as Form["advocateStatus"],
-                    })
-                  }
+                  onChange={fieldChanges.advocateStatus}
                 >
                   <option value="not_declared">
                     {text("Не заявлен", "Bildirilmagan", "Not declared")}
@@ -565,26 +614,25 @@ export function LawyerProfessionalProfile({
                   }
                 />
               </label>
-              <DurationInput locale={locale} label={text("Длительность консультации", "Maslahat davomiyligi", "Consultation duration")} value={form.consultationDurationMinutes} onChange={value => setForm(current => ({ ...current, consultationDurationMinutes: value }))}/>
-              <ChoiceInput locale={locale} label={text("Дополнительные услуги", "Qo‘shimcha xizmatlar", "Additional services")} value={form.additionalServices} options={options.additionalServices} multiple disabled={editingLocked} onChange={value => setForm(current => ({ ...current, additionalServices: value }))}/>
+              <DurationInput locale={locale} label={text("Длительность консультации", "Maslahat davomiyligi", "Consultation duration")} value={form.consultationDurationMinutes} onChange={fieldChanges.consultationDurationMinutes}/>
+              <ChoiceInput locale={locale} label={text("Дополнительные услуги", "Qo‘shimcha xizmatlar", "Additional services")} value={form.additionalServices} options={options.additionalServices} multiple disabled={editingLocked} onChange={fieldChanges.additionalServices}/>
               <div className="lawyer-bio-field">
-                <label htmlFor="lawyer-profile-bio">{text("О себе", "O‘zingiz haqingizda", "About you")}</label>
+                <div className="lawyer-bio-heading">
+                  <label htmlFor="lawyer-profile-bio">{text("О себе", "O‘zingiz haqingizda", "About you")}</label>
+                  <small id="lawyer-bio-count">{form.bio.length.toLocaleString(lawyerIntlLocale(locale))} / {Number(2000).toLocaleString(lawyerIntlLocale(locale))}</small>
+                </div>
                 <textarea
                   id="lawyer-profile-bio"
                   rows={6}
                   maxLength={2000}
-                  aria-describedby="lawyer-bio-hint lawyer-bio-count"
+                  aria-describedby="lawyer-bio-count"
                   placeholder={text("Расскажите, с какими вопросами вы помогаете клиентам и как строите работу.", "Mijozlarga qaysi masalalarda yordam berishingiz va qanday ishlashingiz haqida yozing.", "Describe the matters you help clients with and how you approach your work.")}
                   value={form.bio}
                   onChange={event => setForm(current => ({ ...current, bio: event.target.value }))}
                 />
-                <div className="lawyer-bio-footer">
-                  <small id="lawyer-bio-hint">{text("Ваш подход, опыт и чем вы можете помочь. Этот текст увидят клиенты.", "Yondashuvingiz, tajribangiz va qanday yordam bera olishingiz. Bu matn mijozlarga ko‘rinadi.", "Share your approach, experience, and how you can help. Clients will see this introduction.")}</small>
-                  <small id="lawyer-bio-count">{form.bio.length.toLocaleString(lawyerIntlLocale(locale))} / {Number(2000).toLocaleString(lawyerIntlLocale(locale))}</small>
-                </div>
               </div>
             </section>
-            <section className="lawyer-schedule-callout">
+            <section id="lawyer-schedule" className="lawyer-schedule-callout">
               <div>
                 <strong>{text("Шаг 4 · Расписание", "4-bosqich · Jadval", "Step 4 · Schedule")}</strong>
                 <p>{text("Рабочие дни, свободное время, перерывы и временная недоступность настраиваются в календаре. Часовой пояс: Asia/Tashkent.", "Ish kunlari, bo‘sh vaqt, tanaffuslar va vaqtincha bandlik kalendarda sozlanadi. Vaqt mintaqasi: Asia/Tashkent.", "Set working days, available times, breaks, and temporary unavailability in the calendar. Time zone: Asia/Tashkent.")}</p>
@@ -593,6 +641,7 @@ export function LawyerProfessionalProfile({
             </section>
           </fieldset>
           <section
+            id="lawyer-preview"
             className="lawyer-profile-preview"
             aria-labelledby="lawyer-profile-preview-title"
           >
@@ -616,11 +665,11 @@ export function LawyerProfessionalProfile({
                 />
               ) : (
                 <div className="lawyer-profile-preview-photo" aria-hidden="true">
-                  {form.displayName.trim().slice(0, 1).toUpperCase() || "J"}
+                  {Array.from(previewName)[0]?.toUpperCase() || <UserRound />}
                 </div>
               )}
               <div>
-                <h4>{form.displayName.trim() || text("Имя юриста", "Yurist ismi", "Lawyer name")}</h4>
+                <h4>{previewName || text("Имя юриста", "Yurist ismi", "Lawyer name")}</h4>
                 <p>{[form.city, form.region].filter(Boolean).join(" · ") || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</p>
                 <div className="lawyer-profile-preview-tags">
                   {list(form.specialties).map((value) => <span key={value}>{value}</span>)}
@@ -629,14 +678,14 @@ export function LawyerProfessionalProfile({
               </div>
               {!form.specialties.trim() && !form.bio.trim() && <p className="lawyer-preview-empty">{text("Добавьте специализации, опыт и услуги выше — здесь появится ваша карточка для клиентов.", "Yuqorida mutaxassislik, tajriba va xizmatlarni kiriting — mijozlar uchun kartangiz shu yerda ko‘rinadi.", "Add your practice areas, experience, and services above to see your client-facing profile take shape.")}</p>}
               <dl>
-                {form.experienceYears.trim() && <div><dt>{text("Стаж", "Tajriba", "Experience")}</dt><dd>{form.experienceYears ? text(`${form.experienceYears} лет`, `${form.experienceYears} yil`, `${form.experienceYears} years`) : "—"}</dd></div>}
+                {form.experienceYears.trim() && <div><dt>{text("Стаж", "Tajriba", "Experience")}</dt><dd>{form.experienceYears ? new Intl.NumberFormat(lawyerIntlLocale(locale), { style: "unit", unit: "year", unitDisplay: "long" }).format(Number(form.experienceYears)) : "—"}</dd></div>}
                 {form.education.trim() && <div><dt>{text("Образование", "Ta’lim", "Education")}</dt><dd>{form.education || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
                 {form.firmName.trim() && <div><dt>{text("Место работы", "Ish joyi", "Place of work")}</dt><dd>{form.firmName || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
                 {form.consultationFormats.trim() && <div><dt>{text("Форматы", "Formatlar", "Formats")}</dt><dd>{list(form.consultationFormats).join(", ") || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
                 {form.priceDescription.trim() && <div><dt>{text("Стоимость", "Narx", "Fees")}</dt><dd>{form.priceDescription || text("Пока не указано", "Hali kiritilmagan", "Not added yet")}</dd></div>}
                 <div><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{form.consultationDurationMinutes ? text(`${form.consultationDurationMinutes} мин.`, `${form.consultationDurationMinutes} daq.`, `${form.consultationDurationMinutes} min`) : "—"}</dd></div>
                 {form.availabilityStatus !== "unknown" && <div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{availabilityLabel(form.availabilityStatus, locale)}</dd></div>}
-                {form.nextAvailableAt && <div><dt>{text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")}</dt><dd>{formatProfileDate(form.nextAvailableAt, locale)}</dd></div>}
+                {form.nextAvailableAt && <div><dt>{text("Ближайшая доступность", "Eng yaqin mavjudlik", "Next availability")}</dt><dd>{formatProfileDate(form.nextAvailableAt, locale, Intl.DateTimeFormat().resolvedOptions().timeZone)} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</dd></div>}
               </dl>
               {list(form.additionalServices).length > 0 && <p className="lawyer-profile-preview-bio"><strong>{text("Дополнительные услуги: ", "Qo‘shimcha xizmatlar: ", "Additional services: ")}</strong>{list(form.additionalServices).join(" · ")}</p>}
               {form.bio && <p className="lawyer-profile-preview-bio">{form.bio}</p>}
@@ -650,13 +699,13 @@ export function LawyerProfessionalProfile({
                 .join(", ")}
             </p>
           ) : null}
-          <div className="lawyer-application-actions">
+          <div id="lawyer-submission" className="lawyer-application-actions">
             <button
               type="submit"
               name="intent"
               value="draft"
               formNoValidate
-              disabled={saving || uploadingPhoto}
+              disabled={editingLocked || saving || uploadingPhoto}
             >
               {!saving && <Save aria-hidden="true" />}
               {text("Сохранить черновик", "Qoralamani saqlash", "Save draft")}
@@ -680,7 +729,7 @@ export function LawyerProfessionalProfile({
       </section>
     </section>
   );
-}
+});
 
 function statusLabel(status: Profile["marketplaceStatus"], locale: PlatformLocale) {
   const labels: Record<Profile["marketplaceStatus"], [string, string, string]> = {
@@ -764,13 +813,13 @@ function moderationDecisionLabel(
   return lawyerText(locale, labels[decision][0], labels[decision][1], labels[decision][2]);
 }
 
-function formatProfileDate(value: string, locale: PlatformLocale) {
+function formatProfileDate(value: string, locale: PlatformLocale, timeZone = "Asia/Tashkent") {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat(lawyerIntlLocale(locale), {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "Asia/Tashkent",
+    timeZone,
   }).format(date);
 }
 

@@ -173,7 +173,7 @@ html[data-theme=dark] {
   --text-tertiary: #aebcc7;
   --text-on-action: #f0ddb2;
   --interactive-primary: #494638;
-  --interactive-hover: #55503f;
+  --interactive-hover: #655e49;
   --surface-brand: #403d36;
   --control-background: #253340;
   --control-border: #8295a4;
@@ -184,7 +184,7 @@ html[data-theme=dark] {
   --status-warning: #e4bf79;
   --status-danger: #f3a6aa;
   --blue: #94c5e8;
-  --surface-hover: #3a4c5c;
+  --surface-hover: #455969;
   --surface-selected: var(--interactive-primary);
   --surface-document: #eeeae2;
 }
@@ -392,5 +392,17 @@ html[data-theme=dark] .ask-bar {
   textarea,
   :is(select, .juro-select) {
     transition-duration: .01ms;
+  }
+}
+
+/* One hover boundary for editable fields throughout the platform. Compound
+   controls draw it on their wrapper, never on their borderless inner input. */
+:root { --control-border-hover: var(--border-accent); }
+@media (hover: hover) {
+  :root body :is(input, textarea, select):hover:not(:disabled):not([readonly]):not([aria-invalid=true]):not(:user-invalid):not(:where([type=checkbox], [type=radio], [type=range], [type=hidden], [type=submit], [type=button], .juro-choice-input *, .juro-duration-input *, .juro-file-picker *)) {
+    border-color: var(--control-border-hover);
+  }
+  :root body :is(.juro-select.juro-select, .juro-choice-input, .juro-date-input, .juro-duration-input, .juro-file-picker, .juro-calendar-time .react-aria-DateInput):hover:not(:disabled):not([data-disabled]):not([aria-invalid=true]):not(:has(:disabled, [readonly], [aria-invalid=true], :user-invalid)) {
+    border-color: var(--control-border-hover);
   }
 }

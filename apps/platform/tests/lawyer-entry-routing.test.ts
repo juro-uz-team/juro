@@ -57,8 +57,8 @@ test("shared local hosts retain the lawyer account segment through login and acc
   for (const host of ["localhost:3000", "127.0.0.1:3000", null]) {
     const profile = { ...approvedLawyer, locale: "en" as const };
     assert.equal(lawyerLandingDestination(profile, false, host), "/en/lawyer/dashboard");
-    assert.equal(lawyerLandingDestination({ ...pendingLawyer, locale: "en" }, false, host), "/en/lawyer/profile");
-    assert.equal(lawyerLandingDestination({ ...profile, onboardingCompleted: false }, false, host), "/en/onboarding");
+    assert.equal(lawyerLandingDestination({ ...pendingLawyer, locale: "en" }, false, host), "/en/lawyer/dashboard");
+    assert.equal(lawyerLandingDestination({ ...profile, onboardingCompleted: false }, false, host), "/en/lawyer/dashboard");
     assert.equal(accountModuleRedirect({
       requestedLocale: "en", requestedAccountType: "individual", module: "dashboard",
       lawyerHost: false, requestHost: host, profile,
@@ -80,14 +80,14 @@ test("authenticated lawyer host auth resolves by actual role and lifecycle", () 
   assert.equal(authenticatedAuthRedirect({ mode: "register", reauth: false, lawyerHost: true, profile: client }), null);
   assert.equal(authenticatedAuthRedirect({ mode: "login", reauth: true, lawyerHost: true, profile: approvedLawyer }), null);
   assert.equal(authenticatedAuthRedirect({ mode: "login", reauth: false, lawyerHost: true, profile: approvedLawyer }), "/ru/dashboard");
-  assert.equal(authenticatedAuthRedirect({ mode: "register", reauth: false, lawyerHost: true, profile: pendingLawyer }), "/ru/application");
+  assert.equal(authenticatedAuthRedirect({ mode: "register", reauth: false, lawyerHost: true, profile: pendingLawyer }), "/ru/dashboard");
 });
 
-test("lawyer landing routes onboarding, application, and approved workspace separately", () => {
+test("lawyers enter their workspace regardless of optional onboarding history", () => {
   assert.equal(operationalLawyer(approvedLawyer), true);
   assert.equal(operationalLawyer(pendingLawyer), false);
-  assert.equal(lawyerLandingDestination({ ...pendingLawyer, onboardingCompleted: false }, true, "lawyer.juro.uz"), "/ru/onboarding");
-  assert.equal(lawyerLandingDestination(pendingLawyer, true, "lawyer.juro.uz"), "/ru/application");
+  assert.equal(lawyerLandingDestination({ ...pendingLawyer, onboardingCompleted: false }, true, "lawyer.juro.uz"), "/ru/dashboard");
+  assert.equal(lawyerLandingDestination(pendingLawyer, true, "lawyer.juro.uz"), "/ru/dashboard");
   assert.equal(lawyerLandingDestination(approvedLawyer, false, "app.juro.uz"), "https://lawyer.juro.uz/ru/dashboard");
 });
 
@@ -103,8 +103,8 @@ test("account module guard rejects URL role spoofing on the lawyer host", () => 
   assert.equal(destination, "/ru/auth/login?accountType=lawyer&reauth=1&returnTo=%2Fru%2Fdashboard");
 });
 
-test("pending lawyers stay in application surfaces until approval", () => {
-  for (const requestedModule of ["dashboard", "consultations", "calendar"] as const) {
+test("pending lawyers can open their dashboard but cannot access client tools", () => {
+  for (const requestedModule of ["consultations", "calendar", "ai-chat"] as const) {
     assert.equal(accountModuleRedirect({
       requestedLocale: "ru",
       requestedAccountType: "lawyer",
@@ -114,7 +114,7 @@ test("pending lawyers stay in application surfaces until approval", () => {
       profile: pendingLawyer,
     }), "/ru/application");
   }
-  for (const requestedModule of ["profile", "settings", "security"] as const) {
+  for (const requestedModule of ["dashboard", "profile", "settings", "security"] as const) {
     assert.equal(accountModuleRedirect({
       requestedLocale: "ru",
       requestedAccountType: "lawyer",
@@ -144,7 +144,7 @@ test("canonical staging keeps lawyer routes on the Access-protected shared host"
   );
   assert.equal(
     lawyerLandingDestination(pendingLawyer, false, "staging.app.juro.uz"),
-    "https://staging.app.juro.uz/ru/lawyer/profile",
+    "https://staging.app.juro.uz/ru/lawyer/dashboard",
   );
   assert.equal(
     lawyerLandingDestination(
@@ -152,7 +152,7 @@ test("canonical staging keeps lawyer routes on the Access-protected shared host"
       false,
       "staging.app.juro.uz",
     ),
-    "https://staging.app.juro.uz/ru/onboarding",
+    "https://staging.app.juro.uz/ru/lawyer/dashboard",
   );
   assert.equal(accountModuleRedirect({
     requestedLocale: "ru",
@@ -170,4 +170,10 @@ test("canonical staging keeps lawyer routes on the Access-protected shared host"
     requestHost: "staging.app.juro.uz",
     profile: approvedLawyer,
   }), "https://staging.app.juro.uz/ru/lawyer/dashboard");
+});
+
+test("optional onboarding history never blocks individuals or entrepreneurs", () => {
+  for (const accountType of ["individual", "entrepreneur"] as const) {
+    assert.equal(accountModuleRedirect({ requestedLocale: "ru", requestedAccountType: accountType, module: "dashboard", lawyerHost: false, requestHost: "localhost:3000", profile: { ...client, accountType, onboardingCompleted: false } }), null);
+  }
 });

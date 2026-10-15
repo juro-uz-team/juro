@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync, mkdirSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,7 @@ before(async () => {
         import {AuthForm} from './app/_auth/AuthForm';
         const query = new URLSearchParams(location.search);
         createRoot(document.getElementById('root')).render(<AuthForm
-          mode="login" initialLocale={query.get('locale') || 'en'}
+          mode={query.get('mode') || 'login'} initialLocale={query.get('locale') || 'en'}
           passwordAuthEnabled emailAuthEnabled
           turnstileSiteKey={query.get('challenge') || 'private-local'} />);`,
       resolveDir: root, loader: "tsx",
@@ -33,7 +34,13 @@ before(async () => {
       }));
     } }],
   });
+  const styles = readFileSync(root + 'app/globals.css', 'utf8') + readFileSync(root + 'app/_components/brand.css', 'utf8') + '\n' + readFileSync(root + 'app/_auth/auth.css', 'utf8');
   server = createServer((request, response) => {
+    if (request.url.startsWith('/brand/')) {
+      response.setHeader('Content-Type', 'image/png');
+      response.end(readFileSync(root + 'public' + request.url));
+      return;
+    }
     if (request.headers["x-test-stalled-body"] === "1") {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.write('{"redirectTo":');
@@ -41,7 +48,7 @@ before(async () => {
     }
     response.setHeader("Content-Type", request.url === "/bundle.js" ? "text/javascript" : "text/html");
     response.end(request.url === "/bundle.js" ? bundle.outputFiles[0].text
-      : '<div id="root"></div><script src="/bundle.js"></script>');
+      : `<meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--font-manrope:Manrope}${styles}</style><div id="root"></div><script src="/bundle.js"></script>`);
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
@@ -190,4 +197,46 @@ test("unverified email opens the verification recovery flow", async context => {
   await page.route("**/api/auth/password-login", route => route.fulfill({ status: 403, json: { code: "EMAIL_NOT_VERIFIED" } }));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByRole("button", { name: "Send a new code" }).waitFor();
+});
+
+
+test("auth forms fit laptop screens and remain usable across locales and mobile widths", async context => {
+  const page = await browser.newPage();
+  context.after(() => page.close());
+  const evidence = fileURLToPath(new URL('../../../../.scratch/auth-experience/', import.meta.url));
+  mkdirSync(evidence, { recursive: true });
+  for (const locale of ['ru', 'uz', 'en']) {
+    for (const mode of ['register', 'login']) {
+      for (const width of [320, 390, 768, 1366, 1920]) {
+        await page.setViewportSize({ width, height: 768 });
+        await page.route("**/api/auth/challenge?*", async route => {
+          await route.fulfill({ json: await createChallenge({ algorithm: "SHA-256", hmacKey: "test-only", maxnumber: 10, expires: new Date(Date.now() + 300_000) }) });
+        });
+        await page.goto(`${origin}?locale=${locale}&mode=${mode}&challenge=native-altcha`);
+        await page.waitForFunction(() => document.querySelector('altcha-widget')?.getState() === 'verified');
+        await page.locator('#auth-email').waitFor();
+        await page.waitForTimeout(250);
+        const check = await page.locator('.altcha-checkbox input').boundingBox();
+        assert.ok(check && check.height <= 24, 'form styles must not stretch the verification check');
+        const widget = await page.locator('.altcha-main').boundingBox();
+        const submit = await page.locator('.auth-submit').boundingBox();
+        assert.ok(Math.abs(widget.width - submit.width) <= 2, 'verification aligns with the form');
+        const geometry = await page.evaluate(() => ({
+          width: document.documentElement.scrollWidth,
+          height: document.documentElement.scrollHeight,
+        }));
+        assert.ok(geometry.width <= width, `${locale} ${mode} ${width}: horizontal overflow`);
+        if (width >= 1366) assert.ok(geometry.height <= 768, `${locale} ${mode}: height ${geometry.height}`);
+        for (const input of await page.locator('input:not([type=checkbox]):visible').all()) {
+          assert.ok((await input.boundingBox()).height >= 44);
+        }
+        if (locale === 'ru' && [390, 1366].includes(width)) {
+          await page.screenshot({ path: `${evidence}/${mode}-${width}.png`, fullPage: true });
+          await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+          await page.waitForTimeout(400);
+          await page.screenshot({ path: `${evidence}/${mode}-${width}-dark.png`, fullPage: true });
+        }
+      }
+    }
+  }
 });

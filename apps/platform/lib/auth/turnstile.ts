@@ -14,7 +14,7 @@ export async function validateTurnstile(input: {
   secretKey: string; token: string; remoteIp: string | null; expectedHostname: string;
   expectedAction: string | readonly string[]; fetcher?: typeof fetch;
 }): Promise<TurnstileValidationResult> {
-  if (process.env.PRIVATE_DEVELOPMENT !== "true") {
+  if (process.env.PRIVATE_DEVELOPMENT !== "true" || process.env.LOCAL_AUTH_PREVIEW === "true") {
     if (!challengeSecretConfigured(input.secretKey)) return { status: "unavailable" };
     const verified = await verifyNativeChallenge({secret: input.secretKey, token: input.token, hostname: input.expectedHostname,
       actions: typeof input.expectedAction === "string" ? [input.expectedAction] : input.expectedAction,

@@ -27,6 +27,5 @@ export default async function Root() {
       requestHeaders.get("host"),
     ));
   }
-  if (!profile?.onboardingCompleted) redirect(`/${profile?.locale ?? fallbackLocale}/onboarding`);
-  redirect(`/${profile.locale}/${profile.accountType}/dashboard`);
+  redirect(`/${profile?.locale ?? fallbackLocale}/${profile?.accountType ?? "individual"}/dashboard`);
 }

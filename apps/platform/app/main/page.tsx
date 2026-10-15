@@ -30,7 +30,6 @@ export default async function Main() {
       requestHeaders.get("host"),
     ));
   }
-  if (profile && !profile.onboardingCompleted) redirect(`/${profile.locale}/onboarding`);
   if (profile) redirect(`/${profile.locale}/${profile.accountType}/dashboard`);
 
   const saved = store.get("juro_account_type")?.value;

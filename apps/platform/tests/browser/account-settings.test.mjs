@@ -27,7 +27,7 @@ before(async () => {
       b.onResolve({ filter: /^next\/(navigation|image|link)$/ }, a => ({ path: a.path, namespace: "adapter" }));
       b.onLoad({ filter: /.*/, namespace: "adapter" }, a => ({
         contents: a.path.endsWith("navigation")
-          ? `export const usePathname=()=>location.pathname;export const useRouter=()=>({push:url=>location.assign(url)});`
+          ? `export const usePathname=()=>location.pathname;export const useRouter=()=>({push:url=>location.assign(url),refresh:()=>{}});`
           : `import React from 'react';export default function Adapter({children,priority,unoptimized,prefetch,...props}){return React.createElement('${a.path.endsWith("image") ? "img" : "a"}',props,children)}`,
         loader: "js", resolveDir: root,
       }));
@@ -45,17 +45,17 @@ before(async () => {
 });
 after(async () => { await browser?.close(); server?.closeAllConnections(); await new Promise(r => server ? server.close(r) : r()); });
 
-async function accountPage(t, { view = "profile", locale = "en", theme = "light", width = 1280, failSave = false, failEmail = false } = {}) {
+async function accountPage(t, { view = "profile", locale = "en", theme = "light", width = 1280, failSave = false, failEmail = false, newProfessional = false, failPhoto = false, reviewed = false, historyCount = 1 } = {}) {
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
   t.after(() => page.close());
   const writes = [], errors = [];
   const profile = { email: "aziza@example.test", fullName: "Aziza Karimova", phone: "+998901234567", locale, timezone: "Asia/Tashkent", accountType: "individual", companyName: null, organizationRole: null };
   let preferences = { marketing_email: false, weekly_case_summary: true, unfinished_document: false, comments: true, lawyer_request_updates: true };
-  let professional = { id: "lawyer-one", displayName: "Aziza Karimova", specialties: [], languages: [], status: "active", marketplaceStatus: "profile_incomplete", publicApprovedAt: null, experienceYears: 5, priceDescription: "300 000 UZS", consultationDurationMinutes: 60, additionalServices: [], availabilityStatus: "available", nextAvailableAt: "2026-10-08T10:30:00.000Z", advocateStatus: "not_declared", firmName: "Legal Studio", bio: "", city: "", region: "", education: "Law degree", consultationFormats: [], hasPhone: true, profilePhotoUrl: null, missingRequiredFields: [], moderationReason: null, updatedAt: "2026-10-05T10:00:00Z", moderationHistory: [] };
+  let professional = { id: "lawyer-one", displayName: "Aziza Karimova", specialties: [], languages: [], status: "active", marketplaceStatus: "profile_incomplete", publicApprovedAt: null, experienceYears: 5, priceDescription: "300 000 UZS", consultationDurationMinutes: 60, additionalServices: [], availabilityStatus: "available", nextAvailableAt: "2026-10-08T10:30:00.000Z", advocateStatus: "not_declared", firmName: "Legal Studio", bio: "", city: "", region: "", education: "Law degree", consultationFormats: [], hasPhone: true, profilePhotoUrl: null, missingRequiredFields: [], moderationReason: null, updatedAt: "2026-10-05T10:00:00Z", moderationHistory: reviewed ? Array.from({length: historyCount}, (_, i) => ({profileRevision: 17-i, submissionVersion: historyCount-i, decision: "approved", reason: "Approved", createdAt: "2026-10-15T08:00:00Z"})) : [] };
   let mfaEnabled = false;
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/api/**", async route => {
-    const request = route.request(), path = new URL(request.url()).pathname, method = request.method(), body = request.postDataJSON();
+    const request = route.request(), path = new URL(request.url()).pathname, method = request.method(), body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null;
     if (method !== "GET") writes.push({ path, method, body });
     let result = {}, status = 200;
     if (path === "/api/platform/profile") {
@@ -71,7 +71,11 @@ async function accountPage(t, { view = "profile", locale = "en", theme = "light"
     else if (path === "/api/platform/security/mfa/confirm") { mfaEnabled = true; result = { backupCodes: ["example-one", "example-two"] }; }
     else if (path === "/api/platform/notification-preferences") { if (method === "PUT") preferences = body.preferences; result = { preferences }; }
     else if (path === "/api/platform/ai/memory") result = { available: true, settings: { automaticEnabled: false }, memories: [] };
-    else if (path === "/api/platform/lawyer-profile") { if (method === "PATCH") professional = {...professional, ...body}; result = {profile: professional}; }
+    else if (path === "/api/platform/lawyer-profile") { if (method === "PATCH") professional = {...professional, ...body}; if (method === "POST") { professional = {...professional, ...body}; newProfessional = false; } result = {profile: newProfessional ? null : professional}; }
+    else if (path === "/api/platform/lawyer-profile/photo") {
+      if (failPhoto) { status = 503; failPhoto = false; }
+      else result = {profilePhotoUrl: "/photo.png", marketplaceStatus: "profile_incomplete", missingRequiredFields: []};
+    }
     else if (path === "/api/platform/lawyer-schedule") result = {rules: [], unavailability: []};
     else if (path === "/api/platform/lawyer-profile/credentials") result = { defaultType: "firm", details: { professional_type: "firm", organization_name: "Legal Studio", registration_number: "12345", license_number: null, representatives: [] }, documents: [] };
     else if (path === "/api/platform/privacy/deletion-request") result = { challengeId: "delete-challenge", destination: profile.email, expiresInSeconds: 600 };
@@ -89,7 +93,7 @@ test("each account tab owns distinct controls", async t => {
     const { page } = await accountPage(t, { view });
     for (const title of titles) await page.getByRole("heading", { name: title, exact: true }).waitFor();
     assert.deepEqual(await page.locator(".account-content h2:visible").allTextContents(), titles);
-    assert.equal(await page.getByLabel("Name", { exact: true }).count(), view === "profile" ? 1 : 0);
+    assert.equal(await page.getByLabel("First name", { exact: true }).count(), view === "profile" ? 1 : 0);
     assert.equal(await page.getByRole("combobox", { name: "Language", exact: true }).count(), view === "settings" ? 1 : 0);
     assert.equal(await page.getByRole("radio", { name: "Allow analytics", exact: true }).count(), view === "privacy" ? 1 : 0);
     assert.equal(await page.getByLabel("New email address", { exact: true }).count(), view === "security" ? 1 : 0);
@@ -99,15 +103,15 @@ test("each account tab owns distinct controls", async t => {
 
 test("profile supports discard, persisted save, and recoverable save failure", async t => {
   const { page, writes } = await accountPage(t);
-  const name = page.getByLabel("Name", { exact: true }), save = page.getByRole("button", { name: "Save changes", exact: true });
+  const name = page.getByLabel("First name", { exact: true }), save = page.getByRole("button", { name: "Save changes", exact: true });
   assert.equal(await save.isDisabled(), true);
   await name.fill("New name"); await page.getByRole("button", { name: "Discard changes" }).click(); assert.equal(await name.inputValue(), "Aziza Karimova");
   await name.fill("Aziza Updated"); await save.click(); await page.locator(".profile-message.success").waitFor();
-  assert.equal(writes.at(-1).body.fullName, "Aziza Updated"); assert.equal(writes.at(-1).body.timezone, "Asia/Tashkent");
+  assert.equal(writes.at(-1).body.firstName, "Aziza Updated"); assert.equal(writes.at(-1).body.timezone, "Asia/Tashkent");
   await page.reload(); await name.waitFor(); assert.equal(await name.inputValue(), "Aziza Updated");
   const failed = await accountPage(t, { failSave: true });
-  await failed.page.getByLabel("Name", { exact: true }).fill("Keep my draft"); await failed.page.getByRole("button", { name: "Save changes", exact: true }).click(); await failed.page.getByRole("alert").waitFor();
-  assert.equal(await failed.page.getByLabel("Name", { exact: true }).inputValue(), "Keep my draft"); assert.equal(await failed.page.getByRole("button", { name: "Save changes", exact: true }).isEnabled(), true);
+  await failed.page.getByLabel("First name", { exact: true }).fill("Keep my draft"); await failed.page.getByRole("button", { name: "Save changes", exact: true }).click(); await failed.page.getByRole("alert").waitFor();
+  assert.equal(await failed.page.getByLabel("First name", { exact: true }).inputValue(), "Keep my draft"); assert.equal(await failed.page.getByRole("button", { name: "Save changes", exact: true }).isEnabled(), true);
 });
 
 test("notification changes can be discarded and saved independently", async t => {
@@ -210,16 +214,149 @@ test("professional calendar is localized and file selection shows the selected n
   assert.match(await dialog.textContent(),/октябрь/i);
   const rect=await dialog.boundingBox(); assert.ok(rect.x>=0 && rect.x+rect.width<=390);
   await dialog.locator(".react-aria-CalendarCell").filter({hasText:/^15$/}).click();
+  await dialog.locator('.juro-calendar-time [data-type="hour"]').fill("14");
+  await dialog.locator('.juro-calendar-time [data-type="minute"]').fill("45");
+  await page.getByRole("button",{name:"Готово",exact:true}).click();
   await page.getByRole("button",{name:"Сохранить черновик",exact:true}).click();
   await page.getByText("Черновик сохранён. Отправка на проверку не выполнена.",{exact:true}).waitFor();
   const instant=writes.find(write=>write.path==="/api/platform/lawyer-profile").body.nextAvailableAt;
   assert.equal(await page.evaluate(value=>new Date(value).getDate(),instant),15);
+  assert.equal(await page.evaluate(value=>new Date(value).getHours(),instant),14);
+  assert.equal(await page.evaluate(value=>new Date(value).getMinutes(),instant),45);
   await page.getByRole("button",{name:"Очистить дату"}).click();
   assert.equal(await page.getByRole("button",{name:"Очистить дату"}).count(),0);
+  await page.getByRole("button",{name:"Открыть календарь"}).click();
+  await dialog.locator(".react-aria-CalendarCell").filter({hasText:/^20$/}).click();
+  await dialog.locator('.juro-calendar-time [data-type="hour"]').fill("09");
+  await dialog.locator('.juro-calendar-time [data-type="minute"]').fill("15");
+  await page.getByRole("button",{name:"Готово",exact:true}).click();
+  assert.equal(await page.locator('.juro-date-input [data-type="hour"]').getAttribute("aria-valuenow"),"9");
+  const upload = page.locator('.credential-upload .juro-file-picker');
+  const beforeHover = await upload.evaluate(node=>getComputedStyle(node).backgroundColor);
+  await upload.hover();
+  assert.notEqual(await upload.evaluate(node=>getComputedStyle(node).backgroundColor),beforeHover);
+  const choice = page.locator('.juro-choice-input input').last();
+  await choice.focus();
+  assert.equal(await choice.evaluate(node=>getComputedStyle(node).outlineStyle),"none");
+
   await page.locator('input[name="file"]').setInputFiles({name:"qualification.pdf",mimeType:"application/pdf",buffer:Buffer.from("example")});
   await page.locator(".juro-file-name").filter({hasText:"qualification.pdf"}).waitFor();
   await page.locator(".credential-upload").evaluate(form=>form.reset());
   await page.locator(".credential-upload .juro-file-name").filter({hasText:"Файл не выбран"}).waitFor();
   assert.equal(await page.locator('input[name="file"]').evaluate(input=>input.files.length),0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+});
+
+
+test("optional personal details can be saved and cleared independently", async t => {
+  const {page,writes} = await accountPage(t);
+  await page.getByLabel("Surname", {exact:false}).fill("Karimova");
+  await page.getByLabel("Middle name", {exact:false}).fill("Test");
+  await page.locator(".account-document-details summary").click();
+  await page.getByLabel("Registered address", {exact:false}).fill("Tashkent");
+  await page.locator('.account-birth-date [data-type="day"]').fill("29");
+  await page.locator('.account-birth-date [data-type="month"]').fill("02");
+  await page.locator('.account-birth-date [data-type="year"]').fill("2000");
+  await page.getByRole("button", {name:"Save changes",exact:true}).click();
+  await page.locator(".profile-message.success").waitFor();
+  assert.equal(writes.at(-1).body.lastName,"Karimova");
+  assert.equal(writes.at(-1).body.birthDate,"2000-02-29");
+  assert.equal(writes.at(-1).body.registeredAddress,"Tashkent");
+  await page.getByRole("button", {name:"Clear date",exact:true}).click();
+  await page.getByLabel("Surname", {exact:false}).fill("");
+  await page.getByRole("button", {name:"Save changes",exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.account-edit-form button[type="submit"]').disabled);
+  assert.equal(writes.at(-1).body.lastName, "");
+  assert.equal(writes.at(-1).body.birthDate, "");
+});
+
+
+test("new professional can upload a photo without saving first and retry without losing edits", async t => {
+  const { page, writes } = await accountPage(t, {view: "professional", newProfessional: true, failPhoto: true});
+  const picker = page.locator('.lawyer-professional-profile input[type="file"]').last();
+  await page.getByLabel("Display name", {exact: true}).fill("Aziza");
+  await page.getByRole("combobox", {name: "City", exact: true}).fill("Tashkent");
+  assert.equal(await picker.isEnabled(), true);
+  const photo = {name: "portrait.png", mimeType: "image/png", buffer: Buffer.from("test-image")};
+  await picker.setInputFiles(photo);
+  await page.getByText("We could not upload the photo.", {exact: true}).waitFor();
+  assert.equal(writes.filter(w => w.path === "/api/platform/lawyer-profile" && w.method === "POST").length, 1);
+  assert.equal(await page.getByRole("combobox", {name: "City", exact: true}).inputValue(), "Tashkent");
+  await picker.setInputFiles(photo);
+  await page.getByText("Photo saved to private storage. Save the profile next so JURO can validate the required fields.", {exact: true}).waitFor();
+  assert.equal(writes.filter(w => w.path === "/api/platform/lawyer-profile" && w.method === "POST").length, 1);
+  assert.equal(writes.filter(w => w.path.endsWith("/submit")).length, 0);
+  assert.equal(await picker.isEnabled(), true);
+});
+
+
+test("rapid typing preserves every character and an immediate save uses the latest values", async t => {
+  const {page, writes} = await accountPage(t, {view: "professional"});
+  const text = "Fast typing ".repeat(12);
+  const bio = page.getByLabel("About you", {exact:true});
+  await bio.fill("");
+  await bio.pressSequentially(text, {delay: 0});
+  assert.equal(await bio.inputValue(), text);
+  const city = page.getByRole("combobox", {name:"City",exact:true});
+  await city.pressSequentially("Tashkent", {delay: 0});
+  await page.getByRole("button", {name:"Save draft",exact:true}).click();
+  await page.getByText("Draft saved. It has not been submitted for review.", {exact:true}).waitFor();
+  const saved = writes.find(write=>write.path === "/api/platform/lawyer-profile").body;
+  assert.equal(saved.bio, text);
+  assert.equal(saved.city, "Tashkent");
+});
+
+test("professional section links reach their targets and preview is not falsely complete", async t => {
+  const {page} = await accountPage(t, {view: "professional", locale: "ru"});
+  const links = page.locator('.lawyer-application-steps a');
+  assert.equal(await links.count(), 6);
+  const preview = links.filter({hasText: "Предпросмотр"});
+  assert.equal(await preview.getAttribute("class"), "");
+  for (const link of await links.all()) {
+    const target = await link.getAttribute("href");
+    assert.equal(await page.locator(target).count(), 1);
+  }
+  await page.getByRole('spinbutton', {name: 'Стаж работы'}).fill('3');
+  await preview.click();
+  assert.equal(new URL(page.url()).hash, '#lawyer-preview');
+  assert.match(await page.locator('.lawyer-profile-preview').innerText(), /3 года/);
+});
+
+test("submission brings review status into focus and locks draft actions", async t => {
+  const {page} = await accountPage(t, {view: "professional"});
+  await page.route('**/api/platform/lawyer-profile/submit', route => route.fulfill({json: {marketplaceStatus: 'pending_review'}}));
+  for (const [name, value] of [['City','Tashkent'],['Region','Tashkent'],['Practice areas','Contracts'],['Languages','English'],['Consultation formats','Online']]) {
+    const field = page.getByRole('combobox', {name, exact: true});
+    await field.fill(value);
+    await field.press('Enter');
+    await page.keyboard.press('Escape');
+  }
+  await page.getByRole('button', {name: 'Submit profile for review', exact: true}).click();
+  await page.getByText('Under JURO review', {exact: true}).waitFor();
+  assert.equal(await page.locator('#lawyer-review-status').evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.getByRole('button', {name: 'Save draft', exact: true}).isDisabled(), true);
+});
+
+test("moderation history displays the submission version rather than the edit revision", async t => {
+  const {page} = await accountPage(t, {view: 'professional', locale: 'ru', reviewed: true});
+  const version = page.locator('.lawyer-moderation-version');
+  await version.waitFor();
+  assert.equal(await version.innerText(), 'Версия 1');
+  assert.equal(await page.locator('.lawyer-moderation-archive').count(), 0);
+});
+
+test("long moderation history starts compact and expands with the keyboard", async t => {
+  const {page} = await accountPage(t, {view: 'professional', locale: 'ru', reviewed: true, historyCount: 10, width: 390});
+  const history = page.locator('.lawyer-moderation-history');
+  await history.waitFor();
+  assert.equal(await history.locator('li:visible').count(), 1);
+  assert.equal(await history.locator('.lawyer-moderation-version:visible').innerText(), 'Версия 10');
+  const summary = history.locator('summary');
+  assert.match(await summary.innerText(), /9/);
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await history.locator('li:visible').count(), 10);
+  await page.keyboard.press('Enter');
+  assert.equal(await history.locator('li:visible').count(), 1);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 });

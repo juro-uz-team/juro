@@ -94,7 +94,7 @@ test("lawyer professional profile accepts only bounded self-declared directory d
   assert.equal(isLawyerProfileDirectoryPreviewEnabled({ APP_ENV: "staging", LAWYER_PROFILE_DIRECTORY_ENABLED: "false", DB: {} }), false);
   assert.equal(isLawyerProfileDirectoryPreviewEnabled({ APP_ENV: "staging", LAWYER_PROFILE_DIRECTORY_ENABLED: "true" }), false);
   assert.match(route, /account_type IN \('lawyer','business'\)/); assert.match(route, /isLawyerProfileDirectoryPreviewEnabled/); assert.match(route, /assertSafeWrite/); assert.match(route, /lawyer_profile_created/); assert.match(route, /lawyer_profile_draft_saved/); assert.match(route, /meta\.changes/); assert.match(route, /WHERE EXISTS/);
-  assert.match(client, /Статус адвоката «подтверждён» нельзя установить самостоятельно/);
+  assert.doesNotMatch(client, /<option value="verified"/);
   for (const filter of ["specialtyFilter", "languageFilter", "minimumExperience", "minimumRating", "availabilityFilter", "advocateFilter", "firmFilter"]) assert.match(handoffClient, new RegExp(filter));
   assert.match(migration, /lawyer_profiles_directory_values_insert/); assert.match(migration, /lawyer_profiles_directory_filter_idx/);
 });
@@ -471,7 +471,7 @@ test("local development login is explicit, loopback-only, and creates a real ses
   assert.match(route, /sessionCookie\(session\.token\)/);
   assert.match(authPage, /developmentAuthEnabled/);
   assert.match(authForm, /\/api\/auth\/dev-login\?returnTo=/);
-  assert.match(launcher, /LOCAL_AUTH_BYPASS: config\.privateMode && process\.env\.NODE_ENV !== "production"\s*&& process\.env\.LOCAL_AUTH_BYPASS === "true" \? "true" : "false"/);
+  assert.match(launcher, /LOCAL_AUTH_BYPASS: config\.privateMode && !authPreview && process\.env\.NODE_ENV !== "production"\s*&& process\.env\.LOCAL_AUTH_BYPASS === "true" \? "true" : "false"/);
   assert.equal(JSON.parse(rootPackageText).scripts.dev, "npm run dev:platform");
   assert.match(
     await readFile(new URL("../server/index.ts", import.meta.url), "utf8"),
@@ -525,7 +525,7 @@ test("canonical identity expand stays disabled and public projections omit prote
   assert.match(config, /\.\.\.process\.env/);
   assert.match(session, /return \{\s*sessionId:/);
   assert.doesNotMatch(storage, /\.\.\.existing/);
-  assert.match(storage, /!existing\.onboardingCompletedAt/);
+  assert.match(storage, /!existing\.fullName\?\.trim\(\)/);
   assert.doesNotMatch(profile, /profile:\s*profile\.results/);
   assert.doesNotMatch(team, /members:\s*members\.results/);
   assert.doesNotMatch(team, /invitations:\s*invitations\.results/);

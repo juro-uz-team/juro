@@ -206,9 +206,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
         lawyerProfileStatus: profile.lawyerProfileStatus,
         lawyerMarketplaceStatus: profile.lawyerMarketplaceStatus,
       }, lawyerHost, requestHostname)
-    : !profile.onboardingCompletedAt
-      ? `/${routeLocale}/onboarding`
-      : profile.accountType === "business" && workspaceId
+    : profile.accountType === "business" && workspaceId
         ? `/${routeLocale}/business/${encodeURIComponent(workspaceId)}/dashboard`
         : `/${routeLocale}/${profile.accountType}/dashboard`;
   const redirectTo = profile.accountType !== "lawyer" && lawyerHost

@@ -25,11 +25,28 @@ test("private authentication challenge requires an explicit private deployment",
 test("auth utilities stay in document flow and retain accessible touch targets", () => {
   assert.match(
     authStyles,
-    /\.auth-utilities\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*44px;[^}]*margin-bottom:\s*34px;/s,
+    /\.auth-utilities\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*44px;[^}]*margin-bottom:\s*12px;/s,
   );
   assert.match(
     authStyles,
     /\.auth-language a\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s,
   );
   assert.doesNotMatch(authStyles, /\.auth-(?:language|theme)\s*\{[^}]*position:\s*absolute/s);
+});
+
+
+test("local auth preview rejects the development CAPTCHA bypass", async context => {
+  const previousPrivate = process.env.PRIVATE_DEVELOPMENT;
+  const previousPreview = process.env.LOCAL_AUTH_PREVIEW;
+  context.after(() => {
+    if (previousPrivate === undefined) delete process.env.PRIVATE_DEVELOPMENT;
+    else process.env.PRIVATE_DEVELOPMENT = previousPrivate;
+    if (previousPreview === undefined) delete process.env.LOCAL_AUTH_PREVIEW;
+    else process.env.LOCAL_AUTH_PREVIEW = previousPreview;
+  });
+  process.env.PRIVATE_DEVELOPMENT = "true";
+  process.env.LOCAL_AUTH_PREVIEW = "true";
+  assert.equal((await validateAuthTurnstile(input)).status, "unavailable");
+  process.env.LOCAL_AUTH_PREVIEW = "false";
+  assert.equal((await validateAuthTurnstile(input)).status, "verified");
 });

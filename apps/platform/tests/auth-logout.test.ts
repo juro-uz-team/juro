@@ -263,7 +263,7 @@ test("same-origin form navigation clears HttpOnly state and replaces the protect
     assert.equal(response.status, 303);
     assert.equal(
       response.headers.get("location"),
-      "/signout-with-chatgpt?return_to=%2Fen%2Fauth%2Flogin",
+      "/en/auth/login",
     );
     assert.match(setCookies(response).join("\n"), /juro_session=.*Max-Age=0/u);
     assert.match(
@@ -343,7 +343,7 @@ test("client logout is single-flight, bounded, and replaces history with localiz
 
   assert.deepEqual(replacements, [localizedSignOutPath("uz")]);
   assert.equal(sensitiveStateClears, 1);
-  assert.equal(replacements[0], "/signout-with-chatgpt?return_to=%2Fuz%2Fauth%2Flogin");
+  assert.equal(replacements[0], "/uz/auth/login");
 });
 
 test("client logout still replaces the page without an auth redirect loop after server failure", async () => {
@@ -361,11 +361,9 @@ test("client logout still replaces the page without an auth redirect loop after 
 
   assert.deepEqual(replacements, [localizedSignOutPath("ru", false)]);
   const redirect = new URL(replacements[0], "https://app.juro.uz");
-  assert.equal(redirect.pathname, "/signout-with-chatgpt");
-  assert.equal(
-    redirect.searchParams.get("return_to"),
-    "/ru/auth/login?reauth=1&logout=server-unconfirmed",
-  );
+  assert.equal(redirect.pathname, "/ru/auth/login");
+  assert.equal(redirect.searchParams.get("reauth"), "1");
+  assert.equal(redirect.searchParams.get("logout"), "server-unconfirmed");
 });
 
 test("client logout aborts a stalled revocation request and still exits", async () => {

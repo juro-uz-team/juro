@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Fingerprint, Settings2, ShieldCheck, UserRound, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { accountSettingsCopy, type AccountView } from "./account-settings-copy";
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -18,14 +18,32 @@ const sections: { view: AccountView; path: string; icon: LucideIcon }[] = [
 export function AccountArea({ locale, view, name, email, children }: {
   locale: PlatformLocale; view: AccountView; name?: string | null; email?: string; children: ReactNode;
 }) {
+  const areaRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const area = areaRef.current;
+    const heading = headingRef.current;
+    const rail = railRef.current;
+    if (!area || !heading || !rail) return;
+    const measure = () => {
+      area.style.setProperty("--account-heading-height", `${heading.getBoundingClientRect().height}px`);
+      area.style.setProperty("--account-nav-height", window.matchMedia("(max-width: 800px)").matches ? `${rail.getBoundingClientRect().height}px` : "0px");
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(heading);
+    observer.observe(rail);
+    measure();
+    return () => observer.disconnect();
+  }, []);
   const copy = accountSettingsCopy[locale];
   const base = usePlatformBasePath();
-  const initials = name?.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+  const initials = Array.from(name?.trim() ?? "")[0]?.toUpperCase();
   return (
-    <section className="profile-workspace account-area">
-      <div className="account-heading"><p>{copy.account}</p><h1>{copy[view].title}</h1><span>{copy[view].description}</span></div>
+    <section ref={areaRef} className="profile-workspace account-area">
+      <div ref={headingRef} className="account-heading"><p>{copy.account}</p><h1 id="account-page-title">{copy[view].title}</h1><span>{copy[view].description}</span></div>
       <div className="account-layout">
-        <aside className="account-rail">
+        <aside ref={railRef} className="account-rail">
           <div className="account-identity"><span className="account-avatar" aria-hidden="true">{initials || <UserRound />}</span><div><strong>{name || copy.account}</strong><span title={email}>{email || copy.personal}</span></div></div>
           <nav aria-label={copy.navigation}>
             {sections.map(({ view: item, path, icon: Icon }) => (
@@ -35,16 +53,16 @@ export function AccountArea({ locale, view, name, email, children }: {
             ))}
           </nav>
         </aside>
-        <div className="account-content" key={view}>{children}</div>
+        <div className="account-content" key={view} role="region" aria-labelledby="account-page-title">{children}</div>
       </div>
     </section>
   );
 }
 
-export function AccountDisclosure({ title, description, icon: Icon, danger = false, children }: {
-  title: string; description: string; icon: LucideIcon; danger?: boolean; children: ReactNode;
+export function AccountDisclosure({ title, description, icon: Icon, danger = false, id, defaultOpen = false, children }: {
+  title: string; description: string; icon: LucideIcon; danger?: boolean; id?: string; defaultOpen?: boolean; children: ReactNode;
 }) {
-  return <details className={`account-disclosure${danger ? " account-disclosure-danger" : ""}`}>
+  return <details id={id} open={defaultOpen} className={`account-disclosure${danger ? " account-disclosure-danger" : ""}`}>
     <summary><Icon aria-hidden="true" /><span><strong>{title}</strong><small>{description}</small></span><ChevronDown className="account-disclosure-chevron" aria-hidden="true" /></summary>
     <div className="account-disclosure-body">{children}</div>
   </details>;

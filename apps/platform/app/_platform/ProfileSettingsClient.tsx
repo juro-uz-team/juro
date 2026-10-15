@@ -1,5 +1,8 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
+import { personalDetailsCopy } from "./personal-details-copy";
+
 import { AccountArea, AccountDisclosure } from "./AccountArea";
 import { accountSettingsCopy } from "./account-settings-copy";
 import { useRouter } from "next/navigation";
@@ -25,7 +28,7 @@ import { performLogout } from "./logout-client";
 type View = "profile" | "settings" | "security" | "privacy";
 type ProfileData = {
   profile: {
-    email: string; fullName: string | null; phone: string | null; locale: string; accountType: string;
+    email: string; fullName: string | null; firstName?: string | null; lastName?: string | null; middleName?: string | null; birthDate?: string | null; registeredAddress?: string | null; phone: string | null; locale: string; accountType: string;
     companyName: string | null; organizationRole: string | null; primaryGoal: string | null; timezone: string; createdAt: string;
   };
   workspace: { name: string; type: string; locale: string };
@@ -531,7 +534,8 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [form, setForm] = useState({ fullName: "", phone: "", locale, timezone: "Asia/Tashkent", companyName: "", organizationRole: "" });
+  const personal = personalDetailsCopy[locale];
+  const [form, setForm] = useState({ fullName: "", firstName: "", lastName: "", middleName: "", birthDate: "", registeredAddress: "", phone: "", locale, timezone: "Asia/Tashkent", companyName: "", organizationRole: "" });
   const [savedForm, setSavedForm] = useState<typeof form | null>(null);
   const dirty = savedForm !== null && JSON.stringify(form) !== JSON.stringify(savedForm);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -570,7 +574,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
     setMfaSetup(null);
     setBackupCodes([]);
     setEmailChange(null);
-    setForm({ fullName: "", phone: "", locale, timezone: "Asia/Tashkent", companyName: "", organizationRole: "" });
+    setForm({ fullName: "", firstName: "", lastName: "", middleName: "", birthDate: "", registeredAddress: "", phone: "", locale, timezone: "Asia/Tashkent", companyName: "", organizationRole: "" });
     setNewEmail("");
     setMfaCode("");
     setCurrentEmailCode("");
@@ -596,6 +600,11 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
       setData(profileBody);
       const loadedForm = {
         fullName: profileBody.profile.fullName || "",
+        firstName: profileBody.profile.firstName || profileBody.profile.fullName || "",
+        lastName: profileBody.profile.lastName || "",
+        middleName: profileBody.profile.middleName || "",
+        birthDate: profileBody.profile.birthDate || "",
+        registeredAddress: profileBody.profile.registeredAddress || "",
         phone: profileBody.profile.phone || "",
         locale: isLocale(profileBody.profile.locale)
           ? profileBody.profile.locale
@@ -1245,7 +1254,9 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
       <fieldset className="account-fields" disabled={saving}>
         <legend className="sr-only">{view === "profile" ? ui.details : ui.preferences}</legend>
         {view === "profile" ? <>
-          <label>{copy.name}<input required maxLength={160} autoComplete="name" value={form.fullName} onChange={event => setForm({ ...form, fullName: event.target.value })} /></label>
+          <label>{personal.firstName}<input required maxLength={80} autoComplete="given-name" value={form.firstName} onChange={event => setForm({ ...form, firstName: event.target.value })} /></label>
+          <label>{personal.lastName}<span className="account-optional">{ui.optional}</span><input maxLength={80} autoComplete="family-name" value={form.lastName} onChange={event => setForm({ ...form, lastName: event.target.value })} /></label>
+          <label>{personal.middleName}<span className="account-optional">{ui.optional}</span><input maxLength={80} autoComplete="additional-name" value={form.middleName} onChange={event => setForm({ ...form, middleName: event.target.value })} /></label>
           <label>{copy.phone}<span className="account-optional">{ui.optional}</span><input type="tel" maxLength={40} value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} autoComplete="tel" /></label>
           {accountType === "business" && <><label>{copy.organization}<input maxLength={180} autoComplete="organization" value={form.companyName} onChange={event => setForm({ ...form, companyName: event.target.value })} /></label><label>{copy.organizationRole}<input maxLength={120} autoComplete="organization-title" value={form.organizationRole} onChange={event => setForm({ ...form, organizationRole: event.target.value })} /></label></>}
         </> : <>
@@ -1253,15 +1264,24 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
           <label>{copy.timezone}<Select value={form.timezone} onChange={event => setForm({ ...form, timezone: event.target.value })}><option value="Asia/Tashkent">Tashkent (UTC+05:00)</option><option value="UTC">UTC (+00:00)</option></Select></label>
         </>}
       </fieldset>
+      {view === "profile" && <details className="account-document-details">
+        <summary><span>{personal.documents}</span><small>{ui.optional}</small></summary>
+        <p>{personal.documentHint}</p>
+        <div className="account-fields">
+          <div className="account-birth-date"><DateTimePicker dateOnly locale={locale} label={personal.birthDate} value={form.birthDate} onChange={birthDate => setForm({ ...form, birthDate })} disabled={saving} /></div>
+          <label>{personal.address}<input maxLength={500} autoComplete="street-address" value={form.registeredAddress} onChange={event => setForm({ ...form, registeredAddress: event.target.value })} disabled={saving} /><small className="account-field-hint">{personal.addressHint}</small></label>
+        </div>
+      </details>}
+      {view === "profile" && <p className="account-details-note"><ShieldCheck aria-hidden="true" />{personal.privacy}</p>}
       <footer className="account-save-bar"><span role="status">{saving ? ui.saving : dirty ? ui.unsaved : ui.saved}</span><div>
         {dirty && <button type="button" className="account-button secondary" disabled={saving} onClick={() => { if (savedForm) setForm({ ...savedForm }); setError(""); setNotice(""); }}>{ui.discard}</button>}
         <button type="submit" className="account-button" disabled={saving || !dirty} aria-busy={saving}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{copy.saveChanges}</button>
       </div></footer>
     </form>}
-    {["lawyer","business"].includes(accountType) && view === "profile" && <AccountDisclosure title={ui.professional} description={ui.professionalDescription} icon={UserRound}><LawyerProfessionalProfile locale={locale} /></AccountDisclosure>}
+    {accountType === "lawyer" && view === "profile" && <AccountDisclosure id="professional-profile" defaultOpen title={ui.professional} description={ui.professionalDescription} icon={UserRound}><LawyerProfessionalProfile locale={locale} accountName={data?.profile.fullName} /></AccountDisclosure>}
     {view === "privacy" && <AnalyticsPreferences locale={locale} />}
     {view === "settings" && <NotificationPreferencesPanel locale={locale} />}
-    {view === "settings" && <AccountDisclosure title={copy.newBusinessWorkspace} description={ui.workspaceDescription} icon={Building2}><section className="business-workspace-panel" id="business-workspace">
+    {view === "settings" && <AccountDisclosure id="business-workspace" defaultOpen title={copy.newBusinessWorkspace} description={ui.workspaceDescription} icon={Building2}><section className="business-workspace-panel">
       <div className="business-workspace-heading"><Building2 aria-hidden="true" /><div><h2>{copy.newBusinessWorkspace}</h2><p id="business-workspace-description">{copy.businessWorkspaceDescription}</p></div></div>
       <form onSubmit={createBusinessWorkspace} aria-describedby="business-workspace-description">
         <label>{copy.fullNameLabel}<input required minLength={2} maxLength={200} autoComplete="organization" value={businessWorkspace.fullName} onChange={(event) => setBusinessWorkspace(current => ({ ...current, fullName: event.target.value }))} /></label>
@@ -1530,7 +1550,10 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
                 checked={deletionMode === "recoverable_30d"}
                 onChange={() => setDeletionMode("recoverable_30d")}
               />
-              <span><strong>{copy.afterThirtyDays}</strong>{copy.afterThirtyDaysDescription}</span>
+              <span className="deletion-mode-copy">
+                <strong>{copy.afterThirtyDays}</strong>
+                <span>{copy.afterThirtyDaysDescription}</span>
+              </span>
             </label>
             <label>
               <input
@@ -1540,7 +1563,10 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
                 checked={deletionMode === "immediate"}
                 onChange={() => setDeletionMode("immediate")}
               />
-              <span><strong>{copy.immediately}</strong>{copy.immediatelyDescription}</span>
+              <span className="deletion-mode-copy">
+                <strong>{copy.immediately}</strong>
+                <span>{copy.immediatelyDescription}</span>
+              </span>
             </label>
           </fieldset>
           {!deletionChallenge
