@@ -12,6 +12,7 @@ export const preparedCandidateConfigurationSchema = z.object({
   artifacts: z.object({
     packageSha256: sha256Schema,
     vectorCompletionSha256: sha256Schema,
+    vectorIdentitySha256: sha256Schema,
     membershipSha256: sha256Schema,
     workIndexSha256: sha256Schema,
     navigationSha256: sha256Schema,

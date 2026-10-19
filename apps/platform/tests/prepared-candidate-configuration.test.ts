@@ -8,6 +8,7 @@ function configuration() {
   return {backend: "prepared-corpus-v1", identity: "prepared-configuration",
     embeddingModel: "openai/text-embedding-3-large", dimensions: 3072,
     artifacts: {packageSha256: "a".repeat(64), vectorCompletionSha256: "b".repeat(64),
+      vectorIdentitySha256: "1".repeat(64),
       membershipSha256: "c".repeat(64), workIndexSha256: "d".repeat(64),
       navigationSha256: "e".repeat(64), sparseSha256: "f".repeat(64)},
     evidenceSemantics: "discovery-only", categoryRanking: {mode: "disabled"},
