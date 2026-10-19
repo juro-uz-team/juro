@@ -97,7 +97,7 @@ test("oversized unnumbered sources reopen a complete clause without claiming art
   assert.equal(evidence.source.article,null);assert.equal(evidence.source.citationEvidenceReceipt!.kind,"normalized-section");
   assert.match(evidence.text,/20 December 1991/);assert.match(evidence.text,/following exception/);
   assert.doesNotMatch(evidence.text,/Another identified/);
-  assert.deepEqual(await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!),{text:evidence.text,fullArticle:false,truncated:false});
+  assert.deepEqual(await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!),{text:evidence.text,fullArticle:false,truncated:false,evidenceUnavailable:false});
   await assert.rejects(resolveCitationEvidence(bucket,{...evidence.source.citationEvidenceReceipt!,textSha256:hash(fragment)}));
   assert.equal(await read({...original,provisionText:"This resolution changes"}),null,"shared introductions cannot select a clause");
   const oversized={...source,blocks:source.blocks.map((block,index)=>index===7?{...block,text:block.text.repeat(2)}:block)};

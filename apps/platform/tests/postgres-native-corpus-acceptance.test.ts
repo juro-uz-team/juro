@@ -35,6 +35,11 @@ test(`native acceptance v${version} atomically selects both fenced releases and 
       CREATE TABLE legal.legal_search_releases(id text PRIMARY KEY,capability text,environment text,configuration_identity text);
       CREATE TABLE legal.legal_custom_search_r2_runtime_roots(search_release_id text PRIMARY KEY,runtime_descriptor_r2_key text,runtime_descriptor_sha256 text,mapping_inventory_sha256 text,mapping_count bigint);`);
     await query(await readFile(new URL("../postgres/0031-native-corpus-acceptance.sql",import.meta.url),"utf8"));
+    // The runtime selection reader requires the retirement ledger. Apply its
+    // real migration, including the guards, against the isolated fixture.
+    await query(`CREATE TABLE storage.objects(bucket text);
+      CREATE TABLE storage.embeddings(collection text);`);
+    await query(await readFile(new URL("../postgres/0062-corpus-retirement.sql",import.meta.url),"utf8"));
     for(const capability of ["current","history"] as const){const selected=manifest[capability];
       await query("INSERT INTO storage.vector_collections VALUES($1,1,false)",[selected.vectorCollection]);
       await query("INSERT INTO storage.vector_search_generations VALUES($1,$2,1,'verified',1)",[selected.vector.generation,selected.vectorCollection]);
