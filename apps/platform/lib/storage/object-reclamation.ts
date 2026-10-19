@@ -32,15 +32,21 @@ export async function reclaimObjects(pool: Pool, root: string, digests?: string[
     }
     const pending = await client.query<{sha256:string}>(`SELECT sha256 FROM storage.object_reclamation
       WHERE root=$1 AND ($2::text[] IS NULL OR sha256=ANY($2)) ORDER BY requested_at LIMIT 1000 FOR UPDATE`, [root, digests ?? null]);
+    const hashes=pending.rows.map(row=>row.sha256);
+    // The exclusive root lock keeps writers out for the entire batch. Check
+    // all surviving references in one query instead of one round trip/file.
+    const references=hashes.length?await client.query<{sha256:string}>(
+      "SELECT DISTINCT sha256 FROM storage.objects WHERE sha256=ANY($1::text[])",[hashes]):{rows:[]};
+    const retained=new Set(references.rows.map(row=>row.sha256));
     for (const {sha256} of pending.rows) {
-      const references = await client.query("SELECT 1 FROM storage.objects WHERE sha256=$1 LIMIT 1", [sha256]);
-      if (!references.rowCount) {
+      if (!retained.has(sha256)) {
         await unlink(join(root, sha256.slice(0,2), sha256)).catch(error => { if (error.code !== "ENOENT") throw error; });
         removed++;
       }
-      // A crash after unlink is safe: the pending row survives and ENOENT is idempotent.
-      await client.query("DELETE FROM storage.object_reclamation WHERE root=$1 AND sha256=$2", [root, sha256]);
     }
+    // A crash after any unlink rolls back the whole queue acknowledgement;
+    // all pending rows survive and ENOENT remains idempotent on the next run.
+    if(hashes.length)await client.query("DELETE FROM storage.object_reclamation WHERE root=$1 AND sha256=ANY($2::text[])",[root,hashes]);
     await client.query("COMMIT");
     return {removed,processed:pending.rowCount ?? 0};
   } catch (error) { await client.query("ROLLBACK"); throw error; }

@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {resolveCitationEvidence} from "../lib/legal-corpus/citation-evidence";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, stat, writeFile, link } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, writeFile, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,33 @@ import {objectStorageLock,reclaimObjects} from "../lib/storage/object-reclamatio
 import { PostgresDatabase } from "../lib/storage/postgres";
 import { LocalObjectStore } from "../lib/storage/objects";
 import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
+
+test("a partially unlinked batch keeps its durable queue and preserves surviving references",async()=>{
+  const db=new PostgresDatabase(process.env.DATABASE_URL!);
+  const root=await mkdtemp(join(tmpdir(),"juro-reclaim-batch-")),bucket=`test-${crypto.randomUUID()}`;
+  const store=new LocalObjectStore(db.pool,root,bucket);
+  try{
+    const objects=[];
+    for(const key of ["first","broken","retained"])objects.push((await store.put(key,crypto.randomUUID()))!);
+    const paths=objects.map(object=>join(root,object.etag.slice(0,2),object.etag));
+    for(const [index,object] of objects.entries())await db.pool.query(
+      "INSERT INTO storage.object_reclamation(root,sha256,requested_at) VALUES($1,$2,to_timestamp($3))",
+      [root,object.etag,index+1]);
+    await db.pool.query("DELETE FROM storage.objects WHERE bucket=$1 AND key IN ('first','broken')",[bucket]);
+    await rm(paths[1]!);await mkdir(paths[1]!);
+    await assert.rejects(reclaimObjects(db.pool,root));
+    await assert.rejects(stat(paths[0]!),{code:"ENOENT"});
+    assert.equal((await db.pool.query("SELECT count(*)::int n FROM storage.object_reclamation WHERE root=$1",[root])).rows[0].n,3);
+    assert.ok(await store.get("retained"));
+    await rm(paths[1]!,{recursive:true});
+    assert.deepEqual(await reclaimObjects(db.pool,root),{removed:2,processed:3});
+    assert.ok(await store.get("retained"));
+    assert.equal((await reclaimObjects(db.pool,root)).processed,0);
+  }finally{
+    await store.delete(["first","broken","retained"]);
+    await db.close();await rm(root,{recursive:true,force:true});
+  }
+});
 
 test("parallel retrieval reads share bounded metadata leases and retain fresh ranged bytes",async()=>{
   const db=new PostgresDatabase(process.env.DATABASE_URL!);
