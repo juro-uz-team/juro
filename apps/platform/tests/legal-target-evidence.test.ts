@@ -121,7 +121,7 @@ test("annex article numbers require an authenticated distinguishing fragment and
   const receipt={version:1 as const,capability:"current" as const,kind:"normalized-article" as const,r2Key:key,
     byteCount:bytes.length,sha256:sha256(bytes),officialUrl:snapshot.source.canonicalUrl,languageTag:"en" as const,
     articleNumber:"1",textSha256:sha256(context.provisionText)};
-  assert.deepEqual(await resolveCitationEvidence(bucket,receipt),{text:context.provisionText,fullArticle:true,truncated:false});
+  assert.deepEqual(await resolveCitationEvidence(bucket,receipt),{text:context.provisionText,fullArticle:true,truncated:false,evidenceUnavailable:false});
   await assert.rejects(resolveCitationEvidence(bucket,{...receipt,textSha256:sha256("Shared wording.")}));
   const duplicateBytes=new TextEncoder().encode(JSON.stringify({...snapshot,blocks:[...blocks,...blocks]}));
   bucket.objects.set(key,{bytes:duplicateBytes,customMetadata:{}});
