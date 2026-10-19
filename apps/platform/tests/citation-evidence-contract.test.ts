@@ -1,11 +1,48 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {createHash} from "node:crypto";
-import {assertCitationEvidenceIdentity, resolveCitationEvidence, fetchCitationEvidence, type CitationEvidenceReceipt} from "../lib/legal-corpus/citation-evidence";
+import {assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, resolveCitationEvidence, fetchCitationEvidence, handleCitationEvidenceRequest, RetiredCitationEvidenceError, type CitationEvidenceReceipt} from "../lib/legal-corpus/citation-evidence";
 import type {LegalEvidenceBucket} from "../lib/legal-corpus/target-evidence";
 
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const text = `Статья 7. Правило ${"Полный текст официальной нормы. ".repeat(150)}`;
+
+test("generation-bound receipts resolve only their registered store without legacy fallback",async()=>{
+  const {receipt,bucket,keys}=fixture();
+  const store={namespace:`legal-prepared-${"a".repeat(64)}`,generationSha256:"b".repeat(64)};
+  const pinned={...receipt,version:2 as const,store};
+  const request=()=>new Request("http://legal-corpus.internal/internal/legal-corpus/citations/evidence",{
+    method:"POST",headers:{"content-type":"application/json","x-juro-service-binding":"citation-evidence-v1","x-juro-legal-environment":"production"},body:JSON.stringify(pinned)});
+  const env={APP_ENV:"production",LEGAL_EVIDENCE_BUCKET:bucket};
+  assert.equal((await handleCitationEvidenceRequest(request(),env)).status,503);
+  assert.deepEqual(keys,[]);
+  assert.equal((await handleCitationEvidenceRequest(request(),{...env,resolveEvidenceStore:async()=>null})).status,503);
+  assert.deepEqual(keys,[]);
+  const service={fetch:async()=>handleCitationEvidenceRequest(request(),{...env,resolveEvidenceStore:async actual=>{
+    assert.deepEqual(actual,store);return bucket;
+  }})};
+  const resolved=await fetchCitationEvidence(service,"production",pinned);
+  assert.equal(resolved.text,text.trim());
+  assert.equal(resolved.evidenceUnavailable,false);
+  for(const invalid of [{...receipt,version:2},{...receipt,store},{...pinned,store:{...store,namespace:"application"}}]){
+    assert.equal(citationEvidenceReceiptSchema.safeParse(invalid).success,false);
+  }
+});
+
+test("retirement is explicit and cannot be inferred from missing or corrupt evidence",async()=>{
+  const {receipt,bucket,keys}=fixture();
+  const request=()=>new Request("http://legal-corpus.internal/internal/legal-corpus/citations/evidence",{
+    method:"POST",headers:{"content-type":"application/json","x-juro-service-binding":"citation-evidence-v1","x-juro-legal-environment":"production"},body:JSON.stringify(receipt)});
+  const env={APP_ENV:"production",LEGAL_EVIDENCE_BUCKET:bucket,isRetiredEvidence:async(value:CitationEvidenceReceipt)=>value.sha256===receipt.sha256};
+  const retired=await handleCitationEvidenceRequest(request(),env);
+  assert.equal(retired.status,410);assert.deepEqual(keys,[]);
+  const service={fetch:async()=>handleCitationEvidenceRequest(request(),env)};
+  await assert.rejects(fetchCitationEvidence(service,"production",receipt),RetiredCitationEvidenceError);
+  const wrongEnvironment=await handleCitationEvidenceRequest(request(),{...env,APP_ENV:"staging"});
+  assert.equal(wrongEnvironment.status,404);
+  const missing=await handleCitationEvidenceRequest(request(),{...env,isRetiredEvidence:async()=>false,LEGAL_EVIDENCE_BUCKET:{get:async()=>null}});
+  assert.equal(missing.status,503);
+});
 function fixture() {
   const value = {schemaVersion: 1, parser: {name: "parse5", version: "8.0.1", profile: "juro-legal-blocks-v1"},
     source: {sourceKind: "lex", locale: "ru", canonicalId: "lexuz:777", canonicalUrl: "https://lex.uz/ru/docs/777",

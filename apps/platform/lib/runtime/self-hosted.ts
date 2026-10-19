@@ -120,6 +120,7 @@ export function getSelfHostedRuntime(): Runtime {
   const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, appEnvironment))]));
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
   const retrieval=createNativeCorpusService({pool:corpus.pool,catalog,observations,objectRoot:corpusRoot,
+    environment:appEnvironment,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
     productRevision,compatibility:readCorpusCompatibility(process.env.DEPLOYMENT_ENVIRONMENT,productRevision),fallback:legal});
   state.juroRuntimeProductRevision=productRevision;

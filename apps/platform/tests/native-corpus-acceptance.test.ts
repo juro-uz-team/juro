@@ -6,6 +6,13 @@ import type {Pool} from "pg";
 
 import {nativeAcceptanceFixture as fixture} from "./helpers/native-corpus-acceptance";
 
+test("a retired selection never becomes an absent selection eligible for fallback",async()=>{
+ const {manifest}=fixture();const bytes=Buffer.from(JSON.stringify(manifest));
+ const sha256=createHash("sha256").update(bytes).digest("hex");
+ const pool={query:async()=>({rows:[{sha256,manifest_bytes:bytes,retired_acceptance:sha256}]})} as unknown as Pool;
+ await assert.rejects(readSelectedNativeCorpus(pool,manifest.productRevision),/NATIVE_CORPUS_RETIRED/);
+});
+
 test("operator compatibility retains measured revision and rejects changed selection or candidate",async()=>{
  const {manifest}=fixture();const bytes=Buffer.from(JSON.stringify(manifest));
  const sha256=createHash("sha256").update(bytes).digest("hex");

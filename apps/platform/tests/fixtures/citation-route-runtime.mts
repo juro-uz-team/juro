@@ -86,6 +86,18 @@ async function assertSavedFragment() {
 }
 
 try {
+  await test("retired saved evidence is distinct from a transient outage and remains owner scoped",async()=>{
+    seed(JSON.stringify(receipt));
+    serviceResponse=()=>Response.json({code:"CITATION_EVIDENCE_RETIRED"},{status:410});
+    const retired=await (await get()).json();
+    assert.equal(retired.evidenceUnavailableReason,"retired");
+    assert.equal(retired.text,savedFragment);assert.equal(retired.fullArticle,false);
+    userId="other";assert.equal((await get()).status,404);assert.equal(serviceCalls,1);
+    seed(JSON.stringify(receipt));
+    serviceResponse=()=>Response.json({code:"CITATION_UNAVAILABLE"},{status:503});
+    const unavailable=await (await get()).json();
+    assert.equal(unavailable.evidenceUnavailable,true);assert.equal(unavailable.evidenceUnavailableReason,undefined);
+  });
   await test("historical citations reopen their exact saved revision and reject other dates", async () => {
     const historicalUrl=officialUrl+"?ONDATE=30.10.2021";
     const historicalReceipt: CitationEvidenceReceipt={...receipt,capability:"history",officialUrl:historicalUrl};
