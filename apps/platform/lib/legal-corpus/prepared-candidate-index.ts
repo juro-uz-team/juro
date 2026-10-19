@@ -15,6 +15,7 @@ const responseSchema=z.object({
   configuration:preparedCandidateConfigurationSchema,
   lanes:z.object({dense:z.literal("complete"),sparse:z.literal("complete")}).strict(),
   hits:z.array(z.object({
+    vectorOrdinal:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     membershipOrdinal:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     vectorRank:z.number().int().positive(),vectorScore:z.number().finite(),
     keywordRank:z.number().int().positive(),keywordScore:z.number().finite(),fusionScore:z.number().finite(),
@@ -45,8 +46,8 @@ export function createPreparedCandidateIndex(transport:{search(request:PreparedS
       throw Error("PREPARED_SEARCH_RESPONSE_MISMATCH");
     }
     const instance=release.instances[0]!;
-    return response.hits.map(({membershipOrdinal,...scores})=>({
-      itemKey:`search-releases/${release.id}/prepared/${membershipOrdinal}`,
+    return response.hits.map(({vectorOrdinal,membershipOrdinal,...scores})=>({
+      itemKey:`search-releases/${release.id}/prepared/${vectorOrdinal}/${membershipOrdinal}`,
       instanceId:instance.id,shardId:instance.shardId,...scores,
     }));
   });

@@ -19,7 +19,7 @@ function release(){return parsePinnedCandidateRelease({id:"prepared-release",env
   instances:[{id:"prepared-instance",shardId:"prepared-shard"}],configuration:configuration()});}
 function response(request:PreparedSearchRequest){return {version:request.version,releaseId:request.releaseId,
   environment:request.environment,configuration:request.configuration,requestSha256:request.requestSha256,
-  lanes:{dense:"complete",sparse:"complete"},hits:[{membershipOrdinal:7,vectorRank:1,vectorScore:.9,
+  lanes:{dense:"complete",sparse:"complete"},hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,
     keywordRank:2,keywordScore:2,fusionScore:.04}]};}
 
 test("prepared adapter preserves formulation provenance and bounds concurrent searches",async()=>{
@@ -33,7 +33,7 @@ test("prepared adapter preserves formulation provenance and bounds concurrent se
   const packet=await adapter.retrieve({id:"interpretation",formulations},{kind:"current"},release());
   assert.equal(peak,2);assert.deepEqual(queries,formulations.map(item=>item.text));
   assert.equal(packet.availability,"available");assert.equal(packet.candidates.length,1);
-  assert.equal(packet.candidates[0]!.itemKey,"search-releases/prepared-release/prepared/7");
+  assert.equal(packet.candidates[0]!.itemKey,"search-releases/prepared-release/prepared/3/7");
   assert.deepEqual(packet.candidates[0]!.formulationIds,["q0","q1","q2","q3"]);
   assert.equal(packet.candidates[0]!.formulationMatches!.length,4);
   assert.equal(packet.candidates[0]!.providerMetadata,undefined);
