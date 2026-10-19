@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {candidateMembershipProofSchema} from "./candidate-membership-proof";
+import {preparedCandidateConfigurationSchema, type PreparedCandidateConfiguration} from "./prepared-candidate-configuration";
 import { LEGAL_INTERPRETATION_FORMULATION_LIMIT, LEGAL_TOTAL_FORMULATION_LIMIT } from "../legal/question-interpretation-limits";
 
 import {
@@ -59,11 +60,15 @@ export const candidateConfigurationSchema = z.object({
   gatewayCaching: z.boolean(),
   similarityCaching: z.boolean(),
 }).strict();
-export const pinnedCandidateConfigurationSchema = candidateConfigurationSchema.extend({
+const legacyPinnedCandidateConfigurationSchema = candidateConfigurationSchema.extend({
   gatewayPayloadLogging: z.literal(false),
   gatewayCaching: z.literal(false),
   similarityCaching: z.literal(false),
 }).strict();
+export const pinnedCandidateConfigurationSchema = z.union([
+  legacyPinnedCandidateConfigurationSchema,
+  preparedCandidateConfigurationSchema,
+]);
 const pinnedReleaseSchema = z.object({
   id: searchReleaseIdSchema,
   environment: legalEnvironmentSchema,
@@ -96,6 +101,7 @@ export function parsePinnedCandidateRelease(value: unknown): PinnedCandidateRele
 
 export function toPinnedCandidateConfiguration(value: unknown): PinnedCandidateConfiguration {
   const record = z.record(z.string(), z.unknown()).parse(value);
+  if ("backend" in record) return preparedCandidateConfigurationSchema.parse(record);
   return pinnedCandidateConfigurationSchema.parse({
     identity: record.identity,
     embeddingModel: record.embeddingModel,
@@ -349,7 +355,7 @@ export type LegalCandidateBatchSearchResponse = Omit<LegalCandidateSearchRespons
   results: Array<{ queryIndex: number; hits: ProviderCandidateHit[] }>;
 };
 export type LegalCandidateProvider = {
-  attest(instanceId: string, releaseId?: string): Promise<CandidateConfiguration>;
+  attest(instanceId: string, releaseId?: string): Promise<CandidateConfiguration | PreparedCandidateConfiguration>;
   search(input: LegalCandidateSearchInput): Promise<LegalCandidateSearchResponse>;
   searchMany?(input: LegalCandidateBatchSearchInput): Promise<LegalCandidateBatchSearchResponse>;
 };
@@ -421,6 +427,11 @@ export function createProviderCandidateIndex(
       const interpretation = interpretationSchema.parse(rawInterpretation);
       const endpoint = endpointSchema.parse(rawEndpoint);
       const release = pinnedReleaseSchema.parse(rawRelease);
+      // This provider's metadata filters and attestations describe the legacy
+      // corpus. A prepared release must use its own authenticated adapter.
+      if ("backend" in release.configuration) {
+        return unavailable(release, endpoint, [{code: "CANDIDATE_CONFIGURATION_DRIFT"}]);
+      }
       const startedAt = (options.now ?? Date.now)();
       const requiredInstanceIds = release.instances.map((instance) => instance.id);
       const shardByInstance = new Map(release.instances.map((instance) => [
