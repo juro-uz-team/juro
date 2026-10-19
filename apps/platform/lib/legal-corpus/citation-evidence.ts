@@ -12,14 +12,19 @@ import {completeDocumentSections} from "../legal/document-sections";
 export const CITATION_EVIDENCE_PATH = "/internal/legal-corpus/citations/evidence";
 const MARKER = "citation-evidence-v1";
 export const citationEvidenceLocatorSchema = z.object({
-  version: z.literal(1), capability: z.enum(["current", "history"]),
+  version: z.union([z.literal(1),z.literal(2)]), capability: z.enum(["current", "history"]),
+  store: z.object({namespace:z.string().regex(/^legal-prepared-[a-f0-9]{64}$/u),generationSha256:sha256Schema}).strict().optional(),
   kind: z.enum(["provision", "normalized-article", "normalized-document", "normalized-section"]),
   r2Key: z.string().min(1).max(700), byteCount: z.number().int().positive().max(8_000_000),
   sha256: sha256Schema, officialUrl: lexDocumentUrlSchema,
   languageTag: legalLanguageSchema, articleNumber: z.string().min(1).max(160).nullable(),
-}).strict();
-export const citationEvidenceReceiptSchema = citationEvidenceLocatorSchema.extend({textSha256: sha256Schema});
+}).strict().refine(value=>value.version===2?Boolean(value.store):value.store===undefined,"Evidence store binding must match receipt version");
+export const citationEvidenceReceiptSchema = citationEvidenceLocatorSchema.safeExtend({textSha256: sha256Schema});
 export type CitationEvidenceReceipt = z.infer<typeof citationEvidenceReceiptSchema>;
+
+export class RetiredCitationEvidenceError extends Error {
+  constructor(){super("CITATION_EVIDENCE_RETIRED");this.name="RetiredCitationEvidenceError";}
+}
 
 export function assertCitationEvidenceIdentity(receipt: CitationEvidenceReceipt, expected: {
   officialUrl: string; languageTag: string; articleNumber: string | null; sha256: string; textSha256?: string;
@@ -86,12 +91,14 @@ export async function resolveCitationEvidence(bucket: Pick<LegalEvidenceBucket, 
   if (text.length > 200_000 || await digest(new TextEncoder().encode(text)) !== value.textSha256) {
     throw new TypeError("CITATION_EVIDENCE_TEXT_MISMATCH");
   }
-  return {text, fullArticle: value.kind === "normalized-article", truncated: false};
+  return {text, fullArticle: value.kind === "normalized-article", truncated: false, evidenceUnavailable:false};
 }
 
 export async function handleCitationEvidenceRequest(request: Request, env: {
   APP_ENV?: string; LEGAL_EVIDENCE_BUCKET?: Pick<LegalEvidenceBucket, "get">;
   LEGAL_HISTORY_EVIDENCE_BUCKET?: Pick<LegalEvidenceBucket, "get">;
+  isRetiredEvidence?: (receipt:CitationEvidenceReceipt)=>Promise<boolean>;
+  resolveEvidenceStore?: (store:NonNullable<CitationEvidenceReceipt["store"]>)=>Promise<Pick<LegalEvidenceBucket,"get">|null>;
 }) {
   const environment = legalEnvironmentSchema.safeParse(env.APP_ENV);
   if (!environment.success || !acceptsPrivateServiceRequest(request, {environment: environment.data,
@@ -101,7 +108,9 @@ export async function handleCitationEvidenceRequest(request: Request, env: {
     const body = await request.text();
     if (new TextEncoder().encode(body).byteLength > 4096) throw new TypeError("CITATION_REQUEST_TOO_LARGE");
     const receipt = citationEvidenceReceiptSchema.parse(JSON.parse(body));
-    const bucket = receipt.capability === "history" ? env.LEGAL_HISTORY_EVIDENCE_BUCKET : env.LEGAL_EVIDENCE_BUCKET;
+    if(await env.isRetiredEvidence?.(receipt))return privateServiceJson({code:"CITATION_EVIDENCE_RETIRED"},410);
+    const bucket = receipt.version===2&&receipt.store?await env.resolveEvidenceStore?.(receipt.store)
+      :receipt.capability === "history" ? env.LEGAL_HISTORY_EVIDENCE_BUCKET : env.LEGAL_EVIDENCE_BUCKET;
     if (!bucket) throw new TypeError("CITATION_BUCKET_UNAVAILABLE");
     const response = privateServiceJson(await resolveCitationEvidence(bucket, receipt));
     response.headers.set("x-juro-citation-evidence-contract", "1");
@@ -115,10 +124,15 @@ export async function fetchCitationEvidence(service: { fetch(input: Request | st
       "x-juro-legal-environment": environment}, body: JSON.stringify(receipt),
     signal: AbortSignal.timeout(8_000),
   });
+  if(response.status===410){
+    const bytes=await readBoundedLegalSourceBytes(response,4096,8_000);
+    const body=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));
+    if(body?.code==="CITATION_EVIDENCE_RETIRED")throw new RetiredCitationEvidenceError();
+  }
   if (!response.ok) throw new TypeError("CITATION_EVIDENCE_UNAVAILABLE");
   if (response.headers.get("x-juro-citation-evidence-contract") !== "1") throw new TypeError("CITATION_EVIDENCE_CONTRACT_UNAVAILABLE");
   const bytes = await readBoundedLegalSourceBytes(response, 1_000_000, 8_000);
-  const result = z.object({text: z.string().max(200_000), fullArticle: z.boolean(), truncated: z.literal(false)}).strict()
+  const result = z.object({text: z.string().max(200_000), fullArticle: z.boolean(), truncated: z.literal(false),evidenceUnavailable:z.literal(false).optional()}).strict()
     .parse(JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)));
   if (await digest(new TextEncoder().encode(result.text)) !== receipt.textSha256
     || result.fullArticle !== (receipt.kind === "normalized-article")) throw new TypeError("CITATION_EVIDENCE_TEXT_MISMATCH");

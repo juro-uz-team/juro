@@ -258,6 +258,7 @@ const resolvedEvidenceSchema = z.object({
     schemaVersion: z.literal(1),
     sourceRevisionId: textRevisionIdSchema.optional(),
     normalizedScope: z.literal("section").optional(),
+    store: z.object({namespace:z.string().regex(/^legal-prepared-[a-f0-9]{64}$/u),generationSha256:sha256Schema}).strict().optional(),
   }).strict(),
 }).strict();
 

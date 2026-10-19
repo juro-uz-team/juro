@@ -42,6 +42,8 @@ export async function prepareCorpusEvidence(input: {
     || complete.officialCitation.url !== original.officialCitation.url
     || complete.evidence.sourceNormalizedSha256 !== original.evidence.sourceNormalizedSha256
     || complete.evidence.sourceRevisionId !== original.evidence.sourceRevisionId
+    || complete.evidence.store?.namespace !== original.evidence.store?.namespace
+    || complete.evidence.store?.generationSha256 !== original.evidence.store?.generationSha256
     || !complete.provisionText.replace(/\s+/gu, " ").includes(original.provisionText.replace(/\s+/gu, " ").trim())) {
     throw new Error("CORPUS_ARTICLE_IDENTITY_MISMATCH");
   }
@@ -51,7 +53,8 @@ export async function prepareCorpusEvidence(input: {
   }
   const textSha256 = await digest(complete.provisionText);
   const receipt = citationEvidenceReceiptSchema.parse({
-    version: 1, capability: input.endpoint.kind === "current" ? "current" : "history",
+    version: complete.evidence.store?2:1, ...(complete.evidence.store?{store:complete.evidence.store}:{}),
+    capability: input.endpoint.kind === "current" ? "current" : "history",
     kind: resolution.articleContext ? "normalized-article" : resolution.documentContext
       ? complete.evidence.normalizedScope==="section"?"normalized-section":"normalized-document" : "provision",
     r2Key: complete.evidence.r2Key, byteCount: complete.evidence.byteCount,

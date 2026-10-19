@@ -52,6 +52,30 @@ after activation as ordinary operation, without blocking tickets on elapsed time
 
 ## Recovery and retirement
 
+The owner-directed [corpus retirement decision](../adr/0030-retire-replaced-corpus-evidence.md)
+overrides the following retention and recovery-copy requirements for the replaced
+old corpus and its evidence. Do not preserve those resources solely to satisfy
+this policy. Exact target isolation and removal of active readers/writers still
+apply; private application data and the new corpus remain outside that exception.
+Deletion timing and replacement availability must be resolved before execution.
+
+For a shared native corpus, deploy the retirement-aware reader before retiring
+the selected acceptance. Apply the retirement and evidence-store migrations to
+the corpus database as well as the application databases; the application
+`db:migrate` command targets only `DATABASE_URL`. Grant the existing scoped
+corpus runtime roles read access to `storage.corpus_retirements`,
+`storage.retired_corpus_objects`, and `storage.corpus_evidence_stores` and verify
+those reads using each environment's actual corpus connection. Do not grant
+runtime retirement or evidence-store publication privileges.
+
+Finish both deployment preparation and activation while retained acceptance
+proofs are available. Then stop admissions and drain or terminate pinned corpus
+readers and writers before committing the reviewed retirement inventory. An
+empty provider key does not establish that corpus access has stopped. Keep
+legacy receipt-v1 evidence namespaces fixed: new evidence uses receipt-v2 with
+an immutable registered namespace and generation. Never repoint old receipts
+to a replacement store.
+
 Reuse an accessible recovery point when it covers the state an operation could
 replace or delete. Additive off-side work retains the active release and does not
 require a new all-resource backup. When coverage is missing, capture only the
