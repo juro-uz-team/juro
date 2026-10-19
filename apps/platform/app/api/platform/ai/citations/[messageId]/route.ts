@@ -1,6 +1,6 @@
 import { withApiErrors } from "../../../../../../lib/document-builder/auth/api";
 import { requireR2, runtimeEnv } from "../../../../../../lib/document-builder/storage/runtime";
-import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCitationEvidence } from "../../../../../../lib/legal-corpus/citation-evidence";
+import { assertCitationEvidenceIdentity, citationEvidenceReceiptSchema, fetchCitationEvidence, RetiredCitationEvidenceError } from "../../../../../../lib/legal-corpus/citation-evidence";
 import { legalRetrievalEnvironment } from "../../../../../../lib/legal-corpus/environment";
 import { parsePrivateDocumentLocator } from "../../../../../../lib/document-analysis/private-document-locator";
 import { normalizeArticleNumber } from "../../../../../../lib/legal/legal-language";
@@ -215,10 +215,11 @@ export const GET = withApiErrors(async function GET(request: Request, context: C
         evidenceIdentity: {receiptVersion: receipt.version, capability: receipt.capability, kind: receipt.kind,
           r2Key: receipt.r2Key, sha256: receipt.sha256, textSha256: receipt.textSha256},
         availableLanguages: [], versionHistory: []});
-    } catch {
+    } catch(error) {
       // A missing immutable object must never be replaced by the latest text.
       return response({documentTitle: citation.title, articleNumber: citation.articleReference,
         text: citation.excerpt, fullArticle: false, truncated: false, evidenceUnavailable: true, language: citation.sourceLocale,
+        ...(error instanceof RetiredCitationEvidenceError?{evidenceUnavailableReason:"retired"}:{}),
         status: citation.documentStatus ?? "unknown", officialUrl: citation.canonicalUrl,
         verifiedAt: citation.validatedAt, availableLanguages: [], versionHistory: []});
     }

@@ -59,8 +59,12 @@ A Citation to official-source material rendered with a provision label, publishe
 _Avoid_: model-authored link, generated anchor, bare article number
 
 **Citation Evidence Receipt**:
-The retained identity of the exact official evidence used by a Citation, including its language and captured revision. It permits the cited text to be checked again without substituting a later revision.
+The retained identity of the exact official evidence used by a Citation, including its language and captured revision. It permits retained cited text to be checked again without substituting a later revision; the receipt alone does not guarantee that the evidence remains available.
 _Avoid_: current article, saved legal text, answer cache
+
+**Retired Citation Evidence**:
+The exact source evidence of a saved Citation that JURO deliberately removed when retiring its corpus. Its retained provenance identifies the unavailable evidence without establishing that the cited law changed or substituting a replacement source.
+_Avoid_: outdated law, transient source failure, replacement citation
 
 ### Authority and evidence
 
@@ -79,6 +83,14 @@ A user-supplied or case-specific circumstance that may be confirmed or rejected 
 _Avoid_: legal proposition, Citation, source-freshness state
 
 ### Official corpus
+
+**Publisher Classification**:
+A subject assignment or taxonomy node explicitly supplied by an official publisher, retaining its scheme, identity, observed language and original document or provision scope. It guides discovery without establishing legal applicability or source eligibility.
+_Avoid_: inferred topic, Coverage Requirement, document status
+
+**Classification Inheritance**:
+A discovery relationship that carries a Publisher Classification from its original scope to a related provision or Retrieval Chunk while preserving the original assertion and the derivation. It does not turn a broader or narrower publisher assignment into an explicit assertion about a different scope.
+_Avoid_: direct publisher assignment, inferred legal rule
 
 **Indexed Official Corpus**:
 JURO's integrity-verified and indexed collection of public official-source snapshots eligible for a named retrieval capability, searched before any online source.

@@ -12,6 +12,23 @@ const currentAt = "2026-09-20T10:00:00.000Z";
 const url = "https://lex.uz/docs/777";
 const hash = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
 
+test("complete article evidence preserves its generation binding and rejects a substituted store",async()=>{
+  const {bucket,resolution,currentSourceStatus}=await fixture();
+  const store={namespace:`legal-prepared-${"a".repeat(64)}`,generationSha256:"b".repeat(64)};
+  const bound={...resolution,
+    controlling:{...resolution.controlling,evidence:{...resolution.controlling.evidence,store}},
+    articleContext:{...resolution.articleContext,evidence:{...resolution.articleContext.evidence,store}}};
+  const evidence=await corpusAnswerEvidence({resolution:bound,currentSourceStatus,currentAt,endpoint:{kind:"current"}});
+  assert.equal(evidence.source.citationEvidenceReceipt!.version,2);
+  assert.deepEqual(evidence.source.citationEvidenceReceipt!.store,store);
+  assert.equal((await resolveCitationEvidence(bucket,evidence.source.citationEvidenceReceipt!)).text,evidence.text);
+  for(const changed of [undefined,{...store,generationSha256:"c".repeat(64)},
+    {...store,namespace:`legal-prepared-${"d".repeat(64)}`}]) {
+    await assert.rejects(corpusAnswerEvidence({resolution:{...bound,articleContext:{...bound.articleContext,
+      evidence:{...bound.articleContext.evidence,store:changed}}},currentSourceStatus,currentAt,endpoint:{kind:"current"}}),/ARTICLE_IDENTITY_MISMATCH/);
+  }
+});
+
 test("a complete inline article retains article evidence and exact citation reopening",async()=>{
   const {bucket,resolution}=await fixture();
   const key="corpus/normalized/revision:one.json";

@@ -15,6 +15,9 @@ import type LegalCorpusService from "../../worker/legal-corpus-worker";
 import {createCorpusResearch} from "../legal-chat/corpus-research";
 import {createDiscoveryPrioritizer} from "../legal-chat/discovery-priority";
 import {corpusSessionSchema,type CorpusSessionInput} from "../legal-chat/corpus-session";
+import {CITATION_EVIDENCE_PATH,handleCitationEvidenceRequest} from "../legal-corpus/citation-evidence";
+import {isRetiredCorpusObject} from "../storage/corpus-retirement";
+import retainedReleases from "../../config/corpus-releases.json";
 
 type Dependencies={pool:Pool;catalog:PostgresDatabase;observations?:PostgresDatabase;objectRoot:string;candidateUrl:string;apiKey:string};
 type Configuration=Omit<NativeCorpusAcceptance,"proofs">;
@@ -87,11 +90,36 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
 
 /** Fetch/citation paths retain their original evidence stores. Each new turn
  * selects both retrieval endpoints once; its repairs keep that same selection. */
-export function createNativeCorpusService(input:Dependencies&{productRevision:string;compatibility?:CorpusCompatibility;
+export function createNativeCorpusService(input:Dependencies&{environment:string;productRevision:string;compatibility?:CorpusCompatibility;
   fallback:Pick<LegalCorpusService,"fetch"|"openLegalResearch">}) {
   let cached:{binding:string;runtime:ReturnType<typeof createNativeCorpusResearchRuntime>}|undefined;
   return {
-    fetch:input.fallback.fetch.bind(input.fallback),
+    async fetch(requestInput:RequestInfo|URL,init?:RequestInit){
+      const request=new Request(requestInput,init);
+      if(new URL(request.url).pathname===CITATION_EVIDENCE_PATH){
+        // Existing v1 receipts are permanently routed to their original stores.
+        // Replacement receipts must use an explicit, versioned store binding.
+        return handleCitationEvidenceRequest(request,{
+          APP_ENV:input.environment,
+          LEGAL_EVIDENCE_BUCKET:new LocalObjectStore(input.pool,input.objectRoot,retainedReleases.evidenceNamespace,true),
+          LEGAL_HISTORY_EVIDENCE_BUCKET:new LocalObjectStore(input.pool,input.objectRoot,retainedReleases.historyEvidenceNamespace,true),
+          isRetiredEvidence:receipt=>isRetiredCorpusObject(input.pool,
+            receipt.store?.namespace??(receipt.capability==="history"?retainedReleases.historyEvidenceNamespace:retainedReleases.evidenceNamespace),
+            receipt.r2Key,receipt.sha256),
+          resolveEvidenceStore:async store=>{
+            const known=await input.pool.query(`SELECT 1 FROM storage.corpus_evidence_stores WHERE generation_sha256=$1 AND namespace=$2`,[store.generationSha256,store.namespace]);
+            return known.rows.length===1?new LocalObjectStore(input.pool,input.objectRoot,store.namespace,true):null;
+          },
+        });
+      }
+      // A retired selected release must never fall back into the old corpus.
+      try{await readSelectedNativeCorpus(input.pool,input.productRevision,input.compatibility);}
+      catch(error){
+        if(error instanceof Error&&error.message==="NATIVE_CORPUS_RETIRED")return Response.json({code:"NATIVE_CORPUS_RETIRED"},{status:503,headers:{"cache-control":"no-store"}});
+        throw error;
+      }
+      return input.fallback.fetch(request);
+    },
     async openLegalResearch(scope:CorpusSessionInput){
       const selected=await readSelectedNativeCorpus(input.pool,input.productRevision,input.compatibility);
       if(!selected)return input.fallback.openLegalResearch(scope);
