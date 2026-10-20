@@ -52,6 +52,7 @@ class PgvectorNavigation:
                 try:
                     cursor.execute("SELECT set_config('statement_timeout', %s, true), "
                                    "set_config('lock_timeout', '1000', true), "
+                                   "set_config('search_path', 'pg_catalog, public', true), "
                                    "set_config('ivfflat.probes', %s, true)",
                                    (str(self.timeout_ms), str(self.probes)))
                     self.attest(cursor, self.manifest_sha256)

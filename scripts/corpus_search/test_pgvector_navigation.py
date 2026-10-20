@@ -63,6 +63,7 @@ class PgvectorNavigationTests(unittest.TestCase):
         statements = self.cursor.commands
         self.assertIn("REPEATABLE READ READ ONLY", statements[0][0])
         self.assertEqual(statements[1][1], ("10000", "64"))
+        self.assertIn("set_config('search_path', 'pg_catalog, public', true)", statements[1][0])
         self.assertIn('FROM "public"."full_bits"', statements[2][0])
         self.assertNotIn("[1.0", statements[2][0])
         self.assertEqual(statements[2][1][1], 2)
