@@ -8,6 +8,7 @@ import hmac
 import json
 import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from cancellation import disconnect_cancellation
 
 MAX_REQUEST_BYTES = 128 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
@@ -78,7 +79,8 @@ def create_numeric_http_server(service, token, port=0, *, manifest_sha256):
                 self.reply(400, {'error': 'invalid_request'})
                 return
             try:
-                self.reply(200, operation(request))
+                with disconnect_cancellation(self.connection):
+                    self.reply(200, operation(request))
             except Exception:
                 # Reader corruption, invalid generation and deadline failures
                 # all withhold the result. Never echo exception/query contents.

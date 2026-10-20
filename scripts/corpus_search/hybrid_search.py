@@ -10,6 +10,7 @@ import math
 import time
 
 from pgvector_navigation import PgvectorNavigation
+from cancellation import check_cancelled
 
 
 class PreparedHybridSearch:
@@ -30,12 +31,12 @@ class PreparedHybridSearch:
         self.profiles, self.memberships, self.vectors = profiles, memberships, vectors
 
     def search(self, query_vector, term_hashes, deadline):
-        if type(deadline) not in (int, float) or not math.isfinite(deadline):
+        if deadline is not None and (type(deadline) not in (int, float) or not math.isfinite(deadline)):
             raise ValueError('hybrid_deadline_invalid')
-        deadline = min(deadline, time.monotonic() + 10)
 
         def check():
-            if time.monotonic() >= deadline:
+            check_cancelled()
+            if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError('hybrid_query_deadline')
 
         check()

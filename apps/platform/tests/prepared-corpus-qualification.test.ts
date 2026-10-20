@@ -7,6 +7,25 @@ test("prepared qualification authenticates complete paired measurements",async()
   const f=fixture();await verifyPreparedCorpusQualification(f.manifest,f.read);
 });
 
+test("prepared qualification permits measured latency only under a bound explicit policy",async()=>{
+  const f=fixture("measured");
+  for(const row of f.proofValues.retrieval.results)row.milliseconds=120000;
+  for(const row of f.proofValues.chat.results)row.milliseconds=240000;
+  f.publish();
+  await verifyPreparedCorpusQualification(f.manifest,f.read);
+  f.proofValues.retrieval.results[0]!.dense="partial";
+  f.publish();
+  await assert.rejects(verifyPreparedCorpusQualification(f.manifest,f.read));
+});
+
+test("measured latency policy preserves recall and requires finite measurements",async()=>{
+  for(const mutate of [
+    (f:ReturnType<typeof fixture>)=>{f.proofValues.dense.results[1]!.recallAt50=.94;},
+    (f:ReturnType<typeof fixture>)=>{f.proofValues.retrieval.results[0]!.milliseconds=Infinity;},
+    (f:ReturnType<typeof fixture>)=>{f.proofValues.chat.results[0]!.reloadPassed=false;},
+  ]){const f=fixture("measured");mutate(f);f.publish();await assert.rejects(verifyPreparedCorpusQualification(f.manifest,f.read));}
+});
+
 test("prepared qualification rejects corruption and proofs rebound to another release",async()=>{
   const f=fixture();f.blobs.set("storage",Buffer.from("{}"));
   await assert.rejects(verifyPreparedCorpusQualification(f.manifest,f.read),/ARTIFACT_CORRUPT/);

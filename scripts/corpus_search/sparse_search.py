@@ -13,6 +13,7 @@ import sqlite3
 import time
 from sparse_postings import PostingRun,MAX_INTEGER
 from works import file_hash,signature
+from cancellation import check_cancelled
 
 FIELDS=('title','hierarchy','article','text')
 WEIGHTS=(2,1.5,1.5,1)
@@ -57,11 +58,11 @@ class SparseIndex:
         if (not isinstance(term_hashes,(list,tuple)) or len(term_hashes)>64
                 or any(not isinstance(term,bytes) or len(term)!=32 for term in term_hashes)
                 or type(limit) is not int or not 1<=limit<=50
-                or type(deadline) not in (int,float) or not math.isfinite(deadline)):
+                or (deadline is not None and (type(deadline) not in (int,float) or not math.isfinite(deadline)))):
             raise ValueError('sparse_query_invalid')
-        deadline=min(deadline,time.monotonic()+10)
         def check():
-            if time.monotonic()>=deadline:raise TimeoutError('sparse_query_deadline')
+            check_cancelled()
+            if deadline is not None and time.monotonic()>=deadline:raise TimeoutError('sparse_query_deadline')
         check();self.assert_unchanged();streams=[];heap=[]
         def scored_rows(stream,df):
             for ordinal,frequencies,weight in stream:yield ordinal,frequencies,weight,df

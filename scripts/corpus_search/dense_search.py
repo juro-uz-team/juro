@@ -7,6 +7,7 @@ still require qualification for the selected navigation candidate count.
 import math
 import time
 import numpy as np
+from cancellation import check_cancelled
 
 
 class DenseSearch:
@@ -19,8 +20,8 @@ class DenseSearch:
         self.vectors.prepare_random_reads()
 
     def search(self,query,deadline,limit=50):
-        if (type(limit) is not int or not 1<=limit<=50 or type(deadline) not in (int,float)
-                or not math.isfinite(deadline)):
+        if (type(limit) is not int or not 1<=limit<=50 or (deadline is not None and (type(deadline) not in (int,float)
+                or not math.isfinite(deadline)))):
             raise ValueError('dense_query_invalid')
         values=np.asarray(query,dtype=np.float64)
         if values.shape!=(3072,) or not np.isfinite(values).all():raise ValueError('dense_query_embedding_invalid')
@@ -31,9 +32,9 @@ class DenseSearch:
         navigation_norm=np.linalg.norm(navigation_query)
         if not np.isfinite(navigation_norm) or navigation_norm<=0:raise ValueError('dense_query_embedding_invalid')
         navigation_query/=navigation_norm
-        deadline=min(deadline,time.monotonic()+10)
         def check():
-            if time.monotonic()>=deadline:raise TimeoutError('dense_query_deadline')
+            check_cancelled()
+            if deadline is not None and time.monotonic()>=deadline:raise TimeoutError('dense_query_deadline')
         check();self.navigation.assert_unchanged();self.vectors.assert_unchanged()
         distances,ids=self.navigation.search(navigation_query,self.candidates)
         check();distances=np.asarray(distances);ids=np.asarray(ids)

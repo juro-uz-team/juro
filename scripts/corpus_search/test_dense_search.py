@@ -1,5 +1,6 @@
 import time
 import unittest
+from unittest.mock import patch
 import numpy as np
 from dense_search import DenseSearch
 import test_vectors
@@ -22,6 +23,22 @@ class Navigation:
 class DenseTests(unittest.TestCase):
     def setUp(self):self.fixture=test_vectors.VectorPoolTests();self.fixture.setUp()
     def tearDown(self):self.fixture.tearDown()
+
+    def test_long_search_honors_caller_deadline_without_an_internal_cutoff(self):
+        vectors=VectorPool(self.fixture.root,self.fixture.pin);vectors.verify_all()
+        try:
+            navigation=Navigation(vectors);search=DenseSearch(navigation,vectors,6)
+            original=navigation.search
+            with patch('dense_search.time.monotonic',return_value=0) as clock:
+                def delayed(query,count):
+                    clock.return_value=20
+                    return original(query,count)
+                navigation.search=delayed
+                self.assertEqual(len(search.search(self.fixture.values[1],30)),6)
+                self.assertEqual(len(search.search(self.fixture.values[1],None)),6)
+                with self.assertRaises(TimeoutError):
+                    search.search(self.fixture.values[1],19)
+        finally:vectors.close()
 
     def test_original_coordinates_override_navigation_order_and_match_float64_scan(self):
         fixture=self.fixture;vectors=VectorPool(fixture.root,fixture.pin);vectors.verify_all()

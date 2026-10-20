@@ -62,7 +62,7 @@ class PgvectorNavigationTests(unittest.TestCase):
         self.assertEqual(self.attestations, [(self.cursor, "b" * 64)] * 2)
         statements = self.cursor.commands
         self.assertIn("REPEATABLE READ READ ONLY", statements[0][0])
-        self.assertEqual(statements[1][1], ("10000", "64"))
+        self.assertEqual(statements[1][1], ("0", "64"))
         self.assertIn("set_config('search_path', 'pg_catalog, public', true)", statements[1][0])
         self.assertIn('FROM "public"."full_bits"', statements[2][0])
         self.assertNotIn("[1.0", statements[2][0])
@@ -89,7 +89,7 @@ class PgvectorNavigationTests(unittest.TestCase):
 
     def test_invalid_configuration_query_and_transaction_are_rejected(self):
         for changes in [{"table": 'table"; SELECT 1'}, {"schema": "x.y"},
-                        {"probes": 101}, {"count": True}, {"timeout_ms": 10001}]:
+                        {"probes": 101}, {"count": True}, {"timeout_ms": -1}]:
             with self.assertRaisesRegex(ValueError, "configuration_invalid"):
                 self.navigation(**changes)
         for query in [self.query.astype(np.float64), self.query[:, :2], np.zeros_like(self.query)]:

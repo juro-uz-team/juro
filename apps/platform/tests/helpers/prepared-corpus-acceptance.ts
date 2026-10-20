@@ -8,7 +8,7 @@ const checks=["tests","typecheck","build","browser","model_only_modes","no_model
   "tenant_isolation","saved_replay","historical_questions","comparison_questions","private_context","retired_citations",
   "complementary_provisions","classification_provenance","category_ranking","original_coordinates","worker_generation",
   "private_data_preserved","historical_applicability"];
-export function preparedAcceptanceFixture(){
+export function preparedAcceptanceFixture(latencyPolicy?:"measured"){
   const blobs=new Map<string,Uint8Array>();
   const put=(key:string,value:unknown)=>{
     const bytes=Buffer.from(JSON.stringify(value));blobs.set(key,bytes);
@@ -31,6 +31,7 @@ export function preparedAcceptanceFixture(){
       evidenceStore:{namespace:`legal-prepared-${"a".repeat(64)}`,generationSha256:digest(storeBytes)}};
   };
   const protocol={version:"prepared-pgvector-qualification-v1",tuningQueryIds:["tuning"],heldOutQueryIds:["held-out"],
+    ...(latencyPolicy?{latencyPolicy}:{}),
     firstTouchIds:["cold"],warmIds:Array.from({length:30},(_,i)=>`warm-${i}`),
     chatCaseIds:nativeChatWorkload.map(row=>row.id),heldOutChatCaseIds:nativeChatWorkload.filter(row=>row.heldOut).map(row=>row.id),
     workloadSha256:nativeChatWorkloadSha256,evidenceCaseIds:["current","history","comparison"],requiredChecks:checks};

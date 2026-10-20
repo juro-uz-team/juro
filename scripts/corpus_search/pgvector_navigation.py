@@ -9,13 +9,14 @@ activate a generation. Distances are navigation hints, never evidence scores.
 import re
 
 import numpy as np
+from cancellation import cancel_connection, check_cancelled
 
 
 class PgvectorNavigation:
     dimensions = 3072
 
     def __init__(self, connect, attest, *, schema, table, completion_sha256,
-                 manifest_sha256, count, lists, probes, timeout_ms=10000):
+                 manifest_sha256, count, lists, probes, timeout_ms=0):
         identifiers = (schema, table)
         hashes = (completion_sha256, manifest_sha256)
         if (not callable(connect) or not callable(attest)
@@ -25,7 +26,7 @@ class PgvectorNavigation:
                 or type(count) is not int or not 0 < count < 2**53
                 or type(lists) is not int or not 1 <= lists <= 32768
                 or type(probes) is not int or not 1 <= probes <= lists
-                or type(timeout_ms) is not int or not 1 <= timeout_ms <= 10000):
+                or type(timeout_ms) is not int or not 0 <= timeout_ms <= 2147483647):
             raise ValueError("pgvector_navigation_configuration_invalid")
         self.connect = connect
         self.attest = attest
@@ -47,7 +48,8 @@ class PgvectorNavigation:
             # would only warn and would not establish the requested snapshot.
             if getattr(getattr(connection, "info", None), "transaction_status", None) != 0:
                 raise ValueError("pgvector_navigation_idle_connection_required")
-            with connection.cursor() as cursor:
+            with cancel_connection(connection), connection.cursor() as cursor:
+                check_cancelled()
                 cursor.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 try:
                     cursor.execute("SELECT set_config('statement_timeout', %s, true), "

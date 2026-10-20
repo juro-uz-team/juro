@@ -42,6 +42,7 @@ const requiredChecks=["tests","typecheck","build","browser","model_only_modes","
   "retired_citations","complementary_provisions","classification_provenance","category_ranking","original_coordinates",
   "worker_generation","private_data_preserved","historical_applicability"] as const;
 const protocolSchema=z.object({version:z.literal("prepared-pgvector-qualification-v1"),
+  latencyPolicy:z.literal("measured").optional(),
   tuningQueryIds:ids,heldOutQueryIds:ids,firstTouchIds:ids,warmIds:ids,
   chatCaseIds:ids,heldOutChatCaseIds:ids,workloadSha256:sha,evidenceCaseIds:ids,requiredChecks:ids}).strict();
 const bound={bindingSha256:sha};
@@ -53,7 +54,7 @@ const storageSchema=z.object({...bound,completionSha256:sha,navigationSha256:sha
 const denseSchema=z.object({...bound,goldSha256:sha,completionSha256:sha,
   results:z.array(z.object({id,heldOut:z.boolean(),recallAt50:z.number().finite().min(.95).max(1)}).strict()).min(1)}).strict();
 const retrievalSchema=z.object({...bound,results:z.array(z.object({id,phase:z.enum(["first_touch","warm"]),
-  concurrency:z.number().int().positive(),milliseconds:z.number().finite().nonnegative().max(10000),
+  concurrency:z.number().int().positive(),milliseconds:z.number().finite().nonnegative(),
   dense:z.literal("complete"),sparse:z.literal("complete"),originalRerank:z.literal(true)}).strict()).min(1)}).strict();
 const evidenceSchema=z.object({...bound,historicalManifestSha256:sha,results:z.array(z.object({id,
   capability:z.enum(["current","history","comparison"]),passed:z.literal(true),
@@ -92,13 +93,19 @@ export async function verifyPreparedCorpusQualification(value:PreparedCorpusAcce
   exact(protocol.tuningQueryIds,dense.results.filter(row=>!row.heldOut).map(row=>row.id));
   exact(protocol.heldOutQueryIds,dense.results.filter(row=>row.heldOut).map(row=>row.id));
   const retrieval=await load(manifest.proofs.retrieval,retrievalSchema);
+  // An explicitly pinned measurement policy records latency without making it
+  // an activation threshold. Existing protocols retain their original gate.
+  if(protocol.latencyPolicy!=="measured"&&retrieval.results.some(row=>row.milliseconds>10000)){
+    throw Error("PREPARED_RETRIEVAL_LATENCY_NOT_QUALIFIED");
+  }
   exact(protocol.firstTouchIds,retrieval.results.filter(row=>row.phase==="first_touch").map(row=>row.id));
   const warm=retrieval.results.filter(row=>row.phase==="warm");exact(protocol.warmIds,warm.map(row=>row.id));
   if(warm.length<30||warm.some(row=>row.concurrency!==5))throw Error("PREPARED_QUALIFICATION_CONCURRENCY");
   const chat=await load(manifest.proofs.chat,nativeChatProofSchema);
   exact(protocol.chatCaseIds,chat.expectedCaseIds);exact(protocol.heldOutChatCaseIds,chat.heldOutCaseIds);
   exact(protocol.chatCaseIds,chat.results.map(row=>row.id));
-  verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256,4);
+  verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256,4,
+    protocol.latencyPolicy==="measured"?"measured":"required");
   const evidence=await load(manifest.proofs.evidence,evidenceSchema);
   exact(protocol.evidenceCaseIds,evidence.results.map(row=>row.id));
   if(evidence.historicalManifestSha256!==manifest.historicalEvidence.sha256

@@ -28,7 +28,8 @@ export function createPreparedSearchService(input:{release:PinnedCandidateReleas
       ||request.requestSha256!==preparedSearchRequestHash(request)){
       throw Error("PREPARED_SEARCH_REQUEST_MISMATCH");
     }
-    const signal=AbortSignal.any([AbortSignal.timeout(10_000),...(callerSignal?[callerSignal]:[])]);
+    // The chat caller owns cancellation and Admin Center controls its limits.
+    const signal=callerSignal??new AbortController().signal;
     signal.throwIfAborted();
     const terms=[...new Set(analyzeCustomWordTerms(request.query))];
     // Never silently drop terms: the numeric sparse reader has this bound.

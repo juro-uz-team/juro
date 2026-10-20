@@ -11,7 +11,7 @@ export function createPreparedNumericTransport(input:{url:string;token:string;wo
     throw Error("PREPARED_NUMERIC_TRANSPORT_INVALID");
   }
   async function post(path:string,value:unknown,callerSignal?:AbortSignal){
-    const signal=AbortSignal.any([AbortSignal.timeout(10_000),...(callerSignal?[callerSignal]:[])]);
+    const signal=callerSignal??new AbortController().signal;
     signal.throwIfAborted();
     const body=JSON.stringify(value);
     if(Buffer.byteLength(body)>128*1024)throw Error("PREPARED_NUMERIC_REQUEST_LIMIT");

@@ -93,7 +93,7 @@ class PgvectorGeneration:
             identifier(m.get(key))
         self.manifest_sha256 = manifest_sha256
 
-    def navigation(self, connect, probes, timeout_ms=10000):
+    def navigation(self, connect, probes, timeout_ms=0):
         from pgvector_navigation import PgvectorNavigation
         m = self.manifest
         return PgvectorNavigation(connect, self, schema=m['schema'], table=m['table'],

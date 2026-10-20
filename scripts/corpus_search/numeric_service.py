@@ -8,7 +8,6 @@ release or infer legal eligibility from a discovery timestamp.
 import copy
 import calendar
 import re
-import time
 
 import numpy as np
 
@@ -86,7 +85,9 @@ class PreparedNumericService:
         values = np.asarray(embedding, dtype=np.float64)
         if not np.isfinite(values).all() or np.max(np.abs(values)) > np.finfo(np.float32).max or not np.any(values.astype(np.float32)):
             raise ValueError('numeric_service_query_invalid')
-        hits = self.hybrid.search(values, [bytes.fromhex(term) for term in terms], time.monotonic()+10)
+        # HTTP disconnect cancellation carries the caller's lifetime. Retrieval
+        # does not impose a separate production chat time budget.
+        hits = self.hybrid.search(values, [bytes.fromhex(term) for term in terms], None)
         return {'version': request['version'], 'releaseId': self.release['id'],
                 'environment': self.release['environment'], 'requestSha256': request['requestSha256'],
                 'configuration': copy.deepcopy(self.release['configuration']),

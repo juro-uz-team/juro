@@ -50,6 +50,19 @@ aggregate quality or p95 thresholds. Record only the observations actually made.
 There are no mandatory 14/30/90-day waits or synthetic-request quotas. Monitor
 after activation as ordinary operation, without blocking tickets on elapsed time.
 
+## Prepared corpus latency
+
+Prepared pgvector qualification can pin `latencyPolicy: "measured"` in its
+protocol when integration takes priority over performance optimization. Retain
+the actual retrieval and chat durations, including concurrent measurements.
+High latency alone then does not prevent activation; complete retrieval, recall,
+evidence, saved citations and private-data checks remain required. Protocols
+without this policy retain their existing latency thresholds.
+
+Prepared retrieval follows caller cancellation instead of imposing a separate
+ten-second chat cutoff. A disconnected caller cancels PostgreSQL work and stops
+cooperative retrieval. Production chat limits belong in Admin Center.
+
 ## Recovery and retirement
 
 The owner-directed [corpus retirement decision](../adr/0030-retire-replaced-corpus-evidence.md)
