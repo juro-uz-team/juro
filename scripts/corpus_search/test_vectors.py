@@ -48,6 +48,18 @@ class VectorPoolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'coordinate_hash_mismatch'):pool.verify_all()
         self.assertFalse(pool.ready);self.assertEqual(pool.opened,{})
 
+    def test_random_read_policy_preserves_exact_coordinates_and_guards(self):
+        pool=VectorPool(self.root,self.pin)
+        try:
+            with self.assertRaisesRegex(ValueError,'not_verified'):pool.prepare_random_reads()
+            pool.verify_all()
+            pool.prepare_random_reads();pool.prepare_random_reads()
+            ids=[5,0,2,2,1]
+            self.assertEqual(pool.read(ids).tobytes(),self.values[ids].tobytes())
+            path=self.root/'vectors/p000-00000.hashes';path.write_bytes(b'x'*64)
+            with self.assertRaisesRegex(ValueError,'storage_changed'):pool.prepare_random_reads()
+        finally:pool.close()
+
     @unittest.skipUnless(importlib.util.find_spec('usearch'), 'requires the pinned serving engine')
     def test_mixed_raw_and_indexed_shards_preserve_original_coordinates(self):
         from scripts.corpus_batch.representation import publish

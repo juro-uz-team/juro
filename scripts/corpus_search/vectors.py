@@ -2,6 +2,7 @@
 import bisect
 import hashlib
 import json
+import mmap
 import pathlib
 
 import numpy as np
@@ -110,6 +111,22 @@ class VectorPool:
         for entry in self.opened.values():
             if signature(entry['paths'])!=entry['signature']:
                 raise ValueError('vector_pool_storage_changed')
+
+    def prepare_random_reads(self):
+        """Avoid sequential read-ahead when reranking scattered candidates.
+
+        Set this only for retrieval, after authentication. Sequential gold scans
+        retain their default mapping policy. Platforms without madvise retain
+        identical coordinate reads but require their own latency qualification.
+        """
+        self.assert_unchanged()
+        if not hasattr(mmap, 'MADV_RANDOM'):
+            return
+        for entry in self.opened.values():
+            if entry['kind'] == 'raw':
+                mapping = entry['backend']._mmap
+                if hasattr(mapping, 'madvise'):
+                    mapping.madvise(mmap.MADV_RANDOM)
 
     def read(self,ids):
         groups=self._ids(ids)

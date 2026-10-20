@@ -16,6 +16,7 @@ class DenseSearch:
                 or type(candidates) is not int or not 1<=candidates<=20000):
             raise ValueError('dense_search_configuration_invalid')
         self.navigation=navigation;self.vectors=vectors;self.candidates=min(candidates,vectors.count)
+        self.vectors.prepare_random_reads()
 
     def search(self,query,deadline,limit=50):
         if (type(limit) is not int or not 1<=limit<=50 or type(deadline) not in (int,float)
