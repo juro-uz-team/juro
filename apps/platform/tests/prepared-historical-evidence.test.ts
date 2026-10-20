@@ -11,14 +11,14 @@ import {parsePinnedCandidateRelease} from "../lib/legal-corpus/legal-candidate-i
 import {preparedCandidateConfigurationSchema} from "../lib/legal-corpus/prepared-candidate-configuration";
 
 const hash=(value:string|Uint8Array)=>createHash("sha256").update(value).digest("hex");
-async function fixture(){
+async function fixture(timeline=""){
   const objects=new Map<string,Uint8Array>();
   const bucket={async get(key:string){const bytes=objects.get(key);return bytes?{key,size:bytes.length,bytes:async()=>bytes}:null;},
     async put(key:string,bytes:Uint8Array){objects.set(key,new Uint8Array(bytes));}};
   const url="https://lex.uz/en/docs/777?ONDATE=01.01.2020";
   const quote="This provision applies from 1 January 2020 until 1 January 2021.";
   const edition="This text is the official edition for the period from 1 January 2020 until 1 January 2021.";
-  const bytes=new TextEncoder().encode(`<html><header id="doc_header">Действующий акт</header><main><h1>Records law</h1><p>Article 7. Records</p><p>The applicant may request a complete record from the public authority except where disclosure would reveal protected personal information. Commencement follows Article 8 of this Law.</p><p>Article 8. Commencement</p><p>${quote}</p><p>${edition}</p></main></html>`);
+  const bytes=new TextEncoder().encode(`<html><header id="doc_header">Действующий акт${timeline}</header><main><h1>Records law</h1><p>Article 7. Records</p><p>The applicant may request a complete record from the public authority except where disclosure would reveal protected personal information. Commencement follows Article 8 of this Law.</p><p>Article 8. Commencement</p><p>${quote}</p><p>${edition}</p></main></html>`);
   const capture=await capturePreparedSource({fetched:{...classifyLegalSourceUrl(url),bytes,contentSha256:hash(bytes),
     contentType:"text/html",etag:null,lastModified:null,fetchedAt:"2026-10-20T00:00:00.000Z",robotsUrl:"https://lex.uz/robots.txt"},
     bucket,store:{namespace:"legal-prepared-"+"a".repeat(64),generationSha256:"b".repeat(64)},options:{}});
@@ -35,6 +35,32 @@ async function fixture(){
     completeText,articleNumber:"7",instant:"2020-06-01T00:00:00Z"};
   return {reader,publication,query,objects,capture,bucket,bytes};
 }
+
+test("versioned historical proof authenticates raw editorial controls and every applicability source",async()=>{
+  const f=await fixture(`<div class="lx_date_selected">01.01.2020</div>
+    <div class="lx_date_link" onclick="lxOpenUrl('/en/docs/777?ONDATE=01.01.2021')">01.01.2021</div>`);
+  const original=f.publication.facts[0]!;
+  const publication={...f.publication,format:"prepared-historical-evidence-v2",facts:[{...original,
+    editorial:{from:"2020-01-01T00:00:00Z",to:"2020-12-31T19:00:00Z"},
+    editorialEvidence:{kind:"publisher_timeline",rawSha256:hash(f.bytes),officialUrl:f.query.officialUrl,
+      selectedDate:"2020-01-01",nextDate:"2021-01-01"},
+    applicabilityEvidence:[original.applicabilityEvidence,{...original.editorialEvidence,kind:"amendment_act"}]}]};
+  const rawKey=`corpus/publisher/${hash(f.bytes)}.html`;f.objects.set(rawKey,f.bytes);
+  function reader(value=publication){const manifestBytes=Buffer.from(JSON.stringify(value));return createPreparedHistoricalEvidenceReader({
+    manifestBytes,manifestSha256:hash(manifestBytes),packageSha256:f.publication.packageSha256,bucket:f.bucket});}
+  assert.equal((await reader().resolve(f.query)).fact.articleNumber,"7");
+  assert.throws(()=>reader({...publication,format:"prepared-historical-evidence-v1"}));
+  for(const change of [
+    (value:typeof publication)=>{value.facts[0]!.editorialEvidence.nextDate="2022-01-01";},
+    (value:typeof publication)=>{value.facts[0]!.editorial.from="2019-01-01T00:00:00Z";},
+    (value:typeof publication)=>{value.facts[0]!.editorial.to="2021-01-01T00:00:00Z";},
+    (value:typeof publication)=>{value.facts[0]!.applicabilityEvidence[1]!.quote="This separate source does not contain this required assertion.";},
+  ]){const invalid=structuredClone(publication);change(invalid);await assert.rejects(reader(invalid).resolve(f.query));}
+  f.objects.set(rawKey,Buffer.from("changed"));
+  await assert.rejects(reader().resolve(f.query),/SOURCE_MISMATCH/);
+  f.objects.delete(rawKey);
+  await assert.rejects(reader().resolve(f.query),/SOURCE_UNAVAILABLE/);
+});
 
 test("historical admission authenticates exact complete rule and independent interval evidence",async()=>{
   const f=await fixture();const result=await f.reader().resolve(f.query);

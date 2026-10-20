@@ -5,6 +5,7 @@ import {createCompleteArticleIndex} from "../legal/article-context";
 import {createNormalizedSourceReader} from "./normalized-source-reader";
 import {legalLanguageSchema,sha256Schema,utcInstantSchema} from "./target-domain-schemas";
 import type {LegalEvidenceBucket} from "./target-evidence";
+import {readPreparedPublisherTimeline} from "./prepared-publisher-timeline";
 
 const hash=(value:string|Uint8Array)=>createHash("sha256").update(value).digest("hex");
 const normalized=(text:string)=>text.replace(/\s+/gu," ").trim();
@@ -24,15 +25,21 @@ const officialUrl=z.string().refine(value=>{
 });
 const evidence=z.object({revisionId:z.string().regex(/^prepared-normalized-[a-f0-9]{64}$/u),
   sha256:sha256Schema,officialUrl,quote:z.string().min(10).max(32000)}).strict();
+const publisherTimeline=z.object({kind:z.literal("publisher_timeline"),rawSha256:sha256Schema,
+  officialUrl,selectedDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  nextDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable()}).strict();
+const applicabilityEvidence=evidence.extend({kind:z.enum([
+  "commencement_clause","amendment_act","repeal_act","official_timeline"])});
 const fact=z.object({sourceRevisionId:z.string().regex(/^prepared-normalized-[a-f0-9]{64}$/u),sourceSha256:sha256Schema,
   officialUrl,languageTag:legalLanguageSchema,completeTextSha256:sha256Schema,
   articleNumber:z.string().min(1).max(100).nullable(),
-  editorial:interval,editorialEvidence:evidence,
-  applicability:interval,applicabilityEvidence:evidence.extend({kind:z.enum([
-    "commencement_clause","amendment_act","repeal_act","official_timeline"])}),
+  editorial:interval,editorialEvidence:z.union([evidence,publisherTimeline]),
+  applicability:interval,applicabilityEvidence:z.union([applicabilityEvidence,z.array(applicabilityEvidence).min(1).max(8)]),
 }).strict();
-const manifest=z.object({format:z.literal("prepared-historical-evidence-v1"),packageSha256:sha256Schema,
-  facts:z.array(fact).min(1).max(10000)}).strict();
+const manifest=z.object({format:z.enum(["prepared-historical-evidence-v1","prepared-historical-evidence-v2"]),packageSha256:sha256Schema,
+  facts:z.array(fact).min(1).max(10000)}).strict().refine(value=>value.format==="prepared-historical-evidence-v2"
+    ||value.facts.every(row=>!("kind" in row.editorialEvidence)&&!Array.isArray(row.applicabilityEvidence)),
+  "Publisher timelines and multiple applicability sources require the versioned publication");
 
 /** A pinned, reviewed applicability publication is the authority for intervals.
  * This reader authenticates its retained sources and exact rule scope; matching
@@ -95,7 +102,23 @@ export function createPreparedHistoricalEvidenceReader(input:{manifestBytes:Uint
     }else if(normalized(source.snapshot.blocks.map(block=>block.text).join(" "))!==normalized(query.completeText)){
       throw Error("PREPARED_HISTORY_RULE_MISMATCH");
     }
-    await Promise.all([authenticate(selected.editorialEvidence),authenticate(selected.applicabilityEvidence)]);
+    const editorial=selected.editorialEvidence;
+    if("kind" in editorial){
+      if(editorial.officialUrl!==selected.officialUrl||editorial.rawSha256!==source.snapshot.source.rawContentSha256){
+        throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
+      }
+      const object=await input.bucket.get(`corpus/publisher/${editorial.rawSha256}.html`);
+      if(!object||object.size>16*1024*1024)throw Error("PREPARED_EDITORIAL_SOURCE_UNAVAILABLE");
+      const bytes=await object.bytes();
+      if(bytes.byteLength!==object.size||hash(bytes)!==editorial.rawSha256)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
+      const timeline=readPreparedPublisherTimeline(new TextDecoder("utf-8",{fatal:true}).decode(bytes),editorial.officialUrl);
+      if(timeline.selectedDate!==editorial.selectedDate||timeline.nextDate!==editorial.nextDate
+        ||compare(selected.editorial.from,timeline.from)<0
+        ||(timeline.to!==null&&(selected.editorial.to===null||compare(selected.editorial.to,timeline.to)>0))){
+        throw Error("PREPARED_EDITORIAL_INTERVAL_MISMATCH");
+      }
+    }else await authenticate(editorial);
+    await Promise.all((Array.isArray(selected.applicabilityEvidence)?selected.applicabilityEvidence:[selected.applicabilityEvidence]).map(authenticate));
     return {manifestSha256:input.manifestSha256,packageSha256:publication.packageSha256,instant,
       fact:structuredClone(selected)};
   }};

@@ -32,12 +32,16 @@ export async function createAcceptedPreparedCorpusRuntime(input:{pool:Pool;objec
   };
   const endpoint=(capability:"current"|"history")=>{
     const selected=manifest[capability];
+    // Complete code pages exceed the generic fetch default. Match the bounded
+    // publisher observation fetch; normalized citation parents retain their
+    // separate eight-million-byte admission limit.
+    const sourceOptions={adviceEnabled:false,crawlDelayMode:"proceed" as const,maxBytes:16*1024*1024};
     return {release:selected.release,numeric:input.transport[capability],
       embedding:{apiKey:input.apiKey,budgetDatabase:input.budgetDatabase as unknown as D1Database,budgetMode:"metered" as const},
-      fetch:(url:string,signal?:AbortSignal)=>fetchLegalSource(url,{adviceEnabled:false,crawlDelayMode:"proceed",
+      fetch:(url:string,signal?:AbortSignal)=>fetchLegalSource(url,{...sourceOptions,
         fetchImpl:(request,init)=>fetchImpl(request,{...init,...(signal?{signal:AbortSignal.any([signal,...(init?.signal?[init.signal]:[])])}:{})})}),
       capture:{bucket:bucket(selected.evidenceStore.namespace),store:selected.evidenceStore,
-        options:{adviceEnabled:false,crawlDelayMode:"proceed" as const,fetchImpl}},
+        options:{...sourceOptions,fetchImpl}},
       ...(capability==="history"?{history:{manifestBytes:historicalBytes,manifestSha256:manifest.historicalEvidence.sha256}}:{})};
   };
   return createPreparedNativeResearchPairRuntime({current:endpoint("current"),history:endpoint("history")});
