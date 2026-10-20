@@ -20,6 +20,7 @@ if __name__ == '__main__':
 
 from dense_search import DenseSearch
 from discovery_catalog import PreparedDiscoveryCatalog
+from discovery_chunks import chunk_part_order
 from hybrid_search import PreparedHybridSearch
 from membership import MembershipIndex
 from numeric_http import create_numeric_http_server, unique_object
@@ -86,6 +87,10 @@ def open_worker(spec, connect):
         memberships = MembershipIndex(paths['memberships'], pins['membershipSha256'])
         profiles = resources.enter_context(closing(SparseProfiles(paths['profiles'], spec['profilesSha256'],
             pins['packageSha256'], pins['vectorIdentitySha256'])))
+        # The pinned profile publisher verified every chunk/member join in this
+        # order. Keep membership ordinals stable when physical shards differ.
+        package.chunk_parts=profiles.manifest.get('chunk_parts')
+        chunk_part_order(package)
         sparse = resources.enter_context(closing(SparseIndex(paths['sparse'], pins['sparseSha256'],
             spec['profilesSha256'], spec['analyzerSha256'])))
         catalog = PreparedDiscoveryCatalog(package, vectors, memberships, works)

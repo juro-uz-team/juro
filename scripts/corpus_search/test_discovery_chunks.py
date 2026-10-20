@@ -29,6 +29,16 @@ class Fixture:
 
 
 class ChunkTests(unittest.TestCase):
+    def test_reordered_shards_use_membership_order_without_changing_identities(self):
+        fixture=Fixture()
+        fixture.chunks.reverse()
+        fixture.chunk_parts=[1,0]
+        result=hydrate_membership_chunks(fixture,fixture.members,fixture.inputs)
+        self.assertEqual([row['work'] for row in result],['work:0','work:1'])
+        fixture.chunk_parts=[0,0]
+        with self.assertRaisesRegex(ValueError,'chunk_order'):
+            hydrate_membership_chunks(fixture,fixture.members,fixture.inputs)
+
     def test_exact_chunk_input_work_and_global_ordinal_join_preserves_locators(self):
         fixture=Fixture();result=hydrate_membership_chunks(fixture,[fixture.members[1],fixture.members[0],fixture.members[1]],fixture.inputs)
         self.assertEqual([row['work'] for row in result],['work:1','work:0','work:1'])

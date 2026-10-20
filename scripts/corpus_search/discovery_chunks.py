@@ -1,7 +1,8 @@
 """Resolve membership ordinals to exact chunks, authenticating every join.
 
-The handoff producer emits chunks and memberships together in the same order.
-That is a locator optimization only: work, chunk and both input identities are
+Chunk shard order can differ from membership order. The profile publication
+authenticates their permutation; runtime locators use that pinned order.
+Work, chunk and both input identities are
 independently checked before returning text. No article identity is inferred.
 """
 import bisect
@@ -17,10 +18,24 @@ def chunk_original_input(chunk):
       'script':chunk['script']})+b'\n'
 
 
+def chunk_part_order(package):
+    """Return a complete permutation, never dropping or repeating a shard."""
+    count=len(package.handoff['shards']['chunks'])
+    parts=getattr(package,'chunk_parts',None)
+    if parts is None:return list(range(count))
+    if (not isinstance(parts,list) or len(parts)!=count
+            or any(type(part) is not int for part in parts)
+            or sorted(parts)!=list(range(count))):
+        raise ValueError('discovery_chunk_order_invalid')
+    return list(parts)
+
+
 def hydrate_membership_chunks(package,members,compact_inputs,max_bytes=16*1024*1024):
     if not isinstance(members,(tuple,list)) or len(members)>128:raise ValueError('discovery_chunk_request_bound')
     ends=[];starts=[];total=0
-    for receipt in package.handoff['shards']['chunks']:
+    parts=chunk_part_order(package)
+    for part in parts:
+        receipt=package.handoff['shards']['chunks'][part]
         count=receipt['count']
         if type(count) is not int or count<=0:raise ValueError('discovery_chunk_partition_invalid')
         starts.append(total);total+=count;ends.append(total)
@@ -29,7 +44,8 @@ def hydrate_membership_chunks(package,members,compact_inputs,max_bytes=16*1024*1
     for row in members:
         if (len(row)!=5 or any(not isinstance(value,bytes) or len(value)!=32 for value in row[:4])
                 or type(row[4]) is not int or not 0<=row[4]<total):raise ValueError('discovery_chunk_member_invalid')
-        part=bisect.bisect_right(ends,row[4]);locations.append((part,row[4]-starts[part]))
+        position=bisect.bisect_right(ends,row[4])
+        locations.append((parts[position],row[4]-starts[position]))
     chunks=hydrate_records(package,'chunks',locations,max_total_bytes=max_bytes)
     for member,chunk in zip(members,chunks):
         compact,original,identity,work,_=member

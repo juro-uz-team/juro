@@ -9,7 +9,7 @@ import os
 import pathlib
 import sqlite3
 import zlib
-from discovery_chunks import chunk_original_input
+from discovery_chunks import chunk_original_input,chunk_part_order
 from prepared import canonical
 from membership import sync_directory
 from works import file_hash,signature
@@ -28,6 +28,7 @@ def sparse_fields(chunk):
 
 def publish_sparse_profiles(package,identities,root,checkpoint=None):
     if identities.manifest.get('vector_completion_sha256') is None:raise ValueError('sparse_profile_vector_pin_missing')
+    chunk_parts=chunk_part_order(package)
     root=pathlib.Path(root);root.mkdir(parents=True,exist_ok=False)
     pending=root/'profiles.partial';db=sqlite3.connect(pending)
     def progress(phase,**values):
@@ -35,7 +36,7 @@ def publish_sparse_profiles(package,identities,root,checkpoint=None):
     def source_rows(kind):
         count=0
         parts=package.memberships['receipts'] if kind=='memberships' else package.handoff['shards']['chunks']
-        for part in range(len(parts)):
+        for part in (range(len(parts)) if kind=='memberships' else chunk_parts):
             stream=package.membership_rows(part) if kind=='memberships' else package.records('chunks',part)
             for row in stream:
                 yield row if kind=='memberships' else (count,row[1]);count+=1
@@ -101,6 +102,7 @@ def publish_sparse_profiles(package,identities,root,checkpoint=None):
         with pending.open('r+b') as target:os.fsync(target.fileno())
         path=root/'profiles.sqlite';os.replace(pending,path)
         manifest={'format':'prepared-sparse-profiles-v1','complete':True,'search_index':False,'members':members,'profiles':originals,
+          'chunk_parts':chunk_parts,
           'package_sha256':package.sha256,'vector_identity_sha256':identities.manifest_sha256,
           'vector_completion_sha256':identities.manifest['vector_completion_sha256'],
           'mapping_sha256':package.files['embedding-inputs/manifest.json']['sha256'],
@@ -116,9 +118,14 @@ class SparseProfiles:
     """Authenticated bounded iterator for offline production tokenization."""
     def __init__(self,root,manifest_sha256,package_sha256,vector_identity_sha256):
         self.root=pathlib.Path(root).resolve(strict=True);path=self.root/'manifest.json'
-        if path.is_symlink() or path.stat().st_size>8192 or file_hash(path)!=manifest_sha256:
+        if path.is_symlink() or path.stat().st_size>8*1024*1024 or file_hash(path)!=manifest_sha256:
             raise ValueError('sparse_profiles_manifest_mismatch')
         self.manifest=json.loads(path.read_bytes());m=self.manifest
+        parts=m.get('chunk_parts')
+        if parts is not None and (not isinstance(parts,list)
+                or any(type(part) is not int for part in parts)
+                or sorted(parts)!=list(range(len(parts)))):
+            raise ValueError('sparse_profiles_chunk_order_invalid')
         if (m.get('format')!='prepared-sparse-profiles-v1' or m.get('complete') is not True
                 or m.get('search_index') is not False or m.get('package_sha256')!=package_sha256
                 or m.get('vector_identity_sha256')!=vector_identity_sha256

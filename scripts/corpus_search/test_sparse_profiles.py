@@ -19,6 +19,20 @@ class Identities:
 
 
 class SparseProfileTests(unittest.TestCase):
+    def test_reordered_shards_publish_membership_order_for_runtime_hydration(self):
+        fixture=Fixture();identities=Identities(fixture)
+        members=[list(fixture.membership_rows(part)) for part in range(2)]
+        fixture.membership_rows=lambda part:VerifiedStream(lambda:iter(members[part]))
+        fixture.chunks.reverse()
+        fixture.chunk_parts=[1,0]
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory)/'profiles'
+            pin=publish_sparse_profiles(fixture,identities,root)
+            with closing(SparseProfiles(root,pin,fixture.sha256,identities.manifest_sha256)) as profiles:
+                self.assertEqual(profiles.manifest['chunk_parts'],[1,0])
+                rows=list(profiles.rows())
+                self.assertEqual(sorted(row['first_membership'] for row in rows),[0,1])
+
     def test_authenticated_profiles_preserve_fields_and_membership_multiplicity(self):
         fixture=Fixture();identities=Identities(fixture)
         # A second legal membership can share the same original embedding input.
