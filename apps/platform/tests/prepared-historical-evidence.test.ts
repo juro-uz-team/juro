@@ -6,7 +6,7 @@ import {createPreparedHistoricalEvidenceReader} from "../lib/legal-corpus/prepar
 import {classifyLegalSourceUrl} from "../lib/legal/source-fetch";
 import {createCompleteArticleIndex} from "../lib/legal/article-context";
 import {resolvePreparedSourceEvidence} from "../lib/legal-corpus/prepared-source-evidence";
-import {createPreparedCorpusResearchRuntime} from "../lib/runtime/prepared-corpus";
+import {createPreparedCorpusResearchRuntime,createPreparedCorpusResearchPairRuntime} from "../lib/runtime/prepared-corpus";
 import {parsePinnedCandidateRelease} from "../lib/legal-corpus/legal-candidate-index";
 import {preparedCandidateConfigurationSchema} from "../lib/legal-corpus/prepared-candidate-configuration";
 
@@ -33,7 +33,7 @@ async function fixture(){
     return createPreparedHistoricalEvidenceReader({manifestBytes,manifestSha256:hash(manifestBytes),packageSha256:publication.packageSha256,bucket});}
   const query={sourceRevisionId:capture.revisionId,sourceSha256:capture.parent.sha256,officialUrl:url,languageTag:"en" as const,
     completeText,articleNumber:"7",instant:"2020-06-01T00:00:00Z"};
-  return {reader,publication,query,objects,capture,bucket};
+  return {reader,publication,query,objects,capture,bucket,bytes};
 }
 
 test("historical admission authenticates exact complete rule and independent interval evidence",async()=>{
@@ -88,7 +88,7 @@ test("manifest pins and editorial validity are independent admission requirement
   await f.reader().resolve({...f.query,instant:"2020-06-01T00:00Z"});
 });
 
-test("historical chat reads retained captures and separately proves complementary provisions",async()=>{
+async function historicalRuntimeFixture(){
   const f=await fixture();
   const configuration=preparedCandidateConfigurationSchema.parse({backend:"prepared-corpus-v1",navigationBackend:"pgvector",identity:"history-configuration",
     embeddingModel:"openai/text-embedding-3-large",dimensions:3072,evidenceSemantics:"discovery-only",categoryRanking:{mode:"disabled"},
@@ -107,17 +107,25 @@ test("historical chat reads retained captures and separately proves complementar
   const complete=structuredClone(f.publication);
   const target=createCompleteArticleIndex(f.capture.parent.snapshot.blocks)("8").candidates[0]!.text;
   complete.facts.push({...complete.facts[0]!,articleNumber:"8",completeTextSha256:hash(target)});
-  async function run(publication:typeof complete,instant=f.query.instant){
+  function dependencies(publication:typeof complete):Parameters<typeof createPreparedCorpusResearchRuntime>[0]{
     const manifestBytes=new TextEncoder().encode(JSON.stringify(publication));
-    const runtime=createPreparedCorpusResearchRuntime({release,history:{manifestBytes,manifestSha256:hash(manifestBytes)},
+    return {release,history:{manifestBytes,manifestSha256:hash(manifestBytes)},
       capture:{bucket:f.bucket,store:f.capture.store,options:{}},fetch:async()=>{throw Error("Historical evidence must not fetch current text");},
       readExact:async()=>packet,search:async request=>({version:request.version,releaseId:request.releaseId,environment:request.environment,
         configuration:request.configuration,requestSha256:request.requestSha256,lanes:{dense:"complete",sparse:"complete"},
-        hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]})});
+        hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]})};
+  }
+  async function run(publication:typeof complete,instant=f.query.instant){
+    const runtime=createPreparedCorpusResearchRuntime(dependencies(publication));
     const session=await runtime.openLegalResearch({requestId:"history-turn",environment:release.environment,temporalScope:{kind:"timestamp",instant}});
     return session.search({round:0,plan:{id:"history-plan",formulations:[{id:"query",text:"What rule applied to records?",
       privateNameSpans:[],readingIds:["applicant"],requirementIds:["records"]}]}});
   }
+  return {f,complete,dependencies,run};
+}
+
+test("historical chat reads retained captures and separately proves complementary provisions",async()=>{
+  const {f,complete,run}=await historicalRuntimeFixture();
   const result=await run(complete);
   assert.deepEqual(result.needs,[]);assert.deepEqual(result.evidence.map(row=>row.source.article).sort(),["7","8"]);
   assert.ok(result.evidence.every(row=>row.source.status==="historical"&&row.source.citationEvidenceReceipt?.capability==="history"
@@ -126,4 +134,61 @@ test("historical chat reads retained captures and separately proves complementar
   assert.equal(missingReference.evidence.some(row=>row.source.article==="8"),false);
   assert.ok(missingReference.needs.some(row=>row.reason==="unresolved_reference"));
   assert.equal((await run(complete,"2021-01-01T00:00:00Z")).evidence.length,0);
+});
+
+
+test("prepared comparisons pin both releases and keep concurrent endpoint evidence separate",async()=>{
+  const {f,complete,dependencies}=await historicalRuntimeFixture();
+  const history=dependencies(complete);const search=history.search;
+  const started:string[]=[],finished:string[]=[];const both=Promise.withResolvers<void>();
+  const overlapped:typeof search=async(request,signal)=>{
+    started.push(request.releaseId);if(started.length===2)both.resolve();
+    await both.promise;
+    if(request.endpoint.kind==="timestamp")await new Promise(resolve=>setTimeout(resolve,20));
+    finished.push(request.releaseId);return search(request,signal);
+  };
+  history.search=overlapped;
+  const current={...dependencies(complete),release:parsePinnedCandidateRelease({...history.release,id:"current-release",capability:"current"}),
+    search:overlapped,fetch:async(url:string)=>({...classifyLegalSourceUrl(url),bytes:f.bytes,contentSha256:hash(f.bytes),
+      contentType:"text/html",etag:null,lastModified:null,fetchedAt:new Date().toISOString(),robotsUrl:"https://lex.uz/robots.txt"}),
+    readExact:async()=>{
+      const packet=await dependencies(complete).readExact({artifacts:preparedCandidateConfigurationSchema.parse(history.release.configuration).artifacts,references:[[3,7]]});
+      const cloned=structuredClone(packet) as {sources:Record<string,{inventory:{url:string}}>};
+      cloned.sources["work:1"]!.inventory.url="https://lex.uz/en/docs/777";return cloned;
+    }};
+  const runtime=createPreparedCorpusResearchPairRuntime({current,history});
+  // Caller mutation cannot replace the already selected release pair.
+  current.release=parsePinnedCandidateRelease({...current.release,id:"later-current-release"});
+  const scope={requestId:"comparison-turn",environment:"production" as const,temporalScope:{kind:"comparison" as const,
+    left:{kind:"timestamp" as const,instant:f.query.instant},right:{kind:"current" as const}}};
+  const session=await runtime.openLegalResearch(scope);
+  const plan={id:"comparison-plan",formulations:[{id:"query",text:"Compare the records rule then and now.",
+    privateNameSpans:[],readingIds:["applicant"],requirementIds:["records"]}]};
+  const result=await session.search({round:0,plan});
+  assert.deepEqual(started,["history-release","current-release"]);assert.deepEqual(finished,["current-release","history-release"]);
+  assert.deepEqual(result.needs,[]);assert.equal(result.evidence.length,4);
+  for(const capability of ["current","history"]){
+    const evidence=result.evidence.filter(row=>row.source.citationEvidenceReceipt?.capability===capability);
+    assert.deepEqual(evidence.map(row=>row.source.article).sort(),["7","8"]);
+    assert.ok(evidence.every(row=>row.endpoint.kind===(capability==="current"?"current":"timestamp")));
+  }
+  await (await runtime.openLegalResearch({...scope,requestId:"comparison-next-turn"})).search({round:0,plan});
+  assert.deepEqual(started.slice(2),["history-release","current-release"]);
+  assert.throws(()=>createPreparedCorpusResearchPairRuntime({current:history,history}),/PAIR_INVALID/);
+  assert.throws(()=>createPreparedCorpusResearchPairRuntime({current,history:{...history,
+    release:parsePinnedCandidateRelease({...history.release,environment:"staging"})}}),/PAIR_INVALID/);
+});
+
+test("two historical endpoints keep separate applicability sessions within one release",async()=>{
+  const {f,complete,dependencies}=await historicalRuntimeFixture();
+  const runtime=createPreparedCorpusResearchRuntime(dependencies(complete));
+  const later="2020-12-01T00:00:00Z";
+  const session=await runtime.openLegalResearch({requestId:"two-dates",environment:"production",temporalScope:{kind:"comparison",
+    left:{kind:"timestamp",instant:f.query.instant},right:{kind:"timestamp",instant:later}}});
+  const result=await session.search({round:0,plan:{id:"dates-plan",formulations:[{id:"query",text:"Compare the rule on these dates.",
+    privateNameSpans:[],readingIds:["applicant"],requirementIds:["records"]}]}});
+  assert.deepEqual(result.needs,[]);assert.equal(result.evidence.length,4);
+  for(const instant of [f.query.instant,later]){
+    assert.equal(result.evidence.filter(row=>row.endpoint.kind==="timestamp"&&row.endpoint.instant===instant).length,2);
+  }
 });
