@@ -57,7 +57,8 @@ test(`a joined publisher refresh handles ${scenario} ownership without duplicate
         if (scenario === "slow" && time >= Date.parse("2026-09-11T00:00:13.000Z")) {release(); await owner;}
         if (scenario === "cancel") cancellation.abort(cancelled);
       }, readPublisher: async () => {assert.fail("A joiner must not issue another publisher request");}});
-    const joined = scenario === "cancel" ? runIndexedRetrieval(cancellation.signal, () => join(url)) : join(url);
+    const joined = scenario === "cancel" ? runIndexedRetrieval(cancellation.signal, () => join(url))
+      : scenario === "bounded" ? runIndexedRetrieval(undefined, () => join(url),performance.now()+45_000) : join(url);
     try {
       if (scenario === "cancel") await assert.rejects(joined, error => error === cancelled);
       else if (scenario === "handoff_stale") await assert.rejects(joined, /SOURCE_OBSERVATION_REFRESH_UNAVAILABLE/);

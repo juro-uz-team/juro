@@ -8,7 +8,7 @@ import type {ResearchRequest} from "../lib/legal-chat/research";
 import {researchLegalQuestion} from "../lib/legal-chat/research";
 import {PostgresDatabase} from "../lib/storage/postgres";
 import {createSharedSourceObservationRefresh} from "../lib/legal/shared-source-observation";
-import {indexedRetrievalSignal} from "../lib/runtime/indexed-retrieval";
+import {indexedRetrievalSignal,runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
 const instant="2026-09-20T10:00:00.000Z";
 const release=(capability:"current"|"history")=>parsePinnedCandidateRelease({id:`release:${capability}`,
@@ -280,7 +280,7 @@ test("indexed retrieval expires after one total deadline and cannot publish late
   const search=createCorpusResearch({services,formulate:async input=>{
     signal=input.question.signal;started();await blocked;return interpretation;
   }});
-  const pending=search(request);
+  const pending=runIndexedRetrieval(undefined,()=>search(request),performance.now()+45_000);
   const rejected=assert.rejects(pending,{name:"TimeoutError"});
   await entered;
   context.mock.timers.tick(45_000);

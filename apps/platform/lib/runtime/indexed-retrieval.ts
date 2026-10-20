@@ -1,8 +1,5 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 
-// One shared acquisition allowance, including planning and queued source reads.
-export const INDEXED_RETRIEVAL_TIMEOUT_MS=45_000;
-
 type RetrievalScope = {controller:AbortController;expiresAt:number};
 const scopes=new AsyncLocalStorage<RetrievalScope>();
 const timeout=()=>new DOMException("Indexed retrieval deadline exceeded", "TimeoutError");
@@ -19,7 +16,7 @@ export function indexedRetrievalSignal():AbortSignal|undefined {
 export function indexedRetrievalRemainingMs():number {
   indexedRetrievalSignal();
   const scope=scopes.getStore();
-  return scope?Math.max(0,Math.min(INDEXED_RETRIEVAL_TIMEOUT_MS,scope.expiresAt-performance.now())):INDEXED_RETRIEVAL_TIMEOUT_MS;
+  return scope?Math.max(0,scope.expiresAt-performance.now()):Infinity;
 }
 
 export function awaitIndexedRetrieval<T>(operation:Promise<T>,signal=indexedRetrievalSignal()):Promise<T> {
@@ -41,7 +38,7 @@ async function runWithDeadline<T>(milliseconds:number,parent:AbortSignal|undefin
   const controller=new AbortController();
   const abort=()=>controller.abort(parent!.reason);
   parent?.addEventListener("abort",abort,{once:true});
-  const timer=setTimeout(()=>controller.abort(timeout()),milliseconds);
+  const timer=Number.isFinite(milliseconds)?setTimeout(()=>controller.abort(timeout()),milliseconds):undefined;
   try {
     return await scopes.run({controller,expiresAt:performance.now()+milliseconds},async()=>{
       const result=await awaitIndexedRetrieval(operation(controller.signal),controller.signal);
@@ -60,7 +57,7 @@ export function runIndexedRetrieval<T>(parent:AbortSignal|undefined,operation:(s
   expiresAt?:number):Promise<T> {
   const enclosing=scopes.getStore();
   const signal=enclosing?AbortSignal.any([enclosing.controller.signal,...(parent?[parent]:[])]):parent;
-  const remaining=Math.max(0,Math.min(INDEXED_RETRIEVAL_TIMEOUT_MS,
+  const remaining=Math.max(0,Math.min(
     (enclosing?.expiresAt??Infinity)-performance.now(),(expiresAt??Infinity)-performance.now()));
   return runWithDeadline(remaining,signal,operation);
 }
@@ -78,14 +75,14 @@ export function finishIndexedRetrievalCleanup<T>(operation:()=>Promise<T>):Promi
 export function openIndexedRetrievalScope(parent:AbortSignal|undefined,expiresAt:number) {
   parent?.throwIfAborted();
   const enclosing=scopes.getStore();
-  const deadline=Math.min(expiresAt,enclosing?.expiresAt??Infinity,performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS);
+  const deadline=Math.min(expiresAt,enclosing?.expiresAt??Infinity);
   if(deadline<=performance.now())throw timeout();
   const controller=new AbortController();
   const signal=enclosing?AbortSignal.any([enclosing.controller.signal,...(parent?[parent]:[])]):parent;
   const abort=()=>controller.abort(signal!.reason);
   signal?.addEventListener("abort",abort,{once:true});
   if(signal?.aborted)abort();
-  const timer=setTimeout(()=>controller.abort(timeout()),Math.max(0,deadline-performance.now()));
+  const timer=Number.isFinite(deadline)?setTimeout(()=>controller.abort(timeout()),Math.max(0,deadline-performance.now())):undefined;
   const scope={controller,expiresAt:deadline};
   return {
     async run<T>(operation:()=>Promise<T>):Promise<T> {

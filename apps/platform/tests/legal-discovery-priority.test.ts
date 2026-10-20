@@ -104,7 +104,7 @@ test("the shared retrieval deadline expires during metadata reading and starts n
   context.mock.method(globalThis,"fetch",async()=>{calls++;throw new Error("Unexpected model request");});
   const prioritize=createDiscoveryPrioritizer({requestId:"discovery-deadline",readMetadata:async()=>
     awaitIndexedRetrieval(new Promise(()=>{}))});
-  await assert.rejects(runIndexedRetrieval(undefined,signal=>prioritize({...input,signal})),
+  await assert.rejects(runIndexedRetrieval(undefined,signal=>prioritize({...input,signal}),performance.now()+10),
     {name:"TimeoutError",message:"Indexed retrieval deadline exceeded"});
   assert.equal(calls,0);
 });

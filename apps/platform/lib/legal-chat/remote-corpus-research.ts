@@ -2,7 +2,7 @@ import type {CorpusSessionInput, CorpusSearchInput,CorpusStageInput} from "./cor
 import type {ResearchFormulator,ResearchFormulation} from "./research-formulation";
 import {documentModelContext} from "./document-context";
 import type {ResearchPacket,ResearchRequest} from "./research";
-import {runIndexedRetrieval,openIndexedRetrievalScope,INDEXED_RETRIEVAL_TIMEOUT_MS} from "../runtime/indexed-retrieval";
+import {runIndexedRetrieval,openIndexedRetrievalScope} from "../runtime/indexed-retrieval";
 
 type RemoteSession={
   search(input:CorpusSearchInput):PromiseLike<ResearchPacket>;
@@ -112,7 +112,7 @@ export function createRemoteCorpusResearch(input:{
     async stage(request:ResearchRequest,fragment:ResearchFormulation):Promise<void> {
       if(closed)throw new Error("CORPUS_RESEARCH_SESSION_CLOSED");
       stagingScope??=openIndexedRetrievalScope(request.question.signal,
-        input.retrievalExpiresAt??performance.now()+INDEXED_RETRIEVAL_TIMEOUT_MS);
+        input.retrievalExpiresAt??Infinity);
       await stagingScope.run(async()=>{
         const active=await open(request);
         request.question.signal?.throwIfAborted();

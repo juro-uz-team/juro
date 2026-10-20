@@ -166,6 +166,7 @@ test("the indexed deadline includes opening a session and disposes a late capabi
   const opened=Promise.withResolvers<Awaited<ReturnType<CorpusResearchService["openLegalResearch"]>>>();
   let searches=0,disposed=0,failure:unknown;
   const remote=createRemoteCorpusResearch({requestId:"deadline-opening",environment:"staging",formulate:async()=>plan,
+    retrievalExpiresAt:performance.now()+45_000,
     service:{openLegalResearch:()=>opened.promise}});
   const pending=remote.indexed(request).catch(error=>{failure=error;});
   try {
@@ -184,6 +185,7 @@ test("formulation and native search share one deadline without resetting the bud
   const formulated=Promise.withResolvers<void>(),searching=Promise.withResolvers<void>(),finish=Promise.withResolvers<void>();
   let failure:unknown,attempt:AbortSignal|undefined,nested:AbortSignal|undefined;
   const remote=createRemoteCorpusResearch({requestId:"deadline-formulation",environment:"staging",
+    retrievalExpiresAt:performance.now()+45_000,
     formulate:async input=>{attempt=input.question.signal;await formulated.promise;return plan;},
     service:{async openLegalResearch(){return {async search(){return runIndexedRetrieval(undefined,async signal=>{
       nested=signal;searching.resolve();await finish.promise;return {evidence:[],needs:[]};
