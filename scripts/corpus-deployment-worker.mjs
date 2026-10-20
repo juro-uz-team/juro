@@ -15,21 +15,36 @@ process.once("message",async input=>{
  try{
  const imported=async path=>{const value=await import(pathToFileURL(join(request.release,path)).href);return value.default??value;};
  const api=await imported("apps/platform/lib/storage/native-corpus-acceptance.ts");
+ const rawManifest=JSON.parse(bytes.toString()),prepared=rawManifest.version==="prepared-pgvector-v1";
+ const preparedQualification=prepared?await imported("apps/platform/lib/storage/prepared-corpus-qualification.ts"):null;
+ const preparedAdmission=prepared?await imported("apps/platform/lib/storage/prepared-corpus-acceptance.ts"):null;
  const {stableSourceSnapshotJson}=await imported("apps/platform/lib/legal-corpus/source-snapshot.ts");
  const {parseCustomBm25RuntimeDescriptor}=await imported("apps/platform/lib/legal-corpus/custom-bm25-runtime.ts");
  const {LocalObjectStore}=await imported("apps/platform/lib/storage/objects.ts");
  const pg=await imported("apps/platform/node_modules/pg/lib/index.js");
  stage="parse-manifest";
- const manifest=api.nativeCorpusAcceptanceSchema.parse(JSON.parse(bytes.toString()));assert.equal(manifest.productRevision,bundle.mode==="retain"?bundle.acceptedRevision:request.revision);assert.equal(manifest.environment,bundle.mode==="retain"?"production":request.environment);assert.equal(digest(stableSourceSnapshotJson(manifest)),bundle.acceptanceSha256);
+ const manifest=(prepared?preparedQualification.preparedCorpusAcceptanceSchema:api.nativeCorpusAcceptanceSchema).parse(rawManifest);assert.equal(manifest.productRevision,bundle.mode==="retain"?bundle.acceptedRevision:request.revision);assert.equal(manifest.environment,bundle.mode==="retain"?"production":request.environment);assert.equal(digest(stableSourceSnapshotJson(manifest)),bundle.acceptanceSha256);
  const pool=new pg.Pool({connectionString:settings.CORPUS_DATABASE_URL,max:2,connectionTimeoutMillis:10000,statement_timeout:30000,idle_in_transaction_session_timeout:15000});
  const stores=new Map();const read=async ref=>{if(!stores.has(ref.bucket))stores.set(ref.bucket,new LocalObjectStore(pool,settings.CORPUS_OBJECT_STORAGE_PATH,ref.bucket,true));const object=await stores.get(ref.bucket).get(ref.key);assert(object,"Prepublished proof/object missing");const value=await object.bytes();assert.equal(value.length,ref.sizeBytes);assert.equal(digest(value),ref.sha256);return value;};
- const selected=async()=> {stage="selection-read";return (await pool.query("SELECT acceptance_sha256 FROM storage.native_corpus_selections ORDER BY id DESC LIMIT 1")).rows[0]?.acceptance_sha256;};
+ // JSON lookup also supports old schemas during retained legacy deployments.
+ // Never filter out the latest selection when its backend changes.
+ const selectionSql="SELECT coalesce(acceptance_sha256,to_jsonb(s)->>'prepared_acceptance_sha256') AS acceptance_sha256 FROM storage.native_corpus_selections s ORDER BY id DESC LIMIT 1";
+ const selected=async()=> {stage="selection-read";return (await pool.query(selectionSql)).rows[0]?.acceptance_sha256;};
  try{
   const result=await runDeploymentPhase(request,bundle,{guard,selected,
-   qualify:async()=>{stage="qualify-proofs";await api.verifyNativeCorpusQualification(manifest,read);for(const lane of [manifest.current,manifest.history]){const descriptor=parseCustomBm25RuntimeDescriptor(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(await read(lane.descriptor))));assert.equal(descriptor.releaseId,lane.releaseId);assert.equal(descriptor.statistics.documentCount,lane.membership.count);assert.equal(descriptor.denseMetadataReleaseId??descriptor.releaseId,lane.releaseId);}},
+   qualify:async()=>{stage="qualify-proofs";
+    if(prepared){await preparedQualification.verifyPreparedCorpusQualification(manifest,read);await preparedAdmission.readPreparedAdmissionArtifacts(manifest,read);return;}
+    await api.verifyNativeCorpusQualification(manifest,read);for(const lane of [manifest.current,manifest.history]){const descriptor=parseCustomBm25RuntimeDescriptor(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(await read(lane.descriptor))));assert.equal(descriptor.releaseId,lane.releaseId);assert.equal(descriptor.statistics.documentCount,lane.membership.count);assert.equal(descriptor.denseMetadataReleaseId??descriptor.releaseId,lane.releaseId);}},
    fences:async()=>{stage="prepare-fences";const client=await pool.connect();try{await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     for(const capability of ["current","history"]){
       const selected=manifest[capability];
+      if(prepared){
+        const store=(await client.query("SELECT namespace,manifest FROM storage.corpus_evidence_stores WHERE generation_sha256=$1",
+          [selected.evidenceStore.generationSha256])).rows[0];
+        assert.equal(store?.namespace,selected.evidenceStore.namespace);
+        assert.equal(digest(store.manifest),selected.evidenceStore.generationSha256);
+        continue;
+      }
       const vectors=(await client.query(`SELECT g.collection,g.source_revision::text,g.state,g.member_count,c.source_revision::text AS live_revision
         FROM storage.vector_search_generations g JOIN storage.vector_collections c ON c.name=g.collection
         WHERE g.id=$1`,[selected.vector.generation])).rows[0];
@@ -53,9 +68,10 @@ process.once("message",async input=>{
     await client.query("ROLLBACK");}finally{client.release();}},
    activate:async()=>{stage="activate";
     const guardedPool={connect:async()=>{const client=await pool.connect();return {release:()=>client.release(),query:async(...args)=>{
-     const sql=String(args[0]).trim();if(sql==="BEGIN"){const value=await client.query(...args);await client.query("SET LOCAL lock_timeout='5s'");await client.query("SET LOCAL statement_timeout='30s'");await client.query("SELECT pg_advisory_xact_lock(hashtextextended('native-corpus-selection',0))");const actual=(await client.query("SELECT acceptance_sha256 FROM storage.native_corpus_selections ORDER BY id DESC LIMIT 1")).rows[0]?.acceptance_sha256;assert.equal(actual,bundle.expectedParent);await guard(true);return value;}if(sql==="COMMIT")await guard(true);return client.query(...args);
+     const sql=String(args[0]).trim();if(sql==="BEGIN"){const value=await client.query(...args);await client.query("SET LOCAL lock_timeout='5s'");await client.query("SET LOCAL statement_timeout='30s'");await client.query("SELECT pg_advisory_xact_lock(hashtextextended('native-corpus-selection',0))");const actual=(await client.query(selectionSql)).rows[0]?.acceptance_sha256;assert.equal(actual,bundle.expectedParent);await guard(true);return value;}if(sql==="COMMIT")await guard(true);return client.query(...args);
     }};}};
-    assert.equal(await api.activateNativeCorpus({pool:guardedPool,manifest,productRevision:request.revision,read}),bundle.acceptanceSha256);
+    const activate=prepared?preparedAdmission.activatePreparedCorpus:api.activateNativeCorpus;
+    assert.equal(await activate({pool:guardedPool,manifest,productRevision:request.revision,read}),bundle.acceptanceSha256);
    }});process.send({type:"result",result});
  }finally{await pool.end();}
  process.removeListener("disconnect",disconnected);process.disconnect();
