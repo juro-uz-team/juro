@@ -13,10 +13,18 @@ import {sameInstrumentArticleReferences} from "../legal/referenced-article-conte
 import {runIndexedRetrieval} from "../runtime/indexed-retrieval";
 
 type RuntimeServices = ReturnType<typeof createRuntimeLegalEvidenceServices>;
+export type ResearchDiscoveryCandidate={kind:"prepared-discovery";discoveryId:string;discoveryGroupId:string;
+  candidate:RevalidatedCandidate["candidate"]};
+export type ResearchCandidate=RevalidatedCandidate|ResearchDiscoveryCandidate;
+const readIdentity=(candidate:ResearchCandidate)=>"discoveryId" in candidate?candidate.discoveryId:candidate.provisionRenditionId;
+const schedulingIdentity=(candidate:ResearchCandidate)=>"discoveryId" in candidate?candidate.discoveryGroupId:candidate.provisionRenditionId;
 type CorpusServices = Pick<RuntimeServices,
   "releaseResolver" | "candidateIndex" | "referenceDiscovery" | "verifyCurrentSource">
-  & {candidateCatalog:Pick<RuntimeServices["candidateCatalog"],"revalidate">;
-    evidenceResolver:Pick<RuntimeServices["evidenceResolver"],"resolveControlling">};
+  & {candidateCatalog:{revalidate(...args:Parameters<RuntimeServices["candidateCatalog"]["revalidate"]>):Promise<ResearchCandidate[]>};
+    evidenceResolver:Pick<RuntimeServices["evidenceResolver"],"resolveControlling">&{
+      resolveDiscovery?:(id:string,endpoint:LegalTime,context:{release:PinnedCandidateRelease;currentAt:string})=>Promise<{
+        candidate:RevalidatedCandidate;resolution:Awaited<ReturnType<RuntimeServices["evidenceResolver"]["resolveControlling"]>>}>;
+    }};
 type EndpointRelease = {endpoint:LegalTime;release:PinnedCandidateRelease};
 export type CandidatePrioritizer = (input:{
   renditionIds:readonly string[];
@@ -43,7 +51,7 @@ export function createCorpusResearch(input: {
   let owner:string|undefined;
   let pinned:Promise<EndpointRelease[]>|undefined;
   type CurrentVerifier={key:string;detail:string;verify:()=>ReturnType<CorpusServices["verifyCurrentSource"]>};
-  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;verifier?:CurrentVerifier}>>();
+  const saved=new Map<string,Promise<{prepared:PreparedCorpusEvidence;bound:RevalidatedCandidate;verifier?:CurrentVerifier}>>();
   const currentVerifiers=new Map<string,CurrentVerifier>();
   const articles=new Map<string,PreparedCorpusEvidence>();
   const verifiedArticles=new Map<string,LegalEvidence>();
@@ -99,7 +107,7 @@ export function createCorpusResearch(input: {
     const readEvidence=new Map<string,PreparedCorpusEvidence>();
     const seen=new Set<string>();
     const resolved:SelectionCandidate[][]=releases.map(()=>[]);
-    const queues:RevalidatedCandidate[][]=[];
+    const queues:ResearchCandidate[][]=[];
     let discoveryOmitted=0;
     // Both comparison endpoints share the deadline. Start their independent
     // candidate searches together, then preserve endpoint order for admission.
@@ -135,21 +143,21 @@ export function createCorpusResearch(input: {
           return candidates
           .filter(item=>item.candidate.formulationIds.includes(formulation.id))
           .sort((a,b)=>{
-            const rank=(item:RevalidatedCandidate)=>item.candidate.formulationMatches
+            const rank=(item:ResearchCandidate)=>item.candidate.formulationMatches
               ?.find(match=>match.formulationId===formulation.id)?.rank??Number.MAX_SAFE_INTEGER;
             return rank(a)-rank(b)||b.candidate.fusionScore-a.candidate.fusionScore;
           }).filter(item=>{
             // Rank complete provisions, not repeated chunks of one provision.
             // Preserve the first (best-ranked) representative in each query.
-            if(seenProvisions.has(item.provisionRenditionId))return false;
-            seenProvisions.add(item.provisionRenditionId);return true;
+            if(seenProvisions.has(schedulingIdentity(item)))return false;
+            seenProvisions.add(schedulingIdentity(item));return true;
           });
         });
-        const ordered=new Map<string,RevalidatedCandidate>();
+        const ordered=new Map<string,ResearchCandidate>();
         for(let rank=0;byFormulation.some(items=>rank<items.length);rank++) {
           for(const items of byFormulation) {
             const candidate=items[rank];
-            if(candidate&&!ordered.has(candidate.provisionRenditionId)) ordered.set(candidate.provisionRenditionId,candidate);
+            if(candidate&&!ordered.has(schedulingIdentity(candidate))) ordered.set(schedulingIdentity(candidate),candidate);
           }
         }
         const priority=await input.prioritize?.({renditionIds:[...ordered.keys()],
@@ -202,10 +210,11 @@ export function createCorpusResearch(input: {
       void pending.catch(()=>undefined);
       return pending;
     };
-    const prepareRead=(candidate:RevalidatedCandidate,index:number,reference=false):(()=>Promise<void>)=>{
+    const prepareRead=(candidate:ResearchCandidate,index:number,reference=false):(()=>Promise<void>)=>{
       check();
       const {endpoint,release}=releases[index]!;
-      const key=JSON.stringify([release.id,timeIdentity(endpoint),candidate.provisionRenditionId]);
+      const identity=readIdentity(candidate);
+      const key=JSON.stringify([release.id,timeIdentity(endpoint),identity]);
       if(seen.has(key)) {
         return async()=>{
           const item=readEvidence.get(key);
@@ -215,7 +224,7 @@ export function createCorpusResearch(input: {
       if(!saved.has(key)&&reads>=(reference?MAX_CANDIDATE_READS:MAX_CANDIDATE_READS-RESERVED_REFERENCE_READS)) {
         return async()=>{
         if(reference) {
-          const need:ResearchNeed={reason:"unresolved_reference",detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}: The source read budget did not cover this explicitly referenced provision.`};
+          const need:ResearchNeed={reason:"unresolved_reference",detail:`${identity} at ${timeIdentity(endpoint)}: The source read budget did not cover this explicitly referenced provision.`};
           needs.push(need);
           pendingReads.set(key,[...new Map([...(pendingReads.get(key)??[]),need].map(value=>[JSON.stringify(value),value])).values()]);
         }
@@ -227,11 +236,20 @@ export function createCorpusResearch(input: {
         if(!pending) {
           reads++;
           pending=(async()=>{
-            const resolution=await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt});
+            const binding="discoveryId" in candidate
+              ?await input.services.evidenceResolver.resolveDiscovery?.(candidate.discoveryId,endpoint,{release,currentAt})
+              :{candidate,resolution:await input.services.evidenceResolver.resolveControlling(candidate.provisionRenditionId,endpoint,{release,currentAt})};
+            if(!binding||binding.candidate.candidate.itemKey!==candidate.candidate.itemKey
+              ||binding.candidate.candidate.instanceId!==candidate.candidate.instanceId
+              ||binding.candidate.candidate.shardId!==candidate.candidate.shardId)throw Error("CORPUS_DISCOVERY_BINDING_INVALID");
+            const {resolution}=binding;
+            if("discoveryId" in candidate&&(binding.candidate.textRevisionId!==resolution.controlling.textRevisionId
+              ||binding.candidate.provisionRenditionId!==resolution.controlling.provisionRenditionId
+              ||binding.candidate.provisionConceptId!==resolution.controlling.provisionConceptId))throw Error("CORPUS_DISCOVERY_BINDING_INVALID");
             check();
             const prepared=await prepareCorpusEvidence({resolution,endpoint});
-            return {prepared,...(endpoint.kind==="current"?{verifier:{key,
-              detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}`,
+            return {prepared,bound:binding.candidate,...(endpoint.kind==="current"?{verifier:{key,
+              detail:`${identity} at ${timeIdentity(endpoint)}`,
               verify:()=>input.services.verifyCurrentSource(resolution.controlling)}}:{})};
           })();
           saved.set(key,pending);
@@ -250,14 +268,17 @@ export function createCorpusResearch(input: {
         const verifier=currentVerifiers.get(item.source.id);
         if(verifier)checkCurrentSource(item.source.id,item.source.officialUrl,verifier);
         readEvidence.set(key,item);
-        resolved[index]!.push({candidate,citationLabel:item.source.actTitle,provisionText:item.text});
+        const bound={...result.item.bound,candidate:candidate.candidate};
+        const boundKey=JSON.stringify([release.id,timeIdentity(endpoint),bound.provisionRenditionId]);
+        readEvidence.set(boundKey,item);seen.add(boundKey);
+        resolved[index]!.push({candidate:bound,citationLabel:item.source.actTitle,provisionText:item.text});
         evidence.set(item.source.id,item);
         if(!reference) primaryEvidence.add(item.source.id);
         for(const need of pendingReads.get(key)??[]) resolutions.push({need,sourceIds:[item.source.id]});
         for(const pending of pendingReferences.values()) {
           const language={ru:"ru",uz:"uz-Latn",uzc:"uz-Cyrl",en:"en"}[item.source.locale];
           if(timeIdentity(pending.endpoint)===timeIdentity(endpoint)
-            && pending.query.textRevisionId===candidate.textRevisionId
+            && pending.query.textRevisionId===bound.textRevisionId
             && pending.query.languageTag===language && pending.query.article===item.source.article) {
             resolutions.push({need:pending.need,sourceIds:[item.source.id]});
           }
@@ -267,7 +288,7 @@ export function createCorpusResearch(input: {
         const code=error instanceof Error?error.message:"";
         const need:ResearchNeed={reason:code==="CORPUS_COMPLETE_ARTICLE_UNAVAILABLE"?"missing_rule":
           code==="CORPUS_CURRENT_SOURCE_UNCONFIRMED"?"ambiguous_revision":"source_unavailable",
-        detail:`${candidate.provisionRenditionId} at ${timeIdentity(endpoint)}: `+(code==="CORPUS_COMPLETE_ARTICLE_UNAVAILABLE"
+        detail:`${identity} at ${timeIdentity(endpoint)}: `+(code==="CORPUS_COMPLETE_ARTICLE_UNAVAILABLE"
           ?"A retrieved article fragment could not be expanded to its authenticated complete article."
           :code==="CORPUS_CURRENT_SOURCE_UNCONFIRMED"
             ?"A retrieved revision could not be confirmed against the current official publication."
@@ -279,7 +300,7 @@ export function createCorpusResearch(input: {
     // Reserve reads in rank order, overlap only their I/O, and commit in the
     // same order. Completion timing cannot choose canonical articles or spend
     // another candidate's reserved read/context allowance.
-    const readOrdered=async(entries:Iterable<{candidate:RevalidatedCandidate;index:number}>,reference=false)=>{
+    const readOrdered=async(entries:Iterable<{candidate:ResearchCandidate;index:number}>,reference=false)=>{
       const iterator=entries[Symbol.iterator]();
       const pending:(()=>Promise<void>)[]=[];
       let exhausted=false;

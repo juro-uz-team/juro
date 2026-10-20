@@ -52,6 +52,53 @@ function fixture() {
   return {services,calls,search:createCorpusResearch({services,formulate:async()=>interpretation,now:()=>Date.parse(instant)})};
 }
 
+test("prepared discovery acquires legal identities only after evidence resolution",async()=>{
+  const {services,search}=fixture();let reads=0;let references=0;
+  services.candidateCatalog.revalidate=async()=>[{kind:"prepared-discovery",discoveryId:"prepared:source:one",discoveryGroupId:"prepared:unit:one",candidate:candidate.candidate}];
+  services.evidenceResolver.resolveControlling=async()=>{throw Error("legacy resolver must not receive discovery IDs");};
+  services.evidenceResolver.resolveDiscovery=async(id)=>{
+    assert.equal(id,"prepared:source:one");reads++;
+    return {candidate,resolution:{controlling,materialCitation:controlling.officialCitation}};
+  };
+  services.referenceDiscovery=async values=>{
+    references++;assert.equal(values[0]!.candidate.textRevisionId,controlling.textRevisionId);
+    assert.equal(values[0]!.candidate.provisionRenditionId,controlling.provisionRenditionId);
+    return {candidates:[],unresolved:[]};
+  };
+  assert.equal((await search(request)).evidence.length,1);
+  assert.equal((await search({...request,round:1})).evidence.length,1);
+  assert.equal(reads,1);assert.equal(references,2);
+});
+
+test("prepared chunks from one publisher unit cannot consume the reads for a different unit",async()=>{
+  const {services,search}=fixture();const reads:string[]=[];
+  const discoveries=Array.from({length:41},(_,index)=>({kind:"prepared-discovery" as const,
+    discoveryId:`discovery:${index}`,discoveryGroupId:index<40?"unit:first":"unit:second",
+    candidate:{...candidate.candidate,itemKey:`item:${index}`,fusionScore:1-index/100}}));
+  services.candidateCatalog.revalidate=async()=>discoveries;
+  services.evidenceResolver.resolveDiscovery=async id=>{
+    reads.push(id);const found=discoveries.find(row=>row.discoveryId===id)!;
+    const suffix=id==="discovery:40"?"second":"first";
+    const original=parseResolvedOfficialEvidence({...controlling,provisionRenditionId:`rendition:${suffix}`,provisionConceptId:`concept:${suffix}`,
+      provisionText:`${controlling.provisionText} Independent provision ${suffix}.`,
+      evidence:{...controlling.evidence,provisionRenditionId:`rendition:${suffix}`}});
+    return {candidate:{...candidate,candidate:found.candidate,provisionRenditionId:original.provisionRenditionId,
+      provisionConceptId:original.provisionConceptId},resolution:{controlling:original,materialCitation:original.officialCitation}};
+  };
+  const result=await search(request);
+  assert.deepEqual(reads,["discovery:0","discovery:40"]);
+  assert.equal(result.evidence.length,2);
+});
+
+test("prepared discovery cannot publish evidence with a mismatched captured revision",async()=>{
+  const {services,search}=fixture();
+  services.candidateCatalog.revalidate=async()=>[{kind:"prepared-discovery",discoveryId:"prepared:source:one",discoveryGroupId:"prepared:unit:one",candidate:candidate.candidate}];
+  services.evidenceResolver.resolveDiscovery=async()=>({candidate:parseRevalidatedCandidates([{...candidate,textRevisionId:"wrong-revision"}])[0]!,
+    resolution:{controlling,materialCitation:controlling.officialCitation}});
+  const result=await search(request);assert.equal(result.evidence.length,0);
+  assert.ok(result.needs.some(need=>need.reason==="source_unavailable"));
+});
+
 test("incremental formulations start candidate retrieval before the final plan but release no early evidence",async()=>{
   const {services,calls}=fixture();
   const searching=Promise.withResolvers<void>(),finish=Promise.withResolvers<QuestionInterpretation>();

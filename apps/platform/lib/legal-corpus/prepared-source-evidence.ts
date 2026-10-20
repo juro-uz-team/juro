@@ -72,6 +72,7 @@ export async function resolvePreparedSourceReferences(input:{
   source:Awaited<ReturnType<typeof resolvePreparedSourceEvidence>>;
   bucket:Pick<LegalEvidenceBucket,"get">;
   limit?:number;
+  articles?:readonly string[];
 }){
   const limit=input.limit??3;
   if(!Number.isSafeInteger(limit)||limit<0||limit>3)throw Error("PREPARED_REFERENCE_BUDGET_INVALID");
@@ -84,7 +85,10 @@ export async function resolvePreparedSourceReferences(input:{
   }
   const complete=input.source.resolution.articleContext??input.source.resolution.documentContext;
   if(!complete)throw Error("PREPARED_COMPLETE_CONTEXT_UNAVAILABLE");
-  const references=sameInstrumentArticleReferences(complete.provisionText);
+  const observed=sameInstrumentArticleReferences(complete.provisionText);
+  if(input.articles&&(input.articles.length>3||new Set(input.articles).size!==input.articles.length
+    ||input.articles.some(article=>!observed.includes(article))))throw Error("PREPARED_REFERENCE_SELECTION_INVALID");
+  const references=input.articles??observed;
   const index=createCompleteArticleIndex(capture.parent.snapshot.blocks);
   const resolved:Array<{article:string;source:Awaited<ReturnType<typeof resolvePreparedSourceEvidence>>}>=[];
   const unresolved:Array<{article:string;reason:"lookup_budget"|"reference_not_found"|"reference_ambiguous"}>=[];
