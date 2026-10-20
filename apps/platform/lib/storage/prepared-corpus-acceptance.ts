@@ -3,6 +3,7 @@ import type {Pool} from "pg";
 import {z} from "zod";
 import {stableSourceSnapshotJson} from "../legal-corpus/source-snapshot";
 import {createPreparedHistoricalEvidenceReader} from "../legal-corpus/prepared-historical-evidence";
+import {isPreparedPostgresEvidenceStore} from "./prepared-evidence-objects";
 import {preparedCorpusAcceptanceSchema,preparedQualificationArtifactSchema,verifyPreparedCorpusQualification,
   type PreparedCorpusAcceptance} from "./prepared-corpus-qualification";
 
@@ -58,7 +59,8 @@ export async function activatePreparedCorpus(input:{pool:Pool;manifest:PreparedC
     for(const selected of [manifest.current,manifest.history]){
       const store=(await client.query(`SELECT namespace,manifest FROM storage.corpus_evidence_stores
         WHERE generation_sha256=$1 FOR SHARE`,[selected.evidenceStore.generationSha256])).rows[0];
-      if(!store||store.namespace!==selected.evidenceStore.namespace||hash(store.manifest)!==selected.evidenceStore.generationSha256){
+      if(!store||store.namespace!==selected.evidenceStore.namespace||hash(store.manifest)!==selected.evidenceStore.generationSha256
+        ||!isPreparedPostgresEvidenceStore(store.manifest)){
         throw Error("PREPARED_EVIDENCE_STORE_UNREGISTERED");
       }
     }

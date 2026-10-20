@@ -6,7 +6,7 @@ import {activatePreparedCorpus,readPreparedAdmissionArtifacts} from "../lib/stor
 import {readSelectedCorpus,readSelectedNativeCorpus} from "../lib/storage/native-corpus-acceptance";
 import {preparedAcceptanceFixture} from "./helpers/prepared-corpus-acceptance";
 import {createNativeCorpusService} from "../lib/runtime/native-corpus";
-import {LocalObjectStore} from "../lib/storage/objects";
+import {PreparedEvidenceStore} from "../lib/storage/prepared-evidence-objects";
 import type {PostgresDatabase} from "../lib/storage/postgres";
 
 test("prepared admission authenticates worker release and historical publication before transactions",async()=>{
@@ -36,7 +36,7 @@ test("native dispatch retries failed prepared initialization and never falls bac
   const sha256=createHash("sha256").update(bytes).digest("hex");
   const pool={query:async()=>({rows:[{sha256,manifest_bytes:bytes,prepared_acceptance_sha256:sha256}]})} as unknown as Pool;
   let failed=false,reads=0;
-  t.mock.method(LocalObjectStore.prototype,"get",async(key:string)=>{
+  t.mock.method(PreparedEvidenceStore.prototype,"get",async(key:string)=>{
     reads++;if(!failed){failed=true;throw Error("temporary object failure");}
     const value=f.blobs.get(key)!;return {size:value.length,bytes:async()=>value};
   });

@@ -21,11 +21,12 @@ process.once("message",async input=>{
  const {stableSourceSnapshotJson}=await imported("apps/platform/lib/legal-corpus/source-snapshot.ts");
  const {parseCustomBm25RuntimeDescriptor}=await imported("apps/platform/lib/legal-corpus/custom-bm25-runtime.ts");
  const {LocalObjectStore}=await imported("apps/platform/lib/storage/objects.ts");
+ const preparedStores=prepared?await imported("apps/platform/lib/storage/prepared-evidence-objects.ts"):null;
  const pg=await imported("apps/platform/node_modules/pg/lib/index.js");
  stage="parse-manifest";
  const manifest=(prepared?preparedQualification.preparedCorpusAcceptanceSchema:api.nativeCorpusAcceptanceSchema).parse(rawManifest);assert.equal(manifest.productRevision,bundle.mode==="retain"?bundle.acceptedRevision:request.revision);assert.equal(manifest.environment,bundle.mode==="retain"?"production":request.environment);assert.equal(digest(stableSourceSnapshotJson(manifest)),bundle.acceptanceSha256);
  const pool=new pg.Pool({connectionString:settings.CORPUS_DATABASE_URL,max:2,connectionTimeoutMillis:10000,statement_timeout:30000,idle_in_transaction_session_timeout:15000});
- const stores=new Map();const read=async ref=>{if(!stores.has(ref.bucket))stores.set(ref.bucket,new LocalObjectStore(pool,settings.CORPUS_OBJECT_STORAGE_PATH,ref.bucket,true));const object=await stores.get(ref.bucket).get(ref.key);assert(object,"Prepublished proof/object missing");const value=await object.bytes();assert.equal(value.length,ref.sizeBytes);assert.equal(digest(value),ref.sha256);return value;};
+ const stores=new Map();const read=async ref=>{if(!stores.has(ref.bucket))stores.set(ref.bucket,prepared&&ref.bucket.startsWith("legal-prepared-")?new preparedStores.PreparedEvidenceStore(pool,ref.bucket,true):new LocalObjectStore(pool,settings.CORPUS_OBJECT_STORAGE_PATH,ref.bucket,true));const object=await stores.get(ref.bucket).get(ref.key);assert(object,"Prepublished proof/object missing");const value=await object.bytes();assert.equal(value.length,ref.sizeBytes);assert.equal(digest(value),ref.sha256);return value;};
  // JSON lookup also supports old schemas during retained legacy deployments.
  // Never filter out the latest selection when its backend changes.
  const selectionSql="SELECT coalesce(acceptance_sha256,to_jsonb(s)->>'prepared_acceptance_sha256') AS acceptance_sha256 FROM storage.native_corpus_selections s ORDER BY id DESC LIMIT 1";
@@ -43,6 +44,7 @@ process.once("message",async input=>{
           [selected.evidenceStore.generationSha256])).rows[0];
         assert.equal(store?.namespace,selected.evidenceStore.namespace);
         assert.equal(digest(store.manifest),selected.evidenceStore.generationSha256);
+        assert(preparedStores.isPreparedPostgresEvidenceStore(store.manifest));
         continue;
       }
       const vectors=(await client.query(`SELECT g.collection,g.source_revision::text,g.state,g.member_count,c.source_revision::text AS live_revision

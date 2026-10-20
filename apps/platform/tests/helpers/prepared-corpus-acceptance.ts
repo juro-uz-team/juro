@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
 import {preparedCorpusAcceptanceSchema,preparedCorpusBinding} from "../../lib/storage/prepared-corpus-qualification";
 import {nativeChatWorkload,nativeChatWorkloadSha256} from "../../lib/storage/native-chat-workload";
+import {preparedEvidenceStoreFormat} from "../../lib/storage/prepared-evidence-objects";
 
 const digest=(value:Uint8Array)=>createHash("sha256").update(value).digest("hex");
 const checks=["tests","typecheck","build","browser","model_only_modes","no_model_verification","citation_integrity",
@@ -11,12 +12,12 @@ export function preparedAcceptanceFixture(){
   const blobs=new Map<string,Uint8Array>();
   const put=(key:string,value:unknown)=>{
     const bytes=Buffer.from(JSON.stringify(value));blobs.set(key,bytes);
-    return {bucket:"qualification",key,sha256:digest(bytes),sizeBytes:bytes.length};
+    return {bucket:`legal-prepared-${"a".repeat(64)}`,key,sha256:digest(bytes),sizeBytes:bytes.length};
   };
   const artifacts={packageSha256:"a".repeat(64),vectorCompletionSha256:"b".repeat(64),
     vectorIdentitySha256:"c".repeat(64),membershipSha256:"d".repeat(64),workIndexSha256:"e".repeat(64),
     navigationSha256:"f".repeat(64),sparseSha256:"1".repeat(64)};
-  const storeBytes=Buffer.from(JSON.stringify({packageSha256:artifacts.packageSha256}));
+  const storeBytes=Buffer.from(JSON.stringify({format:preparedEvidenceStoreFormat,packageSha256:artifacts.packageSha256}));
   const selected=(capability:"current"|"history")=>{
     const release={id:`prepared-${capability}`,environment:"production",capability,
       instances:[{id:`instance-${capability}`,shardId:"prepared-shard"}],

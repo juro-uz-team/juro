@@ -1,5 +1,6 @@
 import type {Pool} from "pg";
 import type {PostgresDatabase} from "../storage/postgres";
+import {PreparedEvidenceStore} from "../storage/prepared-evidence-objects";
 import {LocalObjectStore} from "../storage/objects";
 import {readPreparedAdmissionArtifacts} from "../storage/prepared-corpus-acceptance";
 import type {PreparedCorpusAcceptance} from "../storage/prepared-corpus-qualification";
@@ -20,9 +21,11 @@ export async function createAcceptedPreparedCorpusRuntime(input:{pool:Pool;objec
   for(const capability of ["current","history"] as const){
     if(input.transport[capability].workerSha256!==manifest[capability].worker.sha256)throw Error("PREPARED_WORKER_DEPLOYMENT_MISMATCH");
   }
-  const bucket=(namespace:string)=>new LocalObjectStore(input.pool,input.objectRoot,namespace);
+  const bucket=(namespace:string)=>new PreparedEvidenceStore(input.pool,namespace);
   const {historicalBytes}=await readPreparedAdmissionArtifacts(manifest,async reference=>{
-    const object=await bucket(reference.bucket).get(reference.key);
+    const artifacts=reference.bucket.startsWith("legal-prepared-")?bucket(reference.bucket)
+      :new LocalObjectStore(input.pool,input.objectRoot,reference.bucket,true);
+    const object=await artifacts.get(reference.key);
     if(!object||object.size!==reference.sizeBytes)throw Error("PREPARED_ADMISSION_ARTIFACT_CORRUPT");
     return object.bytes();
   });

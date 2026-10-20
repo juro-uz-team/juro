@@ -2,6 +2,7 @@ import type {Pool} from "pg";
 import type {CorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
 import type {PostgresDatabase} from "../storage/postgres";
 import {LocalObjectStore} from "../storage/objects";
+import {PreparedEvidenceStore,isPreparedPostgresEvidenceStore} from "../storage/prepared-evidence-objects";
 import {PostgresVectorIndex} from "../storage/vectors";
 import {createVectorCandidateReader} from "../storage/vector-candidates";
 import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
@@ -110,8 +111,11 @@ export function createNativeCorpusService(input:Dependencies&{environment:string
             receipt.store?.namespace??(receipt.capability==="history"?retainedReleases.historyEvidenceNamespace:retainedReleases.evidenceNamespace),
             receipt.r2Key,receipt.sha256),
           resolveEvidenceStore:async store=>{
-            const known=await input.pool.query(`SELECT 1 FROM storage.corpus_evidence_stores WHERE generation_sha256=$1 AND namespace=$2`,[store.generationSha256,store.namespace]);
-            return known.rows.length===1?new LocalObjectStore(input.pool,input.objectRoot,store.namespace,true):null;
+            const known=await input.pool.query(`SELECT manifest FROM storage.corpus_evidence_stores WHERE generation_sha256=$1 AND namespace=$2`,[store.generationSha256,store.namespace]);
+            if(known.rows.length!==1)return null;
+            return isPreparedPostgresEvidenceStore(known.rows[0].manifest)
+              ?new PreparedEvidenceStore(input.pool,store.namespace,true)
+              :new LocalObjectStore(input.pool,input.objectRoot,store.namespace,true);
           },
         });
       }
