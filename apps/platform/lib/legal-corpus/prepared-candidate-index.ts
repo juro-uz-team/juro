@@ -2,14 +2,30 @@ import {createHash} from "node:crypto";
 import {z} from "zod";
 import {createCallbackCandidateIndex,type TemporalEndpoint} from "./legal-candidate-index";
 import {preparedCandidateConfigurationSchema,type PreparedCandidateConfiguration} from "./prepared-candidate-configuration";
-import {legalEnvironmentSchema,searchReleaseIdSchema,sha256Schema} from "./target-domain-schemas";
+import {legalEnvironmentSchema,searchReleaseIdSchema,sha256Schema,utcInstantSchema} from "./target-domain-schemas";
 
 export type PreparedSearchRequest={
   version:"prepared-search-v1";releaseId:string;environment:z.infer<typeof legalEnvironmentSchema>;
   configuration:PreparedCandidateConfiguration;endpoint:TemporalEndpoint;query:string;
   requestSha256:string;limit:50;
 };
-const responseSchema=z.object({
+export const preparedSearchRequestSchema=z.object({
+  version:z.literal("prepared-search-v1"),releaseId:searchReleaseIdSchema,environment:legalEnvironmentSchema,
+  configuration:preparedCandidateConfigurationSchema,
+  endpoint:z.discriminatedUnion("kind",[
+    z.object({kind:z.literal("current")}).strict(),
+    z.object({kind:z.literal("timestamp"),instant:utcInstantSchema}).strict(),
+  ]),query:z.string().min(1).max(900),requestSha256:sha256Schema,limit:z.literal(50),
+}).strict();
+
+export function preparedSearchRequestHash(request:Omit<PreparedSearchRequest,"requestSha256">){
+  return createHash("sha256").update(JSON.stringify({version:request.version,releaseId:request.releaseId,
+    environment:request.environment,configuration:preparedCandidateConfigurationSchema.parse(request.configuration),
+    endpoint:request.endpoint.kind==="current"?{kind:"current"}:{kind:"timestamp",instant:request.endpoint.instant},
+    query:request.query,limit:request.limit})).digest("hex");
+}
+
+export const preparedSearchResponseSchema=z.object({
   version:z.literal("prepared-search-v1"),releaseId:searchReleaseIdSchema,
   environment:legalEnvironmentSchema,requestSha256:sha256Schema,
   configuration:preparedCandidateConfigurationSchema,
@@ -34,10 +50,10 @@ export function createPreparedCandidateIndex(transport:{search(request:PreparedS
     }
     const request={version:"prepared-search-v1" as const,releaseId:release.id,environment:release.environment,
       configuration,endpoint,query:formulation.text,limit:50 as const};
-    const requestSha256=createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const requestSha256=preparedSearchRequestHash(request);
     if(active<2)active++;else await new Promise<void>(resolve=>waiting.push(resolve));
-    let response:z.infer<typeof responseSchema>;
-    try{response=responseSchema.parse(await transport.search({...request,requestSha256}));}
+    let response:z.infer<typeof preparedSearchResponseSchema>;
+    try{response=preparedSearchResponseSchema.parse(await transport.search({...request,requestSha256}));}
     finally{const next=waiting.shift();if(next)next();else active--;}
     if(response.releaseId!==release.id||response.environment!==release.environment
       ||response.requestSha256!==requestSha256

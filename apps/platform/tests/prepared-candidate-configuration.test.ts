@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {createPreparedCandidateIndex,type PreparedSearchRequest} from "../lib/legal-corpus/prepared-candidate-index";
+import {createPreparedCandidateIndex,preparedSearchRequestHash,type PreparedSearchRequest} from "../lib/legal-corpus/prepared-candidate-index";
+import {createPreparedSearchService} from "../lib/legal-corpus/prepared-search-service";
+import {prepareSparseProfile} from "../lib/legal-corpus/prepared-sparse-profile";
 import {createProviderCandidateIndex, parsePinnedCandidateRelease,
   toPinnedCandidateConfiguration} from "../lib/legal-corpus/legal-candidate-index";
 
@@ -22,6 +24,52 @@ function response(request:PreparedSearchRequest){return {version:request.version
   environment:request.environment,configuration:request.configuration,requestSha256:request.requestSha256,
   lanes:{dense:"complete",sparse:"complete"},hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,
     keywordRank:2,keywordScore:2,fusionScore:.04}]};}
+
+test("prepared search service connects unchanged formulation and production analyzer to numeric search",async()=>{
+  let embedded="",calls=0;
+  const service=createPreparedSearchService({release:release(),async embed(query,signal){
+    signal.throwIfAborted();embedded=query;return Array(3072).fill(.01);
+  },async execute(request,signal){
+    signal.throwIfAborted();calls++;assert.equal("query" in request,false);
+    assert.equal(request.embedding.length,3072);
+    const expected=prepareSparseProfile({title:"",hierarchy:"",article:"",text:embedded},1);
+    assert.deepEqual(request.termHashes,expected.postings.map(row=>row.termHash));
+    return response({...request,query:embedded});
+  }});
+  const adapter=createPreparedCandidateIndex(service);
+  const query="Mehnat шартнома шартнома — Article 7";
+  const packet=await adapter.retrieve({id:"question",formulations:[{id:"q",text:query,
+    privateNameSpans:[],readingIds:["reading"],requirementIds:["requirement"]}]},{kind:"current"},release());
+  assert.equal(packet.availability,"available");assert.equal(embedded,query);assert.equal(calls,1);
+});
+
+test("prepared service rejects changed request before embedding and propagates incomplete lanes",async()=>{
+  let embeddings=0;
+  const service=createPreparedSearchService({release:release(),async embed(){embeddings++;return Array(3072).fill(.01);},
+    async execute(request){return {...response({...request,query:"question"}),lanes:{dense:"complete",sparse:"partial"}};}});
+  let captured:PreparedSearchRequest|undefined;
+  const adapter=createPreparedCandidateIndex({async search(request){captured=request;return response(request);}});
+  await adapter.retrieve({id:"question",formulations:[{id:"q",text:"question",privateNameSpans:[],
+    readingIds:["reading"],requirementIds:["requirement"]}]},{kind:"current"},release());
+  assert.ok(captured);
+  await assert.rejects(service.search({...captured,query:"different"}),/REQUEST_MISMATCH/u);
+  await assert.rejects(service.search({...captured,endpoint:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}),/REQUEST_MISMATCH/u);
+  assert.equal(embeddings,0);
+  await assert.rejects(service.search(captured));assert.equal(embeddings,1);
+  await assert.rejects(service.search(captured,AbortSignal.abort()));assert.equal(embeddings,1);
+});
+
+test("historical discovery request identity does not depend on endpoint property insertion order",async()=>{
+  const history=parsePinnedCandidateRelease({...release(),capability:"history"});
+  const request={version:"prepared-search-v1" as const,releaseId:history.id,environment:history.environment,
+    configuration:configuration() as PreparedSearchRequest["configuration"],
+    endpoint:{instant:"2020-01-01T00:00:00.000Z",kind:"timestamp" as const},query:"question",limit:50 as const};
+  const requestSha256=preparedSearchRequestHash(request);
+  assert.equal(requestSha256,preparedSearchRequestHash({...request,endpoint:{kind:"timestamp",instant:request.endpoint.instant}}));
+  const service=createPreparedSearchService({release:history,async embed(){return Array(3072).fill(.01);},
+    async execute(value){return response({...value,query:"question"});}});
+  assert.equal((await service.search({...request,requestSha256})).requestSha256,requestSha256);
+});
 
 test("prepared adapter preserves formulation provenance and bounds concurrent searches",async()=>{
   let active=0,peak=0;const queries:string[]=[];
