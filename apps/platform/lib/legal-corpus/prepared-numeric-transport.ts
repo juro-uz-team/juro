@@ -3,10 +3,11 @@ import type {PreparedCandidateConfiguration} from "./prepared-candidate-configur
 
 /** The worker is private loopback infrastructure, never a publisher URL. Its
  * process owns authenticated readers; admission must precede this transport. */
-export function createPreparedNumericTransport(input:{url:string;token:string}){
+export function createPreparedNumericTransport(input:{url:string;token:string;workerSha256:string}){
   const base=new URL(input.url);
   if(base.protocol!=="http:"||base.hostname!=="127.0.0.1"||!base.port||base.pathname!=="/"
-    ||base.search||base.hash||base.username||base.password||!/^[!-~]{32,256}$/u.test(input.token)){
+    ||base.search||base.hash||base.username||base.password||!/^[!-~]{32,256}$/u.test(input.token)
+    ||!/^[a-f0-9]{64}$/u.test(input.workerSha256)){
     throw Error("PREPARED_NUMERIC_TRANSPORT_INVALID");
   }
   async function post(path:string,value:unknown,callerSignal?:AbortSignal){
@@ -18,6 +19,9 @@ export function createPreparedNumericTransport(input:{url:string;token:string}){
       headers:{"Content-Type":"application/json",Authorization:`Bearer ${input.token}`},body});
     if(!response.ok||!response.body){
       await response.body?.cancel();throw Error("PREPARED_NUMERIC_UNAVAILABLE");
+    }
+    if(response.headers.get("X-Juro-Worker-Sha256")!==input.workerSha256){
+      await response.body.cancel();throw Error("PREPARED_NUMERIC_WORKER_MISMATCH");
     }
     const maximum=path==="/search"?128*1024:64*1024*1024;
     const reader=response.body.getReader();const chunks:Uint8Array[]=[];let bytes=0;

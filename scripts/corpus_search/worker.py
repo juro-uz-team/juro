@@ -113,7 +113,7 @@ def main():
         def connect():
             return psycopg.connect(dsn, autocommit=True, connect_timeout=5)
         with open_worker(spec, connect) as service:
-            with create_numeric_http_server(service, token, args.port) as server:
+            with create_numeric_http_server(service, token, args.port, manifest_sha256=args.sha256) as server:
                 print(json.dumps({'event': 'prepared_numeric_ready', 'manifestSha256': args.sha256}), flush=True)
                 server.serve_forever()
     except Exception as error:

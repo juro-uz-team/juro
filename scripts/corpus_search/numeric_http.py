@@ -6,6 +6,7 @@ concurrency qualification. No request content, tokens or errors are logged.
 """
 import hmac
 import json
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MAX_REQUEST_BYTES = 128 * 1024
@@ -21,10 +22,11 @@ def unique_object(pairs):
     return result
 
 
-def create_numeric_http_server(service, token, port=0):
+def create_numeric_http_server(service, token, port=0, *, manifest_sha256):
     if (not isinstance(token, str) or not token.isascii() or not 32 <= len(token) <= 256
             or any(not 33 <= ord(char) <= 126 for char in token)
-            or type(port) is not int or not 0 <= port <= 65535):
+            or type(port) is not int or not 0 <= port <= 65535
+            or not isinstance(manifest_sha256, str) or not re.fullmatch('[a-f0-9]{64}', manifest_sha256)):
         raise ValueError('numeric_transport_configuration_invalid')
 
     class Handler(BaseHTTPRequestHandler):
@@ -42,6 +44,7 @@ def create_numeric_http_server(service, token, port=0):
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Juro-Worker-Sha256', manifest_sha256)
             self.send_header('Content-Length', str(len(raw)))
             self.send_header('Connection', 'close')
             self.end_headers()

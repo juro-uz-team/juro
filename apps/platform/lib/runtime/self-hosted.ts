@@ -122,6 +122,11 @@ export function getSelfHostedRuntime(): Runtime {
   const retrieval=createNativeCorpusService({pool:corpus.pool,catalog,observations,objectRoot:corpusRoot,
     environment:appEnvironment,
     candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
+    preparedTransport:{
+      current:{url:process.env.PREPARED_CURRENT_URL??"",token:process.env.PREPARED_TRANSPORT_TOKEN??"",
+        workerSha256:process.env.PREPARED_CURRENT_WORKER_SHA256??""},
+      history:{url:process.env.PREPARED_HISTORY_URL??"",token:process.env.PREPARED_TRANSPORT_TOKEN??"",
+        workerSha256:process.env.PREPARED_HISTORY_WORKER_SHA256??""}},
     productRevision,compatibility:readCorpusCompatibility(process.env.DEPLOYMENT_ENVIRONMENT,productRevision),fallback:legal});
   state.juroRuntimeProductRevision=productRevision;
   state.juroRuntime = { ...env, ...queues, ...deadLetters,

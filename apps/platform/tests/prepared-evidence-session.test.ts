@@ -181,16 +181,17 @@ test("native gateway composes budgeted embeddings and numeric transport with com
   t.mock.method(globalThis,"fetch",async(url:URL,init:RequestInit)=>{
     assert.equal(url.origin,"http://127.0.0.1:43210");
     const body=JSON.parse(String(init.body));
-    if(url.pathname==="/read-exact"){calls.push("catalog");return Response.json(f.packet);}
+    const headers={"X-Juro-Worker-Sha256":"a".repeat(64)};
+    if(url.pathname==="/read-exact"){calls.push("catalog");return Response.json(f.packet,{headers});}
     calls.push("numeric");assert.equal(body.embedding.length,3072);assert.equal("query" in body,false);
     assert.ok(body.termHashes.length>0);
     return Response.json({version:body.version,releaseId:body.releaseId,environment:body.environment,
       configuration:body.configuration,requestSha256:body.requestSha256,lanes:{dense:"complete",sparse:"complete"},
-      hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]});
+      hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]},{headers});
   });
   const budgetDatabase={prepare(){return {bind(){return {async run(){calls.push("budget");return {success:true};}};}};}} as unknown as D1Database;
   const runtime=createPreparedNativeResearchRuntime({release,capture:f.input,fetch:f.input.fetch,
-    numeric:{url:"http://127.0.0.1:43210",token:"test-token-".repeat(5)},
+    numeric:{url:"http://127.0.0.1:43210",token:"test-token-".repeat(5),workerSha256:"a".repeat(64)},
     embedding:{apiKey:"test-only-key",budgetDatabase,budgetMode:"metered",fetch:async(_url,init)=>{
       calls.push("embedding");assert.deepEqual(JSON.parse(String(init!.body)).input,[query]);
       return Response.json({model:"text-embedding-3-large",data:[{index:0,embedding:Array.from({length:3072},(_,i)=>i===0?1:0)}],

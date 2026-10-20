@@ -15,7 +15,8 @@ class NumericHttpTests(unittest.TestCase):
             if value.get('fail'):
                 raise ValueError('private formulation')
             return {'hits': value}
-        self.server = create_numeric_http_server(SimpleNamespace(search=search, read_exact=search), 't'*32)
+        self.server = create_numeric_http_server(SimpleNamespace(search=search, read_exact=search), 't'*32,
+                                                 manifest_sha256='a'*64)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -29,6 +30,7 @@ class NumericHttpTests(unittest.TestCase):
         try:
             connection.request('POST', path, raw, {'Authorization': 'Bearer '+token, 'Content-Type': 'application/json'})
             response = connection.getresponse()
+            self.assertEqual(response.getheader('X-Juro-Worker-Sha256'), 'a'*64)
             return response.status, json.loads(response.read())
         finally:
             connection.close()

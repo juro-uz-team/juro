@@ -5,7 +5,9 @@ import {LocalObjectStore} from "../storage/objects";
 import {PostgresVectorIndex} from "../storage/vectors";
 import {createVectorCandidateReader} from "../storage/vector-candidates";
 import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
-import {readSelectedNativeCorpus,nativeCorpusBinding,type NativeCorpusAcceptance} from "../storage/native-corpus-acceptance";
+import {readSelectedCorpus,nativeCorpusBinding,type NativeCorpusAcceptance} from "../storage/native-corpus-acceptance";
+import {preparedCorpusBinding} from "../storage/prepared-corpus-qualification";
+import {createAcceptedPreparedCorpusRuntime,type PreparedNativeTransport} from "./prepared-native-corpus";
 import {createRuntimeEvidenceServices,createRuntimePinnedCustomSearchProvider} from "../legal-corpus/target-runtime";
 import {createProviderCandidateIndex,parsePinnedCandidateRelease,type LegalCandidateProvider} from "../legal-corpus/legal-candidate-index";
 import {handleCustomSearchRequest,type CustomSearchEnv} from "../legal-corpus/custom-search-service";
@@ -91,6 +93,7 @@ export async function createNativeCorpusResearchRuntime(input:Dependencies&{
 /** Fetch/citation paths retain their original evidence stores. Each new turn
  * selects both retrieval endpoints once; its repairs keep that same selection. */
 export function createNativeCorpusService(input:Dependencies&{environment:string;productRevision:string;compatibility?:CorpusCompatibility;
+  preparedTransport?:PreparedNativeTransport;
   fallback:Pick<LegalCorpusService,"fetch"|"openLegalResearch">}) {
   let cached:{binding:string;runtime:ReturnType<typeof createNativeCorpusResearchRuntime>}|undefined;
   return {
@@ -113,7 +116,12 @@ export function createNativeCorpusService(input:Dependencies&{environment:string
         });
       }
       // A retired selected release must never fall back into the old corpus.
-      try{await readSelectedNativeCorpus(input.pool,input.productRevision,input.compatibility);}
+      try{
+        const selected=await readSelectedCorpus(input.pool,input.productRevision,input.compatibility);
+        if(selected?.version==="prepared-pgvector-v1"){
+          return Response.json({code:"PREPARED_CORPUS_SESSION_REQUIRED"},{status:503,headers:{"cache-control":"no-store"}});
+        }
+      }
       catch(error){
         if(error instanceof Error&&error.message==="NATIVE_CORPUS_RETIRED")return Response.json({code:"NATIVE_CORPUS_RETIRED"},{status:503,headers:{"cache-control":"no-store"}});
         throw error;
@@ -121,12 +129,25 @@ export function createNativeCorpusService(input:Dependencies&{environment:string
       return input.fallback.fetch(request);
     },
     async openLegalResearch(scope:CorpusSessionInput){
-      const selected=await readSelectedNativeCorpus(input.pool,input.productRevision,input.compatibility);
+      const selected=await readSelectedCorpus(input.pool,input.productRevision,input.compatibility);
       if(!selected)return input.fallback.openLegalResearch(scope);
-      if(!input.candidateUrl)throw Error("NATIVE_CORPUS_CANDIDATE_SERVICE_MISSING");
-      const binding=nativeCorpusBinding(selected);
-      if(cached?.binding!==binding)cached={binding,runtime:createNativeCorpusResearchRuntime({...input,configuration:selected,mode:"accepted"})};
-      const runtime=await cached.runtime;
+      if(selected.version==="prepared-pgvector-v1"){
+        if(!input.preparedTransport)throw Error("PREPARED_WORKER_DEPLOYMENT_MISSING");
+        const binding=preparedCorpusBinding(selected);
+        if(cached?.binding!==binding)cached={binding,runtime:createAcceptedPreparedCorpusRuntime({
+          pool:input.pool,objectRoot:input.objectRoot,budgetDatabase:input.observations??input.catalog,
+          apiKey:input.apiKey,configuration:selected,transport:input.preparedTransport})};
+      }else{
+        if(!input.candidateUrl)throw Error("NATIVE_CORPUS_CANDIDATE_SERVICE_MISSING");
+        const binding=nativeCorpusBinding(selected);
+        if(cached?.binding!==binding)cached={binding,runtime:createNativeCorpusResearchRuntime({...input,configuration:selected,mode:"accepted"})};
+      }
+      const pending=cached;
+      let runtime:Awaited<typeof pending.runtime>;
+      try{runtime=await pending.runtime;}catch(error){
+        if(cached===pending)cached=undefined;
+        throw error;
+      }
       return runtime.openLegalResearch(scope);
     },
   };

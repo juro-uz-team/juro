@@ -1,3 +1,4 @@
+import {preparedCorpusAcceptanceSchema,type PreparedCorpusAcceptance} from "./prepared-corpus-qualification";
 import {createHash} from "node:crypto";
 import type {Pool} from "pg";
 import type {CorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
@@ -178,17 +179,29 @@ export async function activateNativeCorpus(input:{pool:Pool;manifest:NativeCorpu
 }
 
 /** A single MVCC read pins both endpoints, including their rollback identity. */
-export async function readSelectedNativeCorpus(pool:Pool,productRevision:string,compatibility?:CorpusCompatibility):Promise<NativeCorpusAcceptance|null> {
-  const row=(await retrievalQuery(pool,`SELECT a.sha256,a.manifest_bytes,r.acceptance_sha256 AS retired_acceptance
+export async function readSelectedCorpus(pool:Pool,productRevision:string,compatibility?:CorpusCompatibility):Promise<NativeCorpusAcceptance|PreparedCorpusAcceptance|null> {
+  const row=(await retrievalQuery(pool,`SELECT coalesce(a.sha256,p.sha256) AS sha256,
+    coalesce(a.manifest_bytes,p.manifest_bytes) AS manifest_bytes,
+    s.prepared_acceptance_sha256,r.acceptance_sha256 AS retired_acceptance
     FROM storage.native_corpus_selections s
-    JOIN storage.native_corpus_acceptances a ON a.sha256=s.acceptance_sha256
+    LEFT JOIN storage.native_corpus_acceptances a ON a.sha256=s.acceptance_sha256
+    LEFT JOIN storage.prepared_corpus_acceptances p ON p.sha256=s.prepared_acceptance_sha256
     LEFT JOIN storage.corpus_retirements r ON r.acceptance_sha256=a.sha256 ORDER BY s.id DESC LIMIT 1`)).rows[0];
   if(!row){if(compatibility)throw Error("NATIVE_CORPUS_COMPATIBILITY_CHANGED");return null;}
   if(row.retired_acceptance)throw Error("NATIVE_CORPUS_RETIRED");
   if(sha(row.manifest_bytes)!==row.sha256)throw Error("NATIVE_CORPUS_ACCEPTANCE_CORRUPT");
-  const manifest=nativeCorpusAcceptanceSchema.parse(JSON.parse(Buffer.from(row.manifest_bytes).toString("utf8")));
+  const value=JSON.parse(Buffer.from(row.manifest_bytes).toString("utf8"));
+  const manifest=row.prepared_acceptance_sha256?preparedCorpusAcceptanceSchema.parse(value):nativeCorpusAcceptanceSchema.parse(value);
   if(compatibility && (compatibility.revision!==productRevision || compatibility.acceptanceSha256!==row.sha256
     || compatibility.acceptedRevision!==manifest.productRevision))throw Error("NATIVE_CORPUS_COMPATIBILITY_CHANGED");
   if(manifest.productRevision!==productRevision && !compatibility)throw Error("NATIVE_CORPUS_PRODUCT_CHANGED");
   return manifest;
+}
+
+/** Legacy callers must fail closed rather than skip a prepared selection and
+ * accidentally reopen an older corpus. New runtime dispatch uses the union. */
+export async function readSelectedNativeCorpus(pool:Pool,productRevision:string,compatibility?:CorpusCompatibility):Promise<NativeCorpusAcceptance|null>{
+  const selected=await readSelectedCorpus(pool,productRevision,compatibility);
+  if(selected?.version==="prepared-pgvector-v1")throw Error("PREPARED_CORPUS_RUNTIME_REQUIRED");
+  return selected;
 }

@@ -40,6 +40,8 @@ test(`native acceptance v${version} atomically selects both fenced releases and 
     await query(`CREATE TABLE storage.objects(bucket text);
       CREATE TABLE storage.embeddings(collection text);`);
     await query(await readFile(new URL("../postgres/0062-corpus-retirement.sql",import.meta.url),"utf8"));
+    await query(await readFile(new URL("../postgres/0063-corpus-evidence-stores.sql",import.meta.url),"utf8"));
+    await query(await readFile(new URL("../postgres/0064-prepared-corpus-acceptance.sql",import.meta.url),"utf8"));
     for(const capability of ["current","history"] as const){const selected=manifest[capability];
       await query("INSERT INTO storage.vector_collections VALUES($1,1,false)",[selected.vectorCollection]);
       await query("INSERT INTO storage.vector_search_generations VALUES($1,$2,1,'verified',1)",[selected.vector.generation,selected.vectorCollection]);
