@@ -5,7 +5,7 @@ import {createProviderCandidateIndex, parsePinnedCandidateRelease,
   toPinnedCandidateConfiguration} from "../lib/legal-corpus/legal-candidate-index";
 
 function configuration() {
-  return {backend: "prepared-corpus-v1", identity: "prepared-configuration",
+  return {backend: "prepared-corpus-v1", navigationBackend: "pgvector", identity: "prepared-configuration",
     embeddingModel: "openai/text-embedding-3-large", dimensions: 3072,
     artifacts: {packageSha256: "a".repeat(64), vectorCompletionSha256: "b".repeat(64),
       vectorIdentitySha256: "1".repeat(64),
@@ -45,6 +45,7 @@ test("prepared adapter rejects incomplete lanes, stale pins, wrong requests and 
     (value:ReturnType<typeof response>)=>({...value,lanes:{dense:"complete",sparse:"partial"}}),
     (value:ReturnType<typeof response>)=>({...value,requestSha256:"0".repeat(64)}),
     (value:ReturnType<typeof response>)=>({...value,environment:"staging"}),
+    (value:ReturnType<typeof response>)=>({...value,configuration:{...value.configuration,navigationBackend:"faiss"}}),
     (value:ReturnType<typeof response>)=>({...value,configuration:{...value.configuration,artifacts:{...value.configuration.artifacts,sparseSha256:"0".repeat(64)}}}),
     (value:ReturnType<typeof response>)=>({...value,hits:[...value.hits,...value.hits]}),
   ];
@@ -62,6 +63,8 @@ test("prepared release preserves every artifact pin and rejects legacy or incomp
   for (const changed of [
     {...input, dimensions: 1536},
     {...input, backend: "prepared-corpus-v2"},
+    {...input, navigationBackend: undefined},
+    {...input, navigationBackend: "faiss"},
     {...input, evidenceSemantics: "eligible"},
     {...input, gatewayCaching: true},
     {...input, metadataSchema: ["valid_from", "valid_to"]},
