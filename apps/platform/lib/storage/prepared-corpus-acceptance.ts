@@ -56,9 +56,11 @@ export async function activatePreparedCorpus(input:{pool:Pool;manifest:PreparedC
   try{
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('native-corpus-selection',0))");
+    // Registrations are immutable; admission needs SELECT, not the UPDATE
+    // privilege PostgreSQL requires for a row-locking read.
     for(const selected of [manifest.current,manifest.history]){
       const store=(await client.query(`SELECT namespace,manifest FROM storage.corpus_evidence_stores
-        WHERE generation_sha256=$1 FOR SHARE`,[selected.evidenceStore.generationSha256])).rows[0];
+        WHERE generation_sha256=$1`,[selected.evidenceStore.generationSha256])).rows[0];
       if(!store||store.namespace!==selected.evidenceStore.namespace||hash(store.manifest)!==selected.evidenceStore.generationSha256
         ||!isPreparedPostgresEvidenceStore(store.manifest)){
         throw Error("PREPARED_EVIDENCE_STORE_UNREGISTERED");
