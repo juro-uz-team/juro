@@ -69,7 +69,7 @@ export const pinnedCandidateConfigurationSchema = z.union([
   legacyPinnedCandidateConfigurationSchema,
   preparedCandidateConfigurationSchema,
 ]);
-const pinnedReleaseSchema = z.object({
+export const pinnedReleaseSchema = z.object({
   id: searchReleaseIdSchema,
   environment: legalEnvironmentSchema,
   capability: z.enum(["current", "history"]),
