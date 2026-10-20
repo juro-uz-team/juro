@@ -18,7 +18,7 @@ test("capture role can append registered public evidence but cannot change retai
   const rewrite=(statement:string)=>statement.replaceAll("storage.",`${schema}.`);
   const client=await db.pool.connect();
   const query=(statement:string,values?:unknown[])=>client.query(rewrite(statement),values);
-  const pool={query} as unknown as Pool;
+  const pool={query,connect:async()=>({query,release:()=>{}})} as unknown as Pool;
   const descriptor=Buffer.from(JSON.stringify({format:preparedEvidenceStoreFormat,packageSha256:"a".repeat(64)}));
   const generation=createHash("sha256").update(descriptor).digest("hex"),namespace=`legal-prepared-${generation}`;
   let roleCreated=false;
@@ -40,8 +40,13 @@ test("capture role can append registered public evidence but cannot change retai
       SET ROLE ${role}`);
     const store=new PreparedEvidenceStore(pool,namespace);
     assert.equal(await store.get("parent"),null);
+    await query("SET default_transaction_read_only=on");
+    await assert.rejects(query("SELECT storage.append_prepared_evidence($1,$2,$3)",
+      [namespace,"parent",Buffer.from("complete public source")]),/read-only transaction/);
     await store.put("parent",Buffer.from("complete public source"));
     await store.put("parent",Buffer.from("complete public source"));
+    assert.equal((await query("SHOW default_transaction_read_only")).rows[0].default_transaction_read_only,"on");
+    await query("SET default_transaction_read_only=off");
     assert.deepEqual(await store.head("parent"),{key:"parent",size:22});
     const object=await store.get("parent");
     const first=await object!.bytes();first[0]=0;

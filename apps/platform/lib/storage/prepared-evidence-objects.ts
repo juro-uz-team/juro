@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
 import type {Pool} from "pg";
-import {retrievalQuery} from "./retrieval-connection";
+import {acquireRetrievalClient,retrievalQuery} from "./retrieval-connection";
 
 const maximum=64*1024*1024;
 const hash=(value:Uint8Array)=>createHash("sha256").update(value).digest("hex");
@@ -42,9 +42,20 @@ export class PreparedEvidenceStore {
     this.validateKey(key);
     if(value.byteLength<1||value.byteLength>maximum)throw Error("PREPARED_EVIDENCE_SIZE_INVALID");
     const bytes=Buffer.from(value),digest=hash(bytes);
-    const {rows}=await retrievalQuery<{sha256:string}>(this.pool,
-      "SELECT storage.append_prepared_evidence($1,$2,$3) AS sha256",[this.namespace,key,bytes]);
-    if(rows[0]?.sha256!==digest)throw Error("PREPARED_EVIDENCE_WRITE_MISMATCH");
+    // Shared corpus pools default to read-only transactions. Override that
+    // default only on this exclusively leased append transaction; role grants
+    // still prohibit direct writes to either prepared or existing objects.
+    const lease=await acquireRetrievalClient(this.pool);
+    try{
+      await lease.client.query("BEGIN READ WRITE");
+      const {rows}=await lease.client.query<{sha256:string}>(
+        "SELECT storage.append_prepared_evidence($1,$2,$3) AS sha256",[this.namespace,key,bytes]);
+      if(rows[0]?.sha256!==digest)throw Error("PREPARED_EVIDENCE_WRITE_MISMATCH");
+      await lease.client.query("COMMIT");
+    }catch(error){
+      try{await lease.client.query("ROLLBACK");}catch{}
+      throw error;
+    }finally{lease.release();}
     return {key,size:bytes.byteLength};
   }
 }
