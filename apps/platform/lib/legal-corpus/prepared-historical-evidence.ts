@@ -58,7 +58,21 @@ export function createPreparedHistoricalEvidenceReader(input:{manifestBytes:Uint
     const position=text.indexOf(quote);
     if(!quote||position<0||text.indexOf(quote,position+1)>=0)throw Error("PREPARED_HISTORY_PROOF_UNAVAILABLE");
   }
-  return {async resolve(query:{sourceRevisionId:string;sourceSha256:string;officialUrl:string;
+  return {packageSha256:publication.packageSha256,manifestSha256:input.manifestSha256,
+    async readCapture(query:{officialUrl:string;languageTag:z.infer<typeof legalLanguageSchema>;instant:string}){
+      const instant=utcInstantSchema.parse(query.instant);
+      const candidates=publication.facts.filter(row=>row.officialUrl===query.officialUrl&&row.languageTag===query.languageTag
+        &&contains(row.editorial,instant)&&contains(row.applicability,instant));
+      const revisions=new Map(candidates.map(row=>[row.sourceRevisionId,row.sourceSha256]));
+      if(revisions.size!==1)throw Error(revisions.size?"PREPARED_HISTORY_AMBIGUOUS":"PREPARED_HISTORICAL_APPLICABILITY_REQUIRED");
+      const [revisionId,sha256]=[...revisions][0]!;
+      if(revisionId!==`prepared-normalized-${sha256}`)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
+      const parent=await read(revisionId,sha256);
+      if(parent.snapshot.source.canonicalUrl!==query.officialUrl)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
+      // Selection only locates retained bytes. resolve() must still prove the
+      // exact complete rule and both interval assertions before admission.
+      return {revisionId,parent};
+    },async resolve(query:{sourceRevisionId:string;sourceSha256:string;officialUrl:string;
     languageTag:z.infer<typeof legalLanguageSchema>;completeText:string;articleNumber:string|null;instant:string}){
     const instant=utcInstantSchema.parse(query.instant);
     const candidates=publication.facts.filter(row=>row.sourceRevisionId===query.sourceRevisionId

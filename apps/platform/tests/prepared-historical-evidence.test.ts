@@ -6,6 +6,9 @@ import {createPreparedHistoricalEvidenceReader} from "../lib/legal-corpus/prepar
 import {classifyLegalSourceUrl} from "../lib/legal/source-fetch";
 import {createCompleteArticleIndex} from "../lib/legal/article-context";
 import {resolvePreparedSourceEvidence} from "../lib/legal-corpus/prepared-source-evidence";
+import {createPreparedCorpusResearchRuntime} from "../lib/runtime/prepared-corpus";
+import {parsePinnedCandidateRelease} from "../lib/legal-corpus/legal-candidate-index";
+import {preparedCandidateConfigurationSchema} from "../lib/legal-corpus/prepared-candidate-configuration";
 
 const hash=(value:string|Uint8Array)=>createHash("sha256").update(value).digest("hex");
 async function fixture(){
@@ -15,7 +18,7 @@ async function fixture(){
   const url="https://lex.uz/en/docs/777?ONDATE=01.01.2020";
   const quote="This provision applies from 1 January 2020 until 1 January 2021.";
   const edition="This text is the official edition for the period from 1 January 2020 until 1 January 2021.";
-  const bytes=new TextEncoder().encode(`<html><header id="doc_header">Действующий акт</header><main><h1>Records law</h1><p>Article 7. Records</p><p>The applicant may request a complete record from the public authority except where disclosure would reveal protected personal information.</p><p>Article 8. Commencement</p><p>${quote}</p><p>${edition}</p></main></html>`);
+  const bytes=new TextEncoder().encode(`<html><header id="doc_header">Действующий акт</header><main><h1>Records law</h1><p>Article 7. Records</p><p>The applicant may request a complete record from the public authority except where disclosure would reveal protected personal information. Commencement follows Article 8 of this Law.</p><p>Article 8. Commencement</p><p>${quote}</p><p>${edition}</p></main></html>`);
   const capture=await capturePreparedSource({fetched:{...classifyLegalSourceUrl(url),bytes,contentSha256:hash(bytes),
     contentType:"text/html",etag:null,lastModified:null,fetchedAt:"2026-10-20T00:00:00.000Z",robotsUrl:"https://lex.uz/robots.txt"},
     bucket,store:{namespace:"legal-prepared-"+"a".repeat(64),generationSha256:"b".repeat(64)},options:{}});
@@ -83,4 +86,44 @@ test("manifest pins and editorial validity are independent admission requirement
   otherEdition.facts[0]!.editorial.to="2020-05-01T00:00:00Z";
   await assert.rejects(f.reader(otherEdition).resolve(f.query),/APPLICABILITY_REQUIRED/);
   await f.reader().resolve({...f.query,instant:"2020-06-01T00:00Z"});
+});
+
+test("historical chat reads retained captures and separately proves complementary provisions",async()=>{
+  const f=await fixture();
+  const configuration=preparedCandidateConfigurationSchema.parse({backend:"prepared-corpus-v1",navigationBackend:"pgvector",identity:"history-configuration",
+    embeddingModel:"openai/text-embedding-3-large",dimensions:3072,evidenceSemantics:"discovery-only",categoryRanking:{mode:"disabled"},
+    artifacts:{packageSha256:"a".repeat(64),vectorCompletionSha256:"b".repeat(64),vectorIdentitySha256:"1".repeat(64),
+      membershipSha256:"c".repeat(64),workIndexSha256:"d".repeat(64),navigationSha256:"e".repeat(64),sparseSha256:"f".repeat(64)},
+    gatewayIdentity:"gateway",providerProjectIdentity:"project",gatewayPayloadLogging:false,gatewayCaching:false,similarityCaching:false});
+  const release=parsePinnedCandidateRelease({id:"history-release",environment:"production",capability:"history",configuration,
+    instances:[{id:"history-instance",shardId:"history-shard"}]});
+  const packet={package_sha256:configuration.artifacts.packageSha256,vector_completion_sha256:configuration.artifacts.vectorCompletionSha256,
+    membership_sha256:configuration.artifacts.membershipSha256,work_index_sha256:configuration.artifacts.workIndexSha256,
+    records:[{vector_ordinal:3,membership_ordinal:7,compact_input_hash:"1".repeat(64),original_input_hash:"2".repeat(64),work:"work:1",unit:"work:1:12",status:"discovery_only",
+      chunk:{id:`retrieval-chunk-v1:${"3".repeat(64)}`,work:"work:1",snapshotProvisionId:"work:1:12",officialText:f.query.completeText,
+        officialTextSha256:hash(f.query.completeText),language:"en",script:"Latn"}}],
+    sources:{"work:1":{inventory:{id:"work:1",url:f.query.officialUrl},prepared:{work:"work:1"}}},
+    units:{"work:1:12":{ordinal:12,text:f.query.completeText}},continuations:{}};
+  const complete=structuredClone(f.publication);
+  const target=createCompleteArticleIndex(f.capture.parent.snapshot.blocks)("8").candidates[0]!.text;
+  complete.facts.push({...complete.facts[0]!,articleNumber:"8",completeTextSha256:hash(target)});
+  async function run(publication:typeof complete,instant=f.query.instant){
+    const manifestBytes=new TextEncoder().encode(JSON.stringify(publication));
+    const runtime=createPreparedCorpusResearchRuntime({release,history:{manifestBytes,manifestSha256:hash(manifestBytes)},
+      capture:{bucket:f.bucket,store:f.capture.store,options:{}},fetch:async()=>{throw Error("Historical evidence must not fetch current text");},
+      readExact:async()=>packet,search:async request=>({version:request.version,releaseId:request.releaseId,environment:request.environment,
+        configuration:request.configuration,requestSha256:request.requestSha256,lanes:{dense:"complete",sparse:"complete"},
+        hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]})});
+    const session=await runtime.openLegalResearch({requestId:"history-turn",environment:release.environment,temporalScope:{kind:"timestamp",instant}});
+    return session.search({round:0,plan:{id:"history-plan",formulations:[{id:"query",text:"What rule applied to records?",
+      privateNameSpans:[],readingIds:["applicant"],requirementIds:["records"]}]}});
+  }
+  const result=await run(complete);
+  assert.deepEqual(result.needs,[]);assert.deepEqual(result.evidence.map(row=>row.source.article).sort(),["7","8"]);
+  assert.ok(result.evidence.every(row=>row.source.status==="historical"&&row.source.citationEvidenceReceipt?.capability==="history"
+    &&row.source.citationEvidenceReceipt.version===2));
+  const missingReference=await run(f.publication);
+  assert.equal(missingReference.evidence.some(row=>row.source.article==="8"),false);
+  assert.ok(missingReference.needs.some(row=>row.reason==="unresolved_reference"));
+  assert.equal((await run(complete,"2021-01-01T00:00:00Z")).evidence.length,0);
 });

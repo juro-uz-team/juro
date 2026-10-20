@@ -21,18 +21,24 @@ const articleLabel=(label:string)=>/(?:Article|Статья|Ст\.)\s+(\d+(?:[.-
 export function createPreparedResearchRuntime(input:{release:PinnedCandidateRelease;catalog:Catalog;session:Session}){
   const pinned=parsePinnedCandidateRelease(input.release);
   const configuration=preparedCandidateConfigurationSchema.parse(pinned.configuration);
-  if(pinned.capability!=="current"||pinned.instances.length!==1)throw Error("PREPARED_RESEARCH_CAPABILITY_UNSUPPORTED");
+  if(pinned.instances.length!==1||(pinned.capability==="history")!==(input.session.historicalInstant!==undefined)){
+    throw Error("PREPARED_RESEARCH_CAPABILITY_UNSUPPORTED");
+  }
   const instance=pinned.instances[0]!;
   const discoveries=new Map<string,{packet:Awaited<ReturnType<Catalog["read"]>>;reference:[number,number];candidate:CandidatePacket["candidates"][number]}>();
   const evidence=new Map<string,Evidence>();
   const check=(endpoint:TemporalEndpoint,release:PinnedCandidateRelease)=>{
-    if(endpoint.kind!=="current"||JSON.stringify(parsePinnedCandidateRelease(release))!==JSON.stringify(pinned)){
+    if((endpoint.kind==="current")!==(pinned.capability==="current")
+      ||(endpoint.kind==="timestamp"&&endpoint.instant!==input.session.historicalInstant)
+      ||JSON.stringify(parsePinnedCandidateRelease(release))!==JSON.stringify(pinned)){
       throw Error("PREPARED_RESEARCH_RELEASE_MISMATCH");
     }
   };
   const candidateCatalog={async revalidate(value:CandidatePacket,endpoint:TemporalEndpoint,release:PinnedCandidateRelease,_currentAt:string){
     check(endpoint,release);const packet=parseCandidatePacket(value);
-    if(packet.releaseId!==pinned.id||packet.endpoint.kind!=="current"||packet.availability!=="available"
+    if(packet.releaseId!==pinned.id||packet.endpoint.kind!==endpoint.kind
+      ||(packet.endpoint.kind==="timestamp"&&endpoint.kind==="timestamp"&&packet.endpoint.instant!==endpoint.instant)
+      ||packet.availability!=="available"
       ||packet.partialErrors.length||packet.requiredInstanceIds.length!==1||packet.requiredInstanceIds[0]!==instance.id
       ||new Set(packet.candidates.map(row=>row.itemKey)).size!==packet.candidates.length){
       throw Error("PREPARED_RESEARCH_PACKET_INVALID");

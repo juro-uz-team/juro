@@ -9,6 +9,7 @@ import type {createPreparedHistoricalEvidenceReader} from "./prepared-historical
 
 const hash=(text:string)=>createHash("sha256").update(text).digest("hex");
 const normalized=(text:string)=>text.replace(/\s+/gu," ").trim();
+export type PreparedSourceCapture=Pick<Awaited<ReturnType<typeof capturePreparedSource>>,"revisionId"|"parent"|"store"|"observation">;
 
 /** Join authenticated discovery text to a separately captured, durable parent.
  * The caller must authenticate package membership before calling this boundary.
@@ -17,7 +18,7 @@ const normalized=(text:string)=>text.replace(/\s+/gu," ").trim();
  * admission requires a separate applicability proof and is not inferred here.
  */
 export async function resolvePreparedSourceEvidence(input:{
-  capture:Awaited<ReturnType<typeof capturePreparedSource>>;
+  capture:PreparedSourceCapture;
   discovery:{officialUrl:string;text:string;textSha256:string;languageTag:"ru"|"uz-Latn"|"uz-Cyrl"|"en"};
   bucket:Pick<LegalEvidenceBucket,"get">;
   history?:{instant:string;reader:ReturnType<typeof createPreparedHistoricalEvidenceReader>};
@@ -74,11 +75,12 @@ export async function resolvePreparedSourceEvidence(input:{
  * The runtime must count these reads against its reserved reference budget.
  */
 export async function resolvePreparedSourceReferences(input:{
-  capture:Awaited<ReturnType<typeof capturePreparedSource>>;
+  capture:PreparedSourceCapture;
   source:Awaited<ReturnType<typeof resolvePreparedSourceEvidence>>;
   bucket:Pick<LegalEvidenceBucket,"get">;
   limit?:number;
   articles?:readonly string[];
+  history?:Parameters<typeof resolvePreparedSourceEvidence>[0]["history"];
 }){
   const limit=input.limit??3;
   if(!Number.isSafeInteger(limit)||limit<0||limit>3)throw Error("PREPARED_REFERENCE_BUDGET_INVALID");
@@ -97,7 +99,7 @@ export async function resolvePreparedSourceReferences(input:{
   const references=input.articles??observed;
   const index=createCompleteArticleIndex(capture.parent.snapshot.blocks);
   const resolved:Array<{article:string;source:Awaited<ReturnType<typeof resolvePreparedSourceEvidence>>}>=[];
-  const unresolved:Array<{article:string;reason:"lookup_budget"|"reference_not_found"|"reference_ambiguous"}>=[];
+  const unresolved:Array<{article:string;reason:"lookup_budget"|"reference_not_found"|"reference_ambiguous"|"applicability_unavailable"}>=[];
   for(const [position,article] of references.entries()){
     if(position>=limit){unresolved.push({article,reason:"lookup_budget"});continue;}
     const found=index(article);
@@ -105,9 +107,15 @@ export async function resolvePreparedSourceReferences(input:{
       unresolved.push({article,reason:found.occurrences>1?"reference_ambiguous":"reference_not_found"});continue;
     }
     const text=found.candidates[0]!.text;
-    const source=await resolvePreparedSourceEvidence({capture,bucket:input.bucket,
-      discovery:{officialUrl:original.officialCitation.url,languageTag:original.languageTag,text,textSha256:hash(text)}});
-    resolved.push({article,source});
+    try{
+      const source=await resolvePreparedSourceEvidence({capture,bucket:input.bucket,history:input.history,
+        discovery:{officialUrl:original.officialCitation.url,languageTag:original.languageTag,text,textSha256:hash(text)}});
+      resolved.push({article,source});
+    }catch(error){
+      if(input.history&&error instanceof Error&&["PREPARED_HISTORICAL_APPLICABILITY_REQUIRED","PREPARED_HISTORY_AMBIGUOUS"].includes(error.message)){
+        unresolved.push({article,reason:"applicability_unavailable"});
+      }else throw error;
+    }
   }
   return {resolved,unresolved};
 }

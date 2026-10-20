@@ -8,7 +8,7 @@ const citationArticle = (label: string) => /(?:Article|Статья|Ст\.)\s+(\
 
 export type UnresolvedReference = {
   query: LegalReferenceQuery;
-  reason: "lookup_unavailable" | "reference_not_found" | "reference_ambiguous" | "lookup_budget" | "member_budget";
+  reason: "lookup_unavailable" | "reference_not_found" | "reference_ambiguous" | "applicability_unavailable" | "lookup_budget" | "member_budget";
 };
 export type ReferenceDiscoveryResult = {
   candidates: RevalidatedCandidate[];
