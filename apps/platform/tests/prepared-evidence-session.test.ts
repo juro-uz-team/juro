@@ -8,7 +8,7 @@ import {candidateSchema} from "../lib/legal-corpus/legal-candidate-index";
 import {parseCandidatePacket,parsePinnedCandidateRelease} from "../lib/legal-corpus/legal-candidate-index";
 import {createPreparedResearchRuntime} from "../lib/legal-corpus/prepared-research-runtime";
 import {prepareCorpusEvidence} from "../lib/legal-chat/corpus-evidence";
-import {createPreparedCorpusResearchRuntime} from "../lib/runtime/prepared-corpus";
+import {createPreparedCorpusResearchRuntime,createPreparedNativeResearchRuntime} from "../lib/runtime/prepared-corpus";
 import {preparedCandidateConfigurationSchema} from "../lib/legal-corpus/prepared-candidate-configuration";
 import {classifyLegalSourceUrl,type FetchedLegalSource} from "../lib/legal/source-fetch";
 
@@ -171,4 +171,35 @@ test("native prepared session delivers verified complete rules and complementary
   assert.equal(f.calls(),1);assert.equal(searches,1);
   await session.cancel();await assert.rejects(session.search({round:1,plan}));
   await assert.rejects(runtime.openLegalResearch({...scope,temporalScope:{kind:"timestamp",instant:"2020-01-01T00:00:00.000Z"}}),/HISTORICAL_APPLICABILITY_REQUIRED/);
+});
+
+test("native gateway composes budgeted embeddings and numeric transport with complete chat evidence",async t=>{
+  const f=await fixture();const calls:string[]=[];
+  const release=parsePinnedCandidateRelease({id:"prepared-release",environment:"production",capability:"current",configuration,
+    instances:[{id:"prepared-instance",shardId:"prepared-shard"}]});
+  const query="How can an applicant challenge a refused record request?";
+  t.mock.method(globalThis,"fetch",async(url:URL,init:RequestInit)=>{
+    assert.equal(url.origin,"http://127.0.0.1:43210");
+    const body=JSON.parse(String(init.body));
+    if(url.pathname==="/read-exact"){calls.push("catalog");return Response.json(f.packet);}
+    calls.push("numeric");assert.equal(body.embedding.length,3072);assert.equal("query" in body,false);
+    assert.ok(body.termHashes.length>0);
+    return Response.json({version:body.version,releaseId:body.releaseId,environment:body.environment,
+      configuration:body.configuration,requestSha256:body.requestSha256,lanes:{dense:"complete",sparse:"complete"},
+      hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]});
+  });
+  const budgetDatabase={prepare(){return {bind(){return {async run(){calls.push("budget");return {success:true};}};}};}} as unknown as D1Database;
+  const runtime=createPreparedNativeResearchRuntime({release,capture:f.input,fetch:f.input.fetch,
+    numeric:{url:"http://127.0.0.1:43210",token:"test-token-".repeat(5)},
+    embedding:{apiKey:"test-only-key",budgetDatabase,budgetMode:"metered",fetch:async(_url,init)=>{
+      calls.push("embedding");assert.deepEqual(JSON.parse(String(init!.body)).input,[query]);
+      return Response.json({model:"text-embedding-3-large",data:[{index:0,embedding:Array.from({length:3072},(_,i)=>i===0?1:0)}],
+        usage:{prompt_tokens:12,total_tokens:12}});
+    }}});
+  const session=await runtime.openLegalResearch({requestId:"native-turn",environment:release.environment,temporalScope:{kind:"current"}});
+  const result=await session.search({round:0,plan:{id:"native-plan",formulations:[{id:"query",text:query,
+    privateNameSpans:[],readingIds:["applicant"],requirementIds:["records","review"]}]}});
+  assert.deepEqual(calls,["budget","embedding","numeric","catalog"]);
+  assert.deepEqual(result.needs,[]);assert.deepEqual(result.evidence.map(row=>row.source.article).sort(),["7","8"]);
+  assert.ok(result.evidence.every(row=>row.source.status==="current"&&row.source.citationEvidenceReceipt!.version===2));
 });

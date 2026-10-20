@@ -121,11 +121,13 @@ export type CustomSearchEnv = {
   CUSTOM_RUNTIME_DESCRIPTOR_SHA256: string;
 };
 
-async function reserveQueryBudget(
-  env: CustomSearchEnv,
+export async function reserveCustomQueryBudget(
+  env: Pick<CustomSearchEnv,"APP_ENV"|"CUSTOM_QUERY_BUDGET_MODE"|"BUDGET_DB"|"CATALOG_DB">,
   releaseId: string,
   queryCount: number,
 ): Promise<string> {
+  searchReleaseIdSchema.parse(releaseId);
+  z.number().int().min(1).max(6).parse(queryCount);
   const environment = legalEnvironmentSchema.parse(env.APP_ENV);
   const mode = z.enum(["metered", "capped"]).parse(env.CUSTOM_QUERY_BUDGET_MODE ?? "capped");
   const period = environment === "staging" ? "evaluation"
@@ -149,11 +151,12 @@ async function reserveQueryBudget(
     reservation, queryCount, environment, period, reservation,
   ).first<{ reservedUsdMicros: number }>();
   if (!reserved) throw new TypeError("CUSTOM_QUERY_BUDGET_EXHAUSTED");
-  await database.prepare(`INSERT INTO legal_custom_query_reservations
+  const recorded = await database.prepare(`INSERT INTO legal_custom_query_reservations
     (id,environment,period,release_id,reserved_usd_micros,created_at)
     VALUES (?,?,?,?,?,?)`).bind(
     id, environment, period, releaseId, reservation, now,
   ).run();
+  if (!recorded.success) throw new TypeError("CUSTOM_QUERY_USAGE_UNAVAILABLE");
   return id;
 }
 
@@ -267,7 +270,7 @@ export async function executeCustomSearch(env: CustomSearchEnv, raw: unknown) {
   const {descriptor,component} = await timed("descriptorMs", () => loadDescriptor(env, input.releaseId));
   const denseMetadataReleaseId = descriptor.denseMetadataReleaseId ?? descriptor.releaseId;
   const queries = "query" in input ? [input.query] : input.queries;
-  await reserveQueryBudget(env, input.releaseId, queries.length);
+  await reserveCustomQueryBudget(env, input.releaseId, queries.length);
   const atEpoch = Math.floor(new Date(input.endpoint.kind === "timestamp"
     ? input.endpoint.instant : input.currentAt).getTime() / 1_000);
   const lanes = await Promise.allSettled([

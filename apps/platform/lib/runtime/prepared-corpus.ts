@@ -8,9 +8,26 @@ import {createPreparedResearchRuntime} from "../legal-corpus/prepared-research-r
 import {parsePinnedCandidateRelease,type PinnedCandidateRelease} from "../legal-corpus/legal-candidate-index";
 import {preparedCandidateConfigurationSchema} from "../legal-corpus/prepared-candidate-configuration";
 import {indexedRetrievalSignal} from "./indexed-retrieval";
+import {createPreparedNumericTransport} from "../legal-corpus/prepared-numeric-transport";
+import {createPreparedQueryEmbedding} from "../legal-corpus/prepared-query-embedding";
+import {createPreparedSearchService} from "../legal-corpus/prepared-search-service";
 
 type Capture=Parameters<typeof createPreparedEvidenceSession>[0];
 type DiscoveryRequest=Parameters<Parameters<typeof createPreparedDiscoveryCatalog>[0]["readExact"]>[0];
+
+/** Compose the native query gateway and private worker after release admission.
+ * The selected-release controller still owns qualification and activation. */
+export function createPreparedNativeResearchRuntime(input:
+  Omit<Parameters<typeof createPreparedCorpusResearchRuntime>[0],"search"|"readExact">&{
+    numeric:Parameters<typeof createPreparedNumericTransport>[0];
+    embedding:Omit<Parameters<typeof createPreparedQueryEmbedding>[0],"environment"|"releaseId">;
+  }){
+  const release=parsePinnedCandidateRelease(input.release);
+  const transport=createPreparedNumericTransport(input.numeric);
+  const embed=createPreparedQueryEmbedding({...input.embedding,environment:release.environment,releaseId:release.id});
+  const search=createPreparedSearchService({release,embed,execute:transport.execute});
+  return createPreparedCorpusResearchRuntime({...input,release,search:search.search,readExact:transport.readExact});
+}
 
 /** The native request/session boundary for an explicitly selected prepared
  * release. Admission and activation belong to the caller; this constructor
