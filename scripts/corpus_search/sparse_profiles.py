@@ -26,10 +26,37 @@ def sparse_fields(chunk):
             'article':article or '', 'text':chunk['officialText']}
 
 
-def publish_sparse_profiles(package,identities,root,checkpoint=None):
+def publish_sparse_profiles(package,identities,root,checkpoint=None,resume=None):
+    """Publish from sources or an explicitly pinned copy of an audited partial.
+
+    A recovery receipt must bind the partial bytes, source generations, committed
+    population and previous shard order. Never infer a checkpoint from a status
+    file or reuse a completed publication.
+    """
     if identities.manifest.get('vector_completion_sha256') is None:raise ValueError('sparse_profile_vector_pin_missing')
     chunk_parts=chunk_part_order(package)
-    root=pathlib.Path(root);root.mkdir(parents=True,exist_ok=False)
+    root=pathlib.Path(root)
+    if resume is None:root.mkdir(parents=True,exist_ok=False)
+    else:
+        if (not isinstance(resume,dict) or resume.get('package_sha256')!=package.sha256
+                or resume.get('vector_identity_sha256')!=identities.manifest_sha256
+                or resume.get('vector_completion_sha256')!=identities.manifest['vector_completion_sha256']
+                or any(type(resume.get(key)) is not int or resume[key]<=0 for key in ['members','profiles'])
+                or resume['members']>=package.memberships['rows']
+                or root.is_symlink() or (root/'manifest.json').exists()
+                or {p.name for p in root.iterdir()}!={'profiles.partial'}
+                or (root/'profiles.partial').is_symlink()
+                or file_hash(root/'profiles.partial')!=resume.get('database_sha256')):
+            raise ValueError('sparse_profile_resume_invalid')
+        old_parts=resume.get('chunk_parts')
+        if (not isinstance(old_parts,list) or any(type(part) is not int for part in old_parts)
+                or sorted(old_parts)!=list(range(len(chunk_parts)))):
+            raise ValueError('sparse_profile_resume_order_invalid')
+        covered=0
+        for old,new in zip(old_parts,chunk_parts):
+            if covered>=resume['members']:break
+            if old!=new:raise ValueError('sparse_profile_resume_prefix_changed')
+            covered+=package.handoff['shards']['chunks'][old]['count']
     pending=root/'profiles.partial';db=sqlite3.connect(pending)
     def progress(phase,**values):
         if checkpoint:checkpoint({'phase':phase,**values})
@@ -37,15 +64,25 @@ def publish_sparse_profiles(package,identities,root,checkpoint=None):
         count=0
         parts=package.memberships['receipts'] if kind=='memberships' else package.handoff['shards']['chunks']
         for part in (range(len(parts)) if kind=='memberships' else chunk_parts):
+            size=parts[part].get('rows' if kind=='memberships' else 'count')
+            if resume is not None and type(size) is int and count+size<=resume['members']:
+                count+=size
+                continue
             stream=package.membership_rows(part) if kind=='memberships' else package.records('chunks',part)
             for row in stream:
-                yield row if kind=='memberships' else (count,row[1]);count+=1
+                if resume is None or count>=resume['members']:
+                    yield row if kind=='memberships' else (count,row[1])
+                count+=1
             if not stream.verified:raise ValueError('sparse_profile_source_unverified')
     originals=0;members=0
     try:
         db.execute('PRAGMA journal_mode=DELETE');db.execute('PRAGMA synchronous=FULL')
         db.execute('PRAGMA cache_size=-131072');db.execute('PRAGMA temp_store=FILE')
-        db.execute('''CREATE TABLE profiles(original BLOB PRIMARY KEY CHECK(length(original)=32),
+        if resume is not None:
+            if db.execute('SELECT count(*),coalesce(sum(members),0) FROM profiles').fetchone()!=(resume['profiles'],resume['members']):
+                raise ValueError('sparse_profile_resume_population_mismatch')
+            originals=resume['profiles'];members=resume['members']
+        else:db.execute('''CREATE TABLE profiles(original BLOB PRIMARY KEY CHECK(length(original)=32),
             compact BLOB NOT NULL CHECK(length(compact)=32),vector_ordinal INTEGER NOT NULL,
             members INTEGER NOT NULL DEFAULT 0,first_membership INTEGER,fields BLOB) WITHOUT ROWID''')
         def insert(batch):
@@ -53,7 +90,7 @@ def publish_sparse_profiles(package,identities,root,checkpoint=None):
             if any(value is None for value in ordinals):raise ValueError('sparse_profile_vector_missing')
             db.executemany('INSERT INTO profiles(original,compact,vector_ordinal) VALUES(?,?,?)',
                            [(row[0],row[1],ordinal) for row,ordinal in zip(batch,ordinals)])
-        for part in range(len(package.embeddings['mapping_receipts'])):
+        for part in ([] if resume is not None else range(len(package.embeddings['mapping_receipts']))):
             stream=package.mapping_rows(part);batch=[]
             with db:
                 for original,compact,_ in stream:

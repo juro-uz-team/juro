@@ -1,5 +1,7 @@
 import json
+import hashlib
 import pathlib
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -19,6 +21,43 @@ class Identities:
 
 
 class SparseProfileTests(unittest.TestCase):
+    def test_resume_copied_committed_batch_matches_full_publication_after_shard_reorder(self):
+        fixture=Fixture();identities=Identities(fixture)
+        mapping=list(fixture.mapping_rows(0))
+        original_chunks=list(fixture.chunks);original_members=list(fixture.members)
+        fixture.chunks=[dict(original_chunks[i%2]) for i in range(1026)]
+        fixture.members=[original_members[i%2] for i in range(1026)]
+        fixture.handoff['shards']['chunks']=[{'count':1} for _ in fixture.chunks]
+        fixture.memberships={'rows':1026,'receipts':[{'rows':1} for _ in fixture.chunks]}
+        fixture.mapping_rows=lambda part:VerifiedStream(lambda:iter(mapping))
+        member_rows=[(i,m[2],m[1],fixture.chunks[i]['work']) for i,m in enumerate(fixture.members)]
+        fixture.membership_rows=lambda part:VerifiedStream(lambda:iter([member_rows[part]]))
+        def interrupt(status):
+            if status=={'phase':'sparse-memberships','rows':1024}:raise RuntimeError('interrupted')
+        with tempfile.TemporaryDirectory() as directory:
+            base=pathlib.Path(directory);failed=base/'failed'
+            with self.assertRaisesRegex(RuntimeError,'interrupted'):
+                publish_sparse_profiles(fixture,identities,failed,interrupt)
+            partial=failed/'profiles.partial';digest=hashlib.sha256(partial.read_bytes()).hexdigest()
+            recovery=base/'recovery';recovery.mkdir();shutil.copyfile(partial,recovery/'profiles.partial')
+            receipt={'database_sha256':digest,'members':1024,'profiles':2,'package_sha256':fixture.sha256,
+                     'vector_identity_sha256':identities.manifest_sha256,
+                     'vector_completion_sha256':fixture.completion_sha256,'chunk_parts':list(range(1026))}
+            fixture.chunks[1024],fixture.chunks[1025]=fixture.chunks[1025],fixture.chunks[1024]
+            fixture.chunk_parts=list(range(1024))+[1025,1024]
+            pin=publish_sparse_profiles(fixture,identities,recovery,resume=receipt)
+            full=base/'full';full_pin=publish_sparse_profiles(fixture,identities,full)
+            with closing(SparseProfiles(recovery,pin,fixture.sha256,identities.manifest_sha256)) as recovered:
+                with closing(SparseProfiles(full,full_pin,fixture.sha256,identities.manifest_sha256)) as fresh:
+                    self.assertEqual(list(recovered.rows()),list(fresh.rows()))
+            self.assertEqual(hashlib.sha256(partial.read_bytes()).hexdigest(),digest)
+            for field,value in [('members',1023),('database_sha256','0'*64),
+                                ('package_sha256','0'*64),('chunk_parts',[1,0]+list(range(2,1026)))]:
+                rejected=base/field;rejected.mkdir();shutil.copyfile(partial,rejected/'profiles.partial')
+                with self.assertRaisesRegex(ValueError,'resume'):
+                    publish_sparse_profiles(fixture,identities,rejected,resume={**receipt,field:value})
+                self.assertFalse((rejected/'manifest.json').exists())
+
     def test_reordered_shards_publish_membership_order_for_runtime_hydration(self):
         fixture=Fixture();identities=Identities(fixture)
         members=[list(fixture.membership_rows(part)) for part in range(2)]
