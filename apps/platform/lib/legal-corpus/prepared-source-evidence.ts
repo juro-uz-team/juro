@@ -5,6 +5,7 @@ import {sameInstrumentArticleReferences} from "../legal/referenced-article-conte
 import {createNormalizedDocumentEvidenceReader} from "./normalized-article-evidence";
 import {parseResolvedOfficialEvidence,parseControllingEvidenceResolution,type LegalEvidenceBucket} from "./target-evidence";
 import type {capturePreparedSource} from "./prepared-source-capture";
+import type {createPreparedHistoricalEvidenceReader} from "./prepared-historical-evidence";
 
 const hash=(text:string)=>createHash("sha256").update(text).digest("hex");
 const normalized=(text:string)=>text.replace(/\s+/gu," ").trim();
@@ -19,6 +20,7 @@ export async function resolvePreparedSourceEvidence(input:{
   capture:Awaited<ReturnType<typeof capturePreparedSource>>;
   discovery:{officialUrl:string;text:string;textSha256:string;languageTag:"ru"|"uz-Latn"|"uz-Cyrl"|"en"};
   bucket:Pick<LegalEvidenceBucket,"get">;
+  history?:{instant:string;reader:ReturnType<typeof createPreparedHistoricalEvidenceReader>};
 }){
   const {capture,discovery}=input;
   if(hash(discovery.text)!==discovery.textSha256)throw Error("PREPARED_DISCOVERY_TEXT_MISMATCH");
@@ -28,7 +30,7 @@ export async function resolvePreparedSourceEvidence(input:{
   if(reference.canonicalUrl!==snapshot.source.canonicalUrl||discovery.languageTag!==languageTag){
     throw Error("PREPARED_DISCOVERY_SOURCE_MISMATCH");
   }
-  if(reference.revisionDate||!capture.observation)throw Error("PREPARED_HISTORICAL_APPLICABILITY_REQUIRED");
+  if(!input.history&&(reference.revisionDate||!capture.observation))throw Error("PREPARED_HISTORICAL_APPLICABILITY_REQUIRED");
   const fragment=normalized(discovery.text);
   const source=normalized(snapshot.blocks.map(block=>block.text).join(" "));
   const first=source.indexOf(fragment);
@@ -57,8 +59,12 @@ export async function resolvePreparedSourceEvidence(input:{
   const complete=article?{...original,provisionText:article.text}:
     await createNormalizedDocumentEvidenceReader(input.bucket)(original,capture.revisionId);
   if(!complete)throw Error("PREPARED_COMPLETE_CONTEXT_UNAVAILABLE");
+  const historicalApplicability=input.history?await input.history.reader.resolve({sourceRevisionId:capture.revisionId,
+    sourceSha256:capture.parent.sha256,officialUrl:snapshot.source.canonicalUrl,languageTag,
+    completeText:complete.provisionText,articleNumber:article?.article??null,instant:input.history.instant}):undefined;
   return {resolution:parseControllingEvidenceResolution({controlling:original,
     ...(article?{articleContext:complete}:{documentContext:complete}),materialCitation:complete.officialCitation}),
+    ...(historicalApplicability?{historicalApplicability}:{}),
     correspondence:{discoveryTextSha256:discovery.textSha256,sourceNormalizedSha256:capture.parent.sha256,
       sourceRevisionId:capture.revisionId,transform:"collapse-whitespace-v1" as const}};
 }
