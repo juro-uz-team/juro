@@ -7,8 +7,16 @@ function articleNumber(value: string | null | undefined): string | undefined {
 
 export function sameInstrumentArticleReferences(text: string): string[] {
   const references = new Set<string>();
+  // Lists still need an explicit same-instrument qualifier. A bare article
+  // number or an external code reference cannot establish this relationship.
+  const explicit = /(?<![\p{L}\p{N}_])(стать(?:ями|ях|[её]й|[яеию])|статей|articles?)\s+(\d+(?:[.-]\d+)?(?:\s*(?:,\s*(?:(?:и|and)\s+)?|(?:и|and)\s+)\d+(?:[.-]\d+)?)*)\s+(?:(?:настоящего|этого)\s+(?:Кодекса|Закона)|of\s+this\s+(?:Code|Act|Law))/giu;
+  for (const match of text.matchAll(explicit)) {
+    // A hyphen after an explicitly plural prefix may denote a range rather
+    // than a suffixed article. Leave that ambiguity unresolved.
+    if (/^(?:articles|статьями|статьях|статей)$/iu.test(match[1]!) && match[2]!.includes("-")) continue;
+    for (const number of match[2]!.matchAll(/\d+(?:[.-]\d+)?/gu)) references.add(number[0]);
+  }
   for (const pattern of [
-    /(?:стать(?:[её]й|[яеию])|article)\s+\d+(?:[.-]\d+)?\s+(?:(?:настоящего|этого)\s+(?:Кодекса|Закона)|of\s+this\s+(?:Code|Act|Law))/giu,
     /(?:ushbu|мазкур)\s+(?:kodeks|qonun|Кодекс|Қонун)[^.;\n]{0,45}?\d+\s*[-–]?\s*(?:modda|модда)[^\s,;.]*/giu,
   ]) for (const match of text.matchAll(pattern)) {
     for (const number of detectArticleNumbers(match[0])) references.add(number);
