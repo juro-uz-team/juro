@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {preparedCorpusAcceptanceSchema,verifyPreparedCorpusQualification} from "../lib/storage/prepared-corpus-qualification";
+import {preparedCorpusAcceptanceSchema,preparedCorpusBinding,verifyPreparedCorpusQualification} from "../lib/storage/prepared-corpus-qualification";
 import {preparedAcceptanceFixture as fixture} from "./helpers/prepared-corpus-acceptance";
 
 test("prepared qualification authenticates complete paired measurements",async()=>{
@@ -73,4 +73,48 @@ test("prepared admission cannot enable category ranking with a generic passed ch
   f.manifest.current.release.configuration.categoryRanking={mode:"qualified",
     policySha256:"5".repeat(64),qualificationSha256:"6".repeat(64)};
   assert.throws(()=>preparedCorpusAcceptanceSchema.parse(f.manifest));
+});
+
+function providerFreeFixture(){
+  const f=fixture("measured");
+  const cases=["fast","deep"].flatMap(mode=>["current","history","comparison"].map((capability,index)=>({
+    id:`${mode}-${capability}`,inputSha256:"7".repeat(64),mode,capability,
+    locale:["en","ru","uz"][index],actor:index===0?"guest":"signed",
+  })));
+  const workload=f.put("provider-free-workload",{format:"prepared-provider-free-chat-workload-v1",cases});
+  const protocol={...f.protocol,providerFreeChatWorkload:workload,workloadSha256:workload.sha256,
+    chatCaseIds:cases.map(row=>row.id),heldOutChatCaseIds:[cases[0]!.id]};
+  f.manifest.protocol=f.put("protocol",protocol);
+  const bindingSha256=preparedCorpusBinding(f.manifest);
+  f.storage.bindingSha256=bindingSha256;
+  for(const proof of Object.values(f.proofValues))proof.bindingSha256=bindingSha256;
+  const chat={bindingSha256,format:"prepared-provider-free-chat-proof-v1",workloadSha256:workload.sha256,
+    providerNetworkCalls:0,liveModelQualityVerified:false,
+    results:cases.map(row=>({...row,milliseconds:120000,model:row.mode==="fast"?"gpt-5.6-terra":"gpt-6-luna",
+      providerFixture:{kind:"synthetic",artifact:f.put(`fixture-${row.id}`,{synthetic:true})},
+      retrievalBackend:"pgvector",retrievalComplete:true,sourceCount:1,sourceChecksPassed:true,reloadPassed:true,tenantIsolationPassed:true,
+      transcript:f.put(`transcript-${row.id}`,{syntheticUnitTest:true})})),
+  };
+  const publish=()=>{f.publish();f.manifest.proofs.chat=f.put("provider-free-chat",chat);};
+  publish();
+  return {...f,chat,publish};
+}
+
+test("provider-free admission is explicit and authenticates separate fixture and transcript artifacts",async()=>{
+  const f=providerFreeFixture();await verifyPreparedCorpusQualification(f.manifest,f.read);
+  f.blobs.set(f.chat.results[0]!.transcript.key,Buffer.from("{}"));
+  await assert.rejects(verifyPreparedCorpusQualification(f.manifest,f.read),/ARTIFACT_CORRUPT/);
+});
+
+test("provider-free admission cannot claim live quality or waive integration coverage",async()=>{
+  for(const mutate of [
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.liveModelQualityVerified=true;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.providerNetworkCalls=1;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results[0]!.model="gpt-6-luna";},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results[0]!.retrievalComplete=false;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results[0]!.sourceCount=0;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results[0]!.reloadPassed=false;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results[0]!.tenantIsolationPassed=false;},
+    (f:ReturnType<typeof providerFreeFixture>)=>{f.chat.results.pop();},
+  ]){const f=providerFreeFixture();mutate(f);f.publish();await assert.rejects(verifyPreparedCorpusQualification(f.manifest,f.read));}
 });

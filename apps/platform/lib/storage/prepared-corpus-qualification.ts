@@ -43,6 +43,7 @@ const requiredChecks=["tests","typecheck","build","browser","model_only_modes","
   "worker_generation","private_data_preserved","historical_applicability"] as const;
 const protocolSchema=z.object({version:z.literal("prepared-pgvector-qualification-v1"),
   latencyPolicy:z.literal("measured").optional(),
+  providerFreeChatWorkload:artifact.optional(),
   tuningQueryIds:ids,heldOutQueryIds:ids,firstTouchIds:ids,warmIds:ids,
   chatCaseIds:ids,heldOutChatCaseIds:ids,workloadSha256:sha,evidenceCaseIds:ids,requiredChecks:ids}).strict();
 const bound={bindingSha256:sha};
@@ -61,6 +62,21 @@ const evidenceSchema=z.object({...bound,historicalManifestSha256:sha,results:z.a
   completeRules:z.literal(true),applicabilityVerified:z.literal(true),complementaryProvisionsVerified:z.literal(true),
   citationReloadVerified:z.literal(true)}).strict()).min(3)}).strict();
 const checksSchema=z.object({...bound,results:z.array(z.object({id,passed:z.literal(true),evidenceSha256:sha}).strict()).min(1)}).strict();
+const integrationCase=z.object({id,inputSha256:sha,mode:z.enum(["fast","deep"]),locale:z.enum(["en","ru","uz"]),
+  actor:z.enum(["guest","signed"]),capability:z.enum(["current","history","comparison"])}).strict();
+const providerFreeWorkloadSchema=z.object({format:z.literal("prepared-provider-free-chat-workload-v1"),
+  cases:z.array(integrationCase).min(1)}).strict();
+const providerFreeChatSchema=z.object({...bound,format:z.literal("prepared-provider-free-chat-proof-v1"),
+  workloadSha256:sha,providerNetworkCalls:z.literal(0),liveModelQualityVerified:z.literal(false),
+  results:z.array(integrationCase.extend({
+    milliseconds:z.number().finite().nonnegative(),model:z.enum(["gpt-5.6-terra","gpt-6-luna"]),
+    providerFixture:z.object({kind:z.enum(["recorded","synthetic"]),artifact}).strict(),
+    retrievalBackend:z.literal("pgvector"),retrievalComplete:z.literal(true),
+    sourceCount:z.number().int().positive(),
+    sourceChecksPassed:z.literal(true),reloadPassed:z.literal(true),tenantIsolationPassed:z.literal(true),
+    transcript:artifact,
+  }).strict()).min(1),
+}).strict();
 function exact(expected:readonly string[],actual:readonly string[]){
   if(new Set(actual).size!==actual.length||expected.length!==actual.length||expected.some(value=>!actual.includes(value))){
     throw Error("PREPARED_QUALIFICATION_COVERAGE");
@@ -101,11 +117,43 @@ export async function verifyPreparedCorpusQualification(value:PreparedCorpusAcce
   exact(protocol.firstTouchIds,retrieval.results.filter(row=>row.phase==="first_touch").map(row=>row.id));
   const warm=retrieval.results.filter(row=>row.phase==="warm");exact(protocol.warmIds,warm.map(row=>row.id));
   if(warm.length<30||warm.some(row=>row.concurrency!==5))throw Error("PREPARED_QUALIFICATION_CONCURRENCY");
-  const chat=await load(manifest.proofs.chat,nativeChatProofSchema);
-  exact(protocol.chatCaseIds,chat.expectedCaseIds);exact(protocol.heldOutChatCaseIds,chat.heldOutCaseIds);
-  exact(protocol.chatCaseIds,chat.results.map(row=>row.id));
-  verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256,4,
-    protocol.latencyPolicy==="measured"?"measured":"required");
+  if(protocol.providerFreeChatWorkload){
+    // This admission path proves integration, not model quality. Its separate
+    // format cannot be confused with a live-provider workload receipt.
+    if(protocol.latencyPolicy!=="measured")throw Error("PREPARED_QUALIFICATION_PROTOCOL");
+    const workload=await load(protocol.providerFreeChatWorkload,providerFreeWorkloadSchema,false);
+    const chat=await load(manifest.proofs.chat,providerFreeChatSchema);
+    if(chat.workloadSha256!==protocol.providerFreeChatWorkload.sha256
+      ||protocol.workloadSha256!==chat.workloadSha256)throw Error("PREPARED_CHAT_WORKLOAD_CHANGED");
+    exact(protocol.chatCaseIds,workload.cases.map(row=>row.id));
+    exact(protocol.chatCaseIds,chat.results.map(row=>row.id));
+    if(protocol.heldOutChatCaseIds.some(id=>!protocol.chatCaseIds.includes(id))){
+      throw Error("PREPARED_CHAT_WORKLOAD_CHANGED");
+    }
+    for(const row of chat.results){
+      const expected=workload.cases.find(item=>item.id===row.id)!;
+      if((["inputSha256","mode","locale","actor","capability"] as const).some(key=>row[key]!==expected[key])
+        ||row.model!==(row.mode==="fast"?"gpt-5.6-terra":"gpt-6-luna"))throw Error("PREPARED_CHAT_WORKLOAD_CHANGED");
+      // Authenticate the retained fixture and HTTP transcript even though the
+      // trusted runner remains responsible for their factual interpretation.
+      for(const reference of [row.providerFixture.artifact,row.transcript]){
+        const bytes=await read(reference);
+        if(bytes.byteLength!==reference.sizeBytes||hash(bytes)!==reference.sha256){
+          throw Error("PREPARED_QUALIFICATION_ARTIFACT_CORRUPT");
+        }
+      }
+    }
+    for(const [key,values] of [["mode",["fast","deep"]],["locale",["en","ru","uz"]],
+      ["actor",["guest","signed"]],["capability",["current","history","comparison"]]] as const){
+      if(values.some(value=>!chat.results.some(row=>row[key]===value)))throw Error("PREPARED_CHAT_WORKLOAD_INCOMPLETE");
+    }
+  }else{
+    const chat=await load(manifest.proofs.chat,nativeChatProofSchema);
+    exact(protocol.chatCaseIds,chat.expectedCaseIds);exact(protocol.heldOutChatCaseIds,chat.heldOutCaseIds);
+    exact(protocol.chatCaseIds,chat.results.map(row=>row.id));
+    verifyNativeChatProof(chat,protocol.requiredChecks,protocol.workloadSha256,4,
+      protocol.latencyPolicy==="measured"?"measured":"required");
+  }
   const evidence=await load(manifest.proofs.evidence,evidenceSchema);
   exact(protocol.evidenceCaseIds,evidence.results.map(row=>row.id));
   if(evidence.historicalManifestSha256!==manifest.historicalEvidence.sha256

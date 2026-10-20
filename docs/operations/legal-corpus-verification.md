@@ -63,6 +63,23 @@ Prepared retrieval follows caller cancellation instead of imposing a separate
 ten-second chat cutoff. A disconnected caller cancels PostgreSQL work and stops
 cooperative retrieval. Production chat limits belong in Admin Center.
 
+## Qualification without paid model requests
+
+When provider credit must be preserved for production, a prepared qualification
+protocol may pin a `providerFreeChatWorkload` artifact with its measured latency
+policy. This selects a separate integration proof format, not the live-provider
+benchmark. The proof must report zero provider network calls and explicitly
+state that live model quality was not verified.
+
+Run the real private HTTP, pgvector, evidence and saved-citation paths using
+isolated provider fixtures. Cover both model routes, all supported locales,
+guest and signed users, and current, historical and comparison questions.
+Retain hash-pinned fixtures and HTTP transcripts for each workload case. Label
+synthetic responses; replay recorded responses only for matching requests and
+evidence. Fixture output is not evidence of model quality or legal entailment.
+Recall, source integrity, private-data preservation and all other required
+checks remain in force. Never ship the fixture transport with production.
+
 ## Recovery and retirement
 
 The owner-directed [corpus retirement decision](../adr/0030-retire-replaced-corpus-evidence.md)
