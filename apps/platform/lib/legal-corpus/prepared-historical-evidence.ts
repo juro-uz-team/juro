@@ -68,14 +68,23 @@ export function createPreparedHistoricalEvidenceReader(input:{manifestBytes:Uint
   return {packageSha256:publication.packageSha256,manifestSha256:input.manifestSha256,
     async readCapture(query:{officialUrl:string;languageTag:z.infer<typeof legalLanguageSchema>;instant:string}){
       const instant=utcInstantSchema.parse(query.instant);
-      const candidates=publication.facts.filter(row=>row.officialUrl===query.officialUrl&&row.languageTag===query.languageTag
-        &&contains(row.editorial,instant)&&contains(row.applicability,instant));
-      const revisions=new Map(candidates.map(row=>[row.sourceRevisionId,row.sourceSha256]));
+      const discovery=classifyLegalSourceUrl(query.officialUrl);
+      // Discovery may name a different publisher edition. The requested instant
+      // selects a proved capture of the same instrument and language; resolve()
+      // still authenticates the exact complete text and applicability evidence.
+      const candidates=publication.facts.filter(row=>{
+        const source=classifyLegalSourceUrl(row.officialUrl);
+        return discovery.sourceKind==="lex"&&source.canonicalId===discovery.canonicalId
+          &&source.locale===discovery.locale&&row.languageTag===query.languageTag
+          &&contains(row.editorial,instant)&&contains(row.applicability,instant);
+      });
+      const revisions=new Map(candidates.map(row=>[JSON.stringify([row.sourceRevisionId,row.sourceSha256,row.officialUrl]),row]));
       if(revisions.size!==1)throw Error(revisions.size?"PREPARED_HISTORY_AMBIGUOUS":"PREPARED_HISTORICAL_APPLICABILITY_REQUIRED");
-      const [revisionId,sha256]=[...revisions][0]!;
+      const selected=[...revisions.values()][0]!;
+      const {sourceRevisionId:revisionId,sourceSha256:sha256}=selected;
       if(revisionId!==`prepared-normalized-${sha256}`)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
       const parent=await read(revisionId,sha256);
-      if(parent.snapshot.source.canonicalUrl!==query.officialUrl)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
+      if(parent.snapshot.source.canonicalUrl!==selected.officialUrl)throw Error("PREPARED_HISTORY_SOURCE_MISMATCH");
       // Selection only locates retained bytes. resolve() must still prove the
       // exact complete rule and both interval assertions before admission.
       return {revisionId,parent};

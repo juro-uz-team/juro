@@ -61,7 +61,7 @@ export function createPreparedEvidenceSession(input:{configuration:PreparedCandi
     const language=sourceLanguage(record.chunk.language,record.chunk.script);
     // Selecting a publisher language route is not an assertion of equivalence:
     // the discovered span must occur uniquely in the captured official text.
-    const url=classifyLegalSourceUrl(`https://lex.uz/${language.locale}/docs/${original.canonicalId}${input.history?new URL(original.canonicalUrl).search:""}`).canonicalUrl;
+    const url=classifyLegalSourceUrl(`https://lex.uz/${language.locale}/docs/${original.canonicalId}`).canonicalUrl;
     let pending=captures.get(url);
     if(!pending){
       if(attempts>=limit)throw Error("PREPARED_CAPTURE_BUDGET_EXHAUSTED");
@@ -78,7 +78,8 @@ export function createPreparedEvidenceSession(input:{configuration:PreparedCandi
     }
     const capture=await pending;input.options.signal?.throwIfAborted();
     const sourceEvidence=await resolvePreparedSourceEvidence({capture,bucket:input.bucket,history:input.history,
-      discovery:{officialUrl:url,text:record.chunk.officialText,textSha256:record.chunk.officialTextSha256,languageTag:language.tag}});
+      discovery:{officialUrl:capture.parent.snapshot.source.canonicalUrl,text:record.chunk.officialText,
+        textSha256:record.chunk.officialTextSha256,languageTag:language.tag}});
     return {capture,source:sourceEvidence,
       discovery:{packageSha256:packet.package_sha256,vectorOrdinal:reference[0],membershipOrdinal:reference[1],
         canonicalChunkId:record.chunk.id,work:record.work,unit:record.unit,originalUrl:original.canonicalUrl,originalInputHash:record.original_input_hash,
