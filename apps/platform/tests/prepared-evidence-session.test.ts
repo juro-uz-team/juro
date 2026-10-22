@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
+import {createServer} from "node:http";
 import test from "node:test";
 import {createPreparedDiscoveryCatalog} from "../lib/legal-corpus/prepared-discovery-catalog";
 import {createPreparedEvidenceSession} from "../lib/legal-corpus/prepared-evidence-session";
@@ -134,13 +135,14 @@ test("prepared read groups retain exact membership identities and distinct publi
   assert.notEqual(found[1]!.discoveryGroupId,found[2]!.discoveryGroupId);
 });
 
-test("session does not turn historical discovery into current evidence or exceed failed-fetch budget",async()=>{
+test("session rejects historical discovery as current and reuses failed source requests",async()=>{
   const history=await fixture("https://lex.uz/en/docs/777?ONDATE=01.01.2020");
   await assert.rejects(createPreparedEvidenceSession(history.input).resolve(history.packet,[3,7]),/HISTORICAL_APPLICABILITY_REQUIRED/);
   assert.equal(history.calls(),0);
-  const f=await fixture();const session=createPreparedEvidenceSession({...f.input,captureLimit:1,fetch:async()=>{throw Error("upstream unavailable");}});
+  const f=await fixture();let calls=0;const session=createPreparedEvidenceSession({...f.input,fetch:async()=>{calls++;throw Error("upstream unavailable");}});
   await assert.rejects(session.resolve(f.packet,[3,7]),/upstream unavailable/);
-  await assert.rejects(session.resolve(f.packet,[3,7]),/CAPTURE_BUDGET_EXHAUSTED/);
+  await assert.rejects(session.resolve(f.packet,[3,7]),/upstream unavailable/);
+  assert.equal(calls,1);
 });
 
 test("native prepared session delivers verified complete rules and complementary evidence through chat research",async()=>{
@@ -178,20 +180,24 @@ test("native gateway composes budgeted embeddings and numeric transport with com
   const release=parsePinnedCandidateRelease({id:"prepared-release",environment:"production",capability:"current",configuration,
     instances:[{id:"prepared-instance",shardId:"prepared-shard"}]});
   const query="How can an applicant challenge a refused record request?";
-  t.mock.method(globalThis,"fetch",async(url:URL,init:RequestInit)=>{
-    assert.equal(url.origin,"http://127.0.0.1:43210");
-    const body=JSON.parse(String(init.body));
+  const server=createServer(async(request,response)=>{
+    const chunks:Buffer[]=[];for await(const chunk of request)chunks.push(chunk);
+    const body=JSON.parse(Buffer.concat(chunks).toString());
     const headers={"X-Juro-Worker-Sha256":"a".repeat(64)};
-    if(url.pathname==="/read-exact"){calls.push("catalog");return Response.json(f.packet,{headers});}
+    response.writeHead(200,{...headers,"Content-Type":"application/json"});
+    if(request.url==="/read-exact"){calls.push("catalog");response.end(JSON.stringify(f.packet));return;}
     calls.push("numeric");assert.equal(body.embedding.length,3072);assert.equal("query" in body,false);
     assert.ok(body.termHashes.length>0);
-    return Response.json({version:body.version,releaseId:body.releaseId,environment:body.environment,
+    response.end(JSON.stringify({version:body.version,releaseId:body.releaseId,environment:body.environment,
       configuration:body.configuration,requestSha256:body.requestSha256,lanes:{dense:"complete",sparse:"complete"},
-      hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]},{headers});
+      hits:[{vectorOrdinal:3,membershipOrdinal:7,vectorRank:1,vectorScore:.9,keywordRank:1,keywordScore:2,fusionScore:.03}]}));
   });
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  t.after(()=>new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve())));
+  const address=server.address();assert.ok(address&&typeof address!=="string");
   const budgetDatabase={prepare(){return {bind(){return {async run(){calls.push("budget");return {success:true};}};}};}} as unknown as D1Database;
   const runtime=createPreparedNativeResearchRuntime({release,capture:f.input,fetch:f.input.fetch,
-    numeric:{url:"http://127.0.0.1:43210",token:"test-token-".repeat(5),workerSha256:"a".repeat(64)},
+    numeric:{url:`http://127.0.0.1:${address.port}`,token:"test-token-".repeat(5),workerSha256:"a".repeat(64)},
     embedding:{apiKey:"test-only-key",budgetDatabase,budgetMode:"metered",fetch:async(_url,init)=>{
       calls.push("embedding");assert.deepEqual(JSON.parse(String(init!.body)).input,[query]);
       return Response.json({model:"text-embedding-3-large",data:[{index:0,embedding:Array.from({length:3072},(_,i)=>i===0?1:0)}],

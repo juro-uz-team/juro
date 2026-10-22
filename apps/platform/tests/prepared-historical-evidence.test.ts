@@ -114,7 +114,7 @@ test("manifest pins and editorial validity are independent admission requirement
   await f.reader().resolve({...f.query,instant:"2020-06-01T00:00Z"});
 });
 
-async function historicalRuntimeFixture(){
+async function historicalRuntimeFixture(discoveryUrl?:string){
   const f=await fixture();
   const configuration=preparedCandidateConfigurationSchema.parse({backend:"prepared-corpus-v1",navigationBackend:"pgvector",identity:"history-configuration",
     embeddingModel:"openai/text-embedding-3-large",dimensions:3072,evidenceSemantics:"discovery-only",categoryRanking:{mode:"disabled"},
@@ -128,7 +128,7 @@ async function historicalRuntimeFixture(){
     records:[{vector_ordinal:3,membership_ordinal:7,compact_input_hash:"1".repeat(64),original_input_hash:"2".repeat(64),work:"work:1",unit:"work:1:12",status:"discovery_only",
       chunk:{id:`retrieval-chunk-v1:${"3".repeat(64)}`,work:"work:1",snapshotProvisionId:"work:1:12",officialText:f.query.completeText,
         officialTextSha256:hash(f.query.completeText),language:"en",script:"Latn"}}],
-    sources:{"work:1":{inventory:{id:"work:1",url:f.query.officialUrl},prepared:{work:"work:1"}}},
+    sources:{"work:1":{inventory:{id:"work:1",url:discoveryUrl??f.query.officialUrl},prepared:{work:"work:1"}}},
     units:{"work:1:12":{ordinal:12,text:f.query.completeText}},continuations:{}};
   const complete=structuredClone(f.publication);
   const target=createCompleteArticleIndex(f.capture.parent.snapshot.blocks)("8").candidates[0]!.text;
@@ -160,6 +160,27 @@ test("historical chat reads retained captures and separately proves complementar
   assert.equal(missingReference.evidence.some(row=>row.source.article==="8"),false);
   assert.ok(missingReference.needs.some(row=>row.reason==="unresolved_reference"));
   assert.equal((await run(complete,"2021-01-01T00:00:00Z")).evidence.length,0);
+});
+
+test("historical discovery selects the proved revision at the requested instant, independently of discovery edition",async()=>{
+  for(const discoveryUrl of ["https://lex.uz/en/docs/777","https://lex.uz/en/docs/777?ONDATE=01.01.2019"]){
+    const {f,complete,run}=await historicalRuntimeFixture(discoveryUrl);
+    const result=await run(complete);
+    assert.deepEqual(result.evidence.map(row=>row.source.article).sort(),["7","8"]);
+    assert.ok(result.evidence.every(row=>row.source.officialUrl===f.query.officialUrl));
+    assert.equal((await run(complete,"2021-01-01T00:00:00Z")).evidence.length,0);
+  }
+});
+
+test("historical capture selection rejects another instrument, language and ambiguous applicable revision",async()=>{
+  const f=await fixture();const query={officialUrl:"https://lex.uz/en/docs/777",languageTag:"en" as const,instant:f.query.instant};
+  assert.equal((await f.reader().readCapture(query)).revisionId,f.capture.revisionId);
+  for(const changes of [{officialUrl:"https://lex.uz/en/docs/778"},{officialUrl:"https://lex.uz/ru/docs/777"},{languageTag:"ru" as const}]){
+    await assert.rejects(f.reader().readCapture({...query,...changes}),/APPLICABILITY_REQUIRED/);
+  }
+  const ambiguous=structuredClone(f.publication);
+  ambiguous.facts.push({...ambiguous.facts[0]!,sourceRevisionId:`prepared-normalized-${"f".repeat(64)}`,sourceSha256:"f".repeat(64),officialUrl:"https://lex.uz/en/docs/777?ONDATE=01.02.2020"});
+  await assert.rejects(f.reader(ambiguous).readCapture(query),/HISTORY_AMBIGUOUS/);
 });
 
 

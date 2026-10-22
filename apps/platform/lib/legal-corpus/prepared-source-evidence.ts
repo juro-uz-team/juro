@@ -82,8 +82,8 @@ export async function resolvePreparedSourceReferences(input:{
   articles?:readonly string[];
   history?:Parameters<typeof resolvePreparedSourceEvidence>[0]["history"];
 }){
-  const limit=input.limit??3;
-  if(!Number.isSafeInteger(limit)||limit<0||limit>3)throw Error("PREPARED_REFERENCE_BUDGET_INVALID");
+  const limit=input.limit;
+  if(limit!==undefined&&(!Number.isSafeInteger(limit)||limit<0))throw Error("PREPARED_REFERENCE_BUDGET_INVALID");
   const original=input.source.resolution.controlling;
   const {capture}=input;
   if(original.evidence.sourceNormalizedSha256!==capture.parent.sha256
@@ -94,14 +94,14 @@ export async function resolvePreparedSourceReferences(input:{
   const complete=input.source.resolution.articleContext??input.source.resolution.documentContext;
   if(!complete)throw Error("PREPARED_COMPLETE_CONTEXT_UNAVAILABLE");
   const observed=sameInstrumentArticleReferences(complete.provisionText);
-  if(input.articles&&(input.articles.length>3||new Set(input.articles).size!==input.articles.length
+  if(input.articles&&(new Set(input.articles).size!==input.articles.length
     ||input.articles.some(article=>!observed.includes(article))))throw Error("PREPARED_REFERENCE_SELECTION_INVALID");
   const references=input.articles??observed;
   const index=createCompleteArticleIndex(capture.parent.snapshot.blocks);
   const resolved:Array<{article:string;source:Awaited<ReturnType<typeof resolvePreparedSourceEvidence>>}>=[];
   const unresolved:Array<{article:string;reason:"lookup_budget"|"reference_not_found"|"reference_ambiguous"|"applicability_unavailable"}>=[];
   for(const [position,article] of references.entries()){
-    if(position>=limit){unresolved.push({article,reason:"lookup_budget"});continue;}
+    if(limit!==undefined&&position>=limit){unresolved.push({article,reason:"lookup_budget"});continue;}
     const found=index(article);
     if(found.occurrences!==1||found.candidates.length!==1){
       unresolved.push({article,reason:found.occurrences>1?"reference_ambiguous":"reference_not_found"});continue;

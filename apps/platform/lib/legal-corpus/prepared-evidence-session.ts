@@ -23,13 +23,11 @@ function sourceLanguage(language:string,script:string){
  * by the answer's existing finalization/verifier path. */
 export function createPreparedEvidenceSession(input:{configuration:PreparedCandidateConfiguration;
   fetch:(url:string)=>Promise<FetchedLegalSource>;bucket:CaptureInput["bucket"];store:CaptureInput["store"];
-  options:CaptureInput["options"];captureLimit?:number;
+  options:CaptureInput["options"];
   history?:Parameters<typeof resolvePreparedSourceEvidence>[0]["history"]}){
   const configuration=preparedCandidateConfigurationSchema.parse(input.configuration);
   if(input.history&&input.history.reader.packageSha256!==configuration.artifacts.packageSha256)throw Error("PREPARED_HISTORY_PACKAGE_MISMATCH");
-  const limit=input.captureLimit??16;
-  if(!Number.isSafeInteger(limit)||limit<1||limit>32)throw Error("PREPARED_CAPTURE_LIMIT_INVALID");
-  const captures=new Map<string,Promise<Capture>>();let attempts=0;
+  const captures=new Map<string,Promise<Capture>>();
   const verify=createPinnedSourceVerifier({bucket:input.bucket,observe:async url=>{
     const captured=await captures.get(url);
     if(!captured?.observation)throw Error("PREPARED_CURRENT_OBSERVATION_UNAVAILABLE");
@@ -61,11 +59,9 @@ export function createPreparedEvidenceSession(input:{configuration:PreparedCandi
     const language=sourceLanguage(record.chunk.language,record.chunk.script);
     // Selecting a publisher language route is not an assertion of equivalence:
     // the discovered span must occur uniquely in the captured official text.
-    const url=classifyLegalSourceUrl(`https://lex.uz/${language.locale}/docs/${original.canonicalId}${input.history?new URL(original.canonicalUrl).search:""}`).canonicalUrl;
+    const url=classifyLegalSourceUrl(`https://lex.uz/${language.locale}/docs/${original.canonicalId}`).canonicalUrl;
     let pending=captures.get(url);
     if(!pending){
-      if(attempts>=limit)throw Error("PREPARED_CAPTURE_BUDGET_EXHAUSTED");
-      attempts++;
       pending=(async()=>{
         if(input.history)return {...await input.history.reader.readCapture({officialUrl:url,languageTag:language.tag,instant:input.history.instant}),
           store:{...input.store},observation:null};
@@ -74,11 +70,13 @@ export function createPreparedEvidenceSession(input:{configuration:PreparedCandi
         return capturePreparedSource({fetched,bucket:input.bucket,store:input.store,options:input.options});
       })();
       captures.set(url,pending);
-      void pending.catch(()=>{if(captures.get(url)===pending)captures.delete(url);});
+      // Reuse failed captures within the request instead of repeating upstream work.
+      void pending.catch(()=>undefined);
     }
     const capture=await pending;input.options.signal?.throwIfAborted();
     const sourceEvidence=await resolvePreparedSourceEvidence({capture,bucket:input.bucket,history:input.history,
-      discovery:{officialUrl:url,text:record.chunk.officialText,textSha256:record.chunk.officialTextSha256,languageTag:language.tag}});
+      discovery:{officialUrl:capture.parent.snapshot.source.canonicalUrl,text:record.chunk.officialText,
+        textSha256:record.chunk.officialTextSha256,languageTag:language.tag}});
     return {capture,source:sourceEvidence,
       discovery:{packageSha256:packet.package_sha256,vectorOrdinal:reference[0],membershipOrdinal:reference[1],
         canonicalChunkId:record.chunk.id,work:record.work,unit:record.unit,originalUrl:original.canonicalUrl,originalInputHash:record.original_input_hash,
