@@ -35,3 +35,19 @@ test("catalog rejects generation, reference, source, unit and text mismatches",a
   for(const change of changes){const source=packet();change(source);
     await assert.rejects(createPreparedDiscoveryCatalog({async readExact(){return source;}}).read(configuration,[[3,7]]));}
 });
+
+test("oversized catalog pages split without dropping references or classification metadata",async()=>{
+  const calls:Array<Array<[number,number]>>=[];
+  const catalog=createPreparedDiscoveryCatalog({async readExact(request){
+    calls.push(request.references);
+    if(request.references.length>1)throw Error("PREPARED_CATALOG_PAGE_REQUIRED");
+    const source=packet();source.records[0]!.vector_ordinal=request.references[0]![0];
+    source.records[0]!.membership_ordinal=request.references[0]![1];return source;
+  }});
+  const actual=await catalog.read(configuration,[[3,7],[4,8],[5,9]]);
+  assert.deepEqual(actual.records.map(row=>[row.vector_ordinal,row.membership_ordinal]),[[3,7],[4,8],[5,9]]);
+  assert.deepEqual(actual.sources,packet().sources);assert.deepEqual(actual.units,packet().units);
+  assert.equal(calls.length,5);
+  await assert.rejects(createPreparedDiscoveryCatalog({async readExact(){throw Error("PREPARED_CATALOG_PAGE_REQUIRED");}})
+    .read(configuration,[[3,7]]),/PREPARED_CATALOG_PAGE_REQUIRED/);
+});

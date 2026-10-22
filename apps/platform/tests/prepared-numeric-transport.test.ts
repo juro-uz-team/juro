@@ -4,7 +4,7 @@ import test from "node:test";
 import {createPreparedNumericTransport} from "../lib/legal-corpus/prepared-numeric-transport";
 
 test("numeric transport authenticates loopback requests and rejects error or oversized responses",async()=>{
-  let mode:"normal"|"error"|"oversized"|"other-worker"="normal";
+  let mode:"normal"|"error"|"oversized"|"other-worker"|"page"="normal";
   const server=createServer(async(request,response)=>{
     assert.equal(request.headers.authorization,`Bearer ${"t".repeat(32)}`);
     assert.equal(request.url,"/read-exact");
@@ -12,6 +12,7 @@ test("numeric transport authenticates loopback requests and rejects error or ove
     const value=JSON.parse(Buffer.concat(chunks).toString());
     response.setHeader("X-Juro-Worker-Sha256",(mode==="other-worker"?"b":"a").repeat(64));
     if(mode==="error"){response.writeHead(503);response.end("private details");return;}
+    if(mode==="page"){response.writeHead(413);response.end("{}");return;}
     if(mode==="oversized"){
       response.writeHead(200);response.end(Buffer.alloc(64*1024*1024+1,32));return;
     }
@@ -27,6 +28,7 @@ test("numeric transport authenticates loopback requests and rejects error or ove
     assert.deepEqual(await transport.readExact(request),request);
     mode="other-worker";await assert.rejects(transport.readExact(request),/PREPARED_NUMERIC_WORKER_MISMATCH/u);
     mode="error";await assert.rejects(transport.readExact(request),/PREPARED_NUMERIC_UNAVAILABLE/u);
+    mode="page";await assert.rejects(transport.readExact(request),/PREPARED_CATALOG_PAGE_REQUIRED/u);
     mode="oversized";await assert.rejects(transport.readExact(request),/PREPARED_NUMERIC_RESPONSE_LIMIT/u);
     await assert.rejects(transport.readExact(request,AbortSignal.abort()));
   }finally{

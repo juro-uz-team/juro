@@ -1,4 +1,5 @@
 import {createHash} from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
 import {z} from "zod";
 import {preparedCandidateConfigurationSchema,type PreparedCandidateConfiguration} from "./prepared-candidate-configuration";
 import {classifyLegalSourceUrl} from "../legal/source-fetch";
@@ -22,11 +23,27 @@ const packetSchema=z.object({
 export function createPreparedDiscoveryCatalog(transport:{readExact(input:{
   artifacts:PreparedCandidateConfiguration["artifacts"];references:Array<[number,number]>;
 }):Promise<unknown>}){
-  return {async read(configuration:PreparedCandidateConfiguration,references:Array<[number,number]>){
+  return {async read(configuration:PreparedCandidateConfiguration,references:Array<[number,number]>):Promise<z.infer<typeof packetSchema>>{
     const config=preparedCandidateConfigurationSchema.parse(configuration);
     const requested=z.array(z.tuple([ordinal,ordinal])).max(128).parse(references);
     if(new Set(requested.map(row=>row.join(":"))).size!==requested.length)throw Error("PREPARED_CATALOG_DUPLICATE_REFERENCE");
-    const packet=packetSchema.parse(await transport.readExact({artifacts:config.artifacts,references:requested}));
+    let raw:unknown;
+    try{raw=await transport.readExact({artifacts:config.artifacts,references:requested});}
+    catch(error){
+      if(!(error instanceof Error)||error.message!=="PREPARED_CATALOG_PAGE_REQUIRED"||requested.length<2)throw error;
+      // Page only the transport representation; retain every requested hit and
+      // all publisher metadata. Each smaller page passes the same validation.
+      const middle=Math.ceil(requested.length/2);
+      const left=await this.read(config,requested.slice(0,middle));
+      const right=await this.read(config,requested.slice(middle));
+      for(const key of ["sources","units"] as const){
+        for(const [id,value] of Object.entries(right[key])){
+          if(Object.hasOwn(left[key],id)&&!isDeepStrictEqual(left[key][id],value))throw Error("PREPARED_CATALOG_PAGE_MISMATCH");
+        }
+      }
+      return {...left,records:[...left.records,...right.records],sources:{...left.sources,...right.sources},units:{...left.units,...right.units}};
+    }
+    const packet=packetSchema.parse(raw);
     const pins=config.artifacts;
     if(packet.package_sha256!==pins.packageSha256||packet.membership_sha256!==pins.membershipSha256
       ||packet.work_index_sha256!==pins.workIndexSha256||packet.vector_completion_sha256!==pins.vectorCompletionSha256

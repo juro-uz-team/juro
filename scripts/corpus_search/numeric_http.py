@@ -41,7 +41,8 @@ def create_numeric_http_server(service, token, port=0, *, manifest_sha256):
         def reply(self, status, body):
             raw = json.dumps(body, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode()
             if len(raw) > MAX_RESPONSE_BYTES:
-                status, raw = 503, b'{"error":"unavailable"}'
+                status, raw = ((413, b'{"error":"catalog_page_required"}') if self.path == '/read-exact'
+                               else (503, b'{"error":"unavailable"}'))
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Cache-Control', 'no-store')
@@ -81,7 +82,12 @@ def create_numeric_http_server(service, token, port=0, *, manifest_sha256):
             try:
                 with disconnect_cancellation(self.connection):
                     self.reply(200, operation(request))
-            except Exception:
+            except Exception as error:
+                if (self.path == '/read-exact' and isinstance(error, ValueError)
+                        and str(error) in {'prepared_hydration_byte_bound', 'discovery_input_byte_bound',
+                                           'discovery_catalog_response_bound'}):
+                    self.reply(413, {'error': 'catalog_page_required'})
+                    return
                 # Reader corruption, invalid generation and deadline failures
                 # all withhold the result. Never echo exception/query contents.
                 self.reply(503, {'error': 'unavailable'})

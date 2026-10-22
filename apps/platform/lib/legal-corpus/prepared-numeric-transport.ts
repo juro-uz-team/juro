@@ -24,11 +24,14 @@ export function createPreparedNumericTransport(input:{url:string;token:string;wo
           "Cache-Control":"no-store",Authorization:`Bearer ${input.token}`}},resolve);
       request.once("error",reject);request.end(body);
     });
-    if(!response.statusCode||response.statusCode<200||response.statusCode>=300){
-      response.destroy();throw Error("PREPARED_NUMERIC_UNAVAILABLE");
-    }
     if(response.headers["x-juro-worker-sha256"]!==input.workerSha256){
       response.destroy();throw Error("PREPARED_NUMERIC_WORKER_MISMATCH");
+    }
+    if(path==="/read-exact"&&response.statusCode===413){
+      response.destroy();throw Error("PREPARED_CATALOG_PAGE_REQUIRED");
+    }
+    if(!response.statusCode||response.statusCode<200||response.statusCode>=300){
+      response.destroy();throw Error("PREPARED_NUMERIC_UNAVAILABLE");
     }
     const maximum=path==="/search"?128*1024:64*1024*1024;
     const chunks:Uint8Array[]=[];let bytes=0;

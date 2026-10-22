@@ -14,6 +14,8 @@ class NumericHttpTests(unittest.TestCase):
             self.calls.append(value)
             if value.get('fail'):
                 raise ValueError('private formulation')
+            if value.get('large'):
+                raise ValueError('prepared_hydration_byte_bound')
             return {'hits': value}
         self.server = create_numeric_http_server(SimpleNamespace(search=search, read_exact=search), 't'*32,
                                                  manifest_sha256='a'*64)
@@ -56,6 +58,10 @@ class NumericHttpTests(unittest.TestCase):
             connection.close()
         self.assertEqual(self.calls, [])
         self.assertEqual(self.request('{"fail":true}'), (503, {'error': 'unavailable'}))
+
+    def test_catalog_size_failure_can_be_paged_without_exposing_other_errors(self):
+        self.assertEqual(self.request('{"large":true}', path='/read-exact'), (413, {'error': 'catalog_page_required'}))
+        self.assertEqual(self.request('{"large":true}'), (503, {'error': 'unavailable'}))
 
 
 if __name__ == '__main__':
