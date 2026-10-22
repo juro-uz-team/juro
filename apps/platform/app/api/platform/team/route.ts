@@ -15,11 +15,11 @@ import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import { canManageTeam, isWorkspaceRole, requireTeamManager } from "../../../../lib/platform/permissions";
 import { isLocale, type PlatformLocale } from "../../../../lib/platform/routing";
-import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { workspaceForUser, workspaceForUserById } from "../../../../lib/platform/workspace";
 import { sendEmailRequest } from "../../../../lib/runtime/email";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const INVITABLE_ROLES = new Set(["admin", "lawyer", "employee", "viewer", "external"]);
+const INVITABLE_ROLES = new Set(["admin", "lawyer", "employee", "viewer", "external", "assistant", "accountant"]);
 
 const invitationCopy: Record<PlatformLocale, {
   providerUnavailable: string;
@@ -202,11 +202,14 @@ export const GET = withApiErrors(async function GET() {
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
-  requireTeamManager(workspace.role);
   const env = runtimeEnv();
 
-  const body = await request.json().catch(() => null) as { email?: string; role?: string; locale?: string } | null;
+  const body = await request.json().catch(() => null) as { email?: string; role?: string; locale?: string; workspaceId?: string } | null;
+  const workspace = body?.workspaceId
+    ? await workspaceForUserById(user.id, body.workspaceId)
+    : await workspaceForUser(user);
+  if (!workspace) return response({ code: "WORKSPACE_ACCESS_DENIED" }, 403);
+  requireTeamManager(workspace.role);
   const email = normalizeEmail(body?.email ?? "");
   const role = body?.role;
   const locale: PlatformLocale = isLocale(body?.locale ?? "") ? body!.locale as PlatformLocale : "ru";
@@ -219,6 +222,14 @@ export const POST = withApiErrors(async function POST(request: Request) {
   }
   if (!isWorkspaceRole(role) || !INVITABLE_ROLES.has(role)) {
     return response({ error: copy.invalidRole }, 400);
+  }
+  if (role === "assistant" || role === "accountant") {
+    const { transaction, practiceActor } = await import("../../../../lib/practice/access");
+    const permitted = await transaction(async client => {
+      try { return (await practiceActor(client, user.id, workspace.id, true)).writable; }
+      catch { return false; }
+    });
+    if (!permitted) return response({ error: copy.invalidRole }, 403);
   }
 
   const db = requireD1();
