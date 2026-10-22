@@ -135,13 +135,14 @@ test("prepared read groups retain exact membership identities and distinct publi
   assert.notEqual(found[1]!.discoveryGroupId,found[2]!.discoveryGroupId);
 });
 
-test("session does not turn historical discovery into current evidence or exceed failed-fetch budget",async()=>{
+test("session rejects historical discovery as current and reuses failed source requests",async()=>{
   const history=await fixture("https://lex.uz/en/docs/777?ONDATE=01.01.2020");
   await assert.rejects(createPreparedEvidenceSession(history.input).resolve(history.packet,[3,7]),/HISTORICAL_APPLICABILITY_REQUIRED/);
   assert.equal(history.calls(),0);
-  const f=await fixture();const session=createPreparedEvidenceSession({...f.input,captureLimit:1,fetch:async()=>{throw Error("upstream unavailable");}});
+  const f=await fixture();let calls=0;const session=createPreparedEvidenceSession({...f.input,fetch:async()=>{calls++;throw Error("upstream unavailable");}});
   await assert.rejects(session.resolve(f.packet,[3,7]),/upstream unavailable/);
-  await assert.rejects(session.resolve(f.packet,[3,7]),/CAPTURE_BUDGET_EXHAUSTED/);
+  await assert.rejects(session.resolve(f.packet,[3,7]),/upstream unavailable/);
+  assert.equal(calls,1);
 });
 
 test("native prepared session delivers verified complete rules and complementary evidence through chat research",async()=>{

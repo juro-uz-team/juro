@@ -21,7 +21,7 @@ type PreparedRuntimeInput={
   search:(request:PreparedSearchRequest,signal?:AbortSignal)=>Promise<unknown>;
   readExact:(request:DiscoveryRequest,signal?:AbortSignal)=>Promise<unknown>;
   fetch:(url:string,signal?:AbortSignal)=>ReturnType<Capture["fetch"]>;
-  capture:Pick<Capture,"bucket"|"store"|"options"|"captureLimit">;
+  capture:Pick<Capture,"bucket"|"store"|"options">;
   history?:{manifestBytes:Uint8Array;manifestSha256:string};
 };
 type NativePreparedInput=Omit<PreparedRuntimeInput,"search"|"readExact">&{

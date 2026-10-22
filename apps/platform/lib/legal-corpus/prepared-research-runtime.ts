@@ -59,7 +59,6 @@ export function createPreparedResearchRuntime(input:{release:PinnedCandidateRele
       candidates.forEach((candidate,index)=>{
         const reference=references[index]!;
         const discoveryId=`prepared-discovery:${hash([pinned.id,configuration.artifacts.packageSha256,reference])}`;
-        if(!discoveries.has(discoveryId)&&discoveries.size>=4096)throw Error("PREPARED_DISCOVERY_BUDGET_EXHAUSTED");
         discoveries.set(discoveryId,{packet:catalogPacket,reference,candidate});
         const record=catalogPacket.records[index]!;
         // Publisher units group discovery reads only. They do not establish a
@@ -107,8 +106,7 @@ export function createPreparedResearchRuntime(input:{release:PinnedCandidateRele
     }
     const result:ReferenceDiscoveryResult={candidates:[],unresolved:[]};
     const ordered=[...requests.values()].sort((a,b)=>b.concepts.size-a.concepts.size);
-    for(const [index,request] of ordered.entries()){
-      if(index>=3){result.unresolved.push({query:request.query,reason:"lookup_budget"});continue;}
+    for(const request of ordered){
       const found=await input.session.references(request.resolved,1,[request.query.article]);
       const target=found.resolved[0];
       if(!target){result.unresolved.push({query:request.query,
