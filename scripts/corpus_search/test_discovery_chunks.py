@@ -7,7 +7,7 @@ from discovery_chunks import chunk_original_input,hydrate_membership_chunks
 
 
 class Fixture:
-    def __init__(self):
+    def __init__(self,hierarchy=None):
         self.bad=False;self.handoff={'shards':{'chunks':[{'count':1},{'count':1}]}};self.memberships={'rows':2}
         self.chunks=[];self.members=[];self.inputs={}
         for i in range(2):
@@ -17,10 +17,11 @@ class Fixture:
             identity=hashlib.sha256(canonical(fields)).digest()
             chunk={**fields,'id':'retrieval-chunk-v1:'+identity.hex(),'work':work,'officialText':text,
               'articleNumber':'publisher-position-999','articleTitle':None,'sourceDocumentTitle':'Law',
-              'documentType':'code','hierarchy':[],'language':'ru','script':'Cyrl','locator':'block:12','method':'publisher_html'}
+              'documentType':'code','hierarchy':hierarchy or [],'language':'ru','script':'Cyrl','locator':'block:12','method':'publisher_html'}
             compact=bytes([i])*32
             self.chunks.append(chunk);self.members.append((compact,hashlib.sha256(chunk_original_input(chunk)).digest(),identity,work_key(work),i))
             self.inputs[compact]={'documentTitle':'Law','documentType':'code','language':'ru','script':'Cyrl','officialText':text}
+            if hierarchy is not None:self.inputs[compact]['hierarchy']=list(hierarchy)
     def records(self,kind,part):
         def stream():
             yield 0,self.chunks[part]

@@ -41,3 +41,18 @@ test("numeric transport cannot target remote hosts, credential-bearing URLs or w
   }
   assert.throws(()=>createPreparedNumericTransport({url:"http://127.0.0.1:8000",token:"short",workerSha256:"a".repeat(64)}));
 });
+
+test("numeric transport waits for queued headers until its caller cancels",async()=>{
+  let started!:()=>void;const received=new Promise<void>(resolve=>{started=resolve;});
+  let disconnected!:()=>void;const closed=new Promise<void>(resolve=>{disconnected=resolve;});
+  const server=createServer((request)=>{request.resume();request.socket.once("close",disconnected);started();});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  const address=server.address();assert.ok(address&&typeof address!=="string");
+  const transport=createPreparedNumericTransport({url:`http://127.0.0.1:${address.port}`,token:"t".repeat(32),workerSha256:"a".repeat(64)});
+  const controller=new AbortController();
+  try{
+    const pending=transport.readExact({artifacts:{} as never,references:[]},controller.signal);
+    const rejected=assert.rejects(pending,{name:"AbortError"});
+    await received;controller.abort();await rejected;await closed;
+  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});

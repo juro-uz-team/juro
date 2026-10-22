@@ -23,6 +23,17 @@ class Fixture:
 
 
 class DiscoveryInputTests(unittest.TestCase):
+    def test_compact_input_retains_optional_publisher_hierarchy(self):
+        fixture=Fixture()
+        value=json.loads(fixture.rows[0][2]);value['hierarchy']=['Chapter I','Employment']
+        raw=json.dumps(value);fixture.rows[0]=(0,hashlib.sha256(raw.encode()).digest(),raw,12)
+        self.assertEqual(hydrate_vector_inputs(fixture,fixture,[0])[0]['input'],value)
+        for hierarchy in ['Chapter I',[None],[1],{}]:
+            value['hierarchy']=hierarchy;raw=json.dumps(value)
+            fixture.rows[0]=(0,hashlib.sha256(raw.encode()).digest(),raw,12)
+            with self.assertRaisesRegex(ValueError,'codec_invalid'):
+                hydrate_vector_inputs(fixture,fixture,[0])
+
     def test_split_job_offsets_and_repeated_hits_keep_exact_input_identity(self):
         fixture=Fixture();rows=hydrate_vector_inputs(fixture,fixture,[2,0,2])
         self.assertEqual([row['input_row'] for row in rows],[2,0,2])

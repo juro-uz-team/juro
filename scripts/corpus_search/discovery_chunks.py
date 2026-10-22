@@ -62,5 +62,8 @@ def hydrate_membership_chunks(package,members,compact_inputs,max_bytes=16*1024*1
         value=compact_inputs.get(compact)
         expected={'documentTitle':chunk['sourceDocumentTitle'],'documentType':chunk['documentType'],
           'language':chunk['language'],'script':chunk['script'],'officialText':text}
+        # Both retained compact input formats are valid. When the producer
+        # included publisher hierarchy, authenticate it against the chunk too.
+        if isinstance(value,dict) and 'hierarchy' in value:expected['hierarchy']=chunk['hierarchy']
         if value!=expected:raise ValueError('discovery_chunk_compact_input_mismatch')
     return chunks

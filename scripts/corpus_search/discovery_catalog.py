@@ -62,7 +62,20 @@ class PreparedDiscoveryCatalog:
         if any(location is None or location['work']!=work or location['prepared'] is None for work,location in zip(work_ids,locations)):
             raise ValueError('discovery_catalog_prepared_source_missing')
         inventories=hydrate_records(self.package,'inventory',[row['inventory'] for row in locations],max_total_bytes=max_bytes)
-        prepared=hydrate_records(self.package,'prepared',[row['prepared'] for row in locations],max_total_bytes=max_bytes)
+        selected_parents={chunk.get('snapshotProvisionId') for chunk in chunks}
+        def select_provisions(record):
+            observed=record.get('units')
+            if not isinstance(observed,list):raise ValueError('discovery_catalog_units_invalid')
+            seen=set();selected=[]
+            for unit in observed:
+                ordinal=unit.get('ordinal')
+                if type(ordinal) is not int or ordinal<0 or ordinal in seen:
+                    raise ValueError('discovery_catalog_units_invalid')
+                seen.add(ordinal)
+                if f"{record.get('work')}:{ordinal}" in selected_parents:selected.append(unit)
+            return {**record,'units':selected}
+        prepared=hydrate_records(self.package,'prepared',[row['prepared'] for row in locations],
+            max_total_bytes=max_bytes,project=select_provisions)
         sources={};units={};source_units={}
         for work,inventory,record in zip(work_ids,inventories,prepared):
             if inventory.get('id')!=work or record.get('work')!=work:raise ValueError('discovery_catalog_source_identity_mismatch')

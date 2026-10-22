@@ -1,3 +1,4 @@
+import {request as requestHttp,type IncomingMessage} from "node:http";
 import type {PreparedNumericSearchRequest} from "./prepared-search-service";
 import type {PreparedCandidateConfiguration} from "./prepared-candidate-configuration";
 
@@ -15,26 +16,31 @@ export function createPreparedNumericTransport(input:{url:string;token:string;wo
     signal.throwIfAborted();
     const body=JSON.stringify(value);
     if(Buffer.byteLength(body)>128*1024)throw Error("PREPARED_NUMERIC_REQUEST_LIMIT");
-    const response=await fetch(new URL(path,base),{method:"POST",redirect:"error",cache:"no-store",signal,
-      headers:{"Content-Type":"application/json",Authorization:`Bearer ${input.token}`},body});
-    if(!response.ok||!response.body){
-      await response.body?.cancel();throw Error("PREPARED_NUMERIC_UNAVAILABLE");
+    // Fetch's implicit header timeout can expire while this private worker is
+    // queued. Use the caller's lifetime, without a second retrieval deadline.
+    const response=await new Promise<IncomingMessage>((resolve,reject)=>{
+      const request=requestHttp(new URL(path,base),{method:"POST",agent:false,timeout:0,signal,
+        headers:{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body),
+          "Cache-Control":"no-store",Authorization:`Bearer ${input.token}`}},resolve);
+      request.once("error",reject);request.end(body);
+    });
+    if(!response.statusCode||response.statusCode<200||response.statusCode>=300){
+      response.destroy();throw Error("PREPARED_NUMERIC_UNAVAILABLE");
     }
-    if(response.headers.get("X-Juro-Worker-Sha256")!==input.workerSha256){
-      await response.body.cancel();throw Error("PREPARED_NUMERIC_WORKER_MISMATCH");
+    if(response.headers["x-juro-worker-sha256"]!==input.workerSha256){
+      response.destroy();throw Error("PREPARED_NUMERIC_WORKER_MISMATCH");
     }
     const maximum=path==="/search"?128*1024:64*1024*1024;
-    const reader=response.body.getReader();const chunks:Uint8Array[]=[];let bytes=0;
+    const chunks:Uint8Array[]=[];let bytes=0;
     try{
-      while(true){
-        signal.throwIfAborted();const part=await reader.read();if(part.done)break;
-        bytes+=part.value.byteLength;
+      for await(const part of response){
+        signal.throwIfAborted();bytes+=part.byteLength;
         if(bytes>maximum)throw Error("PREPARED_NUMERIC_RESPONSE_LIMIT");
-        chunks.push(part.value);
+        chunks.push(part);
       }
       signal.throwIfAborted();
       return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks,bytes))) as unknown;
-    }finally{await reader.cancel();reader.releaseLock();}
+    }finally{response.destroy();}
   }
   return {
     execute:(request:PreparedNumericSearchRequest,signal?:AbortSignal)=>post("/search",request,signal),

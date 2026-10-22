@@ -14,8 +14,8 @@ from discovery_catalog import PreparedDiscoveryCatalog
 class Fixture(ChunkFixture):
     sha256='a'*64;completion_sha256='d'*64;ready=True;count=2;starts=[0];ends=[2];shards=[{'job':'p000-00000'}]
     files={'embedding-inputs/manifest.json':{'sha256':'b'*64},'memberships/manifest.json':{'sha256':'c'*64}}
-    def __init__(self):
-        super().__init__();self.handoff['shards'].update(inventory=[{}],prepared=[{}]);self.memberships['receipts']=[{},{}]
+    def __init__(self,hierarchy=None):
+        super().__init__(hierarchy);self.handoff['shards'].update(inventory=[{}],prepared=[{}]);self.memberships['receipts']=[{},{}]
         self.embeddings={'mapping_receipts':[{}]};self.input_values=[];new_inputs={}
         for index,member in enumerate(self.members):
             value=self.inputs[member[0]];raw=json.dumps(value,separators=(',',':'));key=hashlib.sha256(raw.encode()).digest()
@@ -39,6 +39,40 @@ class Fixture(ChunkFixture):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_exact_read_bounds_selected_provisions_not_unselected_document_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);fixture=Fixture()
+            fixture.prepared[0]['units'].append({'ordinal':13,'text':'Unselected text '*1000})
+            pin=build_work_index(fixture,root/'works');works=WorkIndex(root/'works',pin,fixture.sha256)
+            try:
+                member_pin=publish_memberships(fixture,works,fixture,root/'members')
+                catalog=PreparedDiscoveryCatalog(fixture,fixture,MembershipIndex(root/'members',member_pin),works)
+                result=catalog.read_exact([(0,0)],max_bytes=4096)
+                self.assertEqual(list(result['units']),['work:0:12'])
+                self.assertEqual(result['sources']['work:0']['prepared']['assignments'],[fixture.assignment])
+                fixture.prepared[0]['units'].append({'ordinal':13,'text':'Duplicate'})
+                with self.assertRaisesRegex(ValueError,'units_invalid'):catalog.read_exact([(0,0)],max_bytes=4096)
+                fixture.prepared[0]['units'].pop();fixture.bad=True
+                with self.assertRaisesRegex(ValueError,'trailing'):catalog.read_exact([(0,0)],max_bytes=4096)
+            finally:works.close()
+
+    def test_exact_read_authenticates_compact_input_hierarchy_against_source_chunk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);fixture=Fixture(['Chapter I','Employment'])
+            pin=build_work_index(fixture,root/'works');works=WorkIndex(root/'works',pin,fixture.sha256)
+            try:
+                membership_pin=publish_memberships(fixture,works,fixture,root/'members')
+                catalog=PreparedDiscoveryCatalog(fixture,fixture,MembershipIndex(root/'members',membership_pin),works)
+                result=catalog.read_exact([(1,1),(0,0)])
+                self.assertEqual([r['chunk']['hierarchy'] for r in result['records']],[['Chapter I','Employment']]*2)
+                value=json.loads(fixture.input_values[0][2]);value['hierarchy']=['Different chapter']
+                # Retain the authenticated identity in this fixture to isolate
+                # the independent chunk/input correspondence check.
+                row,key,_,tokens=fixture.input_values[0]
+                fixture.input_values[0]=(row,key,json.dumps(value),tokens)
+                with self.assertRaisesRegex(ValueError,'compact_input_mismatch'):catalog.read_exact([(0,0)])
+            finally:works.close()
+
     def test_published_join_returns_source_units_and_all_classification_provenance_without_eligibility_claims(self):
         with tempfile.TemporaryDirectory() as directory:
             root=pathlib.Path(directory);fixture=Fixture();pin=build_work_index(fixture,root/'works')

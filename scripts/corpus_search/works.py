@@ -117,11 +117,12 @@ class WorkIndex:
     def close(self):self.connection.close()
 
 
-def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024):
+def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024,*,project=None):
     """Read bounded selected rows, authenticating every touched source part.
 
     Each location is (part,row). Return order and repeated requests are retained.
     Never return rows from a stream whose trailing receipt verification failed.
+    An optional projection bounds retained fields, not the authenticated stream.
     """
     if (kind not in ('inventory','prepared','chunks') or not isinstance(locations,(list,tuple)) or len(locations)>2000
             or type(max_total_bytes) is not int or not 1<=max_total_bytes<=256*1024*1024):
@@ -137,6 +138,7 @@ def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024):
         stream=package.records(kind,part)
         for ordinal,row in stream:
             if ordinal in requested:
+                if project is not None:row=project(row)
                 selected_bytes+=len(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode('utf-8'))
                 if selected_bytes>max_total_bytes:raise ValueError('prepared_hydration_byte_bound')
             for i in requested.get(ordinal,[]):results[i]=row

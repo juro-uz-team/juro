@@ -24,8 +24,11 @@ def hydrate_vector_inputs(package,vectors,ordinals,max_bytes=16*1024*1024):
             total+=len(text.encode('utf-8'))
             if total>max_bytes:raise ValueError('discovery_input_byte_bound')
             value=json.loads(text)
-            if (not isinstance(value,dict) or set(value)!={'documentTitle','documentType','language','script','officialText'}
-                    or not all(isinstance(item,str) for item in value.values()) or not value['officialText']):
+            fields={'documentTitle','documentType','language','script','officialText'}
+            if (not isinstance(value,dict) or set(value) not in (fields,fields|{'hierarchy'})
+                    or not all(isinstance(value[key],str) for key in fields) or not value['officialText']
+                    or ('hierarchy' in value and (not isinstance(value['hierarchy'],list)
+                        or any(not isinstance(item,str) for item in value['hierarchy'])))):
                 raise ValueError('discovery_input_codec_invalid')
             for position in requested[row]:
                 if key!=expected[position]:raise ValueError('discovery_input_vector_mismatch')
