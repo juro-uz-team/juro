@@ -51,4 +51,4 @@ Each interactive component family should explicitly cover:
 - There is no single generated component catalogue or visual playground.
 - Shared primitives are partially duplicated across public and platform apps.
 - Feature CSS is intentionally colocated but not yet normalized to one spacing/radius API.
-- Business, Lawyer, Pending Lawyer, and Staff/Admin component states still need role-specific production QA with controlled accounts and test data.
+- Business, Pending Lawyer, and Staff/Admin component states still need role-specific production QA with controlled accounts and test data. The Lawyer shell is verified read-only; its state-changing client collaboration, dialogs, uploads, and error states remain open.
