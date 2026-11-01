@@ -247,7 +247,12 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   },[intakeHandle,selectedConversationId,workspaceId,requestJson,text]);
   useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
-  useEffect(()=>{if(answer&&nearBottom.current)latestAnswerRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[answer]);
+  useEffect(()=>{
+    const transcript=transcriptRef.current, latest=latestAnswerRef.current;
+    if(answer&&nearBottom.current&&transcript&&latest) {
+      transcript.scrollTo({top:transcript.scrollTop+latest.getBoundingClientRect().top-transcript.getBoundingClientRect().top,behavior:"auto"});
+    }
+  },[answer]);
   useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"auto"});},[requestSending,optimisticQuestion,streamStatus,writing]);
   useEffect(()=>{if(planConfirmationOpen)planConfirmationRef.current?.focus();},[planConfirmationOpen]);
   useEffect(()=>{
@@ -459,8 +464,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               <div>{answer.branches.map((branch) => <a aria-current={branch.branchId === answer.branchId ? "page" : undefined} key={branch.branchId} href={aiLocation(new URLSearchParams({ conversationId: answer.conversationId, branchId: branch.branchId }))}>{branch.versionNumber === 1 ? text("Исходный ответ", "Asl javob", "Original answer") : `${text("Версия", "Versiya", "Version")} ${branch.versionNumber}`}</a>)}</div>
             </nav>}
             </>}
-            {optimisticQuestion && <PendingConversationTurn question={optimisticQuestion} preliminary={preliminary} status={streamStatus} failed={Boolean(error) && !sending} locale={locale} />}
-            {requestSending && streamStatus && <><AnswerWriting draft={writing} /><AnswerActivity submittedAt={requestSubmittedAt} locale={locale} /></>}
+            {optimisticQuestion && <PendingConversationTurn question={optimisticQuestion} preliminary={preliminary} status={streamStatus} failed={Boolean(error) && !sending} locale={locale} writing={requestSending ? writing : null} submittedAt={requestSending ? requestSubmittedAt : undefined} />}
           </>}
         </div>
         <form className="ai-composer" onSubmit={submit}>
@@ -602,22 +606,28 @@ function PendingConversationTurn({
   status,
   failed,
   locale,
+  writing,
+  submittedAt,
 }: {
   question: string;
   preliminary: AiPreliminary | null;
   status: string;
   failed: boolean;
   locale: PlatformLocale;
+  writing: WritingDraft | null;
+  submittedAt?: number;
 }) {
   return <section className="ai-conversation-turn ai-conversation-turn-pending">
     <HumanMessage question={question} locale={locale} />
-    <article className={`ai-assistant-draft ${failed ? "is-failed" : ""}`}>
+    <article className={`ai-answer ai-assistant-draft ${failed ? "is-failed" : ""}`}>
       <small>JURO · {failed
         ? aiText(locale, "ответ не завершён", "javob yakunlanmadi", "answer incomplete")
         : preliminary
           ? aiText(locale, "проверенный вывод · завершаю ответ", "tekshirilgan xulosa · javob yakunlanmoqda", "verified finding · completing the answer")
           : aiText(locale, "отвечает", "javob bermoqda", "answering")}</small>
-      {preliminary
+      {submittedAt !== undefined && <AnswerActivity submittedAt={submittedAt} locale={locale} status={status} />}
+      <AnswerWriting draft={writing} locale={locale} />
+      {!writing?.blocks.length && (preliminary
         ? <div className="ai-preliminary" role="status">
           <strong>{preliminary.message}</strong>
           <p className="ai-preliminary-source">
@@ -627,7 +637,7 @@ function PendingConversationTurn({
               : null}
           </p>
         </div>
-        : <div className="ai-thinking"><LoaderCircle className={failed ? undefined : "spin"} /><span>{failed ? aiText(locale, "Не удалось завершить ответ. Можно безопасно повторить запрос.", "Javobni yakunlab bo‘lmadi. So‘rovni xavfsiz takrorlash mumkin.", "The answer could not be completed. You can safely retry.") : status || aiText(locale, "Проверяю факты и источники…", "Faktlar va manbalarni tekshiryapman…", "Checking facts and sources…")}</span></div>}
+        : failed && <div className="ai-thinking"><CircleAlert /><span>{aiText(locale, "Не удалось завершить ответ. Можно безопасно повторить запрос.", "Javobni yakunlab bo‘lmadi. So‘rovni xavfsiz takrorlash mumkin.", "The answer could not be completed. You can safely retry.")}</span></div>)}
     </article>
   </section>;
 }
