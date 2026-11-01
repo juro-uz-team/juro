@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 /** Visible liveness is independent of stage announcements and never estimates completion. */
-export function AnswerActivity({ submittedAt, locale }: { submittedAt: number; locale: PlatformLocale }) {
+export function AnswerActivity({ submittedAt, locale, status }: { submittedAt: number; locale: PlatformLocale; status?: string }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const update = () => setElapsed(Math.max(0, Math.floor((Date.now() - submittedAt) / 1000)));
@@ -18,7 +19,11 @@ export function AnswerActivity({ submittedAt, locale }: { submittedAt: number; l
     uz: { elapsed: "O‘tgan vaqt", overrun: "Ish davom etmoqda. Odatdagidan ko‘proq vaqt talab etilmoqda." },
   }[locale];
   return <div className="answer-activity">
-    <span aria-live="off">{labels.elapsed}: {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+    <div className="answer-activity__row">
+      <LoaderCircle className="answer-activity__spinner" aria-hidden="true" />
+      {status && <span className="answer-activity__status">{status}</span>}
+      <span className="answer-activity__time" aria-live="off"><span>{labels.elapsed}:</span> <time>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</time></span>
+    </div>
     {elapsed >= 30 && <p role="status">{labels.overrun}</p>}
   </div>;
 }

@@ -181,9 +181,9 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
           ) : null}
 
           {message ? <p className={state === "error" ? "guest-ai-message is-error" : "guest-ai-message"} role={state === "error" ? "alert" : "status"}>{message}</p> : null}
-          {state === "submitting" && <div>
-            <AnswerWriting draft={writing} />
+          {state === "submitting" && <div className="guest-ai-result">
             <AnswerActivity submittedAt={submittedAt} locale={locale} />
+            <AnswerWriting draft={writing} locale={locale} />
             <button type="button" onClick={cancel}>{text("Остановить", "To‘xtatish", "Stop")}</button>
           </div>}
 

@@ -4,6 +4,7 @@ import {createServer} from "node:http";
 import {fileURLToPath} from "node:url";
 import {build} from "esbuild";
 import {chromium} from "playwright";
+import {readFile, mkdir} from "node:fs/promises";
 
 let browser,server,origin;
 const pending=new Map();
@@ -197,4 +198,51 @@ for (const guest of [true, false]) test(`draft grows before completion and clear
   await page.locator('[data-answer-writing]').waitFor({state:'detached'});
   assert.equal(completed.has(path), false);
   assert.deepEqual(errors, []);
+});
+
+for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
+  completed.clear(); stallMetadata=false; sendDeeperProgress=false;
+  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:Array.from({length:12},(_,i)=>({title:`Legal issue ${i+1}`,explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}))}};
+  const page=await browser.newPage({viewport:{width,height:900}});
+  context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
+  await page.goto(origin+'/signed');
+  for (const file of ['globals.css','_platform/platform-shell.css','_platform/legal-answer.css','_platform/ai-lawyer-phase4.css','_platform/ai-document-prefill.css','_platform/ai-evidence.css','_platform/ai-lawyer.css']) {
+    const css=await readFile(new URL(`../../app/${file}`,import.meta.url),'utf8');
+    await page.addStyleTag({content:css.replace(/@import[^;]+;/g,'')});
+  }
+  await page.addStyleTag({content:'body{margin:0;font-family:var(--font-ui)}*{box-sizing:border-box}'});
+  await page.evaluate(()=>{
+    document.documentElement.dataset.theme='dark';
+    const root=document.getElementById('root'), main=document.createElement('main');
+    main.className='platform-main'; root.before(main);
+    const header=document.createElement('header');header.className='platform-topbar';header.textContent='JURO · Legal workspace';
+    main.append(header,root);
+  });
+  await page.locator('#ai-question').fill('Can my employer terminate my contract?');
+  await page.getByRole('button',{name:'Send',exact:true}).click();
+  const activity=page.locator('.ai-assistant-draft .answer-activity');await activity.waitFor();
+  const spinner=activity.locator('svg');
+  assert.notEqual(await spinner.evaluate(el=>getComputedStyle(el).animationName),'none');
+  const first=await spinner.evaluate(el=>getComputedStyle(el).transform);
+  await page.waitForTimeout(150);
+  assert.notEqual(await spinner.evaluate(el=>getComputedStyle(el).transform),first);
+  const response=pending.get('/api/platform/ai');assert(response);
+  response.write(`event: writing\ndata: ${JSON.stringify({blocks:[{key:'turn/content/summary',text:'A supported main point.'},{key:'turn/content/issues/0/title',text:'Employment protections'},{key:'turn/content/issues/0/explanation',text:'The applicable rule and its qualifications. '.repeat(20)}]})}\n\n`);
+  await page.locator('.ai-assistant-draft .legal-answer__section').nth(1).waitFor();
+  assert.equal(await page.locator('[data-answer-writing]').evaluate(el=>!!el.closest('.ai-answer')),true);
+  const dir=new URL('../../../../.scratch/chat-ui/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
+  await page.screenshot({path:fileURLToPath(new URL(`stream-${width}.png`,dir))});
+  const before=await page.evaluate(()=>window.scrollY);
+  completed.add('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);pending.delete('/api/platform/ai');
+  await page.locator('.ai-current-answer').waitFor();await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(()=>window.scrollY),before,'Final delivery must not scroll the page shell');
+  assert.equal(await page.locator('.answer-activity').count(),0);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'No horizontal page overflow');
+  const composer=await page.locator('.ai-composer').boundingBox();assert(composer.y+composer.height<=900,'Composer stays in the viewport');
+  if(width<=980) {
+    const contextBar=await page.locator('.ai-mobile-context-bar').boundingBox();
+    assert(contextBar.y>=composer.y+composer.height-1,'Context controls must not cover the composer');
+  }
+  await page.screenshot({path:fileURLToPath(new URL(`final-${width}.png`,dir))});
+  await page.emulateMedia({reducedMotion:'reduce'});
 });
