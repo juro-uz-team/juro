@@ -1,3 +1,3 @@
-import {questionIntakeRoute} from "../../../../../../lib/legal-chat/intake-route";
+import {questionIntakeRoute} from "../../../../../../lib/legal-answer-workflow/intake-entry";
 
 export const POST=questionIntakeRoute("finalize");

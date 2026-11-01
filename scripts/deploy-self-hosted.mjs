@@ -6,6 +6,19 @@ import { isAbsolute, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
 
+/** Application-only releases trust the provisioned corpus and do not change its selection. */
+export function corpusDeploymentCommand(config, settings) {
+  if (config.corpusPolicy !== undefined && !["retain", "activate"].includes(config.corpusPolicy)) {
+    throw new Error("Unknown corpus policy");
+  }
+  if (config.corpusPolicy === "retain") return undefined;
+  if (settings.CORPUS_DATABASE_URL || config.corpusCommand || config.corpusPolicy === "activate") {
+    if (!isAbsolute(config.corpusCommand ?? "")) throw new Error("Corpus activation requires an absolute corpusCommand");
+    return config.corpusCommand;
+  }
+  return undefined;
+}
+
 function corpusReceipt(value, phase, target, original) {
   if (value?.version !== 1 || value.phase !== phase
     || ["environment", "revision", "release"].some(key => value[key] !== target[key])
@@ -78,11 +91,12 @@ for (const field of ["environmentFile", "backupCommand", "qualifyCommand"]) {
 await access(config.backupCommand, constants.X_OK);
 await access(config.qualifyCommand, constants.X_OK);
 const settings = parseEnv(await readFile(config.environmentFile, "utf8"));
-if (settings.CORPUS_DATABASE_URL || config.corpusCommand) {
-  if (!isAbsolute(config.corpusCommand ?? "") || resolve(config.corpusCommand).startsWith(root + "/releases/")) {
+const corpusCommand = corpusDeploymentCommand(config, settings);
+if (corpusCommand) {
+  if (!isAbsolute(corpusCommand ?? "") || resolve(corpusCommand).startsWith(root + "/releases/")) {
     throw new Error("Shared corpus deployment requires an external absolute corpusCommand");
   }
-  await access(config.corpusCommand, constants.X_OK);
+  await access(corpusCommand, constants.X_OK);
 }
 if (settings.DEPLOYMENT_ENVIRONMENT !== environment || !settings.DATABASE_URL || !isAbsolute(settings.OBJECT_STORAGE_PATH ?? "")) {
   throw new Error("Environment, database and absolute object storage must be provisioned before deployment");
@@ -124,7 +138,7 @@ function tip() {
 }
 function corpusHook(target, evidence) {
   return async phase => {
-    const result = spawnSync(config.corpusCommand, [phase, environment, revision, target.release, target.previous ?? ""], {
+    const result = spawnSync(corpusCommand, [phase, environment, revision, target.release, target.previous ?? ""], {
       cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 150_000,
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
     });
@@ -148,7 +162,7 @@ try {
     if (!previous.startsWith(join(root, "releases") + "/")) throw new Error("Previous release escapes environment root");
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   if (tip() !== revision) throw new Error("The branch has moved beyond the validated revision");
-  if (config.corpusCommand && previous && run("git", ["rev-parse", "HEAD"], previous, true) === revision) {
+  if (corpusCommand && previous && run("git", ["rev-parse", "HEAD"], previous, true) === revision) {
     const saved = JSON.parse(await readFile(join(previous, ".scratch/deployment/corpus-activate.json"), "utf8"));
     if (saved.status !== 0) throw new Error("Existing release lacks successful corpus activation evidence");
     const receipt = JSON.parse(saved.stdout);
@@ -193,7 +207,7 @@ try {
   const evidence = join(release, ".scratch", "deployment");
   await mkdir(evidence, { recursive: true, mode: 0o700 });
   const target = { environment, revision, release, previous };
-  const hook = config.corpusCommand ? corpusHook(target, evidence) : undefined;
+  const hook = corpusCommand ? corpusHook(target, evidence) : undefined;
   await coordinateDeploymentActivation(target, {
     hook,
     beforeInstall: async () => { if (tip() !== revision) throw new Error("A newer branch revision superseded corpus preparation"); },

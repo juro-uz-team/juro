@@ -57,8 +57,9 @@ test("retaining a qualified corpus verifies live fences without republishing mea
  const retained={...bundle,mode:"retain",acceptedRevision:"f".repeat(40),acceptanceSha256:original};
  bindOperatorBundle(deploymentRequest(args),retained);
  const f=fixture("activate");
+ f.operations.qualify=async()=>{throw Error("Retained corpus must not be recertified");};
  assert.equal((await runDeploymentPhase(f.request,retained,f.operations)).selectionState,"committed");
- assert.deepEqual(f.events,["guard","qualify","process-guard","fences","process-guard"]);
+ assert.deepEqual(f.events,["guard","process-guard","fences","process-guard"]);
  assert.equal((await runDeploymentPhase({...f.request,phase:"status"},retained,f.operations)).selectionState,"original");
  assert.equal((await runDeploymentPhase({...f.request,phase:"verify"},retained,f.operations)).selectionState,"committed");
  f.operations.fences=async()=>f.setActual(acceptance);

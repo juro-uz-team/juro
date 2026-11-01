@@ -73,12 +73,12 @@ def inspect_generation(cursor, schema, table, index, lists):
 
 
 class PgvectorGeneration:
-    def __init__(self, path, manifest_sha256):
+    def __init__(self, path, manifest_sha256, *, trust_prepared=False):
         path = pathlib.Path(path)
         if path.is_symlink() or path.stat().st_size > 65536:
             raise ValueError('pgvector_generation_manifest_invalid')
         raw = path.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != manifest_sha256:
+        if not trust_prepared and hashlib.sha256(raw).hexdigest() != manifest_sha256:
             raise ValueError('pgvector_generation_manifest_mismatch')
         self.manifest = json.loads(raw)
         m = self.manifest

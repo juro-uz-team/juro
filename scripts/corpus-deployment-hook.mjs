@@ -63,6 +63,7 @@ async function main(){
  }
  await guard(false);
  const workerPath=join(dirname(fileURLToPath(import.meta.url)),"corpus-deployment-worker.mjs");await protectedPath(workerPath);await protectedPath(join(dirname(workerPath),"corpus-deployment-contract.mjs"));
+ await protectedPath(join(dirname(workerPath),"retained-corpus-deployment.mjs"));
  const operator="juro-corpus-operator",operatorUid=Number(run("id",["-u",operator])),operatorGid=Number(run("id",["-g",operator]));assert(operatorUid>0&&operatorGid>0);assert.notEqual(operatorUid,uid);
  if(request.phase==="prepare"){
   assert((await lstat(join(request.release,".env.self-hosted"))).isSymbolicLink(),"Private environment must remain an excluded symlink");

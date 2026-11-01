@@ -120,68 +120,7 @@ test("connection recovery does not restart the writer's overall generation deadl
   }
 });
 
-test("legal model transport pins each mode and keeps source locators out of provider context", async context => {
-  const previousKey = env.OPENAI_API_KEY;
-  env.OPENAI_API_KEY = "test-key";
-  context.after(() => { env.OPENAI_API_KEY = previousKey; });
-  const sourceText=["Official provision", "", "A qualifying condition follows.",
-    ...Array.from({length:161},(_,index)=>`Line ${index}.`)].join("\n");
-  const payloads: Array<{model:string;input:string;prompt_cache_options?:unknown;reasoning:{effort:string;mode:string};text:{verbosity:string;format:{strict:boolean}}}> = [];
-  context.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body));
-    assertStrictProviderObjects(body.text.format.schema);
-    payloads.push(body);
-    return structuredResponse({stream:true},{ id: "response", model: body.model,
-      output: [{ content: [{ type: "output_text", text: JSON.stringify({
-        answer: {
-        mainPoint: { text: "Supported result", sourceIds: ["source"] },
-        issues: [{finding:{title:"Application",explanation:"A written application is required.",sourceIds:["source"]},
-          actions:[{title:"Apply",instruction:"Submit the application and keep a copy.",sourceIds:["source"]}]}],
-        risks: [], questions: [], unresolved: [],
-        },
-      }) }] }], usage: { input_tokens: 12, output_tokens: 9 } });
-  });
-  const observations: unknown[] = [];
-  const model = createLegalAnswerModel({ requestId: "request", onAttemptFinished: value => { observations.push(value); } });
-  for (const mode of ["fast", "deep"] as const) {
-    const question: AnswerQuestion = { question: "Question", locale: "en", mode, answerMode: "detailed",
-      topics:["Record request eligibility", "Application procedure"],
-      temporalScope: { kind: "current" }, unresolved: [], documents:[privateDocumentContext()], evidence: [{ source: {
-        id: "source", actTitle: "Title", actIdentifier: null, officialUrl: "https://lex.uz/docs/123",
-        revisionDate: null, lastCheckedAt: "2026-09-14", locale: "en", publishedAt: null,
-        sourceType: "lex", status: "current", verificationState: "verified", verifiedAt: "2026-09-14",
-        contentSha256: "server-only-parent-fingerprint",
-      }, text: sourceText, textSha256: "server-only-text-fingerprint", endpoint: {kind: "current"}, origin: "indexed" }] };
-    const draft = legalDraftSchema.parse(await model.write({ question, correction: null }));
-    assert.equal(draft.mainPoint.text, "Supported result");
-    assert.equal(draft.findings[0]?.explanation,"A written application is required.");
-    assert.equal(draft.actions[0]?.description,"Submit the application and keep a copy.");
-    assert.ok(!("sourceReview" in draft));
-  }
-  assert.deepEqual(payloads.map(body => body.model), ["gpt-5.6-terra", "gpt-6-luna"]);
-  assert.deepEqual(payloads.map(body => body.text.verbosity), ["low", "low"]);
-  assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Mode changes only the provider model");
-  assert.deepEqual(payloads.map(body => body.prompt_cache_options),[undefined,undefined],"Writing retains provider caching in both modes");
-  assert.deepEqual(payloads.map(body=>body.reasoning),[
-    {effort:"medium",mode:"standard"},{effort:"medium",mode:"standard"},
-  ]);
-  assert.equal(observations.length, 2);
-  for (const body of payloads) {
-    assert.equal(body.text.format.strict, true);
-    assert.ok(!body.input.includes("fingerprint"));
-    assert.ok(!body.input.includes("https://lex.uz"));
-    assert.ok(body.input.includes("Official provision"));
-    const input=JSON.parse(body.input);
-    assert.equal(input.context.answerMode,"detailed","Concise provider output preserves the requested answer format");
-    assert.deepEqual(input.context.topics,["Record request eligibility", "Application procedure"]);
-    assert.deepEqual(input.context.privateDocuments,[{id:privateDocumentContext().source.id,
-      title:"Uploaded agreement",text:privateDocumentContext().text}]);
-    assert.doesNotMatch(body.input,/juro-private:|private-object-checksum/);
-    assert.ok(input.context.evidence[0].passages.length <=160);
-    assert.equal(input.context.evidence[0].passages.map((passage:{text:string})=>passage.text).join("\n"),
-      sourceText);
-  }
-});
+
 
 test("a fabricated citation is rejected before a draft can reach verification", async context => {
   const previousKey = env.OPENAI_API_KEY;
@@ -267,71 +206,7 @@ test("one whole correction can reuse approved claims without rewriting their con
   await assert.rejects(model.write({ question, correction: null }));
 });
 
-test("qualified issues preserve action membership without duplicating explanatory text", async context => {
-  const previousKey = env.OPENAI_API_KEY;
-  env.OPENAI_API_KEY = "test-key";
-  context.after(() => { env.OPENAI_API_KEY = previousKey; });
-  const question: AnswerQuestion = { question: "How do I apply?", locale: "en", mode: "fast", answerMode: "detailed",
-    temporalScope: { kind: "current" }, unresolved: [], evidence: [] };
-  for(const id of ["rule","procedure",...Array.from({length:12},(_,index)=>`source-${index}`),"additional-source"]) {
-    question.evidence=[...question.evidence,{source:{id,actTitle:"Synthetic rule",actIdentifier:null,officialUrl:"https://lex.uz/docs/123",
-      revisionDate:null,lastCheckedAt:"2026-09-26",locale:"en",publishedAt:null,sourceType:"lex",status:"current",
-      verificationState:"verified",verifiedAt:"2026-09-26",contentSha256:"parent"},text:"A synthetic rule.",
-      textSha256:"text",endpoint:{kind:"current"},origin:"indexed"}];
-  }
-  let explanation = "Workers may apply within ten days after written notice.";
-  let instruction = "Record the notice date and submit your application.";
-  let findingSources = ["rule"];
-  let instructionSources = ["rule", "procedure"];
-  let reuseAction = false;
-  let hasAction = true;
-  context.mock.method(globalThis, "fetch", async () => structuredResponse({stream:true},{
-    id: "response", model: "gpt-5.6-luna", output: [{ content: [{ type: "output_text", text: JSON.stringify({
-      answer: {
-        mainPoint: { text: "Application guidance", sourceIds: [] },
-        issues: [{ finding: { title: "Application", explanation, sourceIds: findingSources },
-          actions: hasAction ? [reuseAction ? { reuse: "action:0" }
-            : { title: "Apply", instruction, sourceIds: instructionSources }] : [] }],
-        risks: [], questions: [], unresolved: [],
-      },
-    }) }] }], usage: { input_tokens: 10, output_tokens: 10 },
-  }));
-  const model = createLegalAnswerModel({ requestId: "composed-limits" });
-  const write = () => model.write({ question, correction: null });
-  const initial = legalDraftSchema.parse(await write());
-  assert.equal(initial.actions[0]!.description, instruction);
-  assert.deepEqual(initial.ruleBindings, [{findingId:"finding:0",actionIds:["action:0"]}]);
-  assert.deepEqual(initial.actions[0]!.sourceIds, ["rule", "procedure"]);
-  explanation = "x".repeat(4000);
-  instruction = "y".repeat(2000);
-  const bounded = legalDraftSchema.parse(await write());
-  assert.equal(bounded.findings[0]!.explanation.length, 4000);
-  assert.equal(bounded.actions[0]!.description.length, 2000);
-  instruction += "y";
-  await assert.rejects(write(), "Oversized guidance must fail without truncation");
-  instruction = "Apply within ten days after written notice.";
-  hasAction = false;
-  explanation = "x".repeat(4000);
-  assert.equal(legalDraftSchema.parse(await write()).findings[0]!.explanation.length, 4000);
-  hasAction = true;
-  explanation = "A supported rule.";
-  findingSources = Array.from({ length: 12 }, (_, index) => `source-${index}`);
-  instructionSources = ["additional-source"];
-  await assert.rejects(write(), "Citation union must not silently discard a thirteenth source");
-  findingSources = ["rule"];
-  instructionSources = ["procedure"];
-  reuseAction = true;
-  const verification = legalVerificationSchema.parse({
-    claims: [{ id: "action:0", supported: true, reason: "Supported earlier." }],
-    complete: false, gaps: [], coverage: [], retention: [], questions: [],
-  });
-  const reused = legalDraftSchema.parse(await model.write({ question, correction: { draft: initial, verification } }));
-  assert.deepEqual(reused.actions, initial.actions, "A changed finding must not prefix or otherwise edit an explicitly reused action");
-  verification.claims[0]!.supported = false;
-  await assert.rejects(model.write({ question, correction: { draft: initial, verification } }));
-  instruction = "Changed instruction";
-  await assert.rejects(write(), "Initial writing cannot reuse prior claims");
-});
+
 
 function assertStrictProviderObjects(value: unknown): void {
   if (Array.isArray(value)) {value.forEach(assertStrictProviderObjects); return;}

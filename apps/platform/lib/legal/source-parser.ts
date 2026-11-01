@@ -8,6 +8,7 @@ import { parse, type DefaultTreeAdapterTypes } from "parse5";
  */
 import { z } from "zod";
 import {isLegalArticleHeading} from "./article-heading";
+import {isLexLanguageNotice} from "./lex-language-notice";
 import type {
   LegalSourceKind,
   LegalSourceLocale,
@@ -47,6 +48,7 @@ const normalizedBlockSchema = z.object({
     "revision",
     "section",
     "chapter",
+    "subsection",
     "article",
     "paragraph",
   ]).optional(),
@@ -61,9 +63,9 @@ const normalizedBlockSchema = z.object({
 export const normalizedLegalSourceSnapshotSchema = z.object({
   schemaVersion: z.literal(1),
   parser: z.object({
-    name: z.enum(["parse5", "unpdf"]),
-    version: z.enum(["8.0.1", "1.8.0"]),
-    profile: z.enum(["juro-legal-blocks-v1", "juro-legal-blocks-v2", "juro-legal-pdf-v1"]),
+    name: z.enum(["parse5", "unpdf", "prepared"]),
+    version: z.enum(["8.0.1", "1.8.0", "1.0.0", "1.1.0", "1.2.0"]),
+    profile: z.enum(["juro-legal-blocks-v1", "juro-legal-blocks-v2", "juro-legal-pdf-v1", "juro-prepared-blocks-v1", "juro-prepared-blocks-v2", "juro-prepared-blocks-v3"]),
   }).strict(),
   source: z.object({
     sourceKind: z.enum(["lex", "advice"]),
@@ -88,7 +90,15 @@ export const normalizedLegalSourceSnapshotSchema = z.object({
   documentTitle: z.string().min(1).max(2_000),
   blocks: z.array(normalizedBlockSchema).min(1).max(8_000),
   plainText: z.string().min(200).max(3_000_000),
-}).strict();
+  preparedSource: z.object({packageSha256:z.string().regex(/^[a-f0-9]{64}$/u),work:z.string().min(1).max(4096),
+    recordSha256:z.string().regex(/^[a-f0-9]{64}$/u)}).strict().optional(),
+}).strict().refine(value=>value.parser.name==="prepared"
+  ?((value.parser.version==="1.0.0"&&value.parser.profile==="juro-prepared-blocks-v1")
+    ||(value.parser.version==="1.1.0"&&value.parser.profile==="juro-prepared-blocks-v2")
+    ||(value.parser.version==="1.2.0"&&value.parser.profile==="juro-prepared-blocks-v3"))&&!!value.preparedSource
+  :!value.preparedSource&&!value.parser.profile.startsWith("juro-prepared-blocks-")
+    &&value.parser.version!=="1.0.0"&&value.parser.version!=="1.1.0"&&value.parser.version!=="1.2.0",
+"Retained-source projection provenance must match its parser profile");
 
 export type NormalizedLegalSourceSnapshot = z.infer<
   typeof normalizedLegalSourceSnapshotSchema
@@ -149,14 +159,10 @@ const LEX_UI_NOISE_PATTERNS = [
   /Listen to audio/giu,
   /Get a link from a document element/giu,
 ] as const;
-const LEX_LANGUAGE_TEXT_UNAVAILABLE_PATTERNS = [
-  /Текст акта приводится на [^.\n]{2,80} языке/iu,
-  /Hujjat matni [^.\n]{2,80} tilida (?:berilgan|keltirilgan)/iu,
-  /Ҳужжат матни [^.\n]{2,80} тилида (?:берилган|келтирилган)/iu,
-  /The text of (?:this|the) act is (?:available|provided) in [^.\n]{2,80}/iu,
-] as const;
 const LEX_UI_CLASS_PATTERN = /(?:^|[-_])(?:audio|button|comment|control|footer|menu|navigation|proposal|share|toolbar)(?:$|[-_])/iu;
-const MAX_NODES = 50_000;
+// Full civil-code pages contain more than 65k DOM nodes, including publisher
+// controls. Keep traversal bounded while permitting those complete documents.
+export const MAX_LEGAL_SOURCE_DOM_NODES = 200_000;
 // The current Tax Code contains about 6.8k semantic Lex elements. Keep a hard
 // ceiling while allowing that official document to be queried live.
 const MAX_BLOCKS = 8_000;
@@ -257,16 +263,17 @@ function walkElements(
   root: ParentNode,
   visitor: (element: Element) => void,
   counter: { value: number },
+  skipUi = false,
 ): void {
   for (const child of root.childNodes) {
     counter.value += 1;
-    if (counter.value > MAX_NODES) {
+    if (counter.value > MAX_LEGAL_SOURCE_DOM_NODES) {
       throw new LegalSourceParserError("LEGAL_SOURCE_PARSE_TOO_COMPLEX");
     }
     if (!isElement(child)) continue;
     visitor(child);
-    if (!SKIPPED_TAGS.has(child.tagName) && !isHidden(child)) {
-      walkElements(child, visitor, counter);
+    if (!SKIPPED_TAGS.has(child.tagName) && !isHidden(child) && !(skipUi && isUiElement(child))) {
+      walkElements(child, visitor, counter, skipUi);
     }
   }
 }
@@ -278,7 +285,7 @@ function findFirstElement(
 ): Element | null {
   for (const child of root.childNodes) {
     counter.value += 1;
-    if (counter.value > MAX_NODES) {
+    if (counter.value > MAX_LEGAL_SOURCE_DOM_NODES) {
       throw new LegalSourceParserError("LEGAL_SOURCE_PARSE_TOO_COMPLEX");
     }
     if (!isElement(child)) continue;
@@ -557,6 +564,16 @@ function normalizeParsedLegalSource(input: LegalSourceHtmlInput, document: Defau
   }
   const blocks = collectBlocks(primary, input.reference.sourceKind, input.profile === "juro-legal-blocks-v2");
   const plainText = blocks.map((block) => block.text).join("\n\n");
+  if(input.reference.sourceKind==="lex"){
+    // A publisher placeholder can have a long title and signature. Its notice
+    // still means that this language route contains no operative legal text.
+    walkElements(document,element=>{
+      if(!isHidden(element)&&classTokens(element).has("COMMENT_FOR_WARNING")
+        &&isLexLanguageNotice(collectVisiblePageText(element))){
+        throw new LegalSourceParserError("LEGAL_SOURCE_LANGUAGE_TEXT_UNAVAILABLE");
+      }
+    },{value:0},true);
+  }
   if (blocks.length === 0 || plainText.length < 200) {
     // Lex places the authoritative "text is in another language" warning in
     // a sibling of #divBody on some legacy acts. Inspect the parsed document
@@ -564,7 +581,7 @@ function normalizeParsedLegalSource(input: LegalSourceHtmlInput, document: Defau
     // short; no surrounding page chrome is admitted to the normalized text.
     const sourceText = normalizeText(collectVisiblePageText(document));
     if (input.reference.sourceKind === "lex"
-      && LEX_LANGUAGE_TEXT_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(sourceText))) {
+      && isLexLanguageNotice(sourceText)) {
       throw new LegalSourceParserError("LEGAL_SOURCE_LANGUAGE_TEXT_UNAVAILABLE");
     }
     throw new LegalSourceParserError("LEGAL_SOURCE_CONTENT_INSUFFICIENT");

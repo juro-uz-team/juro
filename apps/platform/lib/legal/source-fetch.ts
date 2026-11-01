@@ -84,6 +84,7 @@ type FetchLike = (
 
 type FetchOptions = {
   adviceEnabled: boolean;
+  robotsCache?: LegalSourceRobotsCache;
   fetchImpl?: FetchLike;
   now?: () => Date;
   timeoutMs?: number;
@@ -110,6 +111,15 @@ type RobotsGroup = {
   rules: RobotsRule[];
   crawlDelay: number | null;
 };
+
+export type LegalSourceRobotsCache = {readonly scope:"legal-source-request"};
+type RobotsPolicy={groups:RobotsGroup[];url:string};
+const robotsSessions=new WeakMap<LegalSourceRobotsCache,Map<string,Promise<RobotsPolicy>>>();
+/** One research request may share policy reads; source documents remain live reads. */
+export function createLegalSourceRobotsCache():LegalSourceRobotsCache {
+  const token=Object.freeze({scope:"legal-source-request" as const});
+  robotsSessions.set(token,new Map());return token;
+}
 
 const SOURCE_USER_AGENT =
   "JURO-LegalSourceSync/1.0 (+https://juro.uz)";
@@ -541,6 +551,60 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   ).join("");
 }
 
+async function readRobotsPolicy(reference:LegalSourceReference,options:Pick<FetchOptions,"fetchImpl"|"timeoutMs"|"maxRedirects"|"robotsCache">):Promise<RobotsPolicy> {
+  const fetchImpl=options.fetchImpl??fetch;
+  const timeoutMs=options.timeoutMs??DEFAULT_TIMEOUT_MS;
+  const maxRedirects=options.maxRedirects??DEFAULT_MAX_REDIRECTS;
+  const loadRobots=async():Promise<RobotsPolicy>=>{
+    const robotsInitialUrl = new URL(`https://${reference.host}/robots.txt`);
+    const robotsResult = await fetchFollowingRedirects(robotsInitialUrl, {
+      fetchImpl,
+      timeoutMs,
+      maxRedirects,
+      accept: "*/*",
+      allowNotFound: true,
+      unavailableCode: "LEGAL_SOURCE_ROBOTS_UNAVAILABLE",
+      validateUrl(candidate) {
+        return candidate.protocol === "https:"
+          && candidate.port === ""
+          && candidate.username === ""
+          && candidate.password === ""
+          && sourceHostKind(candidate.hostname) === reference.sourceKind
+          && (candidate.pathname === "/robots.txt"
+            || (candidate.origin === robotsInitialUrl.origin && candidate.pathname === "/Pages/404.aspx"))
+          && candidate.search === ""
+          && candidate.hash === "";
+      },
+    });
+    const robotsType = responseContentType(robotsResult.response);
+    const robotsMissing = robotsResult.response.status === 404;
+    if (
+      !robotsMissing && (robotsType.mediaType !== "text/plain"
+      || (robotsType.charset && !["utf-8", "utf8"].includes(robotsType.charset)))
+    ) {
+      await cancelBody(robotsResult.response);
+      throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_UNAVAILABLE", false);
+    }
+    if (robotsMissing) await cancelBody(robotsResult.response);
+    const robotsBytes = robotsMissing ? new Uint8Array() : await readBoundedLegalSourceBytes(
+      robotsResult.response,
+      ROBOTS_MAX_BYTES,
+      timeoutMs,
+    );
+    return {groups:parseRobots(decodeUtf8(robotsBytes)),url:robotsResult.finalUrl.href};
+  };
+  const cache=options.robotsCache?robotsSessions.get(options.robotsCache):undefined;
+  if(options.robotsCache&&!cache)throw new TypeError("Invalid legal source request cache.");
+  const policyKey=JSON.stringify([reference.sourceKind,reference.host,timeoutMs,maxRedirects]);
+  let pending=cache?.get(policyKey);
+  if(!pending){
+    pending=loadRobots();cache?.set(policyKey,pending);
+    const current=pending;
+    void pending.catch(()=>{if(cache?.get(policyKey)===current)cache.delete(policyKey);});
+  }
+  return pending;
+}
+
 export async function fetchLegalSource(
   value: string,
   options: FetchOptions,
@@ -566,45 +630,8 @@ export async function fetchLegalSource(
     throw new TypeError("Invalid legal source fetch limits.");
   }
 
-  const robotsInitialUrl = new URL(`https://${reference.host}/robots.txt`);
-  const robotsResult = await fetchFollowingRedirects(robotsInitialUrl, {
-    fetchImpl,
-    timeoutMs,
-    maxRedirects,
-    accept: "*/*",
-    allowNotFound: true,
-    unavailableCode: "LEGAL_SOURCE_ROBOTS_UNAVAILABLE",
-    validateUrl(candidate) {
-      return candidate.protocol === "https:"
-        && candidate.port === ""
-        && candidate.username === ""
-        && candidate.password === ""
-        && sourceHostKind(candidate.hostname) === reference.sourceKind
-        && (candidate.pathname === "/robots.txt"
-          || (candidate.origin === robotsInitialUrl.origin && candidate.pathname === "/Pages/404.aspx"))
-        && candidate.search === ""
-        && candidate.hash === "";
-    },
-  });
-  const robotsType = responseContentType(robotsResult.response);
-  const robotsMissing = robotsResult.response.status === 404;
-  if (
-    !robotsMissing && (robotsType.mediaType !== "text/plain"
-    || (robotsType.charset && !["utf-8", "utf8"].includes(robotsType.charset)))
-  ) {
-    await cancelBody(robotsResult.response);
-    throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_UNAVAILABLE", false);
-  }
-  if (robotsMissing) await cancelBody(robotsResult.response);
-  const robotsBytes = robotsMissing ? new Uint8Array() : await readBoundedLegalSourceBytes(
-    robotsResult.response,
-    ROBOTS_MAX_BYTES,
-    timeoutMs,
-  );
-  const robots = robotsAllows(
-    parseRobots(decodeUtf8(robotsBytes)),
-    new URL(reference.canonicalUrl),
-  );
+  const policy=await readRobotsPolicy(reference,options);
+  const robots = robotsAllows(policy.groups,new URL(reference.canonicalUrl));
   if (!robots.allowed) {
     throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_DISALLOWED", false);
   }
@@ -681,7 +708,7 @@ export async function fetchLegalSource(
     etag: contentResult.response.headers.get("etag"),
     lastModified: contentResult.response.headers.get("last-modified"),
     fetchedAt: (options.now ?? (() => new Date()))().toISOString(),
-    robotsUrl: robotsResult.finalUrl.href,
+    robotsUrl: policy.url,
   };
 }
 
@@ -694,7 +721,7 @@ export async function fetchLexPdfRepresentation(
   canonicalUrl: string,
   options: Pick<
     FetchOptions,
-    "fetchImpl" | "now" | "timeoutMs" | "maxBytes" | "maxRedirects" | "wait"
+    "fetchImpl" | "now" | "timeoutMs" | "maxBytes" | "maxRedirects" | "wait" | "robotsCache"
   >,
 ): Promise<FetchedLexPdfRepresentation> {
   const reference = classifyLegalSourceUrl(canonicalUrl);
@@ -721,45 +748,8 @@ export async function fetchLexPdfRepresentation(
   const representationUrl = new URL(
     `https://${reference.host}/pdffile/${representationId}`,
   );
-  const robotsInitialUrl = new URL(`https://${reference.host}/robots.txt`);
-  const robotsResult = await fetchFollowingRedirects(robotsInitialUrl, {
-    fetchImpl,
-    timeoutMs,
-    maxRedirects,
-    accept: "*/*",
-    allowNotFound: true,
-    unavailableCode: "LEGAL_SOURCE_ROBOTS_UNAVAILABLE",
-    validateUrl(candidate) {
-      return candidate.protocol === "https:"
-        && candidate.port === ""
-        && candidate.username === ""
-        && candidate.password === ""
-        && sourceHostKind(candidate.hostname) === "lex"
-        && (candidate.pathname === "/robots.txt"
-          || (candidate.origin === robotsInitialUrl.origin && candidate.pathname === "/Pages/404.aspx"))
-        && candidate.search === ""
-        && candidate.hash === "";
-    },
-  });
-  const robotsType = responseContentType(robotsResult.response);
-  const robotsMissing=robotsResult.response.status===404;
-  if (
-    !robotsMissing && (robotsType.mediaType !== "text/plain"
-    || (robotsType.charset && !["utf-8", "utf8"].includes(robotsType.charset)))
-  ) {
-    await cancelBody(robotsResult.response);
-    throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_UNAVAILABLE", false);
-  }
-  if(robotsMissing)await cancelBody(robotsResult.response);
-  const robotsBytes = robotsMissing?new Uint8Array():await readBoundedLegalSourceBytes(
-    robotsResult.response,
-    ROBOTS_MAX_BYTES,
-    timeoutMs,
-  );
-  const robots = robotsAllows(
-    parseRobots(decodeUtf8(robotsBytes)),
-    representationUrl,
-  );
+  const policy=await readRobotsPolicy(reference,options);
+  const robots=robotsAllows(policy.groups,representationUrl);
   if (!robots.allowed) {
     throw new LegalSourceFetchError("LEGAL_SOURCE_ROBOTS_DISALLOWED", false);
   }
@@ -809,7 +799,7 @@ export async function fetchLexPdfRepresentation(
     contentType: contentType.raw || "application/pdf",
     representationUrl: contentResult.finalUrl.href,
     fetchedAt: (options.now ?? (() => new Date()))().toISOString(),
-    robotsUrl: robotsResult.finalUrl.href,
+    robotsUrl: policy.url,
   };
 }
 

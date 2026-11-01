@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { coordinateDeploymentActivation } from "./deploy-self-hosted.mjs";
+import { coordinateDeploymentActivation, corpusDeploymentCommand } from "./deploy-self-hosted.mjs";
 
 const target = { environment: "production", revision: "a".repeat(40), release: "/srv/juro/production/releases/new", previous: "/srv/juro/production/releases/old" };
 const originalSelectionSha256 = "b".repeat(64);
@@ -71,4 +71,19 @@ test("installations without a shared corpus retain ordinary rollback behavior", 
   const { events, actions } = fixture({ hook: undefined });
   await coordinateDeploymentActivation(target, actions);
   assert.deepEqual(events, [`install:${target.release}`, `current:${target.release}`]);
+});
+
+
+test("retained-corpus application releases skip corpus hooks and preserve application rollback", async () => {
+  assert.equal(corpusDeploymentCommand({corpusPolicy:"retain",corpusCommand:"/operator/activate-corpus"},{CORPUS_DATABASE_URL:"configured"}),undefined);
+  const {events,actions}=fixture({hook:undefined});
+  actions.install=async path=>{events.push(`install:${path}`);if(path===target.release)throw Error("application install failed");};
+  await assert.rejects(coordinateDeploymentActivation(target,actions),error=>error.preserveDeploymentLock===false);
+  assert.deepEqual(events,[`install:${target.release}`,`install:${target.previous}`,`current:${target.previous}`]);
+});
+test("corpus activation remains explicit and unknown operator policies fail closed", () => {
+  assert.equal(corpusDeploymentCommand({corpusCommand:"/operator/activate-corpus"},{CORPUS_DATABASE_URL:"configured"}),"/operator/activate-corpus");
+  assert.equal(corpusDeploymentCommand({},{}),undefined);
+  assert.throws(()=>corpusDeploymentCommand({corpusPolicy:"typo"},{}),/corpus policy/);
+  assert.throws(()=>corpusDeploymentCommand({},{CORPUS_DATABASE_URL:"configured"}),/corpusCommand/);
 });

@@ -6,8 +6,12 @@ import { useCallback, useEffect, useId, useState, useRef, type FormEvent } from 
 import { TurnstileWidget } from "../_auth/TurnstileWidget";
 import { LegalAnswerView, type LegalAnswerViewResult } from "../_platform/LegalAnswerView";
 import { aiText } from "../../lib/ai/localization";
-import { readLegalChatStream,shouldReuseLegalChatRequest } from "../../lib/legal-chat/client-stream";
+import { requestLegalChatStream,shouldReuseLegalChatRequest } from "../../lib/legal-answer-workflow/browser-stream";
+import {chatStageLabel} from "../../lib/legal-answer-workflow/browser-stream";
 import type { PlatformLocale } from "../../lib/platform/routing";
+import { AnswerActivity } from "../_platform/AnswerActivity";
+import { AnswerWriting } from "../_platform/AnswerWriting";
+import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-stream";
 
 type GuestResult = LegalAnswerViewResult & {
   sourceAccessMode?: "direct" | "approved_package" | "mixed";
@@ -39,7 +43,10 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
   const [message,setMessage]=useState("");
   const [turnstileToken,setTurnstileToken]=useState("");
   const [turnstileReset,setTurnstileReset]=useState(0);
+  const [submittedAt,setSubmittedAt]=useState(0);
+  const [writing,setWriting]=useState<WritingDraft|null>(null);
   const active=useRef<AbortController|null>(null);
+  const refreshAbort=useRef<AbortController|null>(null);
   const retry=useRef<{question:string;locale:PlatformLocale;key:string}|null>(null);
   const load=useCallback(async(signal?:AbortSignal)=>{
     const response=await fetch("/api/guest/ai",{headers:{"x-juro-locale":locale},cache:"no-store",signal});
@@ -48,12 +55,19 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
     if(signal?.aborted)return;
     return data;
   },[locale]);
+  function refreshSession(receive:(data:Bootstrap)=>void){
+    refreshAbort.current?.abort();
+    const refresh=new AbortController();refreshAbort.current=refresh;
+    void load(AbortSignal.any([refresh.signal,AbortSignal.timeout(10_000)])).then(data=>{
+      if(!refresh.signal.aborted&&refreshAbort.current===refresh&&data)receive(data);
+    }).catch(()=>{}).finally(()=>{if(refreshAbort.current===refresh)refreshAbort.current=null;});
+  }
   useEffect(()=>{
     const controller=new AbortController();
     void load(controller.signal).then(data=>{if(!controller.signal.aborted&&data){setBootstrap(data);setResult(data.result);setState("ready");}}).catch(()=>{
       if(!controller.signal.aborted){setState("error");setMessage(text("Гостевой чат временно недоступен.","Mehmon suhbati vaqtincha mavjud emas.","Guest chat is temporarily unavailable."));}
     });
-    return ()=>{controller.abort();active.current?.abort();};
+    return ()=>{controller.abort();active.current?.abort();refreshAbort.current?.abort();};
   },[load,text]);
   const consumed=bootstrap?.session?.state==="consumed";
   const needsTurnstile=!bootstrap?.session;
@@ -61,35 +75,44 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
     Boolean(question.trim())&&(!needsTurnstile||Boolean(turnstileToken));
   async function submit(event:FormEvent){
     event.preventDefault();if(!canSubmit||active.current)return;
-    const controller=new AbortController();active.current=controller;setState("submitting");setMessage("");
+    refreshAbort.current?.abort();refreshAbort.current=null;
+    const controller=new AbortController();active.current=controller;setState("submitting");setMessage(chatStageLabel("interpreting",locale));
+    const started=Date.now();setSubmittedAt(started);setWriting(null);
     const pending=retry.current?.question===question&&retry.current.locale===locale?retry.current:{question,locale,key:crypto.randomUUID()};
     retry.current=pending;
     try {
-      const response=await fetch("/api/guest/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale},
-        body:JSON.stringify({question:pending.question,locale,idempotencyKey:pending.key,turnstileToken:turnstileToken||undefined}),signal:controller.signal});
-      const saved=await readLegalChatStream(response,()=>{
-        setMessage(text("Проверяем вопрос и официальные источники…","Savol va rasmiy manbalarni tekshiryapmiz…","Checking your question and official sources…"));
-      });
+      const saved=await requestLegalChatStream("/api/guest/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale},
+        body:JSON.stringify({question:pending.question,locale,idempotencyKey:pending.key,turnstileToken:turnstileToken||undefined}),signal:controller.signal},stage=>{
+        setMessage(chatStageLabel(stage,locale));
+      },started,draft=>{if(!controller.signal.aborted)setWriting(draft);});
       if(controller.signal.aborted)return;
       retry.current=null;setResult(saved.result);setQuestion("");setMessage("");setState("ready");
-      const refreshed=await load(controller.signal).catch(()=>null);
-      if(refreshed){setBootstrap(refreshed);setResult(refreshed.result);}
-      if(!refreshed&&saved.result.responseKind==="answer")setBootstrap(previous=>previous?{...previous,session:{state:"consumed",requestCount:previous.session?.requestCount??1,answerCount:1,expiresAt:previous.session?.expiresAt??""}}:previous);
+      if(saved.result.responseKind==="answer")setBootstrap(previous=>previous?{...previous,session:{state:"consumed",requestCount:previous.session?.requestCount??1,answerCount:1,expiresAt:previous.session?.expiresAt??""}}:previous);
+      refreshSession(refreshed=>{setBootstrap(refreshed);setResult(refreshed.result);});
     } catch(error) {
       if(controller.signal.aborted)return;
       if(!shouldReuseLegalChatRequest(error))retry.current=null;
       setState("error");setMessage(text("Не удалось получить ответ. Повторите запрос, чтобы проверить сохранённый результат.","Javobni olib bo‘lmadi. Saqlangan natijani tekshirish uchun qayta urinib ko‘ring.","The answer could not be received. Retry to check for a saved result."));
-      const refreshed=await load(controller.signal).catch(()=>null);
-      if(refreshed){
+      refreshSession(refreshed=>{
         setBootstrap(refreshed);setResult(refreshed.result);
         if(refreshed.session?.state==="consumed"&&refreshed.result){
           retry.current=null;setQuestion("");setMessage("");setState("ready");
         }
-      }
+      });
     } finally {
+      setWriting(null);
       if(active.current===controller)active.current=null;
       if(!controller.signal.aborted){setTurnstileToken("");setTurnstileReset(value=>value+1);}
     }
+  }
+  function cancel() {
+    setWriting(null);
+    active.current?.abort();
+    setState("ready");
+    setMessage(text("Запрос остановлен. Повторите запрос, чтобы проверить сохранённый результат.",
+      "So‘rov to‘xtatildi. Saqlangan natijani tekshirish uchun qayta urinib ko‘ring.",
+      "Request stopped. Retry to check for a saved result."));
+    refreshSession(refreshed=>{setBootstrap(refreshed);setResult(refreshed.result);});
   }
   return (
     <main className="guest-ai-page">
@@ -158,6 +181,11 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
           ) : null}
 
           {message ? <p className={state === "error" ? "guest-ai-message is-error" : "guest-ai-message"} role={state === "error" ? "alert" : "status"}>{message}</p> : null}
+          {state === "submitting" && <div>
+            <AnswerWriting draft={writing} />
+            <AnswerActivity submittedAt={submittedAt} locale={locale} />
+            <button type="button" onClick={cancel}>{text("Остановить", "To‘xtatish", "Stop")}</button>
+          </div>}
 
           {result ? <GuestResultView result={result} locale={locale} /> : null}
 

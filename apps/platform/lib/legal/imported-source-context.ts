@@ -16,7 +16,7 @@ export function importedSourceContexts(snapshot:NormalizedLegalSourceSnapshot) {
   const chapters=blocks.flatMap((block,index)=>isImportedChapterHeading(block.text)?[index]:[]);
   for(const [position,start] of chapters.entries()){
     const part=blocks.slice(start,chapters[position+1]);
-    if(part.some(isLegalAnnexHeading))continue;
+    if(part.some(block=>isLegalAnnexHeading(block)))continue;
     const headings=part.filter(isLegalArticleHeading),index=createCompleteArticleIndex(part);
     if(!headings.length||headings.some(heading=>{
       const article=detectArticleNumbers(heading.text)[0];if(!article)return true;

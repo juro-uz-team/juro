@@ -1,7 +1,7 @@
 import {assertSafeWrite,withApiErrors} from "../../../../../lib/document-builder/auth/api";
 import {parseJsonRequest} from "../../../../../lib/auth/input";
-import {legalChatOwner} from "../../../../../lib/legal-chat/http-owner";
-import {legalFactUpdateSchema,updateLegalFact,LegalFactUnavailable} from "../../../../../lib/legal-chat/facts";
+import {optionalSignedAnswerOwner as legalChatOwner} from "../../../../../lib/legal-answer-workflow/platform-auth";
+import {legalFactUpdateSchema,updateLegalFact,LegalFactUnavailable} from "../../../../../lib/legal-answer-workflow/facts";
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache"}});
 export const POST=withApiErrors(async(request:Request)=>{
   assertSafeWrite(request);

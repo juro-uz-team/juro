@@ -10,6 +10,7 @@ import {
   normalizeLegalSearchQuery,
   normalizeUzbekLatin,
   transliterateUzbek,
+  transliterateUzbekToCyrillic,
 } from "../lib/legal/legal-language";
 
 test("Uzbek normalization keeps Latin official text separate from Cyrillic query transliteration", () => {
@@ -53,4 +54,17 @@ test("language detection and abbreviation expansion keep cross-language query va
   ]);
   assert.equal(normalizeArticleNumber("289¹"), "289-1");
   assert.equal(normalizeArticleNumber("24 prim"), "24-prim");
+});
+
+test("Uzbek query transliteration handles legal wording and apostrophe variants without changing numbers", () => {
+  for (const apostrophe of ["'", "‘", "’", "ʻ", "ʼ", "`", "´"]) {
+    assert.equal(transliterateUzbekToCyrillic(`O${apostrophe}zbekiston g${apostrophe}ayriqonuniy ta${apostrophe}til e${apostrophe}tiroz`),
+      "ўзбекистон ғайриқонуний таътил эътироз");
+  }
+  for (const [latin, cyrillic] of [
+    ["mehnat intizomiy jazo bekor qilish 2026", "меҳнат интизомий жазо бекор қилиш 2026"],
+    ["yer huquqi shartnoma yo‘q", "ер ҳуқуқи шартнома йўқ"],
+    ["shaxs ma’naviy zarar Is’hoq", "шахс маънавий зарар исҳоқ"],
+    ["elektron e’lon yechim", "электрон эълон ечим"],
+  ]) assert.equal(transliterateUzbekToCyrillic(latin), cyrillic);
 });

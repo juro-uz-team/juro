@@ -3,6 +3,7 @@ import bisect
 import hashlib
 import json
 import mmap
+import os
 import pathlib
 
 import numpy as np
@@ -24,15 +25,22 @@ def signature(paths):
 class VectorPool:
     """Global ordinals follow the exact sealed completion's shard order.
 
-    `verify_all` is an admission prerequisite, not work done on each query.
+    Strict preparation uses `verify_all`; trusted runtime uses `open_retained`.
     Every returned coordinate retains the provider's original float32 bytes.
     Candidate search may use a different representation but cannot replace this
     exact-scoring store or its compact-input identities.
     """
-    def __init__(self,root,completion_sha256):
+    def __init__(self,root,completion_sha256,*,raw_read_mode='mapped',trust_prepared=False):
+        if type(trust_prepared) is not bool:raise ValueError('vector_pool_trust_policy_invalid')
+        self.trust_prepared=trust_prepared
+        if type(raw_read_mode) is not str or raw_read_mode not in ('mapped','positioned'):
+            raise ValueError('vector_pool_read_mode_invalid')
+        if raw_read_mode=='positioned' and not callable(getattr(os,'pread',None)):
+            raise ValueError('vector_pool_positioned_reads_unavailable')
+        self.raw_read_mode=raw_read_mode
         self.root=pathlib.Path(root).resolve(strict=True)
         path=self.root/'completion.json'
-        if file_hash(path)!=completion_sha256:
+        if not trust_prepared and file_hash(path)!=completion_sha256:
             raise ValueError('vector_pool_completion_mismatch')
         self.completion=json.loads(path.read_bytes())
         self.completion_sha256=completion_sha256
@@ -63,30 +71,64 @@ class VectorPool:
         receipt=self.shards[part];job=receipt['job'];count=receipt['count']
         receipt_path=self._path(f'receipts/{job}.json')
         identities=self._path(f'vectors/{job}.hashes');bitmap=self._path(f'vectors/{job}.done')
-        if (json.loads(receipt_path.read_bytes())!=receipt or bitmap.read_bytes()!=bytes([1])*count
-                or identities.stat().st_size!=count*32 or file_hash(identities)!=receipt['input_hashes_sha256']):
+        if (json.loads(receipt_path.read_bytes())!=receipt or bitmap.stat().st_size!=count
+                or (not self.trust_prepared and bitmap.read_bytes()!=bytes([1])*count)
+                or identities.stat().st_size!=count*32
+                or (not self.trust_prepared and file_hash(identities)!=receipt['input_hashes_sha256'])):
             raise ValueError('vector_pool_source_identity_mismatch')
         paths=[receipt_path,identities,bitmap]
+        fd=None
         registry=self.root/f'vectors/{job}.representation.json'
         if registry.exists():
             registry=self._path(f'vectors/{job}.representation.json')
             descriptor=json.loads(registry.read_bytes())
-            # IndexedVectors authenticates the registry, saved index and complete
-            # reconstructed original-byte digest before this backend is admitted.
-            backend=IndexedVectors(self.root,job)
+            # The explicit trust policy controls authentication; both paths keep
+            # the same prepared ordinal keys and original full-precision values.
+            backend=IndexedVectors(self.root,job,trust_prepared=self.trust_prepared)
             paths.extend([registry,self._path(f"representations/{descriptor['index_sha256']}.usearch")])
             kind='indexed'
         else:
             raw=self._path(f'vectors/{job}.f32')
-            if raw.stat().st_size!=count*WIDTH or file_hash(raw)!=receipt['vectors_sha256']:
+            raw_identity=signature([raw])[0]
+            if raw.stat().st_size!=count*WIDTH or (not self.trust_prepared and file_hash(raw)!=receipt['vectors_sha256']):
                 raise ValueError('vector_pool_coordinate_hash_mismatch')
+            if signature([raw])[0]!=raw_identity:raise ValueError('vector_pool_storage_changed')
             backend=np.memmap(raw,dtype='<f4',mode='r',shape=(count,DIMENSIONS))
             paths.append(raw);kind='raw'
-        result={'kind':kind,'backend':backend,'identities':identities,'paths':paths,'signature':signature(paths)}
+            if self.raw_read_mode=='positioned':
+                try:
+                    fd=os.open(raw,os.O_RDONLY)
+                    stat=os.fstat(fd)
+                    if (stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)!=raw_identity:
+                        raise ValueError('vector_pool_storage_changed')
+                except BaseException:
+                    if fd is not None:os.close(fd)
+                    backend._mmap.close()
+                    raise
+        try:
+            result={'kind':kind,'backend':backend,'identities':identities,'paths':paths,'signature':signature(paths)}
+        except BaseException:
+            if fd is not None:os.close(fd)
+            if kind=='raw':backend._mmap.close()
+            else:backend.close()
+            raise
+        if fd is not None:
+            if result['signature'][-1]!=raw_identity:
+                os.close(fd);backend._mmap.close()
+                raise ValueError('vector_pool_storage_changed')
+            result['fd']=fd
         self.opened[part]=result
         return result
 
     def verify_all(self):
+        if self.trust_prepared:raise ValueError('vector_pool_retained_not_recertified')
+        self._open_all()
+
+    def open_retained(self):
+        if not self.trust_prepared:raise ValueError('vector_pool_retained_policy_required')
+        self._open_all()
+
+    def _open_all(self):
         try:
             for part in range(len(self.shards)):self._open(part)
             self.ready=True
@@ -120,13 +162,17 @@ class VectorPool:
         identical coordinate reads but require their own latency qualification.
         """
         self.assert_unchanged()
-        if not hasattr(mmap, 'MADV_RANDOM'):
-            return
         for entry in self.opened.values():
-            if entry['kind'] == 'raw':
+            if entry['kind'] == 'indexed':
+                entry['backend'].prepare_random_reads()
+            elif hasattr(mmap, 'MADV_RANDOM'):
                 mapping = entry['backend']._mmap
                 if hasattr(mapping, 'madvise'):
                     mapping.madvise(mmap.MADV_RANDOM)
+            # Positioned reads use a separate open descriptor. Advising the
+            # mmap above does not disable read-ahead on that descriptor.
+            if 'fd' in entry and hasattr(os,'posix_fadvise') and hasattr(os,'POSIX_FADV_RANDOM'):
+                os.posix_fadvise(entry['fd'],0,0,os.POSIX_FADV_RANDOM)
 
     def read(self,ids):
         groups=self._ids(ids)
@@ -136,8 +182,18 @@ class VectorPool:
             if signature(entry['paths'])!=entry['signature']:
                 raise ValueError('vector_pool_storage_changed')
             positions.sort();local=np.asarray([key for key,_ in positions],dtype=np.uint64)
-            if entry['kind']=='raw':values=np.asarray(entry['backend'][local],dtype='<f4')
-            else:values=np.asarray(entry['backend'].index.get(local,dtype='f32'),dtype='<f4')
+            if entry['kind']=='raw' and self.raw_read_mode=='positioned':
+                # The caller supplies bounded concurrency. Positioned reads do
+                # not share a cursor and preserve the admitted float32 bytes.
+                values=np.empty((len(local),DIMENSIONS),dtype='<f4')
+                for offset,row in enumerate(local):
+                    raw=os.pread(entry['fd'],WIDTH,int(row)*WIDTH)
+                    if len(raw)!=WIDTH:raise ValueError('vector_pool_coordinate_read_truncated')
+                    values[offset]=np.frombuffer(raw,dtype='<f4')
+                if signature(entry['paths'])!=entry['signature']:
+                    raise ValueError('vector_pool_storage_changed')
+            elif entry['kind']=='raw':values=np.asarray(entry['backend'][local],dtype='<f4')
+            else:values=np.asarray(entry['backend'].read_positions(local),dtype='<f4')
             if values.shape!=(len(local),DIMENSIONS) or not np.isfinite(values).all() or np.any(np.linalg.norm(values,axis=1)==0):
                 raise ValueError('vector_pool_coordinates_invalid')
             result[[position for _,position in positions]]=values
@@ -159,6 +215,7 @@ class VectorPool:
     def close(self):
         self.ready=False
         for entry in self.opened.values():
+            if 'fd' in entry:os.close(entry['fd'])
             if entry['kind']=='indexed':entry['backend'].close()
             else:entry['backend']._mmap.close()
         self.opened.clear()

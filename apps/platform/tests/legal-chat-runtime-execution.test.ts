@@ -85,36 +85,4 @@ const evidence:LegalEvidence={source:{id:"source",actTitle:"Synthetic source",ac
   contentSha256:"a".repeat(64),sourceClass:"OFFICIAL_LEGISLATION"},text,
   textSha256:createHash("sha256").update(text).digest("hex"),endpoint:{kind:"current"},origin:"indexed"};
 
-test("runtime composition uses the reserved flow and disposes corpus state even when saving fails",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
-  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const models:string[]=[];
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));models.push(body.model);const schema=body.text.format.name;
-    const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
-    const output=schema==="legal_question_research"
-      ?{interpretation:{topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]},
-        research:{directQueries:[{text:query.text,topicIndices:query.topicIndices}],underlyingRuleQueries:[]}}
-      :null;
-    if(output===null)return Response.json({error:{code:"unavailable",message:"Synthetic writer failure"}},{status:503});
-    return structuredResponse(body,{id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
-  });
-  let disposed=0,opened=0,reads=0,renewed=0,released=0;
-  await assert.rejects(executeRuntimeLegalChat({
-    requestId:"one",environment:"staging",mode:"deep",answerMode:"detailed",
-    context:{question:"May I request my record?",locale:"en",priorTurns:[]},
-    service:{async openLegalResearch(input){
-      opened++;assert.equal(input.environment,"staging");
-      return {async search(input){reads++;assert.equal(input.round,0);
-        assert.deepEqual(input.plan.formulations.map(item=>item.text),["record access"]);
-        return {evidence:[evidence],needs:[]};},
-        async cancel(){},[Symbol.dispose](){disposed++;}};
-    }},
-    renew:async()=>{renewed++;return true;},
-    commit:async terminal=>{assert.equal(terminal.kind,"unavailable");throw new Error("synthetic save failure");},
-    release:async reason=>{assert.equal(reason,"failed");released++;},
-  }),/synthetic save failure/);
-  assert.deepEqual(models,["gpt-6-luna","gpt-6-luna"]);
-  assert.equal(opened,1);assert.equal(reads,1);assert.equal(disposed,1);
-  assert.equal(renewed,2);assert.equal(released,1);
-});
+

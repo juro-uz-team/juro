@@ -27,12 +27,13 @@ class PreparedNumericService:
             'vectorIdentitySha256': hybrid.profiles.manifest['vector_identity_sha256'],
             'membershipSha256': catalog.memberships.manifest_sha256,
             'workIndexSha256': catalog.works.manifest_sha256,
-            'navigationSha256': hybrid.dense.navigation.manifest_sha256,
+            'navigationSha256': getattr(hybrid.dense.navigation,'release_manifest_sha256',hybrid.dense.navigation.manifest_sha256),
             'sparseSha256': hybrid.sparse.manifest_sha256,
         }
         if (artifacts != actual or not all(digest(value) for value in actual.values())
                 or configuration.get('backend') != 'prepared-corpus-v1'
-                or configuration.get('navigationBackend') != 'pgvector'
+                or configuration.get('navigationBackend') not in ('pgvector','binary-projected')
+                or configuration.get('navigationBackend') != getattr(hybrid.dense.navigation,'navigation_backend','pgvector')
                 or configuration.get('embeddingModel') != 'openai/text-embedding-3-large'
                 or configuration.get('dimensions') != 3072
                 or configuration.get('evidenceSemantics') != 'discovery-only'
@@ -94,7 +95,34 @@ class PreparedNumericService:
                 'lanes': {'dense': 'complete', 'sparse': 'complete'}, 'hits': hits}
 
     def read_exact(self, request):
+        return self._read_exact(request,encoded=False)
+
+    def read_sources(self, request):
+        if (not isinstance(request,dict) or set(request)!={'artifacts','works'}
+                or request['artifacts']!=self.release['configuration']['artifacts']):
+            raise ValueError('numeric_service_catalog_mismatch')
+        return self.catalog.read_sources(request['works'])
+
+    def locate_sources(self, request):
+        if (not isinstance(request,dict) or set(request)!={'artifacts','urls','sourceLocationsSha256'}
+                or request['artifacts']!=self.release['configuration']['artifacts']):
+            raise ValueError('numeric_service_catalog_mismatch')
+        locations=getattr(self,'source_locations',None)
+        if locations is None or request['sourceLocationsSha256']!=locations.manifest_sha256:
+            raise ValueError('numeric_service_source_locations_mismatch')
+        urls=request['urls']
+        if (not isinstance(urls,list) or not 1<=len(urls)<=8
+                or any(not isinstance(url,str) for url in urls) or len(set(urls))!=len(urls)):
+            raise ValueError('numeric_service_source_locations_bound')
+        return {'package_sha256':self.catalog.package.sha256,
+                'source_locations_sha256':locations.manifest_sha256,
+                'matches':{url:locations.lookup(url) for url in urls}}
+
+    def read_exact_encoded(self, request):
+        return self._read_exact(request,encoded=True)
+
+    def _read_exact(self, request, *, encoded):
         if (not isinstance(request, dict) or set(request) != {'artifacts', 'references'}
                 or request['artifacts'] != self.release['configuration']['artifacts']):
             raise ValueError('numeric_service_catalog_mismatch')
-        return self.catalog.read_exact(request['references'])
+        return self.catalog.read_exact(request['references'],encoded=True) if encoded else self.catalog.read_exact(request['references'])

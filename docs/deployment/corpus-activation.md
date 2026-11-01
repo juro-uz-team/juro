@@ -33,8 +33,9 @@ The environment's `.deploy-lock/owner.json` identifies the environment, revision
 
 ## Operator installation and authority
 
-Install `scripts/corpus-deployment-hook.mjs`, `corpus-deployment-worker.mjs` and
-`corpus-deployment-contract.mjs` together under a root-owned, non-writable
+Install `scripts/corpus-deployment-hook.mjs`, `corpus-deployment-worker.mjs`,
+`corpus-deployment-contract.mjs`, `retained-corpus-deployment.mjs` and
+`corpus-compatibility.mjs` together under a root-owned, non-writable
 operator directory, for example `/usr/local/lib/juro/`. A fixed executable
 wrapper `/usr/local/sbin/juro-corpus-deployment` runs only:
 
@@ -71,8 +72,10 @@ The worker cannot access root SSH keys or production's private application DB.
 
 ### Compatible application releases
 
-An application release that does not change corpus retrieval, model execution,
-source interpretation or their dependencies can retain the existing acceptance.
+An application release using the trusted prepared corpus retains its existing
+selection. Changes to retrieval, model execution and source interpretation require
+appropriate application qualification and source-preservation/access checks,
+without re-certifying the corpus (ADR0039).
 The operator must review the exact candidate diff and dependency changes, retain
 that evidence, and issue a root-owned approval at
 `/etc/juro/corpus-compatibility/<environment>/<revision>.json` (readable by the
@@ -85,8 +88,10 @@ application, with no symlinks or non-root writable ancestors):
 The deployment bundle below then uses `mode: "retain"`, `acceptedRevision`, and
 sets both `expectedParent` and `acceptanceSha256` to the current selection. Its
 manifest is the original, unchanged acceptance. Install `corpus-compatibility.mjs`
-beside the operator hook. Both phases still authenticate original proof objects,
-live vector/membership fences, exact candidate build and service process pins.
+beside the operator hook. Retention checks the configured generation, namespace,
+supported storage format and read access to the evidence projection, together
+with the exact candidate build and service process pins. It does not read proof
+objects, hash corpus contents or recheck vector/membership qualification.
 Activation does not publish a new acceptance or claim new measurements. Status
 reports `original` while that selection is unchanged, allowing safe rollback.
 
@@ -94,8 +99,10 @@ The runtime accepts the measured revision only for the exact approved candidate
 and manifest hash. Missing approval preserves strict revision matching; a changed
 or missing selection fails closed. This allows staging and production to share
 the qualified corpus without one environment invalidating the other's selection.
-Any relevant behavior or dependency change requires fresh qualification and the
-normal acceptance workflow. Approval is never inferred from a successful build.
+Behavior and dependency changes require relevant application qualification;
+retention approval is never inferred from a successful build. The publication
+workflow remains separate and applies only when deliberately changing the corpus
+selection, outside an application-only release.
 
 Systemd user services using `PrivateTmp` may run in a UID namespace where host
 root appears as the kernel's unmapped UID. The runtime translates host root
@@ -109,9 +116,11 @@ can initialize inside that sandbox.
 Before deployment, the operator installs a root-owned bundle at
 `/etc/juro/corpus-deployment/<environment>/<revision>.json`. Its ancestors,
 manifest file and credential file must also be root-owned and not writable by
-other accounts. Prepare the manifest and prepublish its immutable proof objects
-using the authorized writer connection, never the application read-only alias.
-The hook does not upload or synthesize proofs.
+other accounts. For retention, use the existing manifest without preparing or
+publishing proofs. For a separately authorized corpus publication, prepare the
+manifest and prepublish its immutable proof objects using the authorized writer
+connection, never the application read-only alias. The hook does not upload or
+synthesize proofs.
 
 ```json
 {

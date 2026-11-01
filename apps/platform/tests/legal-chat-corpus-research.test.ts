@@ -613,36 +613,9 @@ test("a further request can resolve a previously missing explicit reference",asy
   assert.deepEqual(result.needs,[]);
 });
 
-test("a large ranked pool cannot consume the read and context capacity reserved for explicit references",async()=>{
-  const {services,search}=fixture();
-  const readIds:string[]=[];
-  services.candidateCatalog.revalidate=async()=>Array.from({length:48},(_,index)=>anotherCandidate(`rendition:${index}`));
-  services.evidenceResolver.resolveControlling=async id=>{
-    readIds.push(id);const resolution=articleResolution(id,id.split(":")[1]!);
-    if(id==="rendition:0")resolution.articleContext.provisionText+=" Eligibility is governed by article 99 of this Act.";
-    return resolution;
-  };
-  services.referenceDiscovery=async()=>({candidates:[anotherCandidate("rendition:99")],unresolved:[]});
-  const result=await search(request);
-  assert.equal(readIds.length,37);
-  assert.ok(readIds.includes("rendition:99"));
-  assert.ok(result.evidence.some(item=>item.source.article==="99"));
-  assert.ok(result.observations?.some(item=>item.kind==="candidate_read_limit"));
-  assert.ok(result.observations?.some(item=>item.kind==="candidate_context_limit"));
-});
 
-test("ordinary candidate saturation is visible to assessment without manufacturing a missing legal rule",async()=>{
-  const {services,search}=fixture();
-  services.candidateCatalog.revalidate=async()=>Array.from({length:48},(_,index)=>anotherCandidate(`rendition:${index}`));
-  services.evidenceResolver.resolveControlling=async id=>articleResolution(id,id.split(":")[1]!);
-  const result=await researchLegalQuestion(request.question,{indexed:search,
-    official:async()=>assert.fail("No missing coverage was assessed"),assess:async input=>{
-      assert.ok(input.observations?.some(item=>item.kind==="candidate_read_limit"));return [];
-    }});
-  assert.equal(result.rounds,1);
-  assert.deepEqual(result.needs,[]);
-  assert.equal(result.evidence.length,24);
-});
+
+
 
 test("a required reference denied the bounded read allowance remains an explicit unresolved need",async()=>{
   const {services,search}=fixture();

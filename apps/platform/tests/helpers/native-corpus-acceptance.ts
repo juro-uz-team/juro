@@ -2,7 +2,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {nativeCorpusAcceptanceSchema,nativeCorpusBinding} from "../../lib/storage/native-corpus-acceptance";
 import retainedReleases from "../../config/corpus-releases.json";
 const hash=(value:Uint8Array)=>createHash("sha256").update(value).digest("hex");
-export function nativeAcceptanceFixture(change?:(proofs:Record<string,any>)=>void){
+export function nativeAcceptanceFixture(change?:(proofs:NativeProofFixtures)=>void){
   const ref={bucket:"proofs",key:"placeholder",sha256:"a".repeat(64),sizeBytes:1};
   const release=(capability:string)=>({releaseId:`release:production:${capability}:test`,artifactNamespace:capability,
     vectorCollection:capability,configurationIdentity:"custom-hybrid-production-v1",instanceId:`custom-${capability}-production-v1`,
@@ -27,7 +27,18 @@ export function nativeAcceptanceFixture(change?:(proofs:Record<string,any>)=>voi
     descriptors.set(selected.descriptor.key,bytes);
   }
   const bindingSha256=nativeCorpusBinding(manifest);
-  const proofs:Record<string,any>={
+  const proofs=nativeProofFixtures(bindingSha256);
+  change?.(proofs);
+  const bytes=new Map<string,Uint8Array>([["protocol",protocol],...descriptors]);
+  for(const kind of ["dense","native","semantic","integrity","verification"] as const){
+    const body=Buffer.from(JSON.stringify(proofs[kind]));bytes.set(kind,body);
+    manifest.proofs[kind]={bucket:"proofs",key:kind,sha256:hash(body),sizeBytes:body.length};
+  }
+  return {manifest,read:async(reference:{key:string})=>bytes.get(reference.key)!};
+}
+
+function nativeProofFixtures(bindingSha256:string){
+  return {
     dense:{bindingSha256,expectedQueryIds:["current","history"],heldOutQueryIds:["history"],results:[{id:"current",recall:1},{id:"history",recall:.96}]},
     native:{bindingSha256,expectedFirstTouchIds:["first"],expectedExpiredObservationIds:["expired"],requests:[
       {id:"first",phase:"first_touch",concurrency:1,milliseconds:8000,outcome:"success"},
@@ -37,11 +48,5 @@ export function nativeAcceptanceFixture(change?:(proofs:Record<string,any>)=>voi
     integrity:{bindingSha256,expectedScopes:2,verifiedScopes:2,failures:0,sourceInventoryHashes:["b".repeat(64),"e".repeat(64)]},
     verification:{bindingSha256,requiredChecks:["tests","typecheck","build"],results:["tests","typecheck","build"].map(id=>({id,passed:true}))},
   };
-  change?.(proofs);
-  const bytes=new Map<string,Uint8Array>([["protocol",protocol],...descriptors]);
-  for(const kind of ["dense","native","semantic","integrity","verification"] as const){
-    const body=Buffer.from(JSON.stringify(proofs[kind]));bytes.set(kind,body);
-    manifest.proofs[kind]={bucket:"proofs",key:kind,sha256:hash(body),sizeBytes:body.length};
-  }
-  return {manifest,read:async(reference:{key:string})=>bytes.get(reference.key)!};
 }
+export type NativeProofFixtures=ReturnType<typeof nativeProofFixtures>;

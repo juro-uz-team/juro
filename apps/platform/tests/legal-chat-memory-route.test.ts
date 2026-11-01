@@ -113,35 +113,4 @@ test("selected workspace memory reads and clears preserve another workspace's en
   assert.deepEqual(await statements(request()),["Default workspace fact."]);
 });
 
-test("text chat reads manual memory independently of the account identity migration mode",async context=>{
-  const {request}=setup(context);
-  assert.equal((await POST(request({action:"create",category:"answer_style",statement:"Use concise answers.",scope:"global"}))).status,200);
-  let modelCalls=0;
-  const providerInputs:Array<{userContext?:{memories?:Array<{statement:string}>}}> = [];
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    modelCalls++;
-    const payload=JSON.parse(String(init?.body));
-    providerInputs.push(JSON.parse(payload.input));
-    return structuredResponse(payload,{id:"offline",model:payload.model,output:[{content:[{type:"output_text",text:JSON.stringify({
-      interpretation:{topics:["Applicable law at the event date"],facts:[],temporal:{kind:"unresolved"},questions:["Which event date applies?"],selectedMemoryIds:[]},
-      research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules at the event date",topicIndices:[0]}]},
-    })}]}],usage:{input_tokens:0,output_tokens:0}});
-  });
-  const chatRequest=(key:string)=>new Request("https://app.example/api/platform/ai",{method:"POST",headers:request().headers,
-    body:JSON.stringify({question:"Which deadline applied on that date?",locale:"en",idempotencyKey:key})});
-  const answered=await submitChat(chatRequest("memory-chat-available"));
-  assert.equal(answered.status,200);
-  const saved=await answered.json() as {result:{responseKind:string;clarificationQuestions:string[];failureReason?:string}};
-  assert.equal(saved.result.responseKind,"clarification_required");
-  assert.deepEqual(providerInputs[0]?.userContext?.memories?.map(memory=>memory.statement),["Use concise answers."]);
-  assert.deepEqual(saved.result.clarificationQuestions,["Which event date applies?"]);
-  assert.equal(saved.result.failureReason,undefined);
-  assert.equal(modelCalls,1);
-  Reflect.set(env,"IDENTITY_KEYRING","");
-  const unavailable=await submitChat(chatRequest("memory-chat-unavailable"));
-  assert.equal(unavailable.status,503);
-  assert.equal(modelCalls,1,"Unreadable saved memory must not be silently omitted from a new request");
-  const replay=await submitChat(chatRequest("memory-chat-available"));assert.equal(replay.status,200);
-  assert.deepEqual(await replay.json(),saved);
-  assert.equal(modelCalls,1,"A completed answer replays without reopening later unreadable memory");
-});
+

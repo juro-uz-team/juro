@@ -26,15 +26,28 @@ export function hasInlineArticleBody(block: {text:string;kind?:string}): boolean
 
 /** Publisher annex markers begin a separate instrument scope. References to
  * annexes inside a sentence do not establish a boundary. */
-export function isLegalAnnexHeading(block: {text:string}): boolean {
+export function legalAnnexAdoptionReference(block: {text:string},options:{includeOrders?:boolean}={}): string|null {
   const lines = block.text.trim().split(/\n/u).map(line => line.trim());
   const marker = /^(?:\d+\s*[-–]\s*(?:ILOVA|ИЛОВА)|ПРИЛОЖЕНИЕ\s*(?:№\s*)?\d+)$/iu;
-  if (lines.length === 1) return marker.test(lines[0]!);
-  if (lines.length !== 2 || !marker.test(lines[1]!)) return false;
-  return /^(?:[“«].+[”»]gi\s+)?(?:O[ʻʼ‘’']zbekiston Respublikasi\s+)?Qonuniga$/iu.test(lines[0]!)
+  if(lines.length!==2)return null;
+  // Optional discovery refinement recognizes numbered and single annexes to
+  // ministerial orders. Legacy citation-boundary recognition stays unchanged.
+  if(options.includeOrders&&/^(?:(?:\d+\s*[-–]\s*)?(?:ILOVA|ИЛОВА))$/iu.test(lines[1]!)
+    &&(/^O[ʻʼ‘’']zbekiston Respublikasi [\p{L}\sʻʼ‘’'-]+ vazirining \d{4}-yil \d{1,2}-\p{L}+dagi [\p{L}\d-]+-son buyrug[ʻʼ‘’']iga$/iu.test(lines[0]!)
+      ||/^Ўзбекистон Республикаси [\p{L}\s-]+ вазирининг \d{4} йил \d{1,2} \p{L}+даги [\p{L}\d-]+-сон буйруғига$/iu.test(lines[0]!)))return lines[0]!;
+  if(marker.test(lines[0]!)&&/^к (?:постановлению Кабинета Министров|(?:Указу|постановлению) Президента Республики Узбекистан) от \d{1,2} \p{L}+ \d{4} года № [\p{L}\d/-]+$/iu.test(lines[1]!))return lines[1]!;
+  if(!marker.test(lines[1]!))return null;
+  const matched=/^(?:[“«].+[”»]gi\s+)?(?:O[ʻʼ‘’']zbekiston Respublikasi\s+)?Qonuniga$/iu.test(lines[0]!)
     || /^(?:[“«].+[”»]ги\s+)?(?:Ўзбекистон Республикаси\s+)?Қонунга$/iu.test(lines[0]!)
-    || /^O[ʻʼ‘’']zbekiston Respublikasi (?:Prezidentining|Vazirlar Mahkamasining)\s+\d{4}-yil\s+\d{1,2}-\p{L}+dagi\s+[\p{L}\d-]+-son\s+(?:Farmoniga|qaroriga)$/iu.test(lines[0]!)
-    || /^Ўзбекистон Республикаси (?:Президентининг|Вазирлар Маҳкамасининг)\s+\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\p{L}\d-]+-сон\s+(?:Фармонига|қарорига)$/iu.test(lines[0]!);
+    || /^(?:O[ʻʼ‘’']zbekiston Respublikasi )?(?:Prezidentining|Vazirlar Mahkamasining)\s+\d{4}-yil\s+\d{1,2}-\p{L}+dagi\s+[\p{L}\d-]+-son\s+(?:Farmoniga|qaroriga)$/iu.test(lines[0]!)
+    || /^(?:Ўзбекистон Республикаси )?(?:Президентининг|Вазирлар Маҳкамасининг)\s+\d{4}\s+йил\s+\d{1,2}\s+\p{L}+даги\s+[\p{L}\d-]+-сон\s+(?:Фармонига|қарорига)$/iu.test(lines[0]!);
+  return matched?lines[0]!:null;
+}
+
+
+export function isLegalAnnexHeading(block:{text:string},options:{includeOrders?:boolean}={}):boolean {
+  return /^(?:\d+\s*[-–]\s*(?:ILOVA|ИЛОВА)|ПРИЛОЖЕНИЕ\s*(?:№\s*)?\d+)$/iu.test(block.text.trim())
+    ||legalAnnexAdoptionReference(block,options)!==null;
 }
 
 /** A quotation beginning with an article heading introduces replacement

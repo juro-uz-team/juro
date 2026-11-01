@@ -152,7 +152,17 @@ export async function deleteAiConversation(input: {
   // use ON DELETE SET NULL, while both tables intentionally reject updates.
   // Remove those immutable dependants first so the conversation cascade never
   // attempts a forbidden FK-driven update. D1 batch keeps the sequence atomic.
-  await input.db.batch([
+  const claimed = () => input.db.prepare(`SELECT CASE WHEN changes()=1 THEN 1
+    ELSE json_extract('CONVERSATION_DELETE_FENCE_FAILED','$') END AS owned`);
+  try { await input.db.batch([
+    // Lock active membership through commit so revocation cannot race deletion.
+    input.db.prepare(`UPDATE workspace_members SET updated_at=updated_at
+      WHERE workspace_id=? AND user_id=? AND status='active'`).bind(input.workspaceId, input.userId),
+    claimed(),
+    input.db.prepare(`UPDATE conversations SET updated_at=updated_at
+      WHERE id=? AND workspace_id=? AND owner_user_id=? AND status='active'`)
+      .bind(input.conversationId, input.workspaceId, input.userId),
+    claimed(),
     input.db.prepare(
       `DELETE FROM message_versions
        WHERE conversation_id=? AND EXISTS (
@@ -185,6 +195,14 @@ export async function deleteAiConversation(input: {
       input.workspaceId,
       input.userId,
     ),
+    // Keep run links through dependent-row deletion so the final busy fence
+    // observes a newly admitted run. Detach terminal content references together
+    // just before PostgreSQL's conversation/message cascading actions.
+    input.db.prepare(`UPDATE ai_runs
+      SET conversation_id=NULL,request_message_id=NULL,response_message_id=NULL
+      WHERE conversation_id=? AND workspace_id=? AND user_id=?
+        AND status NOT IN ('reserved','finalizing')`)
+      .bind(input.conversationId, input.workspaceId, input.userId),
     input.db.prepare(
       `DELETE FROM conversations
        WHERE id=? AND workspace_id=? AND owner_user_id=?
@@ -194,7 +212,20 @@ export async function deleteAiConversation(input: {
              AND status IN ('reserved','finalizing')
          )`,
     ).bind(input.conversationId, input.workspaceId, input.userId, input.workspaceId, input.userId),
-  ]);
+    // A newly reserved run must roll back earlier dependent-row deletions too.
+    claimed(),
+  ]); } catch (error) {
+    // A run admitted after the initial read rolls back the complete delete.
+    // Preserve the public busy result while allowing unrelated DB failures out.
+    const busy = await input.db.prepare(`SELECT 1 AS busy FROM ai_runs r
+      JOIN conversations c ON c.id=r.conversation_id AND c.workspace_id=r.workspace_id AND c.owner_user_id=r.user_id
+      JOIN workspace_members member ON member.workspace_id=c.workspace_id AND member.user_id=c.owner_user_id
+      WHERE c.id=? AND c.workspace_id=? AND c.owner_user_id=? AND c.status='active'
+        AND member.status='active' AND r.status IN ('reserved','finalizing') LIMIT 1`)
+      .bind(input.conversationId, input.workspaceId, input.userId).first();
+    if (busy) return "busy";
+    throw error;
+  }
   // D1 batch metadata is not a reliable deletion acknowledgement across all
   // runtimes. Read the tenant-owned row after the atomic batch instead.
   const remaining = await input.db.prepare(

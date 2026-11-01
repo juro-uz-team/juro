@@ -284,7 +284,7 @@ export function LegalAnswerView({
       {coverageGaps}
       {(result.referenceNotes ?? []).length > 0 && <Section id={`${id}-additional`} title={copy.additional} className="legal-answer__section--additional">
         <p className="legal-answer__secondary-note">{copy.secondaryNote}</p>
-        {(result.referenceNotes ?? []).map((note) => <article key={`${note.title}:${note.sourceIds.join(":")}`}>
+        {(result.referenceNotes ?? []).map((note, index) => <article key={`${id}-reference-note-${index}`}>
           <h3>{note.title}</h3><Markdown result={result} locale={locale}>{note.note}</Markdown>
           <CitationList sourceIds={note.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
         </article>)}
@@ -377,7 +377,7 @@ export function LegalAnswerView({
     </Section>}
     {(result.referenceNotes ?? []).length > 0 && <Section id={`${id}-additional`} title={copy.additional} className="legal-answer__section--additional">
       <p className="legal-answer__secondary-note">{copy.secondaryNote}</p>
-      {(result.referenceNotes ?? []).map((note) => <article key={`${note.title}:${note.sourceIds.join(":")}`}>
+      {(result.referenceNotes ?? []).map((note, index) => <article key={`${id}-reference-note-${index}`}>
         <h3>{note.title}</h3><Markdown result={result} locale={locale}>{note.note}</Markdown>
         <CitationList sourceIds={note.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}

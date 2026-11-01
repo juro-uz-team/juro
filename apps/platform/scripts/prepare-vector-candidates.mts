@@ -5,14 +5,17 @@ import {database} from '../lib/storage/connection';
 import {resolve,sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {readVectorCandidateCoverage} from '../lib/storage/vector-candidate-coverage';
+type Artifact={file:string;sha256:string;sizeBytes:number};
+type Checkpoint={id:string;phase:string;pages:{vectors:Artifact;metadata:Artifact;rows:number;coverageVersion?:number}[];rows:number;cursor:string;at?:string;matrix?:Artifact;sourceRevision?:string|number;collection?:string;groupCount?:string|number};
+const errorCode=(error:unknown)=>error&&typeof error==='object'&&'code' in error?error.code:undefined;
 const [directory,...generations]=process.argv.slice(2);
 if(!directory||!generations.length||generations.some(id=>!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(id)))throw Error('Usage: prepare-vector-candidates <directory> <generation UUID> ...');
 const root=pathToFileURL(resolve(directory)+sep);await mkdir(root,{recursive:true});
 const db=database('app'),client=await db.pool.connect();const hash=(v:Uint8Array|string)=>createHash('sha256').update(v).digest('hex');
 
 try{for(const id of generations){
- const dir=new URL(id+'/',root);await mkdir(dir,{recursive:true});const checkpoint=new URL('checkpoint.json',dir);let state:any;
- try{state=JSON.parse(await readFile(checkpoint,'utf8'));}catch(error:any){if(error.code!=='ENOENT')throw error;state={phase:'exporting',id,pages:[],rows:0,cursor:''};}
+ const dir=new URL(id+'/',root);await mkdir(dir,{recursive:true});const checkpoint=new URL('checkpoint.json',dir);let state:Checkpoint;
+ try{state=JSON.parse(await readFile(checkpoint,'utf8'));}catch(error){if(errorCode(error)!=='ENOENT')throw error;state={phase:'exporting',id,pages:[],rows:0,cursor:''};}
  if(state.id!==id)throw Error('Generation checkpoint identity differs');
  const save=async()=>{state.at=new Date().toISOString();await writeFile(new URL('checkpoint.tmp',dir),JSON.stringify(state,null,2));await rename(new URL('checkpoint.tmp',dir),checkpoint);console.log(JSON.stringify({id,phase:state.phase,rows:state.rows}));};
  await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -24,10 +27,10 @@ try{for(const id of generations){
  // are removed. Authenticate both the full matrix and each original page slice.
  const reusableMatrix=state.matrix&&state.rows===Number(generation.group_count);
  if(reusableMatrix){
-  const matrix=new URL(state.matrix.file,dir),digest=createHash('sha256');
-  if((await stat(matrix)).size!==state.rows*6144||state.matrix.sizeBytes!==state.rows*6144)throw Error('Matrix size differs');
+  const matrix=new URL(state.matrix!.file,dir),digest=createHash('sha256');
+  if((await stat(matrix)).size!==state.rows*6144||state.matrix!.sizeBytes!==state.rows*6144)throw Error('Matrix size differs');
   for await(const part of createReadStream(matrix))digest.update(part);
-  if(digest.digest('hex')!==state.matrix.sha256)throw Error('Export checkpoint corrupt');
+  if(digest.digest('hex')!==state.matrix!.sha256)throw Error('Export checkpoint corrupt');
  }
  let offset=0;
  for(const page of state.pages){
@@ -36,22 +39,22 @@ try{for(const id of generations){
   const digest=createHash('sha256');
   if(reusableMatrix){
    if(page.vectors.sizeBytes!==page.rows*6144)throw Error('Vector page size differs');
-   for await(const part of createReadStream(new URL(state.matrix.file,dir),{start:offset,end:offset+page.vectors.sizeBytes-1}))digest.update(part);
+   for await(const part of createReadStream(new URL(state.matrix!.file,dir),{start:offset,end:offset+page.vectors.sizeBytes-1}))digest.update(part);
   }else digest.update(await readFile(new URL(page.vectors.file,dir)));
   if(digest.digest('hex')!==page.vectors.sha256)throw Error('Export checkpoint corrupt');
   offset+=page.vectors.sizeBytes;
  }
- if(reusableMatrix&&offset!==state.matrix.sizeBytes)throw Error('Matrix page sizes differ');
+ if(reusableMatrix&&offset!==state.matrix!.sizeBytes)throw Error('Matrix page sizes differ');
  // Older exports may have universal coverage even when original members have
  // precise dates. Upgrade metadata without changing authenticated vector pages.
- if(state.pages.some((page:any)=>page.coverageVersion!==1)) {
+ if(state.pages.some(page=>page.coverageVersion!==1)) {
   state.phase='exporting';await save();
   for(const page of state.pages){if(page.coverageVersion===1)continue;
    const metadata=JSON.parse(await readFile(new URL(page.metadata.file,dir),'utf8'));
-   const coverage=await readVectorCandidateCoverage(client,id,generation.collection,metadata.map((row:any)=>row.digest));
+   const coverage=await readVectorCandidateCoverage(client,id,generation.collection,metadata.map((row:{digest:string})=>row.digest));
    for(const row of metadata)row.coverage=coverage.get(row.digest);
    const bytes=Buffer.from(JSON.stringify(metadata)+'\n'),sha256=hash(bytes),file=sha256+'.json';
-   await writeFile(new URL(file,dir),bytes,{flag:'wx'}).catch(async(error:any)=>{if(error.code!=='EEXIST'||hash(await readFile(new URL(file,dir)))!==sha256)throw error;});
+   await writeFile(new URL(file,dir),bytes,{flag:'wx'}).catch(async(error:unknown)=>{if(errorCode(error)!=='EEXIST'||hash(await readFile(new URL(file,dir)))!==sha256)throw error;});
    page.metadata={file,sha256,sizeBytes:bytes.length};page.coverageVersion=1;await save();
   }
  }
@@ -64,8 +67,8 @@ try{for(const id of generations){
    if(row.bytes.length!==6148||row.bytes.readUInt16BE(0)!==1536||row.bytes.readUInt16BE(2)!==0||hash(row.bytes)!==row.digest)throw Error('Original vector bytes differ from verified group');
    const native=Buffer.from(row.bytes.subarray(4));native.swap32();native.copy(vectors,index*6144);metadata.push({digest:row.digest,coverage:coverage.get(row.digest)});
   }
-  const artifacts:any={};for(const [kind,bytes] of [['vectors',vectors],['metadata',Buffer.from(JSON.stringify(metadata)+'\n')]] as const){const sha256=hash(bytes),file=sha256+(kind==='vectors'?'.f32':'.json');await writeFile(new URL(file,dir),bytes,{flag:'wx'}).catch(async(error:any)=>{if(error.code!=='EEXIST'||hash(await readFile(new URL(file,dir)))!==sha256)throw error;});artifacts[kind]={file,sha256,sizeBytes:bytes.length};}
-  state.pages.push({...artifacts,rows:rows.length,coverageVersion:1});state.rows+=rows.length;state.cursor=rows.at(-1).digest;await save();
+  const artifacts:Partial<Record<"vectors"|"metadata",Artifact>>={};for(const [kind,bytes] of [['vectors',vectors],['metadata',Buffer.from(JSON.stringify(metadata)+'\n')]] as const){const sha256=hash(bytes),file=sha256+(kind==='vectors'?'.f32':'.json');await writeFile(new URL(file,dir),bytes,{flag:'wx'}).catch(async(error:unknown)=>{if(errorCode(error)!=='EEXIST'||hash(await readFile(new URL(file,dir)))!==sha256)throw error;});artifacts[kind]={file,sha256,sizeBytes:bytes.length};}
+  state.pages.push({vectors:artifacts.vectors!,metadata:artifacts.metadata!,rows:rows.length,coverageVersion:1});state.rows+=rows.length;state.cursor=rows.at(-1).digest;await save();
  }
  await client.query('COMMIT');
  const current=(await client.query('SELECT source_revision FROM storage.vector_collections WHERE name=$1',[generation.collection])).rows[0];if(current.source_revision!==state.sourceRevision)throw Error('Originals changed during export');

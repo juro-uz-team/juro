@@ -139,7 +139,8 @@ export function VoiceMessageControls(props: {
   const uploadRef = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const recordingRef = useRef("");
-  const propsRef = useRef(props); propsRef.current = props;
+  const propsRef = useRef(props);
+  useEffect(() => {propsRef.current = props;}, [props]);
   const busy = ["hashing", "uploading", "finalizing", "transcribing"].includes(phase);
   useEffect(() => {propsRef.current.onPhaseChange?.(phase);}, [phase]);
   useEffect(() => () => {
@@ -155,7 +156,8 @@ export function VoiceMessageControls(props: {
     return () => clearInterval(timer);
   }, [phase]);
   useEffect(() => {if (elapsedMs >= 300_000 && recorderRef.current?.state === "recording") recorderRef.current.stop();}, [elapsedMs]);
-  const durationRef = useRef(elapsedMs); durationRef.current = elapsedMs;
+  const durationRef = useRef(elapsedMs);
+  useEffect(() => {durationRef.current = elapsedMs;}, [elapsedMs]);
   function cancel() {
     generation.current++; uploadRef.current?.abort();
     const recorder = recorderRef.current;

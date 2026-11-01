@@ -9,3 +9,5 @@ apps/platform/postgres/0029-publisher-normalization-policy.sql text eol=crlf
 apps/platform/postgres/0038-application-history-continuity.sql text eol=crlf
 *.sh text eol=lf
 scripts/*.mjs text eol=lf
+# Keep upstream transliterator files byte-identical to the pinned distribution.
+apps/platform/vendor/uztransliterator/** -text

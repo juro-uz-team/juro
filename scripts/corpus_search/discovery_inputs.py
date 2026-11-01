@@ -18,7 +18,8 @@ def hydrate_vector_inputs(package,vectors,ordinals,max_bytes=16*1024*1024):
         groups.setdefault(part,{}).setdefault(row,[]).append(position)
     result=[None]*len(ordinals);total=0
     for part,requested in groups.items():
-        stream=package.input_rows(part)
+        selected_reader=getattr(package,'input_rows_at',None)
+        stream=selected_reader(part,list(requested)) if selected_reader is not None else package.input_rows(part)
         for row,key,text,tokens in stream:
             if row not in requested:continue
             total+=len(text.encode('utf-8'))

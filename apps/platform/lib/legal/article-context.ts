@@ -13,6 +13,21 @@ export function completeUnnumberedDocumentText(snapshot: NormalizedLegalSourceSn
   return completeDocumentText(snapshot);
 }
 
+/** A title or preamble identifies the instrument, not one numbered provision.
+ * Preserve the entire bounded instrument; never infer an article from it or
+ * use this path for fragments within the numbered operative text. */
+export function completeInstrumentIntroductionContext(snapshot:NormalizedLegalSourceSnapshot,fragment:string):string|null {
+  const text=completeDocumentText(snapshot);
+  const normalized=normalize(fragment);
+  if(!text||!normalized)return null;
+  const first=text.indexOf(normalized);
+  if(first<0||text.indexOf(normalized,first+1)>=0)return null;
+  const boundary=snapshot.blocks.findIndex(block=>block.semanticRole==="article"||isLegalArticleHeading(block));
+  if(boundary<1||unquotedArticleHeadings(snapshot.blocks).ambiguousFrom!==null)return null;
+  const introduction=normalize(snapshot.blocks.slice(0,boundary).map(block=>block.text).join(" "));
+  return introduction.includes(normalized)?text:null;
+}
+
 /** Whole-instrument evidence retains every block and makes no article claim. */
 export function completeDocumentText(snapshot: NormalizedLegalSourceSnapshot, maximumCharacters=MAX_LEGAL_EVIDENCE_CHARACTERS): string | null {
   if (snapshot.blocks.length < 2) return null;
@@ -56,9 +71,34 @@ export function createCompleteArticleReader(blocks: NormalizedLegalSourceSnapsho
 
 /** An enacting law and its annex can reuse article numbers. Keep every complete
  * occurrence; callers must resolve one using authenticated text, never order. */
+const immutableArticleIndexes=new WeakMap<NormalizedLegalSourceSnapshot["blocks"],ReturnType<typeof buildCompleteArticleIndex>>();
 export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
+  const previous=immutableArticleIndexes.get(blocks);
+  if(previous)return previous;
+  const index=buildCompleteArticleIndex(blocks);
+  // Only immutable normalized parents can share derived boundaries. Mutable
+  // callers retain the existing capture semantics on every new invocation.
+  // Weak ownership releases the index with its parent; no source bytes or
+  // currentness decisions are retained here. Every lookup returns fresh values.
+  if(Object.isFrozen(blocks)&&blocks.every(Object.isFrozen)){
+    Object.freeze(index);immutableArticleIndexes.set(blocks,index);
+  }
+  return index;
+}
+
+function buildCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot["blocks"]) {
   const captured = blocks.map(block => ({text: block.text, kind:block.kind, semanticRole: block.semanticRole}));
   const headings=unquotedArticleHeadings(captured);
+  const ancestry=new Map<number,string[]>();
+  let annex:string|undefined,section:string|undefined,chapter:string|undefined,subsection:string|undefined;
+  for(const [position,block] of captured.entries()){
+    if(!headings.unquotedBlocks.has(block))continue;
+    if(isLegalAnnexHeading(block)){annex=block.text.slice(0,240);section=undefined;chapter=undefined;subsection=undefined;}
+    else if(block.semanticRole==="section"){section=block.text.slice(0,240);chapter=undefined;subsection=undefined;}
+    else if(block.semanticRole==="chapter"){chapter=block.text.slice(0,240);subsection=undefined;}
+    else if(block.semanticRole==="subsection")subsection=block.text.slice(0,240);
+    if(headings.has(block))ancestry.set(position,[annex,section,chapter,subsection].filter((value):value is string=>value!==undefined));
+  }
   const ranges = new Map<string, {start: number; end: number}[]>();
   let nextBoundary = captured.length;
   for (let index = captured.length - 1; index >= 0; index--) {
@@ -71,8 +111,21 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
         ranges.set(article, occurrences);
       }
       nextBoundary = index;
-    } else if (block.semanticRole === "chapter" || block.semanticRole === "section" || isLegalAnnexHeading(block)) nextBoundary = index;
+    } else if (block.semanticRole === "chapter" || block.semanticRole === "section" || isLegalAnnexHeading(block)
+      ||block.semanticRole==="subsection"&&headings.unquotedBlocks.has(block)) nextBoundary = index;
   }
+  // Locate discovery spans once in the captured parent's normalized text.
+  // Looking up a paragraph must not materialize every article in a large code.
+  const starts:number[]=[],ends:number[]=[],parts:string[]=[];
+  let length=0;
+  for(const block of captured){
+    const text=normalize(block.text);
+    if(text&&length)length++;
+    starts.push(length);
+    if(text){parts.push(text);length+=text.length;}
+    ends.push(length);
+  }
+  const source=parts.join(" ");
   const read = (article: string) => {
     const occurrences = ranges.get(article) ?? [];
     const candidates = occurrences.flatMap(({start, end}) => {
@@ -84,11 +137,29 @@ export function createCompleteArticleIndex(blocks: NormalizedLegalSourceSnapshot
     });
     return {occurrences: occurrences.length, candidates};
   };
-  return Object.assign(read, {containing(fragment:string) {
-    const source=normalize(captured.map(block=>block.text).join(" "));
+  return Object.assign(read, {
+    /** Publisher order and enclosing scopes for discovery, never extra rule text. */
+    outline() {
+      return [...ranges].flatMap(([article,occurrences])=>{
+        const result=read(article);
+        return result.candidates.length===result.occurrences
+          ?result.candidates.map((candidate,index)=>({start:occurrences[index]!.start,
+            ...candidate,article,hierarchy:[...(ancestry.get(occurrences[index]!.start)??[]),candidate.heading]})):[];
+      }).sort((a,b)=>a.start-b.start).map(({start,...item})=>item);
+    },
+    // Enumerate complete occurrences for discovery only. Callers must still
+    // join a unique span and authenticate the resulting evidence context.
+    all() {return [...ranges.keys()].flatMap(article=>{
+      const result=read(article);
+      return result.candidates.length===result.occurrences
+        ?result.candidates.map(candidate=>({...candidate,article})):[];
+    });},
+    containing(fragment:string) {
     const first=source.indexOf(fragment);
     if(!fragment||first<0||source.indexOf(fragment,first+1)>=0)return [];
     return [...ranges.keys()].flatMap(article=>{
+      if(!ranges.get(article)!.some(({start,end})=>first>=starts[start]!
+        &&first+fragment.length<=ends[end-1]!))return [];
       const result=read(article);
       return result.candidates.length===result.occurrences
         ?result.candidates.filter(candidate=>candidate.text.includes(fragment)).map(candidate=>({...candidate,article})):[];

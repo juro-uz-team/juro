@@ -1,5 +1,5 @@
 import {initializeControlCenterEnvironment} from "../../../../scripts/control-center-runtime.mjs";
-import {readCorpusCompatibility} from "../../../../scripts/corpus-compatibility.mjs";
+
 import { localDocumentConverter } from "./document-converter";
 import { localMalwareScanner } from "./scanner";
 import { operationalMetrics } from "./metrics";
@@ -10,24 +10,19 @@ import { resolve } from "node:path";
 import { database, corpusDatabase } from "../storage/connection";
 import { LocalObjectStore } from "../storage/objects";
 import { PostgresVectorIndex } from "../storage/vectors";
-import {createVectorCandidateReader} from "../storage/vector-candidates";
-import {createPreparedMembershipReader,createPreparedOrdinalReader} from "../storage/corpus-membership";
 import { PostgresQueue } from "../storage/queue";
 import { nativeHealthQueueName } from "../../worker/native-dependency-health";
 import { JOB_KINDS, QUEUE_BINDING_BY_KIND, expectedQueueName } from "../jobs/contract";
-import LegalCorpusService from "../../worker/legal-corpus-worker";
-import { handleCustomSearchRequest, type CustomSearchEnv } from "../legal-corpus/custom-search-service";
-import {CustomRuntimeCache} from "../legal-corpus/custom-runtime-cache";
-import {createNativeCorpusService} from "./native-corpus";
+import {createNativeCitationService} from "./native-citations";
+
 import {runtimeProductRevision,executingProductRevision} from "./product-revision";
-import { handleTargetReasoningServiceRequest } from "../legal-corpus/target-reasoning-service";
-import releases from "../../config/corpus-releases.json";
 import type { BuilderRuntimeEnv } from "../document-builder/storage/runtime";
 import type { PlatformJobEnv } from "../../worker/platform-jobs";
 import { nativeHttpConfiguration } from "../../../../scripts/native-http.mjs";
 import { nativeAdminOrigin } from "../../../../scripts/native-admin-http.mjs";
 import { challengeSecretConfigured } from "../auth/native-challenge";
 import { parseIdentityKeyring } from "../auth/keyring";
+
 
 type Runtime = BuilderRuntimeEnv & PlatformJobEnv;
 const state = globalThis as typeof globalThis & { juroRuntime?: Runtime; juroRuntimeProductRevision?:string };
@@ -54,14 +49,13 @@ export function getSelfHostedRuntime(): Runtime {
   const application = database("app");
   if (Boolean(process.env.CORPUS_DATABASE_URL) !== Boolean(process.env.CORPUS_OBJECT_STORAGE_PATH)) throw new Error("Shared corpus database and object path must be configured together");
   const corpus = corpusDatabase("app");
-  const catalog = corpusDatabase("legal");
-  const observations = database("legal");
+  
   const root = resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects");
   const bucket = (name: string) => new LocalObjectStore(application.pool, root, name);
   const corpusRoot = resolve(process.env.CORPUS_OBJECT_STORAGE_PATH ?? root);
-  const corpusBucket = (name: string) => new LocalObjectStore(corpus.pool, corpusRoot, name, true);
   const email = emailDeliveryConfiguration(process.env);
   const env = { ...process.env, APP_ENV: appEnvironment, ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
+    
     CRON_ENABLED: "true", LEGAL_LEX_INGESTION_ENABLED: "false", LEGAL_ADVICE_INGESTION_ENABLED: "false",
     LEGAL_LEX_RSS_DISCOVERY_ENABLED: "false", LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED: "false",
     LEGAL_LEX_METADATA_MONITOR_ENABLED: "false", LEGAL_DIRECT_RETRIEVAL_ENABLED: "true",
@@ -88,49 +82,15 @@ export function getSelfHostedRuntime(): Runtime {
     ADMIN_CONSOLE_ORIGIN: nativeAdminOrigin(process.env),
     LEGAL_RETRIEVAL_ENVIRONMENT: "production",
   };
-  const search = (configuration: typeof releases.current) => {
-      // The historical lexicons and document table alone occupy about 145 MB.
-      // Keep room for authenticated posting blocks without evicting that base.
-      const cache = new CustomRuntimeCache(512*1024*1024);
-      return {
-        async fetch(input: RequestInfo | URL, init?: RequestInit) {
-          const index = new PostgresVectorIndex(corpus.pool, configuration.vectorCollection,
-            process.env.VECTOR_CANDIDATE_URL ? createVectorCandidateReader(process.env.VECTOR_CANDIDATE_URL) : undefined);
-          if (!await index.isReady()) return Response.json({ code: "CORPUS_IMPORT_NOT_VERIFIED" }, { status: 503 });
-          return handleCustomSearchRequest(new Request(input, init), {
-            ...configuration.variables, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "", CATALOG_DB: catalog, BUDGET_DB: observations,
-            CUSTOM_QUERY_BUDGET_MODE: "metered",
-            ARTIFACTS: corpusBucket(configuration.artifactNamespace),
-            RUNTIME_CACHE: cache,
-            PREPARED_ORDINALS:createPreparedOrdinalReader(corpus.pool),
-            DENSE: index,
-          } as unknown as CustomSearchEnv);
-        },
-      };
-  };
-  const legal = new LegalCorpusService({
-    LEGAL_PREPARED_MEMBERSHIP:createPreparedMembershipReader(corpus.pool),
-    ...releases.catalog, LEGAL_DB: catalog, LEGAL_OBSERVATION_DB: observations, LEGAL_SOURCE_OBSERVATIONS_ENABLED:"true",
-    LEGAL_EVIDENCE_BUCKET: corpusBucket(releases.evidenceNamespace),
-    LEGAL_HISTORY_EVIDENCE_BUCKET: corpusBucket(releases.historyEvidenceNamespace),
-    LEGAL_CUSTOM_ARTIFACT_BUCKET: corpusBucket(releases.current.artifactNamespace),
-    LEGAL_CUSTOM_SEARCH_SERVICE: search(releases.current), LEGAL_CUSTOM_HISTORY_SEARCH_SERVICE: search(releases.history),
-    LEGAL_CORPUS_REASONING_SERVICE: { fetch: (input: RequestInfo | URL, init?: RequestInit) => handleTargetReasoningServiceRequest(new Request(input, init), env as unknown as Parameters<typeof handleTargetReasoningServiceRequest>[1]) },
-  } as unknown as ConstructorParameters<typeof LegalCorpusService>[0]);
   const queues = Object.fromEntries(JOB_KINDS.map(kind => [QUEUE_BINDING_BY_KIND[kind], new PostgresQueue(application.pool, expectedQueueName(kind, appEnvironment))]));
   const deadLetters = Object.fromEntries(Object.entries(queues).map(([binding, queue]) => [binding.replace(/_QUEUE$/, "_DLQ"), new PostgresQueue(application.pool, queue.name + "-dlq")]));
-  const retrieval=createNativeCorpusService({pool:corpus.pool,catalog,observations,objectRoot:corpusRoot,
-    environment:appEnvironment,
-    candidateUrl:process.env.VECTOR_CANDIDATE_URL??"",apiKey:process.env.OPENAI_API_KEY??"",
-    preparedTransport:{
-      current:{url:process.env.PREPARED_CURRENT_URL??"",token:process.env.PREPARED_TRANSPORT_TOKEN??"",
-        workerSha256:process.env.PREPARED_CURRENT_WORKER_SHA256??""},
-      history:{url:process.env.PREPARED_HISTORY_URL??"",token:process.env.PREPARED_TRANSPORT_TOKEN??"",
-        workerSha256:process.env.PREPARED_HISTORY_WORKER_SHA256??""}},
-    productRevision,compatibility:readCorpusCompatibility(process.env.DEPLOYMENT_ENVIRONMENT,productRevision),fallback:legal});
+  
+  
+  const retrieval=createNativeCitationService({pool:corpus.pool,objectRoot:corpusRoot,environment:env.LEGAL_RETRIEVAL_ENVIRONMENT});
+  
   state.juroRuntimeProductRevision=productRevision;
   state.juroRuntime = { ...env, ...queues, ...deadLetters,
     NATIVE_HEALTH_QUEUE: config.privateMode ? undefined : new PostgresQueue(application.pool, nativeHealthQueueName(appEnvironment)),
-    LEGAL_RETRIEVAL_SERVICE: retrieval } as unknown as Runtime;
+    LEGAL_RETRIEVAL_SERVICE: retrieval,} as unknown as Runtime;
   return state.juroRuntime;
 }

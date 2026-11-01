@@ -1,6 +1,6 @@
 import {assertSafeWrite,withApiErrors} from "../../../../../lib/document-builder/auth/api";
 import {parseJsonRequest} from "../../../../../lib/auth/input";
-import {legalChatOwner} from "../../../../../lib/legal-chat/http-owner";
+import {optionalSignedAnswerOwner as legalChatOwner} from "../../../../../lib/legal-answer-workflow/platform-auth";
 import {AiActionPlanSaveError,saveAiActionPlanInputSchema,saveAiActionPlanToCase} from "../../../../../lib/ai/action-plan-save";
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache"}});
 export const POST=withApiErrors(async(request:Request)=>{

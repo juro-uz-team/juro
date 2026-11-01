@@ -77,7 +77,10 @@ export const requiredDocumentSchema = z.object({
 export const actionStepSchema = z.object({
   title: z.string().min(1).max(240),
   description: z.string().min(1).max(MAX_LEGAL_ACTION_DESCRIPTION_LENGTH),
-  sourceIds: sourceIdList,
+  // A compiled action inherits its paired rule's references as well as its
+  // own. Both provider lists are bounded independently; their union can use
+  // the complete admitted packet and must never be truncated.
+  sourceIds: z.array(sourceIdList.element).max(MAX_LEGAL_EVIDENCE_SOURCES),
   requirementIds: z.array(z.string().min(1).max(240)).max(40).optional(),
 }).strict();
 

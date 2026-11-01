@@ -9,6 +9,7 @@ import {
   candidateShardIdSchema,
   legalEnvironmentSchema,
   legalIdentifierSchema,
+  lexDocumentUrlSchema,
   providerProjectIdSchema,
   searchReleaseIdSchema,
   utcInstantSchema,
@@ -121,8 +122,16 @@ export const candidateSchema = z.object({
   membershipProof: candidateMembershipProofSchema.optional(),
   /** Reference discovery inherits the originating search's provenance; its
    * numeric ranks do not represent a separate vector or keyword match. */
-  referenceOrigin: z.object({itemKey: z.string().min(1).max(700),
-    article: z.string().regex(/^\d+(?:[.-]\d+)?$/u).max(40)}).strict().optional(),
+  referenceOrigin: z.union([
+    z.object({itemKey:z.string().min(1).max(700),sourceSelection:z.object({
+      officialUrl:lexDocumentUrlSchema,rawContentSha256:z.string().regex(/^[a-f0-9]{64}$/u),
+    }).strict()}).strict(),
+    z.object({itemKey: z.string().min(1).max(700),article: z.string().regex(/^\d+(?:[.-]\d+)?$/u).max(40)}).strict(),
+    z.object({itemKey:z.string().min(1).max(700),publisherDocument:z.object({
+      officialUrl:lexDocumentUrlSchema,targetUrl:lexDocumentUrlSchema,rawContentSha256:z.string().regex(/^[a-f0-9]{64}$/u),
+      contextTextSha256:z.string().regex(/^[a-f0-9]{64}$/u),fragment:z.string().max(512).nullable(),
+    }).strict()}).strict(),
+  ]).optional(),
   instanceId: candidateInstanceIdSchema,
   shardId: candidateShardIdSchema,
   // Initial and bounded repair searches retain all contributing formulations.

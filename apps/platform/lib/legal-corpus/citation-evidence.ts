@@ -7,7 +7,7 @@ import type { LegalEvidenceBucket } from "./target-evidence";
 import {readBoundedLegalSourceBytes} from "../legal/source-fetch";
 import {normalizeArticleNumber, detectArticleNumbers} from "../legal/legal-language";
 import {importedSourceContexts} from "../legal/imported-source-context";
-import {completeDocumentSections} from "../legal/document-sections";
+import {completeDocumentSections,refinedDocumentSections} from "../legal/document-sections";
 
 export const CITATION_EVIDENCE_PATH = "/internal/legal-corpus/citations/evidence";
 const MARKER = "citation-evidence-v1";
@@ -63,7 +63,7 @@ export async function resolveCitationEvidence(bucket: Pick<LegalEvidenceBucket, 
     if(value.kind === "normalized-section"){
       const matches=[];
       if(value.articleNumber!==null)throw new TypeError("CITATION_SECTION_UNAVAILABLE");
-      for(const section of [...completeDocumentSections(snapshot),...importedSourceContexts(snapshot)])if(await digest(new TextEncoder().encode(section.text))===value.textSha256)matches.push(section);
+      for(const section of [...completeDocumentSections(snapshot),...refinedDocumentSections(snapshot).filter(section=>section.complete),...importedSourceContexts(snapshot)])if(await digest(new TextEncoder().encode(section.text))===value.textSha256)matches.push(section);
       if(matches.length!==1)throw new TypeError("CITATION_SECTION_UNAVAILABLE");
       text=matches[0]!.text;
     } else if (value.kind === "normalized-document") {

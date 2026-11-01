@@ -6,7 +6,7 @@ The private deployment described here is restricted to loopback and SSH tunnels.
 
 ## Prepare the host
 
-Install Node.js 22.13 or newer, Docker with Compose, Poppler (`poppler-utils`), Tesseract with English, Russian, Uzbek Latin and Uzbek Cyrillic language data, and ClamAV with current signatures. Install locked dependencies in `apps/platform` and `apps/website` using `npm ci`. The admin service uses the platform's installed TypeScript runtime.
+Install Node.js 22.13 or newer, Python 3.9 or newer (`python3` in `/usr/bin` or `/bin`) for the vendored Uzbek query transliterator, Docker with Compose, Poppler (`poppler-utils`), Tesseract with English, Russian, Uzbek Latin and Uzbek Cyrillic language data, and ClamAV with current signatures. Install locked dependencies in `apps/platform` and `apps/website` using `npm ci`. The admin service uses the platform's installed TypeScript runtime.
 
 Copy `.env.self-hosted.example` to `.env.self-hosted` and restrict its permissions to the service account. Generate the database password and internal admin token; configure the identity keyring and direct AI-provider credentials using the existing application formats. Encrypted identities cannot be recovered from the database alone; recovery requires the matching identity keyring.
 

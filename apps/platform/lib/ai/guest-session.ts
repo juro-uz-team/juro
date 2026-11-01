@@ -6,11 +6,11 @@ import {
   type IdentityKeyring,
 } from "../auth/keyring";
 import type { AiOutputLocale } from "./localization";
-import { LEGAL_CHAT_RESERVATION_TTL_MS } from "../legal-chat/execution-limits";
+import { AI_RESERVATION_TTL_MS } from "./reservation-policy";
 
 export const GUEST_AI_COOKIE = "juro_guest_ai";
 export const GUEST_AI_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
-export const GUEST_AI_RESERVATION_TTL_MS = LEGAL_CHAT_RESERVATION_TTL_MS;
+export const GUEST_AI_RESERVATION_TTL_MS = AI_RESERVATION_TTL_MS;
 
 export async function renewGuestAiReservation(input: {
   db: D1Database; session: GuestAiSession; runId: string; now?: number;

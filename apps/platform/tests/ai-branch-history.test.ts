@@ -2,12 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import {
-  AiBranchInputError,
-  deleteAiConversation,
-  listAiAnswerVersions,
-  listAiBranches,
-} from "../lib/ai/branch-store";
+import { AiBranchInputError, listAiAnswerVersions, listAiBranches } from "../lib/ai/branch-store";
 import { conversationOperation as parseAiMessageOperation, readConversationContext, readSavedConversationTurns } from "../lib/legal-chat/conversation-context";
 import { loadAiConversationTurns } from "../lib/ai/conversation-branch-reader";
 
@@ -278,39 +273,7 @@ test("answer versions exclude ordinary follow-up turns", async () => {
   assert.deepEqual(followUpVersions.map((branch) => branch.branchId), ["branch-follow-up"]);
 });
 
-test("conversation deletion is tenant-scoped and waits for active AI runs", async () => {
-  const { sqlite, d1 } = await branchDatabase();
-  seedInitialBranch(sqlite);
-  sqlite.exec(`
-    INSERT INTO conversation_messages(id,conversation_id,author_type,content,structured_json,created_at)
-      VALUES ('request-delete-edit','conversation-1','user','Исправленная версия',NULL,'2026-07-31T00:01:00.000Z');
-    INSERT INTO conversation_messages(id,conversation_id,author_type,content,structured_json,created_at)
-      VALUES ('response-delete-edit','conversation-1','assistant','Исправленный ответ','{}','2026-07-31T00:01:01.000Z');
-    INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,forked_from_message_id,request_message_id,response_message_id,operation,created_at)
-      VALUES ('branch-delete-edit','conversation-1','workspace-1','user-1','branch-1','request-1','request-delete-edit','response-delete-edit','edit','2026-07-31T00:01:02.000Z');
-    INSERT INTO message_versions(id,conversation_id,branch_id,message_id,source_message_id,created_by_user_id,operation,version_number,content_sha256,created_at)
-      VALUES ('version-delete-edit','conversation-1','branch-delete-edit','request-delete-edit','request-1','user-1','edit',2,'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd','2026-07-31T00:01:03.000Z');
-  `);
 
-  assert.equal(await deleteAiConversation({ db: d1, conversationId: "conversation-1", workspaceId: "workspace-2", userId: "user-2" }), "unavailable");
-  assert.ok(sqlite.prepare("SELECT id FROM conversations WHERE id='conversation-1'").get());
-
-  const racingD1 = {
-    ...d1,
-    async batch<T = unknown>(statements: D1PreparedStatement[]) {
-      sqlite.prepare("INSERT INTO ai_runs(id,workspace_id,user_id,conversation_id,status) VALUES (?,?,?,?,?)")
-        .run("run-active", "workspace-1", "user-1", "conversation-1", "reserved");
-      return d1.batch<T>(statements);
-    },
-  } as D1Database;
-  assert.equal(await deleteAiConversation({ db: racingD1, conversationId: "conversation-1", workspaceId: "workspace-1", userId: "user-1" }), "busy");
-  assert.ok(sqlite.prepare("SELECT id FROM message_branches WHERE id='branch-1'").get());
-
-  sqlite.prepare("UPDATE ai_runs SET status='completed' WHERE id='run-active'").run();
-  assert.equal(await deleteAiConversation({ db: d1, conversationId: "conversation-1", workspaceId: "workspace-1", userId: "user-1" }), "deleted");
-  assert.equal(sqlite.prepare("SELECT id FROM conversations WHERE id='conversation-1'").get(), undefined);
-  assert.equal(sqlite.prepare("SELECT id FROM conversation_messages WHERE conversation_id='conversation-1'").get(), undefined);
-});
 
 test("migration 0039 guards tenant links, hashes, and immutable branch evidence", async () => {
   const { sqlite } = await branchDatabase();

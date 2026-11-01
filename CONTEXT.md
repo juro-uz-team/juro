@@ -43,8 +43,12 @@ A dedicated non-answer identifying any relevant official provisions that were fo
 _Avoid_: uncertain answer, likely answer, empty Legal Answer
 
 **Supported Partial Answer**:
-A Legal Answer that answers the supported parts of a question, explicitly identifies unresolved parts, and asks only for information that could materially change the result. It does not present unresolved legal propositions as conclusions.
+A historical answer outcome that answers supported parts of a question, explicitly identifies unresolved parts, and asks only for information that could materially change the result. It does not present unresolved legal propositions as conclusions and is distinct from a Legal Answer with complete material coverage.
 _Avoid_: complete answer, best guess, degraded success
+
+**Material Legal Gap**:
+An unresolved legal proposition, condition, exception, operative reference or temporal qualification that could materially change the answer to the user's question. It is distinct from a missing Case Fact for which separately supported conditional outcomes can be given.
+_Avoid_: missing user detail, low confidence, tangential provision
 
 **Legal Risk**:
 A relevant adverse consequence or exposure explained with its severity and supporting evidence in the Important Considerations of a Legal Answer.
@@ -93,8 +97,12 @@ A discovery relationship that carries a Publisher Classification from its origin
 _Avoid_: direct publisher assignment, inferred legal rule
 
 **Indexed Official Corpus**:
-JURO's integrity-verified and indexed collection of public official-source snapshots eligible for a named retrieval capability, searched before any online source.
+JURO's integrity-verified and indexed collection of public official-source snapshots eligible for a named retrieval capability and used as the source of law for Legal Answers.
 _Avoid_: knowledge base, local data, internal search
+
+**Corpus Trust**:
+The accepted integrity and authenticity of the prepared Indexed Official Corpus and its retained provenance. It does not establish that a particular provision applies to a question or that the selected provisions provide complete Official Coverage.
+_Avoid_: legal applicability, answer correctness, retrieval relevance
 
 **Sparse Candidate Lane**:
 The required lexical-retrieval channel that ranks official-corpus candidates by agreement with the question's normalized legal terms and structural fields.
@@ -187,7 +195,7 @@ The request-local interpreted legal query sent unchanged to both the Sparse Cand
 _Avoid_: privacy-transformed query, sanitized prompt, embedding prompt
 
 **Live Official Search**:
-Request-scoped retrieval from validated online Lex.uz pages when the Indexed Official Corpus does not provide sufficient current coverage.
+Legacy request-scoped retrieval from validated online Lex.uz pages when the Indexed Official Corpus did not provide sufficient current coverage. It is not part of the current corpus-only Legal Answer workflow.
 _Avoid_: web search, internet search, Lex fallback
 
 **Secondary Web Research**:
@@ -195,7 +203,7 @@ Cited research from the wider internet that supplies supporting context when use
 _Avoid_: official source, legal authority, general search
 
 **Source Ladder**:
-The evidence-priority order from Indexed Official Corpus to Live Official Search, with Secondary Web Research providing attributed context when useful. Official evidence retains priority over secondary context.
+The historical evidence-priority order from Indexed Official Corpus to Live Official Search, with Secondary Web Research providing attributed context. Current Legal Answers use the Indexed Official Corpus; missing material law remains a Material Legal Gap rather than triggering online research.
 _Avoid_: blended authority, interchangeable sources
 
 **Official Coverage**:
@@ -207,7 +215,7 @@ A materially distinct interpretation of a General Legal Question that could chan
 _Avoid_: assumption, query variant, Coverage Requirement
 
 **Coverage Requirement**:
-A distinct legal proposition required by a Plausible Reading that must be supported or explicitly left unresolved before JURO can claim good Official Coverage. Its identity, priority and scope (general rule, personal status, action stage, forum, claim kind or consequence) survive planning, retrieval repair and answer validation. Each requirement has an explicit answer-coverage entry referring to findings that still undergo claim and citation validation. Equivalent requirements may share a finding; distinct scopes cannot silently stand in for one another. An explicit core rule scope requires an ordinary governing finding, rather than a qualification alone.
+A material legal proposition needed to answer the user's question under a Plausible Reading. Proposed requirements may be revised as the question and applicable law become clearer; an unnecessary research topic is not a Coverage Requirement.
 _Avoid_: interpretation, facet, keyword, query concept
 
 **Requirement Support**:
@@ -215,12 +223,15 @@ The validated relationship showing that one eligible official provision supports
 _Avoid_: query match, candidate membership, inherited requirement
 
 **Provision Set**:
-The complementary official provisions selected to satisfy the Coverage Requirements for one Legal Answer.
-Its complete authenticated text must fit the shared evidence context budget. A count of short provisions alone does not justify dropping an operative rule; oversized sets remain explicitly unresolved. See [the evidence context decision](docs/adr/0011-bound-complete-verified-evidence-context.md).
+The complementary complete official provisions selected for their legal relevance to the Coverage Requirements of one Legal Answer. Their material rules and qualifications remain necessary regardless of the amount of text a processing operation can contain.
 _Avoid_: top results, hit list, citation count
 
+**Evidence Inventory**:
+The official provisions kept available while researching one Legal Question, including relevant provisions outside its current Provision Set and their unresolved references. Availability does not establish that a provision was examined or applies to the question.
+_Avoid_: search results, answer context, Provision Set
+
 **Source Unavailability**:
-A temporary operational condition that prevents JURO from completing a Source Ladder check. It is distinct from absent Official Coverage and must not be presented as evidence that no applicable law exists.
+A temporary operational condition that prevents JURO from completing authenticated corpus retrieval. It is distinct from absent Official Coverage and must not be presented as evidence that no applicable law exists.
 _Avoid_: no coverage, no relevant law, insufficient evidence
 
 ### Workspace discovery
@@ -242,3 +253,16 @@ _Avoid_: model answer, legal conclusion, query rewrite
 **Temporal Scope**:
 Whether a Legal Answer concerns current law, law at a specified point in time, or a comparison between any two requested times. It determines which official versions are eligible evidence and prevents rules from different times from being silently mixed.
 _Avoid_: freshness, date filter, current flag
+
+**Research Language**:
+The language and script chosen to discover Official Corpus material, independent of the requested Legal Answer language. Research may use different languages as the question and missing evidence require; choosing a formulation does not restrict the language of eligible sources or establish exhaustive discovery.
+_Avoid_: answer locale filter, preferred-source language
+
+**Writing Start**:
+The first substantive Legal Answer text visible to the user after submission, excluding activity messages, research narration and headings alone.
+_Avoid_: first progress event, provider request start, completed answer
+
+**Saved Delivery**:
+The completed Legal Answer delivered with its persisted identity. Earlier streamed writing remains in progress and does not by itself establish a saved result.
+_Avoid_: first token, provisional answer, provider completion
+

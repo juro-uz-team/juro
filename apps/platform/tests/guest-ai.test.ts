@@ -1,4 +1,5 @@
-import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS,LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
+import { legalAnswerDeadlineMs } from "../lib/legal-answer-workflow/deadline";
+import { AI_RESERVATION_TTL_MS } from "../lib/ai/reservation-policy";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -237,16 +238,16 @@ test("guest lease renewal fences wrong owners and expired runs without consuming
     assert.equal(reserved.kind,"created");
     if(reserved.kind!=="created")throw Error("Reservation required");
     const owner={db:d1,session:created.session,runId:reserved.run.id};
-    const now=Date.parse(NOW)+LEGAL_CHAT_PROVIDER_TIMEOUT_MS;
+    const now=Date.parse(NOW)+legalAnswerDeadlineMs;
     assert.equal(await renewGuestAiReservation({...owner,session:{...created.session,tokenHmac:"wrong"},now}),false);
     assert.equal(await renewGuestAiReservation({...owner,now}),true);
-    assert.deepEqual(await purgeExpiredGuestAiSessions({db:d1,now:new Date(now+LEGAL_CHAT_RESERVATION_TTL_MS-1000).toISOString()}),
+    assert.deepEqual(await purgeExpiredGuestAiSessions({db:d1,now:new Date(now+AI_RESERVATION_TTL_MS-1000).toISOString()}),
       {eligible:0,purged:0,reservationsReleased:0});
-    assert.equal(await renewGuestAiReservation({...owner,now:now+LEGAL_CHAT_RESERVATION_TTL_MS+1}),false);
+    assert.equal(await renewGuestAiReservation({...owner,now:now+AI_RESERVATION_TTL_MS+1}),false);
     sqlite.exec("CREATE TABLE saved_lease_marker(value TEXT)");
     await assert.rejects(completeGuestAiRun({db:d1,keyring:identityKeyring,run:reserved.run,
       resultJson:JSON.stringify({summary:"Late result"}),responseKind:"answer",provider:"openai",model:"synthetic-model",
-      inputTokens:0,outputTokens:0,cachedInputTokens:0,attempts:1,latencyMs:0,now:new Date(now+LEGAL_CHAT_RESERVATION_TTL_MS+1).toISOString(),
+      inputTokens:0,outputTokens:0,cachedInputTokens:0,attempts:1,latencyMs:0,now:new Date(now+AI_RESERVATION_TTL_MS+1).toISOString(),
       additionalStatements:[d1.prepare("INSERT INTO saved_lease_marker VALUES ('late')")]}));
     assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM saved_lease_marker").get()?.count,0);
     assert.equal(sqlite.prepare("SELECT answer_count FROM guest_ai_sessions WHERE id=?").get(created.session.id)?.answer_count,0);

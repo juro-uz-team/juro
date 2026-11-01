@@ -1,5 +1,4 @@
 import { getSelfHostedRuntime } from "../../runtime/self-hosted";
-import type LegalCorpusWorker from "../../../worker/legal-corpus-worker";
 
 export interface BuilderRuntimeEnv {
   APP_ENV?: "development" | "staging" | "production";
@@ -20,7 +19,7 @@ export interface BuilderRuntimeEnv {
   LEGAL_DIRECT_RETRIEVAL_ENABLED?: string;
   LEGAL_SOURCE_STAFF_API_ENABLED?: string;
   LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST?: string;
-  LEGAL_RETRIEVAL_SERVICE?: LegalCorpusWorker;
+  LEGAL_RETRIEVAL_SERVICE?: {fetch(input:Request|string|URL,init?:RequestInit):Promise<Response>};
   LEGAL_RETRIEVAL_ENVIRONMENT?: "development" | "staging" | "production";
   LAWYER_PROFILE_DIRECTORY_ENABLED?: string;
   OPENAI_API_KEY?: string;

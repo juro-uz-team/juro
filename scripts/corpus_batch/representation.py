@@ -6,6 +6,7 @@ The immutable completion receipt continues to describe the reconstructed bytes.
 """
 import hashlib
 import json
+import mmap
 import os
 import pathlib
 import re
@@ -39,7 +40,7 @@ def engine():
     return Index
 
 
-def source_receipt(root, job):
+def source_receipt(root, job, *, trust_prepared=False):
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', job):
         raise ValueError('invalid_vector_job')
     root = pathlib.Path(root)
@@ -56,23 +57,28 @@ def source_receipt(root, job):
         if not re.fullmatch(r'[a-f0-9]{64}', receipt.get(name, '')):
             raise ValueError('vector_representation_source_hash_invalid')
     hashes = root / 'vectors' / f'{job}.hashes'
-    bits = (root / 'vectors' / f'{job}.done').read_bytes()
-    if (bits != bytes([1]) * receipt['count']
+    bitmap = root / 'vectors' / f'{job}.done'
+    if (bitmap.stat().st_size != receipt['count']
+            or (not trust_prepared and bitmap.read_bytes() != bytes([1]) * receipt['count'])
             or hashes.stat().st_size != receipt['count'] * 32
-            or file_hash(hashes) != receipt['input_hashes_sha256']):
+            or (not trust_prepared and file_hash(hashes) != receipt['input_hashes_sha256'])):
         raise ValueError('vector_representation_identity_mismatch')
     return receipt, file_hash(receipt_path)
 
 
 class IndexedVectors:
-    """Read-only original coordinates, authenticated on open and reconstructed.
+    """Read-only original coordinates under an explicit preparation trust policy.
 
     IDs are shard-local ordinals. The immutable .hashes file maps these to the
     original embedding inputs; a search release supplies the shard identity.
+    Strict opens authenticate and reconstruct; retained opens use prepared keys.
     """
-    def __init__(self, root, job):
+    def __init__(self, root, job, *, trust_prepared=False):
+        if type(trust_prepared) is not bool:raise ValueError('vector_representation_trust_policy_invalid')
+        self.trust_prepared=trust_prepared
+        self.index = self.mapping = self.coordinates = None
         root = pathlib.Path(root)
-        self.receipt, receipt_sha = source_receipt(root, job)
+        self.receipt, receipt_sha = source_receipt(root, job, trust_prepared=trust_prepared)
         self.count = self.receipt['count']
         manifest = json.loads((root / 'vectors' / f'{job}.representation.json').read_bytes())
         expected = {'version': 1, 'format': 'usearch-original-f32', 'engine': ENGINE_VERSION,
@@ -89,32 +95,73 @@ class IndexedVectors:
         path = root / 'representations' / (manifest['index_sha256'] + '.usearch')
         if not path.resolve().is_relative_to(root.resolve()) or path.is_symlink():
             raise ValueError('vector_representation_path_invalid')
-        if path.stat().st_size != manifest['index_bytes'] or file_hash(path) != manifest['index_sha256']:
-            raise ValueError('vector_representation_hash_mismatch')
-        self.index = engine().restore(str(path), view=True)
-        self.index.expansion_search = 512
-        if len(self.index) != self.count:
-            raise ValueError('vector_representation_count_mismatch')
-        reconstructed = hashlib.sha256()
-        for start in range(0, self.count, 1024):
-            block = self.read(start, min(1024, self.count-start))
-            values = np.frombuffer(block, dtype='<f4').reshape(-1, DIMENSIONS)
-            if not np.isfinite(values).all() or np.any(np.linalg.norm(values, axis=1) == 0):
-                raise ValueError('vector_representation_coordinates_invalid')
-            reconstructed.update(block)
-        if reconstructed.hexdigest() != self.receipt['vectors_sha256']:
-            raise ValueError('vector_representation_export_mismatch')
+        try:
+            # Own the actual read-only mapping used by USearch so retrieval can
+            # disable sequential read-ahead without changing stored coordinates.
+            with path.open('rb') as source:
+                if os.fstat(source.fileno()).st_size != manifest['index_bytes']:
+                    raise ValueError('vector_representation_hash_mismatch')
+                self.mapping = mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ)
+            if not trust_prepared and hashlib.sha256(self.mapping).hexdigest() != manifest['index_sha256']:
+                raise ValueError('vector_representation_hash_mismatch')
+            self.index = engine().restore(self.mapping, view=True)
+            self.index.expansion_search = 512
+            if len(self.index) != self.count:
+                raise ValueError('vector_representation_count_mismatch')
+            if not trust_prepared:
+                reconstructed = hashlib.sha256()
+                for start in range(0, self.count, 1024):
+                    block = self.read(start, min(1024, self.count-start))
+                    values = np.frombuffer(block, dtype='<f4').reshape(-1, DIMENSIONS)
+                    if not np.isfinite(values).all() or np.any(np.linalg.norm(values, axis=1) == 0):
+                        raise ValueError('vector_representation_coordinates_invalid')
+                    reconstructed.update(block)
+                if reconstructed.hexdigest() != self.receipt['vectors_sha256']:
+                    raise ValueError('vector_representation_export_mismatch')
+        except BaseException:
+            self.close()
+            raise
 
     def read(self, start, count=1):
         if type(start) is not int or type(count) is not int or start < 0 or count < 1 or start+count > self.count:
             raise ValueError('vector_representation_position')
-        values = np.asarray(self.index.get(np.arange(start, start+count, dtype=np.uint64), dtype='f32'), dtype='<f4')
+        values = self.read_positions(np.arange(start, start+count, dtype=np.uint64))
         if values.shape != (count, DIMENSIONS):
             raise ValueError('vector_representation_missing_coordinate')
         return values.tobytes()
 
+    def read_positions(self, positions):
+        if self.index is None:
+            raise ValueError('vector_representation_closed')
+        if self.coordinates is not None:
+            return self.coordinates.read(positions)
+        return np.asarray(self.index.get(positions, dtype='f32'), dtype='<f4')
+
+    def prepare_random_reads(self):
+        """Set retrieval-only access advice after full coordinate verification."""
+        if self.mapping is None:
+            raise ValueError('vector_representation_closed')
+        if self.coordinates is None and not self.trust_prepared:
+            from scripts.corpus_batch.original_coordinates import OriginalCoordinates
+            self.coordinates = OriginalCoordinates(self.mapping, self.count,
+                self.receipt['vectors_sha256'], self.read)
+        if hasattr(mmap, 'MADV_RANDOM') and hasattr(self.mapping, 'madvise'):
+            self.mapping.madvise(mmap.MADV_RANDOM)
+
     def close(self):
-        self.index = None
+        # USearch must release its view before the owned buffer is unmapped.
+        if self.coordinates is not None:
+            self.coordinates.close()
+            self.coordinates = None
+        index, self.index = self.index, None
+        try:
+            if index is not None:
+                index.reset()
+        finally:
+            del index
+            if self.mapping is not None:
+                self.mapping.close()
+                self.mapping = None
 
     def search(self, query, count):
         """Return shard-local candidates reranked against original coordinates.

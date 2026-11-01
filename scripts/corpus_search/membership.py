@@ -7,11 +7,13 @@ Source publication must verify the original-to-compact mapping and the complete
 membership population before publishing the root manifest.
 """
 from collections import OrderedDict
+import bisect
 import hashlib
 import json
 import os
 import pathlib
 import struct
+from types import MappingProxyType
 
 RECORD = struct.Struct('<32s32s32s32sQ')
 PAGE_ROWS = 4096
@@ -21,6 +23,10 @@ MAX_ORDINAL = 2**53-1
 
 def sha(value):
     return hashlib.sha256(value).hexdigest()
+
+
+def storage_identity(stat):
+    return stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns
 
 
 def sync_directory(root):
@@ -76,13 +82,18 @@ def write_part(root, prefix, rows):
 
 
 class MembershipIndex:
-    def __init__(self,root,manifest_sha256,cache_pages=64):
+    def __init__(self,root,manifest_sha256,cache_pages=64,*,page_navigation=False,trust_prepared=False):
+        if type(trust_prepared) is not bool:
+            raise ValueError('membership_trust_policy_invalid')
+        self.trust_prepared=trust_prepared
+        if type(page_navigation) is not bool:
+            raise ValueError('membership_navigation_policy_invalid')
         self.root = pathlib.Path(root).resolve(strict=True)
         path = self.root/'manifest.json'
         if path.stat().st_size > 8*1024*1024:
             raise ValueError('membership_manifest_too_large')
         raw = path.read_bytes()
-        if sha(raw) != manifest_sha256:
+        if not trust_prepared and sha(raw) != manifest_sha256:
             raise ValueError('membership_manifest_pin_mismatch')
         self.manifest_sha256=manifest_sha256
         manifest = json.loads(raw)
@@ -102,6 +113,7 @@ class MembershipIndex:
         if not isinstance(parts,list) or len(parts) > 256:
             raise ValueError('membership_manifest_parts_invalid')
         self.parts = {}
+        self.part_identities = {}
         for part in parts:
             prefix = part.get('prefix')
             count = part.get('rows')
@@ -118,23 +130,70 @@ class MembershipIndex:
             if path.is_symlink() or path.resolve().parent != self.root or path.stat().st_size != part['bytes']:
                 raise ValueError('membership_part_unavailable')
             self.parts[prefix] = part
+            self.part_identities[prefix] = storage_identity(path.stat())
         if sum(part['rows'] for part in parts) != manifest['rows']:
             raise ValueError('membership_manifest_count_mismatch')
         self.manifest = manifest
         self.cache_pages = cache_pages
         self.pages = OrderedDict()
+        self.page_ends = self._page_navigation() if page_navigation else None
+
+    def _page_navigation(self):
+        """Read immutable page endpoints, authenticating only in strict mode."""
+        def identity(stat):
+            return stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns
+        directory={}
+        for prefix,part in self.parts.items():
+            path=self.root/f'{prefix:02x}.members';ends=[]
+            before=identity(path.stat())
+            with path.open('rb') as source:
+                if identity(os.fstat(source.fileno()))!=before:
+                    raise ValueError('membership_part_changed')
+                for page_number,pin in enumerate(part['pages']):
+                    length=min(PAGE_BYTES,(part['rows']-page_number*PAGE_ROWS)*RECORD.size)
+                    if self.trust_prepared:
+                        source.seek(page_number*PAGE_BYTES);first_bytes=source.read(RECORD.size)
+                        source.seek(page_number*PAGE_BYTES+length-RECORD.size);last_bytes=source.read(RECORD.size)
+                        raw=first_bytes+last_bytes
+                        if len(raw)!=2*RECORD.size:raise ValueError('membership_part_changed')
+                    else:
+                        raw=source.read(length)
+                        if sha(raw)!=pin:raise ValueError('membership_page_hash_mismatch')
+                    first=RECORD.unpack_from(raw)
+                    last=RECORD.unpack_from(raw,len(raw)-RECORD.size)
+                    start,end=(first[0],first[4]),(last[0],last[4])
+                    if (first[0][0]!=prefix or last[0][0]!=prefix
+                            or first[4]>MAX_ORDINAL or last[4]>MAX_ORDINAL
+                            or start>end or (ends and ends[-1]>=start)):
+                        raise ValueError('membership_page_order_invalid')
+                    ends.append(end)
+                if source.read(1) or identity(os.fstat(source.fileno()))!=before:
+                    raise ValueError('membership_part_changed')
+            if identity(path.stat())!=before:raise ValueError('membership_part_changed')
+            directory[prefix]=tuple(ends)
+        return MappingProxyType(directory)
 
     def _row(self,prefix,ordinal):
         part = self.parts[prefix]
+        path = self.root/f'{prefix:02x}.members'
+        if self.trust_prepared and storage_identity(path.stat()) != self.part_identities[prefix]:
+            raise ValueError('membership_part_changed')
         if not 0 <= ordinal < part['rows']:
             raise ValueError('membership_position_invalid')
         page_number,offset = divmod(ordinal,PAGE_ROWS)
         identity = (prefix,page_number)
         if identity not in self.pages:
-            with (self.root/f'{prefix:02x}.members').open('rb') as source:
+            with path.open('rb') as source:
+                if self.trust_prepared and storage_identity(os.fstat(source.fileno())) != self.part_identities[prefix]:
+                    raise ValueError('membership_part_changed')
                 source.seek(page_number*PAGE_BYTES)
                 page = source.read(min(PAGE_BYTES,(part['rows']-page_number*PAGE_ROWS)*RECORD.size))
-            if sha(page) != part['pages'][page_number]:
+                if self.trust_prepared and storage_identity(os.fstat(source.fileno())) != self.part_identities[prefix]:
+                    raise ValueError('membership_part_changed')
+            if self.trust_prepared and storage_identity(path.stat()) != self.part_identities[prefix]:
+                raise ValueError('membership_part_changed')
+            if (len(page)!=min(PAGE_BYTES,(part['rows']-page_number*PAGE_ROWS)*RECORD.size)
+                    or (not self.trust_prepared and sha(page) != part['pages'][page_number])):
                 raise ValueError('membership_page_hash_mismatch')
             self.pages[identity] = page
             if len(self.pages) > self.cache_pages:
@@ -169,6 +228,9 @@ class MembershipIndex:
         count = self.parts[prefix]['rows']
         first,last = 0,count
         target = (compact_input_hash,-1 if after_ordinal is None else after_ordinal)
+        if self.page_ends is not None:
+            page=bisect.bisect_right(self.page_ends[prefix],target)
+            first,last=min(page*PAGE_ROWS,count),min((page+1)*PAGE_ROWS,count)
         while first < last:
             middle = (first+last)//2
             row = self._row(prefix,middle)

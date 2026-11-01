@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {digest,runDeploymentPhase} from "./corpus-deployment-contract.mjs";
+import {retainPreparedCorpus} from "./retained-corpus-deployment.mjs";
 assert(process.send && process.getuid()!==0,"Dedicated unprivileged executor required");
 const disconnected=()=>process.exit(1);process.on("disconnect",disconnected);
 let sequence=0;const pending=new Map();
@@ -14,6 +15,16 @@ process.once("message",async input=>{
  let stage="load-product";
  try{
  const imported=async path=>{const value=await import(pathToFileURL(join(request.release,path)).href);return value.default??value;};
+ if(bundle.mode==="retain") {
+  stage="retain-corpus";
+  const pg=await imported("apps/platform/node_modules/pg/lib/index.js");
+  const pool=new pg.Pool({connectionString:settings.CORPUS_DATABASE_URL,max:2,connectionTimeoutMillis:10000,statement_timeout:30000,idle_in_transaction_session_timeout:15000,options:"-c default_transaction_read_only=on"});
+  try {
+   const result=await retainPreparedCorpus({request,bundle,manifest:JSON.parse(bytes.toString()),pool,guard});
+   process.send({type:"result",result});
+  } finally { await pool.end(); }
+  process.removeListener("disconnect",disconnected);process.disconnect();return;
+ }
  const api=await imported("apps/platform/lib/storage/native-corpus-acceptance.ts");
  const rawManifest=JSON.parse(bytes.toString()),prepared=rawManifest.version==="prepared-pgvector-v1";
  const preparedQualification=prepared?await imported("apps/platform/lib/storage/prepared-corpus-qualification.ts"):null;

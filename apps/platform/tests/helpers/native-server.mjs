@@ -4,6 +4,9 @@ import {setTimeout as pause} from "node:timers/promises";
 import {fileURLToPath} from "node:url";
 
 export async function startNativePlatform(port=3099, application="platform") {
+  const offset=Number(process.env.JURO_TEST_PORT_OFFSET??0);
+  if(!Number.isInteger(offset)||offset<0||!Number.isInteger(port)||port+offset<1||port+offset>65535)throw Error("Invalid native test port");
+  port+=offset;
   const cwd=fileURLToPath(new URL(application === "website" ? "../../../website/" : "../../",import.meta.url));
   const loader=new URL("../../node_modules/tsx/dist/loader.mjs",import.meta.url).href;
   let output="";

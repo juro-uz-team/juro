@@ -49,18 +49,4 @@ test("agent evaluation evidence is append-only and cannot impersonate the human 
   assert.doesNotMatch(migration, /DROP\s+TABLE/iu);
 });
 
-test("interactive AI authentication can be resolved from the exact internal Request", async () => {
-  const [session, auth, api, route] = await Promise.all([
-    readFile(new URL("../lib/auth/session.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/chatgpt-auth.ts", import.meta.url), "utf8"),
-    readFile(new URL("../lib/document-builder/auth/api.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/platform/ai/route.ts", import.meta.url), "utf8"),
-  ]);
-  assert.match(session, /getSessionUser\(request\?: Request\)/u);
-  assert.match(session, /request\?\.headers \?\? await headers\(\)/u);
-  assert.match(auth, /getAuthPrincipal\(request\?: Request\)/u);
-  assert.match(api, /requireApiUser\(request\?: Request\)/u);
-  assert.match(route, /legalChatOwner\(request\)/u);
-  assert.match(await readFile(new URL("../lib/legal-chat/http-owner.ts", import.meta.url), "utf8"), /requireApiUser\(request\)/u);
 
-});

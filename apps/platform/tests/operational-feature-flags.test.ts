@@ -148,7 +148,7 @@ test("operational controls use fresh MFA and enforce server-side route boundarie
   assert.match(adminRoute, /assertSafeWrite\(request\)/);
   assert.doesNotMatch(adminRoute, /actorUserId:\s*parsed\.data/);
   assert.match(page, /requirePlatformStaffAccess\(runtime\.DB, session, "staff\.operations\.manage"/);
-  for (const path of routePaths.slice(0, 2)) assert.match(routeSources.get(path) ?? "", /key: "ai_chat"/);
+  for (const path of routePaths.slice(0, 2)) assert.match(readFileSync(new URL("../lib/legal-answer-workflow/platform-entry.ts", import.meta.url), "utf8"), /"ai_chat"/);
   for (const path of routePaths.slice(2, 6)) assert.match(routeSources.get(path) ?? "", /key: "document_analysis_upload"/);
   assert.match(routeSources.get(routePaths[6]) ?? "", /key: "lawyer_handoff"/);
   for (const path of routePaths.slice(7)) assert.match(routeSources.get(path) ?? "", /key: "voice_mode"/);

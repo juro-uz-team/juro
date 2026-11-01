@@ -10,6 +10,11 @@ catch (error) { if (error.code !== "ENOENT") throw error; }
 const environment = Object.fromEntries(["PATH", "SystemRoot", "TEMP", "TMP", "LANG", "HOME"].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 Object.assign(environment, { NODE_ENV: "test", NEXT_TELEMETRY_DISABLED: "1",
   DATABASE_URL: process.env.DATABASE_URL ?? configuration.DATABASE_URL ?? "" });
+if (process.env.JURO_TEST_PORT_OFFSET !== undefined) environment.JURO_TEST_PORT_OFFSET = process.env.JURO_TEST_PORT_OFFSET;
+if (process.platform === "win32") {
+  const scannerContainer = process.env.LOCAL_CLAMAV_CONTAINER ?? configuration.LOCAL_CLAMAV_CONTAINER;
+  if (scannerContainer) environment.LOCAL_CLAMAV_CONTAINER = scannerContainer;
+}
 const requested = process.argv.slice(2);
 const files = requested.length ? requested : (await readdir(new URL("../tests/", import.meta.url)))
   .filter(file => /\.test\.(?:ts|mjs)$/.test(file)).sort().map(file => `tests/${file}`);

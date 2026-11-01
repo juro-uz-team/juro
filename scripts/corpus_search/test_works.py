@@ -27,6 +27,20 @@ class WorkIndexTests(unittest.TestCase):
         self.temporary=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.temporary.name)/'index';self.package=Fixture()
     def tearDown(self):self.temporary.cleanup()
 
+    def test_retained_work_lookup_preserves_locations_and_readonly_storage(self):
+        pin=build_work_index(self.package,self.root)
+        strict=WorkIndex(self.root,pin,self.package.sha256)
+        keys=[work_key('third'),work_key('refresh:уз:1'),work_key('excluded')]
+        expected=strict.lookup(keys);strict.close()
+        with patch('works.file_hash',side_effect=AssertionError('corpus rehash')):
+            index=WorkIndex(self.root,pin,self.package.sha256,trust_prepared=True)
+            try:
+                self.assertEqual(index.lookup(keys),expected)
+                with self.assertRaises(sqlite3.OperationalError):index.connection.execute('DELETE FROM works')
+                with self.assertRaisesRegex(ValueError,'manifest_invalid'):
+                    WorkIndex(self.root,pin,'f'*64,trust_prepared=True)
+            finally:index.close()
+
     def test_work_locations_join_unaligned_parts_and_preserve_missing_prepared_state(self):
         pin=build_work_index(self.package,self.root);index=WorkIndex(self.root,pin,self.package.sha256)
         try:

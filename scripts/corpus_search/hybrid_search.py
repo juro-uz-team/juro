@@ -1,23 +1,28 @@
 """Fuse complete discovery lanes without collapsing distinct source memberships.
 
 Dense vectors and sparse structural profiles can each represent many original
-memberships. Expand in lane order, then ascending membership ordinal, before
-equal reciprocal-rank fusion (k=60). The bounded top-50 lane is explicit; a
+memberships. Visit each ranked candidate once before taking its next membership,
+preserving ascending membership ordinal within each candidate, before equal
+reciprocal-rank fusion (k=60). The bounded top-50 lane is explicit; a
 continuation is not evidence that the whole membership family was examined.
 No classification or temporal observation is an eligibility filter here.
 """
 import math
 import time
+from concurrent.futures import wait
+from contextvars import copy_context
 
 from pgvector_navigation import PgvectorNavigation
+from projected_navigation import ProjectedNavigation
 from cancellation import check_cancelled
+from vector_validation import vector_read_scope
 
 
 class PreparedHybridSearch:
     def __init__(self, dense, sparse, profiles, memberships):
         vectors = dense.vectors
         p, s, m = profiles.manifest, sparse.manifest, memberships.manifest
-        if (not isinstance(dense.navigation, PgvectorNavigation)
+        if (not isinstance(dense.navigation, (PgvectorNavigation,ProjectedNavigation))
                 or s.get('profiles_sha256') != profiles.manifest_sha256
                 or p.get('package_sha256') != m.get('package_sha256')
                 or p.get('vector_completion_sha256') != vectors.completion_sha256
@@ -29,8 +34,13 @@ class PreparedHybridSearch:
             raise ValueError('hybrid_generation_mismatch')
         self.dense, self.sparse = dense, sparse
         self.profiles, self.memberships, self.vectors = profiles, memberships, vectors
+        self.dense_executor = None
 
     def search(self, query_vector, term_hashes, deadline):
+        with vector_read_scope(self.vectors):
+            return self._search(query_vector, term_hashes, deadline)
+
+    def _search(self, query_vector, term_hashes, deadline):
         if deadline is not None and (type(deadline) not in (int, float) or not math.isfinite(deadline)):
             raise ValueError('hybrid_deadline_invalid')
 
@@ -41,23 +51,49 @@ class PreparedHybridSearch:
 
         check()
         self.profiles.assert_unchanged()
-        # Both operations must succeed; exceptions never yield a partial packet.
-        # Readers own SQLite connections, so execute on their owning thread.
-        dense = self.dense.search(query_vector, deadline, limit=50)
-        sparse = self.sparse.search(term_hashes, deadline, limit=50)
+        # SQLite stays on its owning thread. An explicitly configured native
+        # dense reader may overlap its immutable reads with lexical retrieval.
+        # Both operations must finish; a failed lane never yields partial hits.
+        if self.dense_executor is None:
+            dense = self.dense.search(query_vector, deadline, limit=50)
+            sparse = self.sparse.search(term_hashes, deadline, limit=50)
+        else:
+            pending = self.dense_executor.submit(copy_context().run,
+                self.dense.search, query_vector, deadline, limit=50)
+            try:
+                sparse = self.sparse.search(term_hashes, deadline, limit=50)
+                dense = pending.result()
+            finally:
+                pending.cancel()
+                wait([pending])
+        check()
+
+        # Reopen the union once: input_hashes groups identities by physical
+        # shard, retaining its storage checks while avoiding a stat/open cycle
+        # for every hit and for the same vector in both discovery lanes.
+        ordinals = {}
+        for hits in (dense, sparse):
+            if len(hits) > 50:
+                raise ValueError('hybrid_lane_bound')
+            for hit in hits:
+                vector, score = hit['vector_ordinal'], hit['score']
+                if (type(vector) is not int or not 0 <= vector < self.vectors.count
+                        or type(score) not in (int, float) or not math.isfinite(score)):
+                    raise ValueError('hybrid_lane_invalid')
+                ordinals[vector] = None
+        keys = dict(zip(ordinals, self.vectors.input_hashes(list(ordinals))))
         check()
 
         def expand(hits, structural):
             if len(hits) > 50:
                 raise ValueError('hybrid_lane_bound')
-            result, seen = [], set()
-            for hit in hits:
+            def candidate_members(hit):
                 check()
                 vector, score = hit['vector_ordinal'], hit['score']
                 if (type(vector) is not int or not 0 <= vector < self.vectors.count
                         or type(score) not in (int, float) or not math.isfinite(score)):
                     raise ValueError('hybrid_lane_invalid')
-                key = self.vectors.input_hashes([vector])[0]
+                key = keys[vector]
                 original = None
                 if structural:
                     first = self.memberships.lookup_exact(key, hit['membership_ordinal'])
@@ -74,12 +110,7 @@ class PreparedHybridSearch:
                             continue
                         matched = True
                         ordinal = row[4]
-                        if ordinal in seen:
-                            raise ValueError('hybrid_duplicate_lane_membership')
-                        seen.add(ordinal)
-                        result.append((vector, ordinal, score))
-                        if len(result) == 50:
-                            return result
+                        yield vector, ordinal, score
                     if continuation is None:
                         break
                     if after is not None and continuation <= after:
@@ -87,6 +118,27 @@ class PreparedHybridSearch:
                     after = continuation
                 if not matched:
                     raise ValueError('hybrid_lane_membership_missing')
+            # Historical copies of one passage must not consume the lane before
+            # other relevant vectors or structural profiles get a representative.
+            # Retain every membership in its iterator; no temporal eligibility or
+            # text deduplication is inferred by this scheduling policy.
+            pending = [candidate_members(hit) for hit in hits]
+            result, seen = [], set()
+            while pending and len(result) < 50:
+                remaining = []
+                for candidate in pending:
+                    check()
+                    row = next(candidate, None)
+                    if row is None:
+                        continue
+                    if row[1] in seen:
+                        raise ValueError('hybrid_duplicate_lane_membership')
+                    seen.add(row[1])
+                    result.append(row)
+                    remaining.append(candidate)
+                    if len(result) == 50:
+                        break
+                pending = remaining
             return result
 
         dense_members = expand(dense, False)
@@ -105,7 +157,6 @@ class PreparedHybridSearch:
                 hit[lane + 'Rank'], hit[lane + 'Score'] = rank, score
                 hit['fusionScore'] += 1 / (60 + rank)
         check()
-        self.vectors.assert_unchanged()
         self.profiles.assert_unchanged()
         self.sparse.assert_unchanged()
         self.dense.navigation.assert_unchanged()

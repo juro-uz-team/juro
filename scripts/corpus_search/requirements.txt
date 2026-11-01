@@ -3,3 +3,4 @@ zstandard==0.25.0
 numpy==2.2.6
 usearch==2.21.0
 psycopg[binary]==3.3.6
+orjson==3.11.3
