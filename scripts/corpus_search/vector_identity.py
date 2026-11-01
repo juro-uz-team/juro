@@ -107,9 +107,9 @@ def publish_vector_identities(vectors,root,checkpoint=None):
 
 
 class VectorIdentityIndex:
-    def __init__(self,root,manifest_sha256,completion_sha256):
+    def __init__(self,root,manifest_sha256,completion_sha256,*,trust_prepared=False):
         self.root=pathlib.Path(root).resolve(strict=True);path=self.root/'manifest.json'
-        if path.is_symlink() or path.stat().st_size>4096 or file_hash(path)!=manifest_sha256:
+        if path.is_symlink() or path.stat().st_size>4096 or (not trust_prepared and file_hash(path)!=manifest_sha256):
             raise ValueError('vector_identity_manifest_mismatch')
         self.manifest=json.loads(path.read_bytes());m=self.manifest
         if (m.get('format')!='prepared-vector-identities-v1' or m.get('complete') is not True
@@ -118,7 +118,7 @@ class VectorIdentityIndex:
             raise ValueError('vector_identity_manifest_invalid')
         self.path=self.root/'identities.sqlite'
         if (self.path.is_symlink() or self.path.stat().st_size!=m.get('database_bytes')
-                or file_hash(self.path)!=m.get('database_sha256')):
+                or (not trust_prepared and file_hash(self.path)!=m.get('database_sha256'))):
             raise ValueError('vector_identity_database_mismatch')
         self.identity=signature(self.path);self.manifest_sha256=manifest_sha256
         self.connection=sqlite3.connect(self.path.as_uri()+'?mode=ro&immutable=1',uri=True)

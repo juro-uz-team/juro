@@ -26,12 +26,12 @@ export async function runDeploymentPhase(request,bundle,operations){
  if(request.phase==="status")return receipt(before);
  if(request.phase==="verify"){
   assert.equal(before,bundle.mode==="retain"?"original":"committed","Retry requires the reviewed selection");
-  await operations.qualify();await operations.fences();await operations.guard(true);
+  if(bundle.mode!=="retain")await operations.qualify();await operations.fences();await operations.guard(true);
   assert.equal(await operations.selected(),bundle.acceptanceSha256,"Selection changed during retry verification");
   return receipt("committed");
  }
  assert.equal(before,"original","Selection differs from reviewed parent");
- await operations.qualify();
+ if(bundle.mode!=="retain")await operations.qualify();
  if(request.phase==="prepare"){await operations.fences();await operations.guard(false);assert.equal(await operations.selected(),bundle.expectedParent);return receipt("original");}
  await operations.guard(true);
  if(bundle.mode==="retain") { await operations.fences();await operations.guard(true); }

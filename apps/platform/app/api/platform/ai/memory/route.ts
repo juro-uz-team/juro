@@ -2,7 +2,7 @@ import {z} from "zod";
 import {assertSafeWrite,withApiErrors} from "../../../../../lib/document-builder/auth/api";
 import {runtimeEnv} from "../../../../../lib/document-builder/storage/runtime";
 import {parseJsonRequest} from "../../../../../lib/auth/input";
-import {legalChatOwner} from "../../../../../lib/legal-chat/http-owner";
+import {optionalSignedAnswerOwner as legalChatOwner} from "../../../../../lib/legal-answer-workflow/platform-auth";
 import {listUserMemories,memorySettings,memoryKeyring,memoryCategorySchema,memoryStatementSchema,
   saveUserMemory,updateUserMemory,deleteUserMemory,clearUserMemories,setAutomaticMemory,UserMemoryError} from "../../../../../lib/ai/user-memory";
 import {aiText,type AiOutputLocale} from "../../../../../lib/ai/localization";

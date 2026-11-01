@@ -4,7 +4,7 @@ import {verifyNativeCorpusQualification,readSelectedNativeCorpus} from "../lib/s
 import {createHash} from "node:crypto";
 import type {Pool} from "pg";
 
-import {nativeAcceptanceFixture as fixture} from "./helpers/native-corpus-acceptance";
+import {nativeAcceptanceFixture as fixture,type NativeProofFixtures} from "./helpers/native-corpus-acceptance";
 
 test("a retired selection never becomes an absent selection eligible for fallback",async()=>{
  const {manifest}=fixture();const bytes=Buffer.from(JSON.stringify(manifest));
@@ -29,21 +29,21 @@ test("operator compatibility retains measured revision and rejects changed selec
 
 test("native qualification requires every declared query, cold attempt, complete outcome and check",async()=>{
   const valid=fixture();await verifyNativeCorpusQualification(valid.manifest,valid.read);
-  const failures:Array<(p:Record<string,any>)=>void>=[
-    p=>{p.dense.results[1].recall=.94;},
+  const failures:Array<(p:NativeProofFixtures)=>void>=[
+    p=>{p.dense.results[1]!.recall=.94;},
     p=>{p.dense.results.pop();},
     p=>{p.dense.heldOutQueryIds=["unmeasured"];},
-    p=>{p.native.requests[0].outcome="timeout";},
-    p=>{p.native.requests[1].milliseconds=10001;},
-    p=>{p.native.requests=p.native.requests.filter((r:any)=>r.phase!=="expired_observation");},
-    p=>{p.native.requests[2].concurrency=4;},
+    p=>{p.native.requests[0]!.outcome="timeout";},
+    p=>{p.native.requests[1]!.milliseconds=10001;},
+    p=>{p.native.requests=p.native.requests.filter(r=>r.phase!=="expired_observation");},
+    p=>{p.native.requests[2]!.concurrency=4;},
     p=>{p.native.requests.pop();},
-    p=>{p.native.requests[3].id=p.native.requests[2].id;},
-    p=>{p.native.requests[3].id="substituted";},
+    p=>{p.native.requests[3]!.id=p.native.requests[2]!.id;},
+    p=>{p.native.requests[3]!.id="substituted";},
     p=>{for(const r of p.native.requests)if(r.phase==="warm")r.milliseconds=5001;},
-    p=>{p.semantic.results[0].completed=false;},
-    p=>{p.semantic.results[0].unresolvedNeeds=1;},
-    p=>{p.semantic.results[0].sourceUnavailable=true;},
+    p=>{p.semantic.results[0]!.completed=false;},
+    p=>{p.semantic.results[0]!.unresolvedNeeds=1;},
+    p=>{p.semantic.results[0]!.sourceUnavailable=true;},
     p=>{p.integrity.verifiedScopes=1;},
     p=>{p.verification.results.pop();},
   ];

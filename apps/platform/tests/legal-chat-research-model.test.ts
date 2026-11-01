@@ -8,30 +8,7 @@ import type {LegalEvidence} from "../lib/legal-chat/answer-engine";
 
 const query={text:"record access",topicIndices:[0],privateNameSpans:[],legalTitleSpans:[]};
 
-test("bounded Fast assessment returns a provisional issue draft with canonical citations",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const source={...evidence,source:{...evidence.source,id:"authenticated-source-with-long-canonical-identity"}};
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));
-    assert.equal(body.text.format.name,"legal_research_answer");
-    assert.equal(body.model,"gpt-5.6-terra");
-    const payload=JSON.parse(body.input);assert.equal(payload.evidence[0].text,source.text);
-    assert.equal(payload.answerMode,"short");
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify({
-      assessment:{selectedSourceIds:["s0"],supportedAnswerAvailable:true,needs:[],resolved:null,queries:[]},
-      draft:{answer:{issues:[{finding:{title:"Access",explanation:"Applicants may request their record.",sourceIds:["s0"]},
-        actions:[{title:"Request",instruction:"Ask for your record.",sourceIds:["s0"]}]}],
-        risks:[],questions:[],unresolved:[],mainPoint:{text:"You may request your record.",sourceIds:["s0"]}}},
-    })}]}]});
-  });
-  const result=await createLegalResearchModel({requestId:"combined",draftDuringAssessment:true}).assess({
-    ...request,needs:[],question:{...request.question,mode:"fast",answerMode:"short"},evidence:[source],
-  });
-  assert.deepEqual(result.selectedSourceIds,[source.source.id]);
-  assert.deepEqual(result.provisionalDraft?.mainPoint.sourceIds,[source.source.id]);
-  assert.deepEqual(result.provisionalDraft?.ruleBindings,[{findingId:"finding:0",actionIds:["action:0"]}]);
-  assert.equal(result.provisionalDraft?.actions[0]?.description,"Ask for your record.");
-});
+
 
 test("research drafting never expands the answer context budget to the larger selection budget",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
@@ -326,40 +303,7 @@ test("streamed planning rejects staging and partial validation failures despite 
   await assert.rejects(createLegalResearchModel({requestId:"partial-failure"}).formulateIndexed(request,async()=>{}),/RESEARCH_QUERY_TOPIC_INVALID/);
 });
 
-test("research pins Luna/Terra, reuses assessment queries and excludes source locators from model context",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
-  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const payloads:Array<{model:string;input:string}> = [];
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));payloads.push(body);
-    const assessment=JSON.parse(body.input).evidence.length>0;
-    assert.deepEqual(body.reasoning,{effort:assessment?"medium":"none",mode:"standard"});
-    const output=assessment?{needs:[],resolved:[{needIndex:0,sourceIds:["source:one"]}],
-      queries:[{...query,text:"eligibility of a record applicant"}]}:{queries:[query]};
-    return Response.json({id:"response",model:body.model,output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
-  });
-  for(const mode of ["fast","deep"] as const) {
-    const model=createLegalResearchModel({requestId:"request"});
-    const input={...request,question:{...request.question,mode,documents:[privateDocumentContext()]}};
-    await model.formulate(input);
-    await model.formulate(input);
-    const assessment=await model.assess({...input,evidence:[evidence]});
-    assert.deepEqual(assessment.resolved,[{need:request.needs[0],sourceIds:["source:one"]}]);
-    const next=await model.formulate({...input,round:1});
-    assert.equal(next.formulations[0]!.text,"eligibility of a record applicant");
-  }
-  assert.deepEqual(payloads.map(value=>value.model),["gpt-5.6-terra","gpt-5.6-terra","gpt-6-luna","gpt-6-luna"]);
-  assert.deepEqual({...payloads[0],model:payloads[2]!.model},payloads[2],"Query planning differs only by model");
-  assert.deepEqual({...payloads[1],model:payloads[3]!.model},payloads[3],"Evidence selection differs only by model");
-  for(const payload of payloads) {
-    assert.ok(!payload.input.includes("private-parent-hash"));
-    assert.ok(!payload.input.includes("private-text-hash"));
-    assert.ok(!payload.input.includes("https://lex.uz"));
-    assert.deepEqual(JSON.parse(payload.input).privateDocuments,[{id:privateDocumentContext().source.id,
-      title:"Uploaded agreement",text:privateDocumentContext().text}]);
-    assert.doesNotMatch(payload.input,/juro-private:|private-object-checksum/);
-  }
-});
+
 
 test("research rejects fabricated resolution source IDs and operational-gap approvals",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {aiDatabase} from "./helpers/ai-run-database";
 import {reserveAiRun,renewAiRunReservation,beginAiRunFinalization,completeAiRunStatements} from "../lib/ai/run-store";
-import {LEGAL_CHAT_PROVIDER_TIMEOUT_MS,LEGAL_CHAT_RESERVATION_TTL_MS} from "../lib/legal-chat/execution-limits";
+import { legalAnswerDeadlineMs } from "../lib/legal-answer-workflow/deadline";
+import { AI_RESERVATION_TTL_MS } from "../lib/ai/reservation-policy";
 
 test("renewal preserves a long running reservation and cannot revive expired or foreign work",async()=>{
   const {sqlite,d1}=aiDatabase();
@@ -16,19 +17,19 @@ test("renewal preserves a long running reservation and cannot revive expired or 
     if(reserved.kind!=="reserved")throw Error("Reservation required");
     const owner={db:d1,runId:reserved.runId,workspaceId:input.workspaceId,userId:input.userId};
     const now=Date.now();
-    const activeAt=new Date(now-LEGAL_CHAT_PROVIDER_TIMEOUT_MS).toISOString();
+    const activeAt=new Date(now-legalAnswerDeadlineMs).toISOString();
     sqlite.prepare("UPDATE ai_runs SET updated_at=? WHERE id=?").run(activeAt,reserved.runId);
     sqlite.prepare("UPDATE idempotency_keys SET updated_at=?").run(activeAt);
     assert.equal((await reserveAiRun(input)).kind,"processing");
     assert.equal(await renewAiRunReservation({...owner,userId:"foreign",now}),false);
     assert.equal(await renewAiRunReservation({...owner,now}),true);
     assert.equal(sqlite.prepare("SELECT updated_at FROM idempotency_keys").get()?.updated_at,new Date(now).toISOString());
-    assert.equal(await renewAiRunReservation({...owner,now:now+LEGAL_CHAT_RESERVATION_TTL_MS+1}),false);
+    assert.equal(await renewAiRunReservation({...owner,now:now+AI_RESERVATION_TTL_MS+1}),false);
     sqlite.prepare("UPDATE ai_runs SET updated_at=? WHERE id=?")
-      .run(new Date(now-LEGAL_CHAT_RESERVATION_TTL_MS-1).toISOString(),reserved.runId);
+      .run(new Date(now-AI_RESERVATION_TTL_MS-1).toISOString(),reserved.runId);
     assert.equal(await beginAiRunFinalization(owner),false);
     sqlite.prepare("UPDATE idempotency_keys SET updated_at=?")
-      .run(new Date(now-LEGAL_CHAT_RESERVATION_TTL_MS-1).toISOString());
+      .run(new Date(now-AI_RESERVATION_TTL_MS-1).toISOString());
     assert.equal((await reserveAiRun(input)).kind,"expired");
     assert.equal(await renewAiRunReservation(owner),false);
     sqlite.exec("CREATE TABLE saved_lease_marker(value TEXT)");

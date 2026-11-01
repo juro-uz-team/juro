@@ -1,7 +1,10 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 
 type RetrievalScope = {controller:AbortController;expiresAt:number};
-const scopes=new AsyncLocalStorage<RetrievalScope>();
+// Source-loaded corpus services and bundled routes share cancellation, while
+// each request retains its own controller and deadline in AsyncLocalStorage.
+const runtime=globalThis as typeof globalThis & {juroIndexedRetrievalV1?:AsyncLocalStorage<RetrievalScope>};
+const scopes=runtime.juroIndexedRetrievalV1??=new AsyncLocalStorage<RetrievalScope>();
 const timeout=()=>new DOMException("Indexed retrieval deadline exceeded", "TimeoutError");
 
 /** The same budget follows native service calls and database queueing. */
@@ -32,15 +35,18 @@ export function awaitIndexedRetrieval<T>(operation:Promise<T>,signal=indexedRetr
   });
 }
 
-async function runWithDeadline<T>(milliseconds:number,parent:AbortSignal|undefined,operation:(signal:AbortSignal)=>Promise<T>):Promise<T> {
+async function runWithDeadline<T>(expiresAt:number,parent:AbortSignal|undefined,operation:(signal:AbortSignal)=>Promise<T>):Promise<T> {
   parent?.throwIfAborted();
+  const milliseconds=expiresAt-performance.now();
   if(milliseconds<=0)throw timeout();
   const controller=new AbortController();
   const abort=()=>controller.abort(parent!.reason);
   parent?.addEventListener("abort",abort,{once:true});
-  const timer=Number.isFinite(milliseconds)?setTimeout(()=>controller.abort(timeout()),milliseconds):undefined;
+  // Node truncates fractional timer delays. Round up so an early timeout cannot
+  // leave a fraction of the original lifetime available to a subsequent read.
+  const timer=Number.isFinite(milliseconds)?setTimeout(()=>controller.abort(timeout()),Math.ceil(milliseconds)):undefined;
   try {
-    return await scopes.run({controller,expiresAt:performance.now()+milliseconds},async()=>{
+    return await scopes.run({controller,expiresAt},async()=>{
       const result=await awaitIndexedRetrieval(operation(controller.signal),controller.signal);
       indexedRetrievalSignal();
       return result;
@@ -57,15 +63,14 @@ export function runIndexedRetrieval<T>(parent:AbortSignal|undefined,operation:(s
   expiresAt?:number):Promise<T> {
   const enclosing=scopes.getStore();
   const signal=enclosing?AbortSignal.any([enclosing.controller.signal,...(parent?[parent]:[])]):parent;
-  const remaining=Math.max(0,Math.min(
-    (enclosing?.expiresAt??Infinity)-performance.now(),(expiresAt??Infinity)-performance.now()));
-  return runWithDeadline(remaining,signal,operation);
+  const deadline=Math.min(enclosing?.expiresAt??Infinity,expiresAt??Infinity);
+  return runWithDeadline(deadline,signal,operation);
 }
 
 /** Token-fenced lease release must remain possible after its owner is cancelled.
  * Cleanup gets its own short budget and cannot continue retrieval work. */
 export function finishIndexedRetrievalCleanup<T>(operation:()=>Promise<T>):Promise<T> {
-  return scopes.getStore()?runWithDeadline(2000,undefined,operation):operation();
+  return scopes.getStore()?runWithDeadline(performance.now()+2000,undefined,operation):operation();
 }
 
 
@@ -82,7 +87,7 @@ export function openIndexedRetrievalScope(parent:AbortSignal|undefined,expiresAt
   const abort=()=>controller.abort(signal!.reason);
   signal?.addEventListener("abort",abort,{once:true});
   if(signal?.aborted)abort();
-  const timer=Number.isFinite(deadline)?setTimeout(()=>controller.abort(timeout()),Math.max(0,deadline-performance.now())):undefined;
+  const timer=Number.isFinite(deadline)?setTimeout(()=>controller.abort(timeout()),Math.max(0,Math.ceil(deadline-performance.now()))):undefined;
   const scope={controller,expiresAt:deadline};
   return {
     async run<T>(operation:()=>Promise<T>):Promise<T> {

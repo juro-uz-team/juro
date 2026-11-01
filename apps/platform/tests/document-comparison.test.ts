@@ -18,10 +18,10 @@ import {
 const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 test("cancelling PDF extraction destroys the loading task while page extraction is pending",async context=>{
-  const module=await getResolvedPDFJS(),controller=new AbortController();
+  const pdfModule=await getResolvedPDFJS(),controller=new AbortController();
   const entered=Promise.withResolvers<void>();let destroyed=false;
-  await definePDFJSModule(async()=>({...module,getDocument:(...args:Parameters<typeof module.getDocument>)=>{
-    const task=module.getDocument(...args),destroy=task.destroy.bind(task);
+  await definePDFJSModule(async()=>({...pdfModule,getDocument:(...args:Parameters<typeof pdfModule.getDocument>)=>{
+    const task=pdfModule.getDocument(...args),destroy=task.destroy.bind(task);
     task.destroy=async()=>{destroyed=true;return destroy();};
     void task.promise.then(pdf=>{
       context.mock.method(pdf,"getPage",async()=>{
@@ -33,7 +33,7 @@ test("cancelling PDF extraction destroys the loading task while page extraction 
     });
     return task;
   }}));
-  context.after(()=>definePDFJSModule(async()=>module));
+  context.after(()=>definePDFJSModule(async()=>pdfModule));
   const document=await PDFDocument.create();document.addPage();const bytes=await document.save();
   const originalBytes=new Uint8Array(bytes);
   const pending=extractDocument({bytes,fileName:"official.pdf",mimeType:"application/pdf",sizeBytes:bytes.length,signal:controller.signal});

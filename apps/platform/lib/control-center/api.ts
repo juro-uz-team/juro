@@ -280,7 +280,7 @@ export async function handleControlCenter(request: Request): Promise<Response|nu
   }
   if(section==="ai/settings")return reply({ok:true,...await applyControlAiSettings(data,principal.email)});
   if(section==="site-content") {
-   const input=siteContentMutation.parse(data),client=await database().pool.connect();let id=input.id??crypto.randomUUID(),versionId:string|undefined;
+   const input=siteContentMutation.parse(data),client=await database().pool.connect(),id=input.id??crypto.randomUUID();let versionId:string|undefined;
    try{
     await client.query("BEGIN");
     if(input.action==="save_draft"){

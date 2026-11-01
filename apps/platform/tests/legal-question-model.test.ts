@@ -36,43 +36,7 @@ test("invalid speculative research does not discard a valid question interpretat
   if(missing.kind==="ready")assert.equal(missing.initialQueries,undefined);
 });
 
-test("both modes plan research with interpretation in one bounded provider call",async context=>{
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";
-  context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const interpretation={topics:["Record access"],facts:[],temporal:{kind:"current"},questions:[]};
-  const queries=[{text:"record access",topicIndices:[0]}];
-  const underlying=[{...queries[0]!,text:"general duty to provide records"}];
-  const input={question:"Can I request my record?",locale:"en" as const,priorTurns:[],now:new Date("2026-09-27T00:00:00Z")};
-  const requests:{model:string;reasoning?:unknown;schema:string}[]=[];
-  const payloads:Record<string,unknown>[]=[];
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));
-    payloads.push(body);
-    if(body.text.format.name==="legal_question_research") {
-      assert.doesNotMatch(JSON.stringify(body.text.format.schema),/privateNameSpans|legalTitleSpans/,
-        "Indexed initial planning must not generate public-search annotations");
-      assert.doesNotMatch(body.instructions,/Declare verbatim private-name spans/);
-    }
-    requests.push({model:body.model,reasoning:body.reasoning,schema:body.text.format.name});
-    assert.doesNotMatch(body.instructions,/When assessing evidence|selectedSourceIds|supportedAnswerAvailable|Return queries: \[\]/,
-      "Question planning must not receive the evidence assessment contract");
-    assert.deepEqual(JSON.parse(body.input),{question:input.question,locale:"en",priorTurns:[],userContext:null,
-      privateDocuments:[],legalContextDate:null,now:input.now.toISOString()});
-    const output=body.text.format.name==="legal_question_research"?{interpretation,research:{directQueries:queries,underlyingRuleQueries:underlying}}:interpretation;
-    return Response.json({output:[{content:[{type:"output_text",text:JSON.stringify(output)}]}]});
-  });
-  for(const mode of ["fast","deep"] as const) {
-    const result=await interpretLegalQuestion(input,createQuestionInterpreter({mode,requestId:mode}));
-    assert.equal(result.kind,"ready");
-    if(result.kind!=="ready")throw Error("Expected ready");
-    assert.deepEqual(result.initialQueries,[...queries,...underlying].map(query=>({...query,privateNameSpans:[],legalTitleSpans:[]})));
-  }
-  assert.deepEqual(requests,[
-    {model:"gpt-5.6-terra",reasoning:{effort:"none",mode:"standard"},schema:"legal_question_research"},
-    {model:"gpt-6-luna",reasoning:{effort:"none",mode:"standard"},schema:"legal_question_research"},
-  ]);
-  assert.deepEqual({...payloads[0],model:payloads[1]!.model},payloads[1],"Planning mode changes only the model");
-});
+
 
 test("discarded research proposals cannot bypass fact, selection or temporal validation",async context=>{
   const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="test-key";

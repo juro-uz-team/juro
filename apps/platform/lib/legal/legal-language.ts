@@ -90,12 +90,15 @@ export function transliterateUzbek(value: string): string {
 
 /** Query-only Latin-to-Cyrillic variant. Official quotations are never changed. */
 export function transliterateUzbekToCyrillic(value: string): string {
-  const normalizedValue = normalizeUzbekLatin(value).toLocaleLowerCase("uz");
+  const normalizedValue = normalizeUzbekLatin(value.replace(APOSTROPHES, "ʻ").replace(/'/gu, "ʻ")).toLocaleLowerCase("uz");
   const digraphs: ReadonlyArray<readonly [RegExp, string]> = [
     [/oʻ/gu, "ў"], [/gʻ/gu, "ғ"], [/sh/gu, "ш"], [/ch/gu, "ч"],
-    [/yo/gu, "ё"], [/yu/gu, "ю"], [/ya/gu, "я"], [/ts/gu, "ц"],
+    [/ye/gu, "е"], [/yo/gu, "ё"], [/yu/gu, "ю"], [/ya/gu, "я"], [/ts/gu, "ц"],
   ];
-  let converted = normalizedValue;
+  // A separating apostrophe must not turn s + h into the sh digraph.
+  // Bare initial/post-vowel e represents э; ye is handled as a digraph below.
+  let converted = normalizedValue.replace(/sʻh/gu, "сҳ")
+    .replace(/(^|[^\p{L}]|[aeiou])e/gu, "$1э");
   const protectedCharacters: string[] = [];
   for (const [pattern, replacement] of digraphs) {
     converted = converted.replace(pattern, () => {
@@ -111,7 +114,7 @@ export function transliterateUzbekToCyrillic(value: string): string {
     ["q", "қ"], ["r", "р"], ["s", "с"], ["t", "т"], ["u", "у"],
     ["v", "в"], ["x", "х"], ["y", "й"], ["z", "з"],
   ]);
-  converted = converted.replace(/[a-z]/gu, (character) => latin.get(character) ?? character);
+  converted = converted.replace(/[a-z]/gu, (character) => latin.get(character) ?? character).replace(/ʻ/gu, "ъ");
   return converted.replace(/[\uE000-\uF8FF]/gu, (marker) =>
     protectedCharacters[marker.codePointAt(0)! - 0xE000] ?? marker,
   );

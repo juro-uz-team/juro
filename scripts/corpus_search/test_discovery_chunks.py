@@ -1,5 +1,7 @@
 import hashlib
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 from package import VerifiedStream
 from prepared import canonical
 from works import work_key
@@ -30,6 +32,33 @@ class Fixture:
 
 
 class ChunkTests(unittest.TestCase):
+    def test_retained_hydration_preserves_source_and_rejects_wrong_record_associations(self):
+        fixture=Fixture(['Глава I','Ўзбек 😀'])
+        fixture.trust_prepared=True
+        fixture.source_projection=SimpleNamespace(records_at=lambda kind,part,rows,**kwargs:
+            fixture.records(kind,part))
+        with patch('discovery_chunks.hashlib',SimpleNamespace(sha256=lambda *_:
+                self.fail('retained content authentication'))):
+            self.assertEqual(hydrate_membership_chunks(fixture,fixture.members,None),fixture.chunks)
+            self.assertEqual(hydrate_membership_chunks(fixture,fixture.members,fixture.inputs),fixture.chunks)
+            member=fixture.members[0]
+            for invalid in [(member[0],member[1],b'x'*32,member[3],member[4]),
+                            (member[0],member[1],member[2],b'x'*32,member[4])]:
+                with self.assertRaisesRegex(ValueError,'identity_mismatch'):
+                    hydrate_membership_chunks(fixture,[invalid],None)
+
+    def test_reconstructed_compact_bytes_authenticate_both_codecs(self):
+        for hierarchy in (None,['Глава "I"','Ўзбек 😀\nsection']):
+            fixture=Fixture(hierarchy)
+            members=[]
+            for member in fixture.members:
+                key=hashlib.sha256(canonical(fixture.inputs[member[0]])+b'\n').digest()
+                members.append((key,*member[1:]))
+            self.assertEqual(hydrate_membership_chunks(fixture,members,None),fixture.chunks)
+            corrupted=[(b'x'*32,*members[0][1:])]
+            with self.assertRaisesRegex(ValueError,'compact_input_mismatch'):
+                hydrate_membership_chunks(fixture,corrupted,None)
+
     def test_reordered_shards_use_membership_order_without_changing_identities(self):
         fixture=Fixture()
         fixture.chunks.reverse()

@@ -1,11 +1,11 @@
-import { LEGAL_CHAT_RESERVATION_TTL_MS } from "../legal-chat/execution-limits";
+import { AI_RESERVATION_TTL_MS } from "./reservation-policy";
 
 const CHAT_FEATURE = "legal_chat";
 const FREE_MONTHLY_CYCLES = 20;
 // Provider-specific deadlines can legitimately outlive the old 30-second
 // route budget (especially in deep mode). Recovery stays bounded, but must not
 // expire a live provider/fallback chain and race its finalization.
-const STALE_RESERVATION_MS = LEGAL_CHAT_RESERVATION_TTL_MS;
+const STALE_RESERVATION_MS = AI_RESERVATION_TTL_MS;
 
 export type AiRunReservation = {
   kind: "reserved";

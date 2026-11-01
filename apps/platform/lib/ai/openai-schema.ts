@@ -55,6 +55,14 @@ export function openAiCompatibleJsonSchema(schema: Record<string, unknown>): Rec
       ...inheritedDescriptions,
       bounds.length ? `Application validation bounds: ${bounds.join(", ")}.` : "",
     ].filter(Boolean).join(" ");
+    // The provider rejects annotations beside a reference. A one-branch union
+    // retains the referenced grammar and its local guidance without expanding
+    // shared definitions (or weakening the application's original parser).
+    if(typeof result.$ref==="string"&&Object.keys(result).length>1
+      &&!("anyOf" in result)&&!("allOf" in result)){
+      const {$ref,...siblings}=result;
+      return {...siblings,anyOf:[{$ref}]};
+    }
     return result;
   };
   return visit(schema) as Record<string, unknown>;

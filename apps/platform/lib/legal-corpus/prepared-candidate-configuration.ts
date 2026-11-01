@@ -8,7 +8,7 @@ export const preparedCandidateConfigurationSchema = z.object({
   backend: z.literal("prepared-corpus-v1"),
   // Bind the engine into request/response and release identities. A navigation
   // artifact hash alone cannot distinguish a pgvector index from an experiment.
-  navigationBackend: z.literal("pgvector"),
+  navigationBackend: z.enum(["pgvector","binary-projected"]),
   identity: candidateConfigurationIdSchema,
   embeddingModel: z.literal("openai/text-embedding-3-large"),
   dimensions: z.literal(3_072),

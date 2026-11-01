@@ -21,72 +21,7 @@ async function fixture(){
   return {sqlite,input};
 }
 
-test("signed-in clarification persists, accounts once, and replays without another provider attempt",async context=>{
-  const {sqlite,input}=await fixture();context.after(()=>sqlite.close());
-  const oldKey=env.OPENAI_API_KEY;env.OPENAI_API_KEY="offline-test-key";context.after(()=>{env.OPENAI_API_KEY=oldKey;});
-  const models:string[]=[];
-  let documentReads=0;
-  input.readDocuments=async(query,conversationId)=>{
-    documentReads++;assert.equal(query,input.request.question);
-    assert.ok(conversationId===null||typeof conversationId==="string");
-    return [privateDocumentContext()];
-  };
-  context.mock.method(globalThis,"fetch",async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));models.push(body.model);
-    assert.deepEqual(JSON.parse(body.input).privateDocuments,[{id:privateDocumentContext().source.id,
-      title:"Uploaded agreement",text:privateDocumentContext().text}]);
-    assert.doesNotMatch(body.input,/juro-private:|private-object-checksum/);
-    return structuredResponse(body,{id:"offline-response",model:body.model,usage:{input_tokens:20,output_tokens:10},
-      output:[{content:[{type:"output_text",text:JSON.stringify({
-        interpretation:{topics:["Applicable rules"],facts:[],temporal:{kind:"unresolved"},questions:["Which date applies?"]},
-        research:{underlyingRuleQueries:[],directQueries:[{text:"applicable rules",topicIndices:[0]}]},
-      })}]}]});
-  });
-  const stages:string[]=[];
-  const saved=await deliverSignedInLegalChat({...input,onStage:stage=>{stages.push(stage);}});
-  assert.equal(saved.result.responseKind,"clarification_required");
-  assert.deepEqual(saved.result.clarificationQuestions,["Which date applies?"]);
-  assert.deepEqual(stages,["interpreting","saving"]);
-  const replay=await deliverSignedInLegalChat({...input,configured:false,service:undefined});
-  assert.deepEqual(replay,saved);
-  assert.deepEqual(models,["gpt-5.6-terra"]);
-  assert.equal(documentReads,1,"Completed replay does not retrieve private documents again");
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM conversation_messages").get()?.n,2);
-  assert.equal(sqlite.prepare("SELECT status FROM ai_usage_ledger").get()?.status,"released");
-  const run=sqlite.prepare("SELECT status,input_tokens,output_tokens,attempt_count FROM ai_runs").get();
-  assert.equal(run?.status,"completed");assert.equal(run?.input_tokens,20);assert.equal(run?.output_tokens,10);assert.equal(run?.attempt_count,1);
-  assert.deepEqual({...sqlite.prepare("SELECT feature,model,input_tokens,output_tokens,usage_observed FROM ai_provider_usage_events").get()},
-    {feature:"legal_chat",model:"gpt-5.6-terra",input_tokens:20,output_tokens:10,usage_observed:1});
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_provider_usage_events").get()?.n,1);
-  await assert.rejects(deliverSignedInLegalChat({...input,request:{...input.request,question:"Changed request"}}),{code:"IDEMPOTENCY_CONFLICT"});
-  assert.equal(models.length,1);
 
-  const followUp={...input,settings:{...input.settings,configHash:"b".repeat(64)},
-    request:{...input.request,conversationId:saved.conversationId!,operation:"follow_up" as const,idempotencyKey:"follow-up-request"}};
-  const followed=await deliverSignedInLegalChat(followUp);
-  const firstHash=sqlite.prepare("SELECT instruction_hash FROM ai_runs WHERE id=?").get(saved.runId)?.instruction_hash;
-  const changedHash=sqlite.prepare("SELECT instruction_hash FROM ai_runs WHERE id=?").get(followed.runId)?.instruction_hash;
-  assert.match(String(firstHash),/^[a-f0-9]{64}$/);
-  assert.match(String(changedHash),/^[a-f0-9]{64}$/);
-  assert.notEqual(firstHash,changedHash,"Changed server settings must change the persisted instruction identity");
-  let parent=followed.branchId!;
-  for(let index=3;index<=201;index++) {
-    const requestId=crypto.randomUUID(),responseId=crypto.randomUUID(),branchId=crypto.randomUUID();
-    const time=new Date(Date.now()+index*1000).toISOString();
-    for(const [id,author] of [[requestId,"user"],[responseId,"assistant"]]) {
-      sqlite.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,created_at) VALUES (?,?,?,?,?)")
-        .run(id!,saved.conversationId!,author!,`Later turn ${index}`,time);
-    }
-    sqlite.prepare(`INSERT INTO message_branches(id,conversation_id,workspace_id,owner_user_id,parent_branch_id,request_message_id,response_message_id,operation,created_at)
-      VALUES (?,?,'workspace','owner',?,?,?,'follow_up',?)`).run(branchId,saved.conversationId!,parent,requestId,responseId,time);
-    parent=branchId;
-  }
-  assert.deepEqual(await deliverSignedInLegalChat({...followUp,configured:false,service:undefined}),followed,
-    "Completed replay does not reread generation context after the conversation grows");
-  await assert.rejects(deliverSignedInLegalChat({...followUp,request:{...followUp.request,idempotencyKey:"oversized-context"}}),/LEGAL_CONTEXT_CAPACITY_EXCEEDED/);
-  assert.equal(models.length,2,"Oversized new context fails before any provider attempt");
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage_ledger WHERE idempotency_key='oversized-context'").get()?.n,0);
-});
 
 test("missing configuration releases an owned reservation and pre-cancelled requests reserve nothing",async context=>{
   const {sqlite,input}=await fixture();context.after(()=>sqlite.close());

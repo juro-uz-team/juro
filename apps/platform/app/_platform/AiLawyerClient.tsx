@@ -14,11 +14,14 @@ import { aiText } from "../../lib/ai/localization";
 import type { LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import { uzbekistanCalendarDate } from "../../lib/legal/applicability-date";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
-import {readLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-chat/client-stream";
-import type {LegalChatDelivery} from "../../lib/legal-chat/delivery-stream";
-import {chatStageLabel} from "../../lib/legal-chat/stage-label";
+import {requestLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-answer-workflow/browser-stream";
+import type {LegalChatDelivery} from "../../lib/legal-answer-workflow/browser-stream";
+import {chatStageLabel} from "../../lib/legal-answer-workflow/browser-stream";
+import { AnswerWriting } from "./AnswerWriting";
+import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-stream";
 import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
+import { AnswerActivity } from "./AnswerActivity";
 import { LegalAnswerView } from "./LegalAnswerView";
 import { AssistantSpeechControls, VoiceMessageControls } from "./VoiceMessageControls";
 
@@ -61,6 +64,7 @@ type ArticleDetails = {
   evidenceUnavailable?: boolean;
   evidenceUnavailableReason?: "retired";
   fullDocument?: boolean;
+  originalPdfAvailable?: boolean;
   privateSource?: boolean;
   truncated: boolean;
   language: string;
@@ -148,12 +152,15 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const [answer,setAnswer]=useState<Answer|null>(null),[question,setQuestion]=useState("");
   const [citationContext,setCitationContext]=useState<{messageId:string;result:LegalResult}|null>(null);
   const [requestSending,setSending]=useState(false),[error,setError]=useState(""),[streamStatus,setStreamStatus]=useState("");
+  const [requestSubmittedAt,setRequestSubmittedAt]=useState(0);
+  const [writing,setWriting]=useState<WritingDraft|null>(null);
   const [loadingConversation,setLoadingConversation]=useState(false);
   const sending=requestSending||loadingConversation;
   const [historyCursor,setHistoryCursor]=useState<{before:string;beforeId:string}|null>(null),[loadingHistory,setLoadingHistory]=useState(false);
   const activeScope=useRef(workspaceId),currentMessage=useRef<string|undefined>(undefined),currentSelection=useRef("");
   const [optimisticQuestion,setOptimisticQuestion]=useState(""),[canRetry,setCanRetry]=useState(false);
   const savedDeliveryRef=useRef<{idempotencyKey:string;delivery:LegalChatDelivery}|null>(null);
+  const deliveredAnswerRef=useRef<{workspaceId:string;answer:Answer}|null>(null);
   const [answerMode,setAnswerMode]=useState<"short"|"detailed">("detailed"),[reasoningMode,setReasoningMode]=useState<"fast"|"deep">("fast");
   const [legalContextDate,setLegalContextDate]=useState(""),[editSourceMessageId,setEditSourceMessageId]=useState("");
   const [voiceMode,setVoiceMode]=useState(false),[voiceRecordingId,setVoiceRecordingId]=useState("");
@@ -211,10 +218,14 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   },[requestJson]);
   useEffect(()=>{try{setHistoryCollapsed(localStorage.getItem("juro:ai-history")==="collapsed");}catch{/* Storage can be disabled; the control remains usable. */}},[]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Чат временно недоступен.","Suhbat vaqtincha mavjud emas.","Chat is temporarily unavailable."));});return()=>controller.abort();},[refresh,text]);
-  useEffect(()=>{const controller=new AbortController();const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setFeedback([]);setFeedbackStatus("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId));
-    if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
+  useEffect(()=>{const controller=new AbortController();const pending=deliveredAnswerRef.current;
+    const delivered=pending?.workspaceId===workspaceId&&pending.answer.conversationId===selectedConversationId
+      &&(pending.answer.branchId??"")===selectedBranchId?pending.answer:null;
+    if(!delivered)deliveredAnswerRef.current=null;
+    const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(delivered);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setFeedback([]);setFeedbackStatus("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId)&&!delivered);
+    if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)])).catch(()=>{if(!controller.signal.aborted&&!delivered)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
     else setAnswer(null);return()=>controller.abort();
-  },[selectedConversationId,selectedBranchId,intakeHandle,loadAnswer,text]);
+  },[selectedConversationId,selectedBranchId,intakeHandle,loadAnswer,text,workspaceId]);
   useEffect(()=>{
     if(!params.has("prompt"))return;
     const sanitized=new URLSearchParams(params.toString());sanitized.delete("prompt");
@@ -237,7 +248,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
   useEffect(()=>{if(answer&&nearBottom.current)latestAnswerRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[answer]);
-  useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"smooth"});},[requestSending,optimisticQuestion,streamStatus]);
+  useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"auto"});},[requestSending,optimisticQuestion,streamStatus,writing]);
   useEffect(()=>{if(planConfirmationOpen)planConfirmationRef.current?.focus();},[planConfirmationOpen]);
   useEffect(()=>{
     const dialog=mobileContextRef.current;
@@ -247,21 +258,34 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   },[mobileContextOpen]);
   async function send(payload:AiRequestPayload&{idempotencyKey:string}){
     if(streamAbortRef.current)return;const controller=new AbortController();streamAbortRef.current=controller;retryRef.current=payload;
+    const submittedAt=Date.now();
+    setRequestSubmittedAt(submittedAt);setStreamStatus(chatStageLabel("interpreting",locale));setWriting(null);
+    // Required preflight shares the stream's total adaptive deadline.
+    const ancillarySignal=()=>AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)]);
     setSending(true);setCanRetry(false);setError("");setOptimisticQuestion(payload.question||answer?.question||"");
     try {
       // Once committed, recovery loads that answer instead of resubmitting work.
       let saved=savedDeliveryRef.current?.idempotencyKey===payload.idempotencyKey?savedDeliveryRef.current.delivery:null;
       if(!saved){
         savedDeliveryRef.current=null;
-        if(payload.voiceRecordingId)await requestJson(`/api/platform/voice/recordings/${encodeURIComponent(payload.voiceRecordingId)}`,{method:"PATCH",body:JSON.stringify({transcript:payload.question}),signal:controller.signal});
-        const response=await fetch("/api/platform/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale,"x-juro-workspace-id":workspaceId},body:JSON.stringify(payload),signal:controller.signal});
-        saved=await readLegalChatStream(response,stage=>{if(streamAbortRef.current===controller)setStreamStatus(chatStageLabel(stage,locale));});
+        if(payload.voiceRecordingId)await requestJson(`/api/platform/voice/recordings/${encodeURIComponent(payload.voiceRecordingId)}`,{method:"PATCH",body:JSON.stringify({transcript:payload.question}),signal:ancillarySignal()});
+        saved=await requestLegalChatStream("/api/platform/ai",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream","x-juro-csrf":"1","x-juro-locale":locale,"x-juro-workspace-id":workspaceId},body:JSON.stringify(payload),signal:controller.signal},
+          stage=>{if(streamAbortRef.current===controller)setStreamStatus(chatStageLabel(stage,locale));},submittedAt,
+          draft=>{if(streamAbortRef.current===controller&&!controller.signal.aborted)setWriting(draft);});
       }
       if(controller.signal.aborted)return;
       if(!saved.conversationId)throw new Error("Missing saved conversation");
       savedDeliveryRef.current={idempotencyKey:payload.idempotencyKey,delivery:saved};
-      await loadAnswer(saved.conversationId,saved.branchId,controller.signal);
-      if(controller.signal.aborted)return;
+      const previous=answer?.conversationId===saved.conversationId?answer:undefined;
+      const forkIndex=previous?.turns?.findIndex(turn=>turn.requestMessageId===payload.sourceMessageId
+        ||turn.responseMessageId===payload.sourceMessageId)??-1;
+      const delivered:Answer={...previous,...saved,conversationId:saved.conversationId,
+        question:payload.question||previous?.question||"",facts:previous?.facts??[],
+        turns:payload.operation==="follow_up"?previous?.turns:forkIndex>=0?previous?.turns?.slice(0,forkIndex):undefined,
+        operation:payload.operation,sourceFreshness:undefined};
+      deliveredAnswerRef.current={workspaceId,answer:delivered};
+      setAnswer(delivered);
+      setWriting(null);setStreamStatus("");
       setQuestion("");setEditSourceMessageId("");setVoiceRecordingId("");retryRef.current=null;setOptimisticQuestion("");
       // Sidebar metadata is ancillary to the already saved, loaded answer.
       void refresh(controller.signal).catch(()=>{});
@@ -436,15 +460,16 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             </nav>}
             </>}
             {optimisticQuestion && <PendingConversationTurn question={optimisticQuestion} preliminary={preliminary} status={streamStatus} failed={Boolean(error) && !sending} locale={locale} />}
+            {requestSending && streamStatus && <><AnswerWriting draft={writing} /><AnswerActivity submittedAt={requestSubmittedAt} locale={locale} /></>}
           </>}
         </div>
         <form className="ai-composer" onSubmit={submit}>
           {editSourceMessageId && <div className="ai-edit-notice" role="status"><span>{text("Редактирование создаст новую версию; исходный ответ сохранится.", "Tahrirlash yangi versiya yaratadi; oldingi javob saqlanadi.", "Editing creates a new version; the original answer remains available.")}</span><button type="button" onClick={cancelQuestionEdit}>{text("Отменить", "Bekor qilish", "Cancel")}</button></div>}
           <details className="ai-composer-options">
-            <summary><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Быстро", "Tez", "Fast") : text("Глубоко", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
+            <summary><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Простой", "Oddiy", "Simple") : text("Глубоко", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
             <div className="ai-modes">
               <div className="ai-mode-field"><span id="ai-answer-mode-label">{text("Формат ответа", "Javob formati", "Answer format")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-answer-mode-label"><button type="button" aria-pressed={answerMode === "short"} onClick={() => setAnswerMode("short")}>{text("Кратко", "Qisqa", "Concise")}</button><button type="button" aria-pressed={answerMode === "detailed"} onClick={() => setAnswerMode("detailed")}>{text("Подробно", "Batafsil", "Detailed")}</button></div></div>
-              <div className="ai-mode-field"><span id="ai-reasoning-mode-label">{text("Режим ответа", "Javob rejimi", "Response mode")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-reasoning-mode-label"><button type="button" aria-pressed={reasoningMode === "fast"} onClick={() => setReasoningMode("fast")}>{text("Быстро", "Tez", "Fast")}</button><button type="button" aria-pressed={reasoningMode === "deep"} onClick={() => setReasoningMode("deep")}>{text("Глубоко", "Chuqur", "Deep")}</button></div></div>
+              <div className="ai-mode-field"><span id="ai-reasoning-mode-label">{text("Режим ответа", "Javob rejimi", "Response mode")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-reasoning-mode-label"><button type="button" aria-pressed={reasoningMode === "fast"} onClick={() => setReasoningMode("fast")}>{text("Простой", "Oddiy", "Simple")}</button><button type="button" aria-pressed={reasoningMode === "deep"} onClick={() => setReasoningMode("deep")}>{text("Глубоко", "Chuqur", "Deep")}</button></div></div>
               <AiDatePicker locale={locale} value={legalContextDate} max={uzbekistanCalendarDate()} onChange={changeLegalContextDate} />
             </div>
           </details>
@@ -463,8 +488,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             <label className="sr-only" htmlFor="ai-question">{text("Юридический вопрос", "Yuridik savol", "Legal question")}</label>
             <textarea ref={composerRef} id="ai-question" value={question} rows={1} onChange={changeQuestion} onKeyDown={handleComposerKeyDown} disabled={!status?.configured || sending} placeholder={text("Опишите ситуацию или задайте вопрос…", "Vaziyatni yozing yoki savol bering…", "Describe your situation or ask a question…")} />
             {sending
-              ? <button type="button" onClick={() => streamAbortRef.current?.abort()} aria-label={text("Остановить генерацию", "Javob yaratishni to‘xtatish", "Stop generation")}><Square /></button>
-              : <button disabled={!status?.configured || !question.trim() || Boolean(selectedConversationId&&!answer)} aria-label={text("Отправить", "Yuborish", "Send")}><Send /></button>}
+              ? <button key="stop" type="button" onClick={event => { event.preventDefault(); streamAbortRef.current?.abort(); }} aria-label={text("Остановить генерацию", "Javob yaratishni to‘xtatish", "Stop generation")}><Square /></button>
+              : <button key="send" type="submit" disabled={!status?.configured || !question.trim() || Boolean(selectedConversationId&&!answer)} aria-label={text("Отправить", "Yuborish", "Send")}><Send /></button>}
           </div>
           <small className="ai-composer-hint">{text("Enter — отправить · Shift + Enter — новая строка · не указывайте лишние персональные данные", "Enter — yuborish · Shift + Enter — yangi satr · ortiqcha shaxsiy ma’lumotlarni kiritmang", "Enter — send · Shift + Enter — new line · avoid unnecessary personal data")}</small>
         </form>
@@ -629,6 +654,7 @@ function LegalSourceCard({
   const workspaceId=usePlatformWorkspaceId();
   const [open,setOpen]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState("");
   const [details,setDetails]=useState<ArticleDetails|null>(null);
+  const [originalDownloading,setOriginalDownloading]=useState(false);
   const sourceDialogRef=useRef<HTMLElement>(null),closeRef=useRef<HTMLButtonElement>(null);
   const requestRef=useRef<AbortController|null>(null),returnFocus=useRef<HTMLElement|null>(null);
   const privateSource=isTrustedPrivateSource(source),secondarySource=isSafeSecondarySource(source);
@@ -664,6 +690,26 @@ function LegalSourceCard({
     }catch{if(!controller.signal.aborted)setError(aiText(locale,"Не удалось открыть цитированную редакцию.","Iqtibos keltirilgan tahrirni ochib bo‘lmadi.","The cited revision could not be opened."));}
     finally{if(requestRef.current===controller){requestRef.current=null;setLoading(false);}}
   }
+  async function downloadOriginal(){
+    if(!messageId||originalDownloading)return;
+    requestRef.current?.abort();const controller=new AbortController();requestRef.current=controller;
+    setOriginalDownloading(true);setError("");
+    try{
+      const query=new URLSearchParams({sourceUrl:source.originalUrl,format:"pdf"});
+      if(source.article)query.set("article",source.article);
+      if(source.sourceId)query.set("sourceId",source.sourceId);
+      const response=await fetch(`/api/platform/ai/citations/${encodeURIComponent(messageId)}?${query}`,{
+        headers:{"x-juro-workspace-id":workspaceId},cache:"no-store",signal:controller.signal});
+      if(!response.ok||response.headers.get("content-type")!=="application/pdf")throw new Error("CITATION_UNAVAILABLE");
+      const file=await response.blob();
+      if(controller.signal.aborted)return;
+      if(!file.size||file.size>16*1024*1024)throw new Error("CITATION_INVALID");
+      const url=URL.createObjectURL(file),link=document.createElement("a");
+      link.href=url;link.download="cited-source.pdf";link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),10_000);
+    }catch{if(!controller.signal.aborted)setError(aiText(locale,"Не удалось открыть цитированную редакцию.","Iqtibos keltirilgan tahrirni ochib bo‘lmadi.","The cited revision could not be opened."));}
+    finally{if(requestRef.current===controller)requestRef.current=null;setOriginalDownloading(false);}
+  }
   return <article className="ai-source-card" data-message-id={messageId} id={sourceCardDomId(source.sourceId)} tabIndex={-1}>
     <div className="ai-source-card-body">
       <strong>{source.actTitle}</strong>
@@ -689,11 +735,19 @@ function LegalSourceCard({
     {open && <div className="ai-source-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeSourceDialog(); }}>
       <section ref={sourceDialogRef} className="ai-source-modal" role="dialog" aria-modal="true" aria-labelledby="ai-source-modal-title">
         <header>
-          <div><small>{privateSource ? "JURO · PRIVATE DOCUMENT" : "JURO · LEX.UZ"}</small><h2 id="ai-source-modal-title">{privateSource ? aiText(locale, "Документ пользователя", "Foydalanuvchi hujjati", "User document") : display.fullArticle ? aiText(locale, "Полный текст статьи", "Moddaning to‘liq matni", "Full article text") : aiText(locale, "Проверенный фрагмент", "Tekshirilgan parcha", "Verified excerpt")}</h2></div>
+          <div><small>{privateSource ? "JURO · PRIVATE DOCUMENT" : "JURO · LEX.UZ"}</small><h2 id="ai-source-modal-title">{privateSource ? aiText(locale, "Документ пользователя", "Foydalanuvchi hujjati", "User document") : display.originalPdfAvailable ? aiText(locale,"Сохранённый источник","Saqlangan manba","Saved source document") : display.fullArticle ? aiText(locale, "Полный текст статьи", "Moddaning to‘liq matni", "Full article text") : aiText(locale, "Проверенный фрагмент", "Tekshirilgan parcha", "Verified excerpt")}</h2></div>
           <button ref={closeRef} type="button" aria-label={aiText(locale, "Закрыть", "Yopish", "Close")} onClick={closeSourceDialog}><X /></button>
         </header>
         {loading ? <div className="ai-source-modal-state" role="status"><LoaderCircle className="spin" />{aiText(locale, "Загружаем проверенную редакцию…", "Tekshirilgan tahrir yuklanmoqda…", "Loading the verified version…")}</div> : <>
           {error && <p className="ai-source-modal-warning" role="status">{error}</p>}
+          {display.originalPdfAvailable && <div className="ai-source-modal-warning">
+            <p>{aiText(locale,"Для проверки таблиц и изображений откройте сохранённый PDF. Извлечённый текст служит для навигации.",
+              "Jadvallar va rasmlarni tekshirish uchun saqlangan PDF faylini oching. Ajratilgan matn yo‘l ko‘rsatish uchun berilgan.",
+              "Open the saved PDF to check tables and images. Extracted text is provided for navigation.")}</p>
+            <button type="button" disabled={originalDownloading} onClick={()=>void downloadOriginal()}>{originalDownloading
+              ? aiText(locale,"Загрузка…","Yuklanmoqda…","Downloading…")
+              : aiText(locale,"Скачать сохранённый PDF","Saqlangan PDF faylini yuklab olish","Download saved PDF")}</button>
+          </div>}
           {display.evidenceUnavailableReason==="retired" && <div className="ai-source-modal-warning" role="status"><p>{aiText(locale,
             "Исходный корпус источников удалён. Полный текст этой цитаты больше недоступен; сохранённый ответ и фрагмент остаются. Это не означает, что закон изменился.",
             "Dastlabki manbalar korpusi o‘chirildi. Bu iqtibosning to‘liq matni endi mavjud emas; saqlangan javob va parcha qoladi. Bu qonun o‘zgarganini anglatmaydi.",

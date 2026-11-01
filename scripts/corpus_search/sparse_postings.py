@@ -92,9 +92,10 @@ def write_posting_run(rows,root,profiles_sha256,checkpoint=None):
 
 
 class PostingRun:
-    def __init__(self,root,manifest_sha256,profiles_sha256):
+    def __init__(self,root,manifest_sha256,profiles_sha256,*,trust_prepared=False):
+        self.trust_prepared=trust_prepared
         self.root=pathlib.Path(root).resolve(strict=True);path=self.root/'manifest.json'
-        if path.is_symlink() or path.stat().st_size>8192 or file_hash(path)!=manifest_sha256:
+        if path.is_symlink() or path.stat().st_size>8192 or (not trust_prepared and file_hash(path)!=manifest_sha256):
             raise ValueError('sparse_run_manifest_mismatch')
         self.manifest=json.loads(path.read_bytes());m=self.manifest
         if (m.get('format')!='prepared-sparse-posting-run-v1' or m.get('complete') is not True
@@ -106,14 +107,16 @@ class PostingRun:
         self.signatures={}
         for name,receipt in m['artifacts'].items():
             path=self.root/name
-            if path.is_symlink() or path.stat().st_size!=receipt['bytes'] or file_hash(path)!=receipt['sha256']:
+            if path.is_symlink() or path.stat().st_size!=receipt['bytes'] or (not trust_prepared and file_hash(path)!=receipt['sha256']):
                 raise ValueError('sparse_run_artifact_mismatch')
-            self.signatures[name]=signature(path)
+            self.signatures[path]=signature(path)
         self.connection=sqlite3.connect((self.root/'lexicon.sqlite').as_uri()+'?mode=ro&immutable=1',uri=True)
         self.connection.execute('PRAGMA query_only=ON');self.connection.execute('PRAGMA cache_size=-2048')
 
     def assert_unchanged(self):
-        if any(signature(self.root/name)!=value for name,value in self.signatures.items()):
+        # Reuse admitted paths, not stat results: every check still observes
+        # the filesystem, including each authenticated posting block.
+        if any(signature(path)!=value for path,value in self.signatures.items()):
             raise ValueError('sparse_run_storage_changed')
 
     def rows(self):
@@ -128,7 +131,7 @@ class PostingRun:
                             or not 1<=size<=BLOCK_ROWS or not 6*size<=length<=48*size):
                         raise ValueError('sparse_run_block_invalid')
                     raw=source.read(length)
-                    if len(raw)!=length or hashlib.sha256(raw).digest()!=digest:raise ValueError('sparse_run_block_hash_mismatch')
+                    if len(raw)!=length or (not self.trust_prepared and hashlib.sha256(raw).digest()!=digest):raise ValueError('sparse_run_block_hash_mismatch')
                     values=iter(integers(raw));previous=-1;weight_sum=0
                     for _ in range(size):
                         row=[next(values,None) for _ in range(6)]
@@ -160,7 +163,7 @@ class PostingRun:
                             or offset<0 or offset+length>self.manifest['artifacts']['postings.bin']['bytes']):
                         raise ValueError('sparse_term_block_invalid')
                     source.seek(offset);raw=source.read(length)
-                    if len(raw)!=length or hashlib.sha256(raw).digest()!=digest:raise ValueError('sparse_term_hash_mismatch')
+                    if len(raw)!=length or (not self.trust_prepared and hashlib.sha256(raw).digest()!=digest):raise ValueError('sparse_term_hash_mismatch')
                     values=iter(integers(raw));previous=-1;weight_sum=0
                     for _ in range(size):
                         row=[next(values,None) for _ in range(6)]
@@ -174,6 +177,29 @@ class PostingRun:
             check_deadline();self.assert_unchanged()
             if (count,frequency_sum,blocks)!=population:raise ValueError('sparse_term_population_invalid')
         check_deadline();return population[1],VerifiedStream(iterate)
+
+    def term_blocks(self,term,check_deadline=lambda:None):
+        """Authenticate raw blocks for a decoder that validates every row itself."""
+        from package import VerifiedStream
+        if not isinstance(term,bytes) or len(term)!=32:raise ValueError('sparse_term_invalid')
+        check_deadline();self.assert_unchanged()
+        population=self.connection.execute('SELECT coalesce(sum(rows),0),coalesce(sum(frequency),0),count(*) FROM blocks WHERE term=?',(term,)).fetchone()
+        def iterate():
+            count=frequency_sum=blocks=0
+            with (self.root/'postings.bin').open('rb') as source:
+                for block,offset,length,size,frequency,digest in self.connection.execute(
+                        'SELECT block,offset,bytes,rows,frequency,sha FROM blocks WHERE term=? ORDER BY block',(term,)):
+                    check_deadline();self.assert_unchanged()
+                    if (block!=blocks or not 1<=size<=BLOCK_ROWS or not 6*size<=length<=48*size
+                            or offset<0 or offset+length>self.manifest['artifacts']['postings.bin']['bytes']):
+                        raise ValueError('sparse_term_block_invalid')
+                    source.seek(offset);raw=source.read(length)
+                    if len(raw)!=length or (not self.trust_prepared and hashlib.sha256(raw).digest()!=digest):raise ValueError('sparse_term_hash_mismatch')
+                    yield raw,size,frequency
+                    count+=size;frequency_sum+=frequency;blocks+=1
+            check_deadline();self.assert_unchanged()
+            if (count,frequency_sum,blocks)!=population:raise ValueError('sparse_term_population_invalid')
+        return population[1],VerifiedStream(iterate)
 
     def close(self):self.connection.close()
 

@@ -1,14 +1,20 @@
 import type {NormalizedLegalSourceSnapshot} from "./source-parser";
-import {isLegalAnnexHeading,unquotedArticleHeadings} from "./article-heading";
+import {isLegalAnnexHeading,legalAnnexAdoptionReference,unquotedArticleHeadings} from "./article-heading";
 import {MAX_LEGAL_EVIDENCE_CHARACTERS} from "./legal-evidence-budget";
 import {completeTableSectionTexts} from "./table-sections";
 
 const boundedComplete=(text:string)=>text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS&&!/:\s*$/u.test(text);
 
+// A publisher's whole-clause repeal annotation occupies that number in the
+// instrument. Subparagraph amendments and unexplained gaps cannot do so.
+function repealedClauseNumber(text:string):string|undefined{
+  return text.match(/^\((\d+)-банд Ўзбекистон Республикаси(?:нинг)? .+ асосан ўз кучини йўқотган — .+\)$/u)?.[1];
+}
+
 /** Numbered clauses in unnumbered resolutions are not statutory articles.
  * Retain the instrument introduction and current section introduction with
  * every complete clause, including all its subordinate paragraphs. */
-export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean;containsArticles?:true}[] {
+export function documentSections(snapshot:NormalizedLegalSourceSnapshot,options:{preferChapters?:boolean}={}):{heading:string;text:string;complete:boolean;containsArticles?:true}[] {
   const blocks=snapshot.blocks;
   const articleHeadings=unquotedArticleHeadings(blocks);
   const hasArticle=(block:NormalizedLegalSourceSnapshot["blocks"][number])=>articleHeadings.has(block);
@@ -41,11 +47,12 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
   // Whole annexes are stronger boundaries than inferred clause numbering.
   // Match the same adoption reference: quoted annexes of an amended, older
   // decision must remain inside the amending annex, not become sibling scopes.
-  const firstAnnex=blocks.findIndex(block=>isLegalAnnexHeading(block)&&block.text.includes("\n"));
+  const annexOptions={includeOrders:options.preferChapters};
+  const firstAnnex=blocks.findIndex(block=>legalAnnexAdoptionReference(block,annexOptions)!==null);
   if(firstAnnex>0){
-    const adoption=blocks[firstAnnex]!.text.split("\n")[0];
-    const starts=[0,...blocks.flatMap((block,index)=>isLegalAnnexHeading(block)
-      &&block.text.split("\n")[0]===adoption?[index]:[])];
+    const adoption=legalAnnexAdoptionReference(blocks[firstAnnex]!,annexOptions);
+    const starts=[0,...blocks.flatMap((block,index)=>isLegalAnnexHeading(block,annexOptions)
+      &&legalAnnexAdoptionReference(block,annexOptions)===adoption?[index]:[])];
     const firstRule=blocks.findIndex(block=>hasArticle(block)||block.semanticRole==="chapter"
       ||/^\d+\s*[-–]\s*(?:боб|bob)\.\s+\S/iu.test(block.text)||/^(?:\d+|[IVXLCDM]+)\.\s/u.test(block.text));
     const introduction=blocks.slice(0,firstRule>=0?firstRule:firstAnnex).map(block=>block.text);
@@ -57,11 +64,11 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
       if(articleHeadings.ambiguousFrom!==null&&(starts[index+1]??blocks.length)>articleHeadings.ambiguousFrom)
         return [{heading:part[0]!.text.slice(0,240),text,complete:false,containsArticles:true as const}];
       if(hasArticles&&(start===0||part.some(hasArticle)))return [{heading:part[0]!.text.slice(0,240),text,complete:false,containsArticles:true as const}];
-      if(text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS)return [{heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}];
-      const tableSections=completeTableSectionTexts(part,prefix);
+      if(text.length<=MAX_LEGAL_EVIDENCE_CHARACTERS&&!options.preferChapters)return [{heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}];
+      const tableSections=text.length>MAX_LEGAL_EVIDENCE_CHARACTERS?completeTableSectionTexts(part,prefix):null;
       if(tableSections)return tableSections.map(text=>({heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}));
-      const chapters=part.flatMap((block,index)=>block.semanticRole==="chapter"
-        ||/^\d+\s*[-–]\s*(?:боб|bob)\.\s+\S/iu.test(block.text)?[index]:[]);
+      const chapters=part.flatMap((block,index)=>articleHeadings.unquotedBlocks.has(block)&&(block.semanticRole==="chapter"
+        ||/^(?:\d+\s*[-–]\s*(?:боб|bob)|(?:глава|chapter)\s+\d+)\.\s+\S/iu.test(block.text))?[index]:[]);
       if(chapters.length&&!part.slice(chapters[0]).some(block=>block.semanticRole==="section")){
         const context=[...prefix,...part.slice(0,chapters[0]).map(block=>block.text)];
         return chapters.map((chapter,index)=>{
@@ -69,7 +76,7 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
           return {heading:part[chapter]!.text.slice(0,240),text,complete:boundedComplete(text)};
         });
       }
-      return [{heading:part[0]!.text.slice(0,240),text,complete:false}];
+      return [{heading:part[0]!.text.slice(0,240),text,complete:boundedComplete(text)}];
     });
   }
   if(hasArticles)return [];
@@ -88,7 +95,7 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
       const structural=semantic||annex||roman;
       const level=block.headingLevel??(annex?1:2);
       const number=block.kind==="paragraph"&&(!amendingDecisions||decisionClause.test(block.text))
-        ?block.text.match(/^(\d+)\.\s/u)?.[1]:undefined;
+        ?block.text.match(/^(\d+)\.\s/u)?.[1]??(options.preferChapters?repealedClauseNumber(block.text):undefined):undefined;
       if(structural){boundaries.push({index,structural:true,level});if(annex)expected=1;afterStructure=true;}
       else if(number!==undefined){
         // A reset without a section marker may be a subordinate list. Its
@@ -130,4 +137,78 @@ export function documentSections(snapshot:NormalizedLegalSourceSnapshot):{headin
 
 export function completeDocumentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string}[] {
   return documentSections(snapshot).filter(section=>section.complete).map(({heading,text})=>({heading,text}));
+}
+
+/** Refine an annex-bearing instrument's operative body using the same strict
+ * clause parser as an instrument without annexes. Keep the older whole-body
+ * sections available separately so existing citation receipts remain readable.
+ * Earlier complete clauses survive an ambiguous tail; the tail stays explicitly
+ * incomplete and is never returned as a complete clause. */
+function refinedOperativeSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean}[] {
+  const firstAnnex=snapshot.blocks.findIndex(block=>legalAnnexAdoptionReference(block,{includeOrders:true})!==null);
+  if(firstAnnex<=0)return [];
+  const blocks=snapshot.blocks.slice(0,firstAnnex);
+  const sections=documentSections({...snapshot,blocks,plainText:blocks.map(block=>block.text).join(" ")},{preferChapters:true});
+  return sections.filter(section=>section.complete&&!section.containsArticles).length>1
+    &&sections.every(section=>!section.containsArticles)?sections:[];
+}
+
+/** Refine only already established chapter scopes. All source blocks must
+ * reconstruct that scope exactly; uncertain numbering or nested structures
+ * retain the enclosing chapter. Inserted clauses stay with their base clause. */
+function refinedChapterSections(snapshot:NormalizedLegalSourceSnapshot,section:ReturnType<typeof documentSections>[number]){
+  if(section.containsArticles)return [];
+  const chapter=/^(?:\d+\s*[-–]\s*(?:боб|bob)|(?:глава|chapter)\s+\d+)\.\s+\S/iu;
+  if(!chapter.test(section.heading))return [];
+  const matches=snapshot.blocks.flatMap((block,start)=>{
+    if(block.text!==section.heading)return [];
+    const next=snapshot.blocks.findIndex((block,index)=>index>start&&(chapter.test(block.text)||isLegalAnnexHeading(block,{includeOrders:true})));
+    const blocks=snapshot.blocks.slice(start,next<0?undefined:next);
+    const body=blocks.map(block=>block.text).join(" ").replace(/\s+/gu," ").trim();
+    return section.text.endsWith(body)?[{blocks,body}]:[];
+  });
+  if(matches.length!==1)return [];
+  const {blocks,body}=matches[0]!;
+  if(blocks.some(block=>block.semanticRole==="section"||block.kind==="table_cell"||block.tableRows))return [];
+  const headings=unquotedArticleHeadings(blocks);
+  if(headings.size||headings.ambiguousFrom!==null)return [];
+  const prefix=section.text.slice(0,section.text.length-body.length).trim();
+  const boundaries:number[]=[];
+  let expected:number|undefined,quoted=0;
+  for(const [index,block] of blocks.entries()){
+    const number=!quoted&&headings.unquotedBlocks.has(block)&&block.kind==="paragraph"
+      ?block.text.match(/^(\d+)\.\s/u)?.[1]??repealedClauseNumber(block.text):undefined;
+    if(number!==undefined){
+      const value=Number(number);
+      if(!Number.isSafeInteger(value)||value<1||(expected!==undefined&&value!==expected))return [];
+      boundaries.push(index);expected=value+1;
+    }
+    for(const character of block.text){
+      if(character==="«"||character==="“")quoted++;
+      else if(character==="»"||character==="”"){if(!quoted)return [];quoted--;}
+    }
+  }
+  if(quoted||boundaries.length<2)return [];
+  const context=[prefix,...blocks.slice(0,boundaries[0]).map(block=>block.text)];
+  const refined=boundaries.map((index,position)=>{
+    const text=[...context,...blocks.slice(index,boundaries[position+1]).map(block=>block.text)].join(" ").replace(/\s+/gu," ").trim();
+    return {heading:blocks[index]!.text.slice(0,240),text,complete:boundedComplete(text)};
+  });
+  return refined.every(row=>row.complete)?refined:[];
+}
+
+export function refinedDocumentSections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean}[] {
+  const ordinary=documentSections(snapshot);
+  return [...refinedOperativeSections(snapshot).filter(section=>!ordinary.some(row=>row.complete&&row.text===section.text)),...documentSections(snapshot,{preferChapters:true}).flatMap(section=>{
+    const clauses=refinedChapterSections(snapshot,section);
+    return clauses.length?clauses:section.complete&&!ordinary.some(row=>row.text===section.text)?[section]:[];
+  })];
+}
+
+export function documentDiscoverySections(snapshot:NormalizedLegalSourceSnapshot):{heading:string;text:string;complete:boolean;containsArticles?:true}[]{
+  const sections=documentSections(snapshot,{preferChapters:true}),operative=refinedOperativeSections(snapshot);
+  const scopes=operative.length?[...operative,...sections.slice(1)]:sections;
+  const refined=scopes.flatMap(section=>{const clauses=refinedChapterSections(snapshot,section);return clauses.length?clauses:[section];});
+  // Keep discovery within its existing bounded selection contract.
+  return refined.length<=2048?refined:scopes;
 }

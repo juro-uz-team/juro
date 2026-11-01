@@ -1,6 +1,7 @@
 """Authenticated work identities and package record locations for evidence hydration."""
 import hashlib
 import json
+from discovery_json import encode_discovery_json
 import os
 import pathlib
 import sqlite3
@@ -81,10 +82,10 @@ def build_work_index(package,root,progress=None):
 
 
 class WorkIndex:
-    def __init__(self,root,manifest_sha256,package_sha256):
+    def __init__(self,root,manifest_sha256,package_sha256,*,trust_prepared=False):
         self.root=pathlib.Path(root).resolve(strict=True)
         manifest_path=self.root/'manifest.json'
-        if manifest_path.stat().st_size>4096 or file_hash(manifest_path)!=manifest_sha256:
+        if manifest_path.stat().st_size>4096 or (not trust_prepared and file_hash(manifest_path)!=manifest_sha256):
             raise ValueError('prepared_work_manifest_mismatch')
         self.manifest=json.loads(manifest_path.read_bytes());m=self.manifest
         self.manifest_sha256=manifest_sha256
@@ -94,7 +95,7 @@ class WorkIndex:
                 or m['prepared_rows']>m['inventory_rows']):
             raise ValueError('prepared_work_manifest_invalid')
         self.path=self.root/'works.sqlite'
-        if self.path.is_symlink() or self.path.stat().st_size!=m['database_bytes'] or file_hash(self.path)!=m['database_sha256']:
+        if self.path.is_symlink() or self.path.stat().st_size!=m['database_bytes'] or (not trust_prepared and file_hash(self.path)!=m['database_sha256']):
             raise ValueError('prepared_work_database_mismatch')
         self.identity=signature(self.path)
         self.connection=sqlite3.connect(self.path.as_uri()+'?mode=ro&immutable=1',uri=True)
@@ -117,7 +118,7 @@ class WorkIndex:
     def close(self):self.connection.close()
 
 
-def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024,*,project=None):
+def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024,*,project=None,decode_record=None):
     """Read bounded selected rows, authenticating every touched source part.
 
     Each location is (part,row). Return order and repeated requests are retained.
@@ -135,11 +136,13 @@ def hydrate_records(package,kind,locations,max_total_bytes=64*1024*1024,*,projec
         groups.setdefault(location[0],{}).setdefault(location[1],[]).append(i)
     results=[None]*len(locations);selected_bytes=0
     for part,requested in groups.items():
-        stream=package.records(kind,part)
+        projection=getattr(package,'source_projection',None)
+        options={'decode_record':decode_record} if decode_record is not None else {}
+        stream=projection.records_at(kind,part,list(requested),**options) if projection is not None else package.records(kind,part)
         for ordinal,row in stream:
             if ordinal in requested:
                 if project is not None:row=project(row)
-                selected_bytes+=len(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode('utf-8'))
+                selected_bytes+=len(encode_discovery_json(row))
                 if selected_bytes>max_total_bytes:raise ValueError('prepared_hydration_byte_bound')
             for i in requested.get(ordinal,[]):results[i]=row
         if not stream.verified:raise ValueError('prepared_hydration_unverified')

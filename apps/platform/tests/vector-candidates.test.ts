@@ -6,7 +6,7 @@ import {createVectorCandidateReader} from "../lib/storage/vector-candidates";
 import {runIndexedRetrieval} from "../lib/runtime/indexed-retrieval";
 
 test("local vector candidates pin generation identity and abort with their parent request",async()=>{
-  let mode="valid",received:any;
+  let mode="valid",received={collection:"",generation:"",sourceRevision:"",expiresAt:0};
   const server=createServer(async(request,response)=>{
     const chunks=[];for await(const chunk of request)chunks.push(chunk);
     received=JSON.parse(Buffer.concat(chunks).toString());

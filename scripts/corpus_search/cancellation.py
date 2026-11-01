@@ -1,7 +1,7 @@
 """Propagate private HTTP client disconnects without imposing a time budget."""
 from contextlib import contextmanager
 from contextvars import ContextVar
-import select
+import selectors
 import socket
 import threading
 
@@ -60,14 +60,20 @@ def disconnect_cancellation(connection):
     token = _current.set(scope)
 
     def watch():
-        while not stopped.is_set():
-            try:
-                readable, _, _ = select.select([connection], [], [], .1)
-                if readable and not connection.recv(1, socket.MSG_PEEK):
-                    scope.cancel()
-            except OSError:
-                scope.cancel()
-            stopped.wait(.1)
+        try:
+            # Admitted corpus readers may hold more than FD_SETSIZE files.
+            # The platform selector supports those sockets without weakening
+            # disconnect cancellation or imposing a request time limit.
+            with selectors.DefaultSelector() as selector:
+                selector.register(connection,selectors.EVENT_READ)
+                while not stopped.is_set():
+                    if selector.select(.1) and not connection.recv(1,socket.MSG_PEEK):
+                        scope.cancel()
+                        break
+                    stopped.wait(.1)
+        except (OSError,ValueError):
+            # A closed socket or failed registration cannot leave work orphaned.
+            scope.cancel()
 
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()

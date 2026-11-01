@@ -94,7 +94,7 @@ interface R2Error extends Error {
     readonly code: number;
     readonly message: string;
     readonly action: string;
-    readonly stack: any;
+    readonly stack: string;
 }
 interface R2ListOptions {
     limit?: number;

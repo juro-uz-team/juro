@@ -5,6 +5,10 @@ export function postgresSql(source: string, previousChanges?: number): string {
     literals.push(value); return `\u0001${literals.length - 1}\u0002`;
   });
   const ignoreConflict = /\bINSERT\s+OR\s+IGNORE\b/i.test(sql);
+  // Deadlines must observe wall time after lock waits, not PostgreSQL transaction-start time.
+  sql = sql.replace(/"(?:""|[^"])*"|`(?:``|[^`])*`|\bunixepoch\s*\(\s*\u0001(\d+)\u0002\s*\)/gi,
+    (expression, index) => index !== undefined && literals[Number(index)] === "'subsec'"
+      ? "EXTRACT(EPOCH FROM clock_timestamp())" : expression);
   sql = sql.replace(/\bINSERT\s+OR\s+IGNORE\b/gi, "INSERT");
   sql = sql.replace(/\bjson_object\s*\(/gi, "jsonb_build_object(");
   sql = sql.replace(/\b([A-Za-z_][\w.]*)\s+COLLATE\s+NOCASE\b/gi, "lower($1)");

@@ -7,6 +7,7 @@ import {
   type ProviderRequestFirstContentTiming,
 } from "../../ai/provider-request-timeout";
 import { resolveAiRuntimeSettings } from "../../ai/runtime-settings";
+import {providerGenerationModel,reserveProviderOperation} from "../../ai/provider-gateway";
 
 export type AiProviderErrorCode =
   | "PROVIDER_UNAVAILABLE"
@@ -192,10 +193,10 @@ export async function callOpenAiStructured<T>(options: {
   if (!apiKey) {
     throw new AiUnavailableError("AI-модель не подключена: отсутствует серверный ключ провайдера.");
   }
-  const model = options.model || (await resolveAiRuntimeSettings({
+  const model = providerGenerationModel(options.model || (await resolveAiRuntimeSettings({
     db: configuration.DB,
     env: configuration,
-  })).openaiChatModel;
+  })).openaiChatModel);
   const startedAt = Date.now();
   const totalUsage: AiProviderUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
   const maxAttempts = options.maxAttempts ?? 2;
@@ -213,11 +214,15 @@ export async function callOpenAiStructured<T>(options: {
       throw new AiUnavailableError("Время выполнения AI-запроса истекло.", "PROVIDER_TIMEOUT", true);
     }
     await options.onAttempt?.({ attempt: attempt as 1 | 2, model });
+    const spending=await reserveProviderOperation({model,operation:"generation",label:options.schemaName,
+      additionalCharges:Boolean(options.webSearch||options.rawInput||options.reasoningMode==="pro"),
+      maximumOutputTokens:options.maxOutputTokens??16384});
     const attemptStartedAt = Date.now();
     let attemptUsage: AiProviderUsage | null = null;
     let attemptOutcome: AiProviderAttemptObservation["outcome"] = "failed";
     let attemptErrorCode: AiProviderErrorCode | null = "PROVIDER_UNAVAILABLE";
     let attemptHttpStatus: number | null = null;
+    let dispatched=false;
     try {
       await options.onProgress?.({ stage: "provider_started", provider: "openai", model });
       const { response, payload } = await runProviderRequestWithTimeouts({
@@ -228,7 +233,7 @@ export async function callOpenAiStructured<T>(options: {
         requireFirstContent: Boolean(options.onProgress),
         onFirstContent: options.onFirstContent,
         callerSignal: options.signal,
-        start: (signal) => fetch("https://api.openai.com/v1/responses", {
+        start: async(signal) => {signal.throwIfAborted();await spending?.dispatch();signal.throwIfAborted();dispatched=true;return fetch("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
             authorization: `Bearer ${apiKey}`,
@@ -237,6 +242,7 @@ export async function callOpenAiStructured<T>(options: {
           },
           body: JSON.stringify({
             model,
+            ...(spending?{service_tier:"default"}:{}),
             instructions: options.instructions,
             input: options.rawInput ? options.input : typeof options.input === "string" ? options.input : JSON.stringify(options.input),
             ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
@@ -245,7 +251,7 @@ export async function callOpenAiStructured<T>(options: {
               ...(options.reasoningEffort ? {effort:options.reasoningEffort} : {}),
               ...(options.reasoningMode ? {mode:options.reasoningMode} : {}),
             } } : {}),
-            ...(options.maxOutputTokens ? { max_output_tokens: options.maxOutputTokens } : {}),
+            ...(options.maxOutputTokens||spending ? { max_output_tokens: options.maxOutputTokens??16384 } : {}),
             ...(options.webSearch ? {
               tools: [{
                 type: "web_search",
@@ -275,7 +281,7 @@ export async function callOpenAiStructured<T>(options: {
             },
           }),
           signal,
-        }),
+        });},
         consume: async (response, _signal, timing) => ({
           response,
           payload: options.onProgress && response.ok
@@ -294,9 +300,10 @@ export async function callOpenAiStructured<T>(options: {
       totalUsage.inputTokens += payload.usage?.input_tokens ?? 0;
       totalUsage.outputTokens += payload.usage?.output_tokens ?? 0;
       totalUsage.cachedInputTokens += payload.usage?.input_tokens_details?.cached_tokens ?? 0;
-      if (payload.usage) attemptUsage = {
-        inputTokens: payload.usage.input_tokens ?? 0,
-        outputTokens: payload.usage.output_tokens ?? 0,
+      if (payload.usage && Number.isSafeInteger(payload.usage.input_tokens) && payload.usage.input_tokens! >= 0
+        && Number.isSafeInteger(payload.usage.output_tokens) && payload.usage.output_tokens! >= 0) attemptUsage = {
+        inputTokens: payload.usage.input_tokens!,
+        outputTokens: payload.usage.output_tokens!,
         cachedInputTokens: payload.usage.input_tokens_details?.cached_tokens ?? 0,
       };
 
@@ -431,6 +438,9 @@ export async function callOpenAiStructured<T>(options: {
         throw new AiUnavailableError("AI-проверка временно недоступна.", "PROVIDER_UNAVAILABLE", true);
       }
     } finally {
+      // Accounting is a mandatory boundary, not best-effort telemetry. An
+      // unknown attempt blocks retries and retains its worst-case reservation.
+      try {await spending?.finish(dispatched?attemptUsage:{inputTokens:0,outputTokens:0});} finally {
       try {
         await options.onAttemptFinished?.({ attempt: attempt as 1 | 2, model,
           elapsedMs: Date.now() - attemptStartedAt, outcome: attemptOutcome,
@@ -438,6 +448,7 @@ export async function callOpenAiStructured<T>(options: {
       } catch {
         // Telemetry failure must not alter a validated result or repeat a call.
         console.warn(JSON.stringify({event: "ai.provider_attempt_observation_unavailable"}));
+      }
       }
     }
   }
