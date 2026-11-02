@@ -405,3 +405,27 @@ test("published issues and their actions stream before the overview without dupl
   assert.equal(repeated.confirmedFindings[0].explanation, "The complete qualified rule.");
   assert.equal(repeated.summary, "The Main Point.");
 });
+
+
+test("support bindings produce local inline citations even when prose never names a law",()=>{
+ const value=result({summary:"The rule applies.",summarySourceIds:["labor-code-163"]});
+ const html=renderToStaticMarkup(createElement(LegalAnswerView,{result:value,locale:"ru"}));
+ const main=html.slice(html.indexOf('legal-answer__section--main'),html.indexOf('Что говорит закон'));
+ assert.match(main,/href="https:\/\/lex\.uz\/ru\/docs\/6257288"/);
+ assert.match(main,/Ст\. 163/);
+ assert.doesNotMatch(html.slice(html.indexOf('<footer')),/href=/);
+});
+
+
+test("streamed source bindings keep citations beside the same prose after completion",async()=>{
+ const {writingResult}=await import("../app/_platform/AnswerWriting");
+ const {legalSourceRefSchema}=await import("../lib/ai/legal-chat-schema");
+ const sources=[legalSourceRefSchema.parse({...result().sources[0],excerpt:null})];
+ const draft={sources,citations:{"issue/leave/explanation":[sources[0].sourceId]},blocks:[
+ {key:"issue/leave/title",text:"Leave"},{key:"issue/leave/explanation",text:"The employer cannot terminate during leave."}]};
+ const value=writingResult(draft);
+ const streamed=renderToStaticMarkup(createElement(LegalAnswerView,{result:value,locale:"en",streaming:true}));
+ const final=renderToStaticMarkup(createElement(LegalAnswerView,{result:value,locale:"en"}));
+ assert.match(streamed,/The employer cannot terminate during leave.[\s\S]*<a [^>]+>Art. 163/);
+ assert.equal(streamed.replace(' aria-busy="true"','').split('</article>')[0],final.split('<footer')[0].trimEnd());
+});

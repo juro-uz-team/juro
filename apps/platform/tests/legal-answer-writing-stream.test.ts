@@ -80,7 +80,8 @@ test("unfinished structured output streams only answer prose, preserving split e
   assert.equal(drafts.at(-1)?.blocks[0].text, "Закон: ");
   write('abда\\u00bb","summarySourceIds":["s1"],"issues":[{"title":"Правило","explanation":[{"statement":"Есть право.","sourceIds":["secret"]}]}]}}}');
   assert.deepEqual(drafts.at(-1)?.blocks.map(block => block.text), ["Закон: «да»", "Правило", "Есть право."]);
-  assert.ok(!JSON.stringify(drafts).includes("secret"));
+  assert.ok(!JSON.stringify(drafts.map(draft=>draft.blocks)).includes("secret"));
+  assert.deepEqual(drafts.at(-1)?.citations?.["turn/content/issues/0/explanation/0/statement"],["secret"]);
 });
 
 test("research, insufficient results and nested user-like prose never become streamed answers", () => {

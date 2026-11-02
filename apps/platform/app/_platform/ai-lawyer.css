@@ -656,12 +656,13 @@
   .ai-workspace { transition: none; }
 }
 
-/* Keep the workspace and all three reading panes within the app shell. */
-.platform-shell:has(.ai-workspace) { height: 100dvh; min-height: 0; overflow: hidden; }
-.platform-main:has(.ai-workspace) { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.platform-main:has(.ai-workspace) > .platform-topbar { flex-shrink: 0; }
-.platform-content:has(.ai-workspace) { flex: 1; min-height: 0; padding-bottom: 0; overflow: hidden; }
-.platform-content .ai-workspace { height: 100%; min-height: 0; }
-@media (max-width: 760px) {
-  .platform-main:has(.ai-workspace) { height: calc(100dvh - 68px - env(safe-area-inset-bottom)); }
+/* The chat owns the viewport; only its reading panes may scroll. */
+html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; overflow: clip; overscroll-behavior: none; }
+.platform-shell.platform-shell--chat { position: fixed; inset: 0; height: 100dvh; min-height: 0; overflow: clip; }
+.platform-shell--chat .platform-main { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: clip; }
+.platform-shell--chat .platform-main > .platform-topbar { flex-shrink: 0; }
+.platform-shell.platform-shell--chat .platform-content { flex: 1; min-height: 0; padding-bottom: 0; overflow: clip; }
+.platform-shell--chat .platform-content .ai-workspace { height: 100%; min-height: 0; }
+@media (max-width: 900px) {
+  .platform-shell--chat .platform-main { height: calc(100% - 68px - env(safe-area-inset-bottom)); }
 }

@@ -162,6 +162,16 @@ export function PlatformShell({
   children,
 }: Props) {
   const pathname = usePathname();
+  const chatPage = pathname.endsWith("/ai-chat");
+  useEffect(() => {
+    if (!chatPage) return;
+    document.documentElement.classList.add("platform-chat-page");
+    document.body.classList.add("platform-chat-page");
+    return () => {
+      document.documentElement.classList.remove("platform-chat-page");
+      document.body.classList.remove("platform-chat-page");
+    };
+  }, [chatPage]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -396,7 +406,7 @@ export function PlatformShell({
   };
   return (
     <PlatformRouteProvider basePath={base} workspaceId={activeWorkspaceId}>
-      <div className={`platform-shell ${collapsed ? "is-collapsed" : ""}`}>
+      <div className={`platform-shell ${chatPage ? "platform-shell--chat" : ""} ${collapsed ? "is-collapsed" : ""}`}>
         <a className="platform-skip-link" href="#main-content">
           {text({ ru: "Перейти к содержанию", uz: "Asosiy mazmunga o‘tish", en: "Skip to main content" })}
         </a>

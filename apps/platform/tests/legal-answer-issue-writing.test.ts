@@ -103,3 +103,18 @@ test("an atomic batch returns every revision snapshot and long correction reason
   assert.equal(final.referenceNotes.length, 2);
   assert.ok(final.referenceNotes.every(note => note.title.length <= 240 && note.note === reason));
 });
+
+
+test("issue and action citation bindings survive streaming, commit and retraction",()=>{
+ const writing=new IssueWriting("en");
+ const description="Request the permit.";
+ const blocks=[{key:"issue/permit/explanation",text:issue.explanation},{key:"issue/permit/actions/0/description",text:description}];
+ assert.throws(()=>writing.project(initial,blocks,sources,{"issue/permit/actions/0/description":["s2"]}),/ISSUE_SUPPORT_INVALID/);
+ const projected=writing.project(initial,blocks,sources,{"issue/permit/actions/0/description":["s1"]});
+ assert.deepEqual(projected.citations,{"issue/permit/explanation":["s1"],"issue/permit/actions/0/description":["s1"]});
+ const content={...issue,actions:[{title:"Apply",description,sourceIds:["s1"]}]};
+ writing.commit([{...initial,content}],sources,requirements);
+ assert.deepEqual(writing.snapshot().citations,projected.citations);
+ writing.commit([{...initial,baseVersion:"1",change:"retract",reason:"Does not apply.",content:null}],sources,requirements);
+ assert.equal(writing.snapshot().citations,undefined);
+});

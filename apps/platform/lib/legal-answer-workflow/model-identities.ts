@@ -106,6 +106,7 @@ export function compactEvidenceOperation(operation: ModelOperation, handles?: Ma
   return {
     operation: { ...operation,
       ...(operation.onWriting ? { onWriting: draft => operation.onWriting!({ ...draft,
+        ...(draft.citations ? {citations:Object.fromEntries(Object.entries(draft.citations).map(([key,ids])=>[key,ids.map(canonical)]))} : {}),
         ...(draft.issueUpdate ? { issueUpdate: { ...draft.issueUpdate, sourceIds: draft.issueUpdate.sourceIds.map(canonical) } } : {}) }) } : {}),
       ...(responseSchema ? { schema: responseSchema } : {}),
       input: { ...input, evidence: evidence.map(item => ({ ...item, identity: label(item.identity) })),

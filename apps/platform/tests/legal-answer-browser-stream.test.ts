@@ -96,11 +96,12 @@ test("public source metadata arrives before prose and survives subsequent deltas
  const disconnected=new AbortController(), lifetime=requestLifetime(Date.now(),30_000,disconnected.signal);
  const sources=[{sourceId:"labor",actTitle:"Трудовой кодекс",actIdentifier:null,article:"Статья 408",excerpt:null,originalUrl:"https://lex.uz/docs/6257288#408",status:"unconfirmed" as const,effectiveDate:null,verifiedAt:"2026-11-03T00:00:00Z"}];
  const stream=createAnswerEventStream({lifetime,disconnected,async execute(_budget,_progress,write){
-   write({sources,blocks:[{key:"issue/a/explanation",text:"ст. 408 ТК"}]});
-   write({sources,blocks:[{key:"issue/a/explanation",text:"ст. 408 ТК применяется."}]});return null;
+   write({sources,citations:{"issue/a/explanation":["labor"]},blocks:[{key:"issue/a/explanation",text:"ст. 408 ТК"}]});
+   write({sources,citations:{"issue/a/explanation":["labor"]},blocks:[{key:"issue/a/explanation",text:"ст. 408 ТК применяется."}]});return null;
  }});
  const seen:WritingDraft[]=[];
  await assert.rejects(readLegalChatStream(new Response(stream,{headers:{"content-type":"text/event-stream"}}),()=>{},undefined,d=>seen.push(d)),/LEGAL_ANSWER_NOT_COMPLETED/);
  assert.deepEqual(seen[0].sources,sources);assert.deepEqual(seen[0].blocks,[]);
  assert.equal(seen.at(-1)?.blocks[0].text,"ст. 408 ТК применяется.");assert.deepEqual(seen.at(-1)?.sources,sources);
+ assert.deepEqual(seen.at(-1)?.citations,{"issue/a/explanation":["labor"]});
 });

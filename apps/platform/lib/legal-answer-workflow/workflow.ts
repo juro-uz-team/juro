@@ -158,7 +158,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         controller.providerStarted();
         const raw = await withinSignal(writingSignal, () => ports.model.complete({ stage: "write", researchSession: true,
           onWriting: request.onWriting ? draft => emitWriting(draft.issueUpdate
-            ? issueWriting.project(draft.issueUpdate, draft.blocks, new Set(evidence.map(item => item.identity)))
+            ? issueWriting.project(draft.issueUpdate, draft.blocks, new Set(evidence.map(item => item.identity)), draft.citations)
             : issueWriting.snapshot(draft)) : undefined,
           instruction: `${evidence.length ? researchWritingInstruction : unreadResearchInstruction}\nFor this request write user-facing prose in ${outputLanguage}. Keep source and candidate identifiers unchanged. Maintain only useful revisable coverage records: issue, relevance, provisional support, unresolved dependency and next action. These records are task state, never legal evidence.`,
           sourceFiles, input: { researchAgent: true, question: request.question, language: request.language, format: request.format,

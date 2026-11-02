@@ -32,8 +32,19 @@ export function createIssueWritingProjection(onDraft: (draft: WritingDraft) => v
             text: completed.has(key) && bound ? normalize(value, ids) : suffix ? value.slice(0, suffix.index) : value };
         }).filter(block => block.text.length > 0);
       if (!blocks.length && update.change !== "retract") continue;
-      const snapshot = JSON.stringify({ blocks, issueUpdate: update });
-      if (snapshot !== previous.get(index)) { previous.set(index, snapshot); onDraft({ blocks, issueUpdate: update }); }
+      const citations: Record<string,string[]> = {};
+      for(const block of blocks) {
+        const action=/^issue\/[^/]+\/actions\/(\d+)\/description$/.exec(block.key);
+        if(!action) continue;
+        const support=`${path}/content/actions/${action[1]}/sourceIds`;
+        if(completed.has(support)) {
+          const ids=[...values].filter(([key])=>key.startsWith(`${support}/`)).map(([,id])=>id);
+          if(ids.some(id=>!sourceIds.includes(id))) throw new Error("ISSUE_SUPPORT_INVALID");
+          citations[block.key]=ids;
+        }
+      }
+      const snapshot = JSON.stringify({ blocks, citations, issueUpdate: update });
+      if (snapshot !== previous.get(index)) { previous.set(index, snapshot); onDraft({ blocks, ...(Object.keys(citations).length ? {citations} : {}), issueUpdate: update }); }
     }
   };
 }

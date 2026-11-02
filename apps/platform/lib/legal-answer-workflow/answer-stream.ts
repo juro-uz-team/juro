@@ -19,7 +19,7 @@ export function createAnswerEventStream(input: {
       let stage = "interpreting", targetMissed = false;
       const writing = new Map<string, string>();
       let revision = 0;
-      let sourceSnapshot = "";
+      let sourceSnapshot = "", citationSnapshot = "";
       let notices: string[] = [];
       let targetTimer: ReturnType<typeof setTimeout> | undefined;
       const progress = () => { if (!signal.aborted) send("progress", { stage, targetMissed }); };
@@ -34,6 +34,11 @@ export function createAnswerEventStream(input: {
             if (draft.sources) {
               const snapshot = JSON.stringify(draft.sources);
               if (snapshot !== sourceSnapshot) { sourceSnapshot = snapshot; send("sources", { sources: draft.sources }); }
+            }
+            const citations=draft.citations ?? {};
+            const citationState=JSON.stringify(citations);
+            if(citationState!==citationSnapshot && (draft.citations || citationSnapshot)) {
+              citationSnapshot=citationState; send("citations",{citations});
             }
             const nextRevision = draft.revision ?? revision;
             if (!Number.isSafeInteger(nextRevision) || nextRevision < revision || nextRevision > revision + 1)

@@ -30,12 +30,14 @@ export function SafeMarkdown({
   children,
   allowedLinks,
   referenceSources,
+  supportingLinks,
   className,
   locale = "ru",
 }: {
   children?: string;
   allowedLinks?: readonly string[];
   referenceSources?: readonly ReferenceSource[];
+  supportingLinks?: readonly {label: string; href: string}[];
   className?: string;
   locale?: PlatformLocale;
 }) {
@@ -45,7 +47,7 @@ export function SafeMarkdown({
   })) : undefined;
   return <div className={className ? `safe-markdown ${className}` : "safe-markdown"}>
     <ReactMarkdown
-      remarkPlugins={referenceSources ? [remarkGfm, legalReferenceMarkdown(referenceSources)] : [remarkGfm]}
+      remarkPlugins={referenceSources ? [remarkGfm, legalReferenceMarkdown(referenceSources, supportingLinks)] : [remarkGfm]}
       skipHtml
       urlTransform={(url) => safeLink(url, allowlist) ?? ""}
       components={{

@@ -2,7 +2,7 @@ import { citationProseNormalizer } from "./citation-prose";
 
 /** Public prose only. Structured source IDs, research notes and provider reasoning are excluded. */
 export type WritingBlock = { key: string; text: string };
-export type WritingDraft = { blocks: WritingBlock[]; sources?: import("../ai/legal-chat-schema").LegalChatResponse["sources"]; revision?: number; notices?: string[];
+export type WritingDraft = { blocks: WritingBlock[]; citations?: Record<string, string[]>; sources?: import("../ai/legal-chat-schema").LegalChatResponse["sources"]; revision?: number; notices?: string[];
   issueUpdate?: import("./issue-writing").IssueWritingUpdate };
 
 type Frame = { path: string[]; kind: "object" | "array"; key: string; index: number; expectingKey: boolean };
@@ -80,7 +80,13 @@ export function createWritingProjection(onDraft: (draft: WritingDraft) => void,
         return { key, text: suffix ? value.slice(0, suffix.index) : value };
       }).filter(block => block.text.length > 0);
     if (!blocks.length) return;
-    const snapshot = JSON.stringify(blocks);
-    if (snapshot !== previous) { previous = snapshot; onDraft({ blocks }); }
+    const citations: Record<string,string[]> = {};
+    for(const block of blocks) {
+      const parent=block.key.slice(0,block.key.lastIndexOf("/"));
+      const path=`${parent}/${block.key.endsWith("/summary") ? "summarySourceIds" : "sourceIds"}`;
+      if(completed.has(path)) citations[block.key]=[...values].filter(([key])=>key.startsWith(`${path}/`)).map(([,id])=>id);
+    }
+    const snapshot = JSON.stringify({blocks,citations});
+    if (snapshot !== previous) { previous = snapshot; onDraft({ blocks, ...(Object.keys(citations).length ? {citations} : {}) }); }
   };
 }

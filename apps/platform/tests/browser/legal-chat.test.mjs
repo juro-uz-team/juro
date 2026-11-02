@@ -30,16 +30,18 @@ before(async()=>{
     import {AiLawyerClient} from './app/_platform/AiLawyerClient';
     import {GuestAiClient} from './app/_guest/GuestAiClient';
     import {PlatformRouteProvider} from './app/_platform/PlatformRouteContext';
+    import {PlatformShell} from './app/_platform/PlatformShell';
     createRoot(document.getElementById('root')).render(location.pathname==='/guest'
       ? <GuestAiClient locale="en"/>
+      : location.pathname==='/en/individual/ai-chat' ? <PlatformShell locale="en" accountType="individual" userName="Test Reader" activeWorkspaceId="workspace" workspaces={[]}><AiLawyerClient locale="en"/></PlatformShell>
       : <PlatformRouteProvider basePath="/en/individual" workspaceId="workspace"><AiLawyerClient locale="en"/></PlatformRouteProvider>);`,
-    resolveDir:root,loader:"tsx"},bundle:true,write:false,jsx:"automatic",
+    resolveDir:root,loader:"tsx"},bundle:true,write:false,loader:{".css":"empty"},jsx:"automatic",
     plugins:[{name:"next-adapters",setup(builder){
       builder.onResolve({filter:/^next\/(navigation|image|link)$/},args=>({path:args.path,namespace:"adapter"}));
       builder.onLoad({filter:/.*/,namespace:"adapter"},args=>({contents:args.path.endsWith("navigation")
         ? `import {useSyncExternalStore} from 'react';
            const subscribe=callback=>{addEventListener('popstate',callback);return()=>removeEventListener('popstate',callback)};
-           export const usePathname=()=>location.pathname;
+           export const usePathname=()=>useSyncExternalStore(subscribe,()=>location.pathname);
            export const useSearchParams=()=>new URLSearchParams(useSyncExternalStore(subscribe,()=>location.search));
            export const useRouter=()=>({replace:url=>{history.replaceState(null,'',url);dispatchEvent(new PopStateEvent('popstate'))},push:()=>{},prefetch:()=>{}});`
         : `import React from 'react'; export default function Adapter({children,...props}){return React.createElement('${args.path.endsWith("image")?"img":"a"}',props,children)}`,
@@ -200,29 +202,25 @@ for (const guest of [true, false]) test(`draft grows before completion and clear
   assert.deepEqual(errors, []);
 });
 
-for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
-  completed.clear(); stallMetadata=false; sendDeeperProgress=false;
-  const sources=[{sourceId:'section',actTitle:'Трудовой кодекс Республики Узбекистан',actIdentifier:null,article:'§ 1. Особенности',excerpt:null,originalUrl:'https://lex.uz/ru/docs/6257288#section',status:'unconfirmed',effectiveDate:null,verifiedAt:'2026-11-03T00:00:00Z'}];
-  const rule='Статья 408 ТК; пп. 1, 4 и 5 ч. 2 ст. 161 ТК; Статьи 163, 409 ТК. ';
-  delivery={...saved,result:{...result,sources,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:rule+'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[0]}],actionPlan:[{title:"Check the grounds",description:"Request the written grounds and check the leave status.",sourceIds:[]}]}};
-  const page=await browser.newPage({viewport:{width,height:900}});
-  context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
-  await page.goto(origin+'/signed');
-  for (const file of ['globals.css','_platform/platform-shell.css','_platform/legal-answer.css','_platform/ai-lawyer-phase4.css','_platform/ai-document-prefill.css','_platform/ai-evidence.css','_platform/ai-lawyer.css']) {
+async function styleChat(page) {
+  for (const file of ['globals.css','_components/select.css','invite/invite.css','legal/legal.css','_platform/lawyer-workspace.css','_components/motion.css','_components/brand.css','_platform/platform-shell.css','_platform/global-search.css','_platform/platform-readability.css','_platform/legal-answer.css','_platform/ai-lawyer-phase4.css','_platform/ai-document-prefill.css','_platform/ai-evidence.css','_platform/ai-lawyer.css']) {
     const css=await readFile(new URL(`../../app/${file}`,import.meta.url),'utf8');
     await page.addStyleTag({content:css.replace(/@import[^;]+;/g,'')});
   }
+  if(process.env.LEGAL_CHAT_DEPLOYED_CSS) await page.addStyleTag({content:await readFile(process.env.LEGAL_CHAT_DEPLOYED_CSS,'utf8')});
   await page.addStyleTag({content:'body{margin:0;font-family:var(--font-ui)}*{box-sizing:border-box}'});
-  await page.evaluate(()=>{
-    document.documentElement.dataset.theme='dark';
-    const root=document.getElementById('root'), main=document.createElement('main');
-    main.className='platform-main'; root.before(main);
-    const shell=document.createElement('div');shell.className='platform-shell';shell.style.gridTemplateColumns='minmax(0,1fr)';
-    main.before(shell);shell.append(main);
-    const header=document.createElement('header');header.className='platform-topbar';header.textContent='JURO · Legal workspace';
-    const content=document.createElement('main');content.className='platform-content';
-    main.append(header,content);content.append(root);root.style.height='100%';
-  });
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+}
+
+for (const width of [390, 900, 1280, 1920, 2560]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
+  completed.clear(); stallMetadata=false; sendDeeperProgress=false;
+  const sources=[{sourceId:'section',actTitle:'Трудовой кодекс Республики Узбекистан',actIdentifier:null,article:'Статья 409. Гарантии',excerpt:null,originalUrl:'https://lex.uz/ru/docs/6257288#409',status:'unconfirmed',effectiveDate:null,verifiedAt:'2026-11-03T00:00:00Z'}];
+  const rule='Статья 408 ТК; пп. 1, 4 и 5 ч. 2 ст. 161 ТК; Статьи 163, 409 ТК. ';
+  delivery={...saved,result:{...result,sources,responseKind:'answer',summarySourceIds:['section'],summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:rule+'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[0]}],actionPlan:[{title:"Check the grounds",description:"Request the written grounds and check the leave status.",sourceIds:[]}]}};
+  const page=await browser.newPage({viewport:{width,height:900}});
+  context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
+  await page.goto(origin+'/en/individual/ai-chat');
+  await styleChat(page);
   await page.locator('#ai-question').fill('Can my employer terminate my contract?');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   const activity=page.locator('.ai-assistant-draft .answer-activity');await activity.waitFor();
@@ -237,12 +235,13 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
   write([{key:'issue/employment/title',text:'Employment protections'}, {key:'issue/employment/explanation',text:rule+'The applicable rule and its qualifications. '.repeat(20)}]);
   await page.locator('[data-answer-writing]').getByText('Employment protections',{exact:true}).waitFor();
   assert.equal(await page.locator('[data-answer-writing] .safe-markdown a').count(),4,await page.locator('[data-answer-writing]').innerHTML());
-  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),5,'Every mentioned article appears during streaming');
+  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),4,'Every mentioned article appears during streaming');
   assert.equal(await page.locator('[data-answer-writing] .safe-markdown a').first().getAttribute('href'),'https://lex.uz/ru/docs/6257288');
   assert.equal(await page.locator('[data-answer-writing] .legal-answer__section--main').count(),0,'Issues stream before the Main Point exists');
   write([{key:'issue/employment/actions/0/title',text:'Check the grounds'}, {key:'issue/employment/actions/0/description',text:'Request the written grounds and check the leave status.'}]);
   await page.locator('[data-answer-writing]').getByText('Request the written grounds and check the leave status.',{exact:true}).waitFor();
   assert.equal(completed.has('/api/platform/ai'),false,'Guidance appears before final delivery');
+  response.write(`event: citations\ndata: ${JSON.stringify({citations:{'turn/content/summary':['section']}})}\n\n`);
   write([{key:'turn/content/summary',text:'A supported main point.'}]);
   await page.locator('.ai-assistant-draft .legal-answer__section').nth(1).waitFor();
   assert.equal(await page.locator('[data-answer-writing]').evaluate(el=>!!el.closest('.ai-answer')),true);
@@ -251,18 +250,22 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
     return {before:heading.getBoundingClientRect().top-prose.getBoundingClientRect().bottom,after:list.getBoundingClientRect().top-heading.getBoundingClientRect().bottom};
   });
   assert(spacing.before>=23 && spacing.after>=11,'Guidance heading has clear spacing on both sides');
-  const dir=new URL('../../../../.scratch/inline-legal-references/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
+  const dir=new URL('../../../../.scratch/answer-citations-layout/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
   await page.screenshot({path:fileURLToPath(new URL(`stream-${width}.png`,dir))});
   const proseStyle=el=>{const s=getComputedStyle(el);return {font:s.font,color:s.color,spacing:s.letterSpacing,width:el.getBoundingClientRect().width}};
   const streamedStyle=await page.locator('[data-answer-writing] .legal-answer__section--main .safe-markdown p').evaluate(proseStyle);
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY),'clip','Chat must disable document scrolling');
+  assert.equal(await page.locator('[data-answer-writing] .legal-answer__section--main a').count(),1,'A supported overview gets a law link even without an article name in its prose');
   const before=await page.evaluate(()=>window.scrollY);
+  assert.deepEqual(await page.locator('.platform-shell,.platform-main,.platform-content').evaluateAll(els=>els.filter(e=>e.scrollHeight>e.clientHeight+1).map(e=>({name:e.className,height:e.clientHeight,scroll:e.scrollHeight}))),[],'Shell ancestors must not have hidden scroll ranges');
+  delivery.turns=Array.from({length:12},(_,i)=>({branchId:`branch-${i}`,requestMessageId:`request-${i}`,responseMessageId:`response-${i}`,question:`Saved question ${i}`,createdAt:'2026-11-03T00:00:00Z',result:delivery.result}));
   completed.add('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);pending.delete('/api/platform/ai');
   await page.locator('.ai-current-answer').waitFor();await page.waitForTimeout(350);
-  assert.equal(await page.locator('.ai-current-answer .safe-markdown a').count(),4);
-  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),5,'Mentioned articles persist after publication');
+  assert.equal(await page.locator('.ai-current-answer .safe-markdown a').count(),5);
+  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),4,'Mentioned articles persist after publication');
   assert.equal(await page.locator('.ai-current-answer footer a').count(),0);
   assert.equal(await page.evaluate(()=>window.scrollY),before,'Final delivery must not scroll the page shell');
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,'No vertical page overflow');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,JSON.stringify(await page.evaluate(()=>({height:innerHeight,scroll:document.documentElement.scrollHeight,body:document.body.getBoundingClientRect().toJSON(),shell:document.querySelector('.platform-shell').getBoundingClientRect().toJSON()}))));
   assert.equal(await page.locator('.answer-activity').count(),0);
   assert.deepEqual(await page.locator('.ai-current-answer .legal-answer__section--main .safe-markdown p').evaluate(proseStyle),streamedStyle,'Prose styles and measure stay identical');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'No horizontal page overflow');
@@ -272,5 +275,19 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
     assert(contextBar.y>=composer.y+composer.height-1,'Context controls must not cover the composer');
   }
   await page.screenshot({path:fileURLToPath(new URL(`final-${width}.png`,dir))});
+  await page.evaluate(()=>window.scrollTo(0,100000));
+  assert.equal(await page.evaluate(()=>window.scrollY),0,'The outer page cannot scroll below the workspace');
+  const pane=page.locator('.ai-answer-stream');
+  await pane.evaluate(el=>el.scrollTop=el.scrollHeight);
+  assert(await pane.evaluate(el=>el.scrollTop>0),'Long saved conversations remain scrollable inside their pane');
+  await page.goto(origin+'/en/individual/ai-chat?conversationId=conversation');
+  await styleChat(page);
+  await page.locator('.ai-answer-stream .legal-answer').first().waitFor();
+  await page.evaluate(()=>window.scrollTo(0,100000));
+  assert.equal(await page.evaluate(()=>window.scrollY),0,'Reopening a saved conversation cannot scroll the document');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,'Saved conversations stay in the viewport after reload');
+  await page.evaluate(()=>{history.pushState(null,'','/en/individual/dashboard');dispatchEvent(new PopStateEvent('popstate'));});
+  await page.waitForFunction(()=>!document.documentElement.classList.contains('platform-chat-page'));
+  assert.notEqual(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY),'clip','Other routes regain normal document scrolling');
   await page.emulateMedia({reducedMotion:'reduce'});
 });

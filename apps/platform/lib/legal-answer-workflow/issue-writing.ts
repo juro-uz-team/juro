@@ -33,7 +33,7 @@ function blocksFor(id: string, issue: Issue): WritingBlock[] {
 /** Streamed issues stay mutable until saving; revisions are explicit and survive finalization. */
 export class IssueWriting {
   private readonly issued = new Map<string, { version: number; content: Issue | null }>();
-  private readonly pending = new Map<string, { update: IssueWritingUpdate; blocks: WritingBlock[] }>();
+  private readonly pending = new Map<string, { update: IssueWritingUpdate; blocks: WritingBlock[]; citations?: Record<string,string[]> }>();
   private readonly order: string[] = [];
   private readonly changes: WrittenAnswer["referenceNotes"] = [];
   private readonly notices: string[] = [];
@@ -49,7 +49,7 @@ export class IssueWriting {
     return `${this.noticeTitle()}: ${update.reason}`;
   }
   private noticeTitle() { return { en: "Updated explanation", ru: "Уточнение ответа", uz: "Javobga aniqlik" }[this.language]; }
-  project(supplied: IssueWritingUpdate, blocks: WritingBlock[], sources: ReadonlySet<string>): WritingDraft {
+  project(supplied: IssueWritingUpdate, blocks: WritingBlock[], sources: ReadonlySet<string>, citations?: Record<string,string[]>): WritingDraft {
     if (this.closed) throw new Error("ISSUE_WRITING_CLOSED");
     const update = header(supplied);
     this.checkVersion(update);
@@ -57,6 +57,7 @@ export class IssueWriting {
       throw new Error("ISSUE_SUPPORT_INVALID");
     if (new Set(blocks.map(block => block.key)).size !== blocks.length || blocks.some(block => !new RegExp(`^issue/${update.id}/(?:title|explanation|actions/\\d+/(?:title|description))$`).test(block.key)
       || block.text.length > 4000) || (update.change === "retract" && blocks.length)) throw new Error("ISSUE_BLOCK_INVALID");
+    if(citations && Object.entries(citations).some(([key,ids])=>!blocks.some(block=>block.key===key) || ids.some(id=>!update.sourceIds.includes(id)))) throw new Error("ISSUE_SUPPORT_INVALID");
     const prior = this.pending.get(update.id);
     if (prior && JSON.stringify(prior.update) !== JSON.stringify(update)) throw new Error("ISSUE_REVISION_CHANGED");
     const active = this.activeIds();
@@ -72,7 +73,7 @@ export class IssueWriting {
     } else if (prior.blocks.some(block => !blocks.find(next => next.key === block.key)?.text.startsWith(block.text))) {
       throw new Error("ISSUE_STREAM_REPLACEMENT");
     }
-    this.pending.set(update.id, { update, blocks: structuredClone(blocks) });
+    this.pending.set(update.id, { update, blocks: structuredClone(blocks), citations: structuredClone(citations) });
     return this.snapshot();
   }
   commit(updates: IssueUpdate[], sources: ReadonlySet<string>, requirements: ReadonlySet<string>) {
@@ -117,7 +118,17 @@ export class IssueWriting {
       const issue = this.issued.get(id)?.content;
       return issue ? blocksFor(id, issue) : [];
     });
-    return { blocks: [...structuredClone(blocks), ...extra.blocks],
+    const citations: Record<string,string[]> = {};
+    for(const id of this.order) {
+      const pending=this.pending.get(id), issue=this.issued.get(id)?.content;
+      if(pending) { if(pending.update.change!=="retract") { citations[`issue/${id}/explanation`]=[...pending.update.sourceIds]; Object.assign(citations,pending.citations); } }
+      else if(issue) {
+        citations[`issue/${id}/explanation`]=[...issue.sourceIds];
+        issue.actions.forEach((action,index)=>{citations[`issue/${id}/actions/${index}/description`]=[...action.sourceIds];});
+      }
+    }
+    Object.assign(citations,extra.citations);
+    return { ...(Object.keys(citations).length ? {citations} : {}), blocks: [...structuredClone(blocks), ...extra.blocks],
       ...(this.revision ? { revision: this.revision, notices: [...this.notices] } : {}) };
   }
   finalize(content: WrittenAnswer): WrittenAnswer {

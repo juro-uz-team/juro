@@ -3,7 +3,7 @@ import { inlineReferences, type ReferenceSource } from "./legal-inline-reference
 
 type Node = { type: string; value?: string; url?: string; children?: Node[] };
 /** Link text nodes only: never rewrite code, existing links, HTML or Markdown syntax. */
-export function legalReferenceMarkdown(sources: readonly ReferenceSource[]) {
+export function legalReferenceMarkdown(sources: readonly ReferenceSource[], supportingLinks: readonly {label: string; href: string}[] = []) {
   return () => (tree: Root) => {
     const visit = (node: Node) => {
       if (["link", "linkReference", "code", "inlineCode", "html"].includes(node.type) || !node.children) return;
@@ -21,5 +21,16 @@ export function legalReferenceMarkdown(sources: readonly ReferenceSource[]) {
       });
     };
     visit(tree);
+    if (supportingLinks.length) {
+      const links: Node[] = [{type:"text",value:" ("}];
+      supportingLinks.forEach((link,index)=>{
+        if(index) links.push({type:"text",value:"; "});
+        links.push({type:"link",url:link.href,children:[{type:"text",value:link.label}]});
+      });
+      links.push({type:"text",value:")"});
+      const root=tree as Node, last=root.children?.at(-1);
+      if(last?.type==="paragraph") last.children!.push(...links);
+      else root.children!.push({type:"paragraph",children:links});
+    }
   };
 }

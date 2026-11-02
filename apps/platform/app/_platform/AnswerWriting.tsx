@@ -14,6 +14,12 @@ export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
     const previous = fields.get(key);
     fields.set(key, previous?.startsWith(block.text) ? previous : block.text);
   }
+  const support=new Map<string,string[]>();
+  for(const [key,ids] of Object.entries(draft.citations ?? {})) {
+    const normalized=key.replace(/^issue\/([^/]+)\//u,(_,id:string)=>`issues/${issueIds.indexOf(id)}/`).replace(/^turn\/content\//u,"");
+    support.set(normalized,ids);
+  }
+  const ids=(key:string)=>support.get(key) ?? [...new Set([...support].filter(([path])=>path.startsWith(`${key}/`)).flatMap(([,values])=>values))];
   const text = (key: string) => fields.get(key) ?? "";
   const indices = (prefix: string) => [...new Set([...fields.keys()].flatMap(key => {
     if (!key.startsWith(`${prefix}/`)) return [];
@@ -21,7 +27,7 @@ export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
     return /^\d+$/u.test(index) ? [Number(index)] : [];
   }))].sort((a, b) => a - b);
   const result: LegalAnswerViewResult = {
-    responseKind: "answer", summary: text("summary"), answer: "", sources: draft.sources ?? [],
+    responseKind: "answer", summary: text("summary"), summarySourceIds:ids("summary"), answer: "", sources: draft.sources ?? [],
     confirmedFindings: [], issues: [], actionPlan: [], assumptions: [], risks: [],
     deadlines: [], requiredDocuments: [], referenceNotes: [], conditionalBranches: [],
     clarificationQuestions: [], urgency: "normal", suggestedDocument: null, legalDatabaseAsOf: "",
@@ -30,18 +36,18 @@ export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
     const prefix = `issues/${index}`;
     const explanation = text(`${prefix}/explanation`) || indices(`${prefix}/explanation`)
       .map(i => text(`${prefix}/explanation/${i}/statement`)).join("\n\n");
-    const findingIndex = result.confirmedFindings.push({ title: text(`${prefix}/title`), explanation }) - 1;
+    const findingIndex = result.confirmedFindings.push({ title: text(`${prefix}/title`), explanation, sourceIds:ids(`${prefix}/explanation`) }) - 1;
     const actionIndices = indices(`${prefix}/actions`).map(i => result.actionPlan.push({
-      title: text(`${prefix}/actions/${i}/title`), description: text(`${prefix}/actions/${i}/description`),
+      title: text(`${prefix}/actions/${i}/title`), description: text(`${prefix}/actions/${i}/description`), sourceIds:ids(`${prefix}/actions/${i}/description`),
     }) - 1);
     result.issues!.push({ findingIndex, actionIndices });
   }
-  result.conditionalBranches = indices("conditionalBranches").map(i => ({ condition: text(`conditionalBranches/${i}/condition`), outcome: text(`conditionalBranches/${i}/outcome`), sourceIds: [] }));
+  result.conditionalBranches = indices("conditionalBranches").map(i => ({ condition: text(`conditionalBranches/${i}/condition`), outcome: text(`conditionalBranches/${i}/outcome`), sourceIds: ids(`conditionalBranches/${i}/outcome`) }));
   result.assumptions = indices("assumptions").map(i => ({ statement: text(`assumptions/${i}/statement`), impact: text(`assumptions/${i}/impact`) }));
-  result.risks = indices("risks").map(i => ({ title: text(`risks/${i}/title`), explanation: text(`risks/${i}/explanation`), level: "low" }));
-  result.deadlines = indices("deadlines").map(i => ({ title: text(`deadlines/${i}/title`), calculationMethod: text(`deadlines/${i}/calculationMethod`), dueDate: null, confidence: "" }));
+  result.risks = indices("risks").map(i => ({ title: text(`risks/${i}/title`), explanation: text(`risks/${i}/explanation`), level: "low", sourceIds:ids(`risks/${i}/explanation`) }));
+  result.deadlines = indices("deadlines").map(i => ({ title: text(`deadlines/${i}/title`), calculationMethod: text(`deadlines/${i}/calculationMethod`), dueDate: null, confidence: "", sourceIds:ids(`deadlines/${i}/calculationMethod`) }));
   result.requiredDocuments = indices("requiredDocuments").map(i => ({ name: text(`requiredDocuments/${i}/name`), reason: text(`requiredDocuments/${i}/reason`), required: false }));
-  result.referenceNotes = indices("referenceNotes").map(i => ({ title: text(`referenceNotes/${i}/title`), note: text(`referenceNotes/${i}/note`), sourceIds: [] }));
+  result.referenceNotes = indices("referenceNotes").map(i => ({ title: text(`referenceNotes/${i}/title`), note: text(`referenceNotes/${i}/note`), sourceIds: ids(`referenceNotes/${i}/note`) }));
   result.clarificationQuestions = indices("clarificationQuestions").map(i => text(`clarificationQuestions/${i}`));
   return result;
 }

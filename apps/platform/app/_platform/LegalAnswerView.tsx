@@ -1,4 +1,5 @@
 "use client";
+import { inlineReferences } from "../../lib/ai/legal-inline-references";
 
 import { ExternalLink } from "lucide-react";
 import { useId, type ReactNode } from "react";
@@ -174,7 +175,8 @@ function publicSourceUrl(source: LegalAnswerViewSource): string | null {
 }
 
 function citationText(source: LegalAnswerViewSource, locale: PlatformLocale): string {
-  const article = source.article?.replace(/^(?:статья|ст\.?|modda)\s*/iu, "").trim();
+  const articleText = source.article?.replace(/^(?:статья|ст\.?|modda)\s*/iu, "").trim();
+  const article = articleText?.match(/^\d+(?:[-–]\d+)?/u)?.[0] ?? articleText;
   const act = source.actTitle
     .replace(/Республики Узбекистан/giu, { ru: "РУз", uz: "O‘zR", en: "Uzbekistan" }[locale])
     .replace(/O‘zbekiston Respublikasi/giu, { ru: "РУз", uz: "O‘zR", en: "Uzbekistan" }[locale]);
@@ -211,12 +213,18 @@ function CitationList({
   </span>;
 }
 
-function Markdown({ children, result, locale }: { children: string; result: LegalAnswerViewResult; locale: PlatformLocale }) {
+function Markdown({ children, result, locale, sourceIds }: { children: string; result: LegalAnswerViewResult; locale: PlatformLocale; sourceIds?: readonly string[] }) {
   const allowedLinks = result.sources.flatMap(source => {
     const href = publicSourceUrl(source); if (!href) return [];
     const document = new URL(href); document.hash = ""; return [href, document.href];
   });
-  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks} referenceSources={result.sources}>{children}</SafeMarkdown>;
+  const mentioned = new Set(inlineReferences(children,result.sources).filter(ref=>ref.source && !ref.navigationOnly && (ref.articleNumber || !ref.source.article)).map(ref=>ref.source!.sourceId));
+  const supportingLinks = [...new Set(children.trim() ? sourceIds ?? [] : [])].flatMap(id=>{
+    const source=result.sources.find(item=>item.sourceId===id);
+    const href=source && publicSourceUrl(source);
+    return source && href && !mentioned.has(id) ? [{label:citationText(source,locale),href}] : [];
+  });
+  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks} referenceSources={result.sources} supportingLinks={supportingLinks}>{children}</SafeMarkdown>;
 }
 
 function Section({ id, title, children, className = "" }: { id: string; title: string; children: ReactNode; className?: string }) {
@@ -280,7 +288,7 @@ export function LegalAnswerView({
       {result.confirmedFindings.length > 0 && <Section id={`${id}-found`} title={copy.law}>
         {result.confirmedFindings.map((finding, index) => <div className="legal-answer__finding" key={index}>
           <h3>{finding.title}</h3>
-          <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
+          <Markdown result={result} locale={locale} sourceIds={finding.sourceIds}>{finding.explanation}</Markdown>
           <CitationList sourceIds={finding.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
         </div>)}
       </Section>}
@@ -288,7 +296,7 @@ export function LegalAnswerView({
       {(result.referenceNotes ?? []).length > 0 && <Section id={`${id}-additional`} title={copy.additional} className="legal-answer__section--additional">
         <p className="legal-answer__secondary-note">{copy.secondaryNote}</p>
         {(result.referenceNotes ?? []).map((note, index) => <article key={`${id}-reference-note-${index}`}>
-          <h3>{note.title}</h3><Markdown result={result} locale={locale}>{note.note}</Markdown>
+          <h3>{note.title}</h3><Markdown result={result} locale={locale} sourceIds={note.sourceIds}>{note.note}</Markdown>
           <CitationList sourceIds={note.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
         </article>)}
       </Section>}
@@ -305,25 +313,25 @@ export function LegalAnswerView({
   const prepare = result.requiredDocuments.length > 0 || Boolean(result.suggestedDocument);
   return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>
     {result.summary && <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
-      <Markdown result={result} locale={locale}>{result.summary}</Markdown>
+      <Markdown result={result} locale={locale} sourceIds={result.summarySourceIds}>{result.summary}</Markdown>
     </Section>}
     {(result.conditionalBranches ?? []).length > 0 && <Section id={`${id}-branches`} title={copy.branches}>
       <div className="legal-answer__findings">{(result.conditionalBranches ?? []).map((branch) => <article key={`${branch.condition}:${branch.sourceIds.join(":")}`}>
         <h3>{branch.condition}</h3>
-        <Markdown result={result} locale={locale}>{branch.outcome}</Markdown>
+        <Markdown result={result} locale={locale} sourceIds={branch.sourceIds}>{branch.outcome}</Markdown>
       </article>)}</div>
     </Section>}
     {result.issues?.map((issue,index)=>{
       const finding=result.confirmedFindings[issue.findingIndex]!;
       return <section className="legal-answer__section" data-answer-issue={index} key={issue.findingIndex} aria-labelledby={`${id}-issue-${index}`}>
         <h2 id={`${id}-issue-${index}`}>{finding.title}</h2>
-        <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
+        <Markdown result={result} locale={locale} sourceIds={finding.sourceIds}>{finding.explanation}</Markdown>
         {issue.actionIndices.length>0 && <>
           <h3>{copy.next}</h3>
           <ol className="legal-answer__steps">{issue.actionIndices.map(actionIndex=>{
             const step=result.actionPlan[actionIndex]!;
             return <li key={actionIndex}>
-              <div><h4>{step.title}</h4><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
+              <div><h4>{step.title}</h4><Markdown result={result} locale={locale} sourceIds={step.sourceIds}>{step.description}</Markdown></div>
             </li>;
           })}</ol>
         </>}
@@ -332,12 +340,12 @@ export function LegalAnswerView({
     {!result.issues && result.confirmedFindings.length > 0 && <Section id={`${id}-law`} title={copy.law}>
       <div className="legal-answer__findings">{result.confirmedFindings.map((finding) => <article key={`${finding.title}:${finding.sourceIds?.join(":") ?? ""}`}>
         <h3>{finding.title}</h3>
-        <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
+        <Markdown result={result} locale={locale} sourceIds={finding.sourceIds}>{finding.explanation}</Markdown>
       </article>)}</div>
     </Section>}
     {!result.issues && result.actionPlan.length > 0 && <Section id={`${id}-next`} title={copy.next}>
       <ol className="legal-answer__steps">{result.actionPlan.map((step) => <li key={step.title}>
-        <div><h3>{step.title}</h3><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
+        <div><h3>{step.title}</h3><Markdown result={result} locale={locale} sourceIds={step.sourceIds}>{step.description}</Markdown></div>
       </li>)}</ol>
     </Section>}
     {important && <Section id={`${id}-important`} title={copy.important} className="legal-answer__section--important">
@@ -346,13 +354,13 @@ export function LegalAnswerView({
         : copy.priorityUrgency}</p>}
       {result.assumptions.map((assumption) => <article key={assumption.statement}><h3>{assumption.statement}</h3><Markdown result={result} locale={locale}>{assumption.impact}</Markdown></article>)}
       {result.risks.map((risk) => <article className={`legal-answer__risk legal-answer__risk--${risk.level}`} key={`${risk.level}:${risk.title}`}>
-        <h3>{risk.title}</h3><Markdown result={result} locale={locale}>{risk.explanation}</Markdown>
+        <h3>{risk.title}</h3><Markdown result={result} locale={locale} sourceIds={risk.sourceIds}>{risk.explanation}</Markdown>
       </article>)}
     </Section>}
     {result.deadlines.length > 0 && <Section id={`${id}-deadlines`} title={copy.deadlines}>
       <div className="legal-answer__deadlines">{result.deadlines.map((deadline) => <article key={deadline.title}>
         <h3>{deadline.title}{deadline.dueDate ? ` · ${deadline.dueDate}` : ""}</h3>
-        <Markdown result={result} locale={locale}>{deadline.calculationMethod}</Markdown>
+        <Markdown result={result} locale={locale} sourceIds={deadline.sourceIds}>{deadline.calculationMethod}</Markdown>
       </article>)}</div>
     </Section>}
     {prepare && <Section id={`${id}-prepare`} title={copy.prepare}>
@@ -364,7 +372,7 @@ export function LegalAnswerView({
     {(result.referenceNotes ?? []).length > 0 && <Section id={`${id}-additional`} title={copy.additional} className="legal-answer__section--additional">
       <p className="legal-answer__secondary-note">{copy.secondaryNote}</p>
       {(result.referenceNotes ?? []).map((note, index) => <article key={`${id}-reference-note-${index}`}>
-        <h3>{note.title}</h3><Markdown result={result} locale={locale}>{note.note}</Markdown>
+        <h3>{note.title}</h3><Markdown result={result} locale={locale} sourceIds={note.sourceIds}>{note.note}</Markdown>
       </article>)}
     </Section>}
     {coverageGaps}
