@@ -308,9 +308,9 @@ export function LegalAnswerView({
     ...result.deadlines.map((deadline) => deadline.sourceIds),
   ].flatMap((sourceIds) => sourceIds ?? []))];
   return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>
-    <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
+    {result.summary && <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
-    </Section>
+    </Section>}
     {(result.conditionalBranches ?? []).length > 0 && <Section id={`${id}-branches`} title={copy.branches}>
       <div className="legal-answer__findings">{(result.conditionalBranches ?? []).map((branch) => <article key={`${branch.condition}:${branch.sourceIds.join(":")}`}>
         <h3>{branch.condition}</h3>

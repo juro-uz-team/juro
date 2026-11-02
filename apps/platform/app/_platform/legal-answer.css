@@ -280,3 +280,9 @@
 
 .legal-answer__sources { border-top: 1px solid var(--legal-rule); padding-top: 24px; }
 .legal-answer__source-group + .legal-answer__source-group { margin-top: 20px; }
+
+/* Practical guidance is a separate reading group within its legal issue. */
+.legal-answer__section > .safe-markdown + h3 { margin: 24px 0 12px; }
+.legal-answer__steps h4 { margin: 0; color: var(--text-primary); font-size: 0.98rem; font-weight: 700; line-height: 1.5; }
+.legal-answer__steps > li > div > .safe-markdown { margin-top: 8px; }
+.legal-answer[aria-busy="true"] > .legal-answer__section:first-child { padding-top: 0; border-top: 0; }

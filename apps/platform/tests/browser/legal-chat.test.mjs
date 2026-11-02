@@ -202,7 +202,7 @@ for (const guest of [true, false]) test(`draft grows before completion and clear
 
 for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
   completed.clear(); stallMetadata=false; sendDeeperProgress=false;
-  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[]}]}};
+  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[0]}],actionPlan:[{title:"Check the grounds",description:"Request the written grounds and check the leave status.",sourceIds:[]}]}};
   const page=await browser.newPage({viewport:{width,height:900}});
   context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
   await page.goto(origin+'/signed');
@@ -230,10 +230,22 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
   await page.waitForTimeout(150);
   assert.notEqual(await spinner.evaluate(el=>getComputedStyle(el).transform),first);
   const response=pending.get('/api/platform/ai');assert(response);
-  response.write(`event: writing\ndata: ${JSON.stringify({blocks:[{key:'turn/content/summary',text:'A supported main point.'},{key:'turn/content/issues/0/title',text:'Employment protections'},{key:'turn/content/issues/0/explanation',text:'The applicable rule and its qualifications. '.repeat(20)}]})}\n\n`);
+  const write=blocks=>response.write(`event: writing\ndata: ${JSON.stringify({blocks})}\n\n`);
+  write([{key:'issue/employment/title',text:'Employment protections'}, {key:'issue/employment/explanation',text:'The applicable rule and its qualifications. '.repeat(20)}]);
+  await page.locator('[data-answer-writing]').getByText('Employment protections',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-answer-writing] .legal-answer__section--main').count(),0,'Issues stream before the Main Point exists');
+  write([{key:'issue/employment/actions/0/title',text:'Check the grounds'}, {key:'issue/employment/actions/0/description',text:'Request the written grounds and check the leave status.'}]);
+  await page.locator('[data-answer-writing]').getByText('Request the written grounds and check the leave status.',{exact:true}).waitFor();
+  assert.equal(completed.has('/api/platform/ai'),false,'Guidance appears before final delivery');
+  write([{key:'turn/content/summary',text:'A supported main point.'}]);
   await page.locator('.ai-assistant-draft .legal-answer__section').nth(1).waitFor();
   assert.equal(await page.locator('[data-answer-writing]').evaluate(el=>!!el.closest('.ai-answer')),true);
-  const dir=new URL('../../../../.scratch/chat-ui/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
+  const spacing=await page.locator('[data-answer-writing] [data-answer-issue="0"]').evaluate(el=>{
+    const prose=el.querySelector('.safe-markdown'), heading=el.querySelector(':scope > h3'), list=el.querySelector('ol');
+    return {before:heading.getBoundingClientRect().top-prose.getBoundingClientRect().bottom,after:list.getBoundingClientRect().top-heading.getBoundingClientRect().bottom};
+  });
+  assert(spacing.before>=23 && spacing.after>=11,'Guidance heading has clear spacing on both sides');
+  const dir=new URL('../../../../.scratch/full-answer-stream/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
   await page.screenshot({path:fileURLToPath(new URL(`stream-${width}.png`,dir))});
   const proseStyle=el=>{const s=getComputedStyle(el);return {font:s.font,color:s.color,spacing:s.letterSpacing,width:el.getBoundingClientRect().width}};
   const streamedStyle=await page.locator('[data-answer-writing] .legal-answer__section--main .safe-markdown p').evaluate(proseStyle);

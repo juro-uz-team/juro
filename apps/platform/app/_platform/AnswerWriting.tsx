@@ -4,7 +4,16 @@ import { LegalAnswerView, type LegalAnswerViewResult } from "./LegalAnswerView";
 
 /** Project public prose only; sources and authority arrive after validation. */
 export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
-  const fields = new Map(draft.blocks.map(block => [block.key.replace(/^turn\/content\//u, ""), block.text]));
+  const fields = new Map<string, string>();
+  const issueIds = [...new Set(draft.blocks.flatMap(block => /^issue\/([^/]+)\//u.exec(block.key)?.[1] ?? []))];
+  // Research issues and the final writer use different keys for the same ordered issues.
+  // Keep complete published prose while the final writer repeats its matching prefix.
+  for (const block of draft.blocks) {
+    const key = block.key.replace(/^issue\/([^/]+)\//u, (_, id: string) => `issues/${issueIds.indexOf(id)}/`)
+      .replace(/^turn\/content\//u, "");
+    const previous = fields.get(key);
+    fields.set(key, previous?.startsWith(block.text) ? previous : block.text);
+  }
   const text = (key: string) => fields.get(key) ?? "";
   const indices = (prefix: string) => [...new Set([...fields.keys()].flatMap(key => {
     if (!key.startsWith(`${prefix}/`)) return [];
@@ -38,9 +47,7 @@ export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
 }
 
 export function AnswerWriting({ draft, locale = "en" }: { draft: WritingDraft | null; locale?: PlatformLocale }) {
-  // Research issue updates can still be revised and do not contain the Main Point.
-  // Start the reading view with the final writer's ordered prose, not a provisional issue.
-  if (!draft?.blocks.some(block => block.key === "turn/content/summary" && block.text.length > 0)) return null;
+  if (!draft || (!draft.blocks.length && !draft.notices?.length)) return null;
   return <div data-answer-writing>
     <LegalAnswerView result={writingResult(draft)} locale={locale} streaming />
     {draft.notices?.map((notice, index) => <p key={index} role="status" className="ai-answer-revision">{notice}</p>)}

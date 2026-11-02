@@ -357,10 +357,10 @@ test("programmatically checked answers do not display independent legal verifica
 });
 
 // The public writing view shares the completed section tree and defers mutable research previews.
-test("streaming waits for the Main Point and keeps issue formatting and source boundaries", async () => {
+test("streaming includes early issues and keeps issue formatting and source boundaries", async () => {
   const { AnswerWriting, writingResult } = await import("../app/_platform/AnswerWriting");
   const research = { blocks: [{ key: "issue/employment/title", text: "Provisional" }] };
-  assert.equal(renderToStaticMarkup(createElement(AnswerWriting, { draft: research })), "");
+  assert.match(renderToStaticMarkup(createElement(AnswerWriting, { draft: research })), /Provisional/);
   const draft = { blocks: [
     { key: "turn/content/summary", text: "A **supported** conclusion." },
     { key: "turn/content/issues/0/title", text: "Employment" },
@@ -376,4 +376,31 @@ test("streaming waits for the Main Point and keeps issue formatting and source b
   assert.equal(streamed.replace(' aria-busy="true"', '').split('</article>')[0], saved.split('<footer')[0].trimEnd());
   assert.match(streamed, /<strong>supported<\/strong>/);
   assert.doesNotMatch(streamed, /legal-answer__authority|legal-answer__citations/);
+});
+
+test("published issues and their actions stream before the overview without duplicating final-writer prose", async () => {
+  const { writingResult, AnswerWriting } = await import("../app/_platform/AnswerWriting");
+  const blocks = [
+    { key: "issue/employment/title", text: "Employment protections" },
+    { key: "issue/employment/explanation", text: "The complete qualified rule." },
+    { key: "issue/employment/actions/0/title", text: "Check the order" },
+    { key: "issue/employment/actions/0/description", text: "Request the written grounds." },
+    { key: "issue/appeal/title", text: "Appeal" },
+    { key: "issue/appeal/explanation", text: "Keep the deadline." },
+  ];
+  const early = writingResult({ blocks });
+  assert.equal(early.confirmedFindings.length, 2);
+  assert.equal(early.actionPlan[0].description, "Request the written grounds.");
+  const html = renderToStaticMarkup(createElement(AnswerWriting, { draft: { blocks }, locale: "en" }));
+  assert.match(html, /Request the written grounds/);
+  assert.doesNotMatch(html, /Key point/);
+  const repeated = writingResult({ blocks: [...blocks,
+    { key: "turn/content/summary", text: "The Main Point." },
+    { key: "turn/content/issues/0/title", text: "Employment" },
+    { key: "turn/content/issues/0/explanation/0/statement", text: "The complete" },
+  ] });
+  assert.equal(repeated.confirmedFindings.length, 2);
+  assert.equal(repeated.confirmedFindings[0].title, "Employment protections");
+  assert.equal(repeated.confirmedFindings[0].explanation, "The complete qualified rule.");
+  assert.equal(repeated.summary, "The Main Point.");
 });
