@@ -157,9 +157,11 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         const outputLanguage = { en: "English", ru: "Russian", uz: "Uzbek in Latin script" }[request.language];
         controller.providerStarted();
         const raw = await withinSignal(writingSignal, () => ports.model.complete({ stage: "write", researchSession: true,
-          onWriting: request.onWriting ? draft => emitWriting(draft.issueUpdate
-            ? issueWriting.project(draft.issueUpdate, draft.blocks, new Set(evidence.map(item => item.identity)), draft.citations)
-            : issueWriting.snapshot(draft)) : undefined,
+          onWriting: request.onWriting ? draft => {
+            if (draft.issueUpdate) {
+              issueWriting.project(draft.issueUpdate, draft.blocks, new Set(evidence.map(item => item.identity)), draft.citations);
+            } else emitWriting(issueWriting.publicSnapshot(draft));
+          } : undefined,
           instruction: `${evidence.length ? researchWritingInstruction : unreadResearchInstruction}\nFor this request write user-facing prose in ${outputLanguage}. Keep source and candidate identifiers unchanged. Maintain only useful revisable coverage records: issue, relevance, provisional support, unresolved dependency and next action. These records are task state, never legal evidence.`,
           sourceFiles, input: { researchAgent: true, question: request.question, language: request.language, format: request.format,
             ...(ports.model.issueWriting ? { issueWriting: true, publishedIssues: issueWriting.published(), issueCorrections: issueWriting.correctionCount() } : {}),
@@ -180,7 +182,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         if (ports.model.issueWriting && typeof raw === "object" && raw !== null && issuedResearchTurn in raw) {
           const parsed = z.object({ issueUpdates: z.array(issueUpdateSchema), coverageUpdates: z.array(coverageRecordSchema).optional() }).parse(raw);
           const updates = parsed.issueUpdates;
-          for (const draft of issueWriting.commit(updates, new Set(evidence.map(item => item.identity)), requirements)) emitWriting(draft);
+          issueWriting.commit(updates, new Set(evidence.map(item => item.identity)), requirements);
           if (parsed.coverageUpdates) workspace.revise(parsed.coverageUpdates);
           continue;
         }

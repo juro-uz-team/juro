@@ -3,14 +3,38 @@ import test from "node:test";
 import { createWritingProjection, type WritingDraft } from "../lib/legal-answer-workflow/writing-stream";
 import { readProviderResponse } from "../lib/legal-answer-workflow/provider-stream";
 import { citationProseNormalizer } from "../lib/legal-answer-workflow/citation-prose";
+import { IssueWriting } from "../lib/legal-answer-workflow/issue-writing";
+import { writtenAnswerSchema } from "../lib/legal-answer-workflow/contracts";
 
-test("qualified issue prose streams before its later derived overview without losing either", () => {
+test("prepared research issues appear only after the streamed opening, before supporting sections", () => {
+  const writing = new IssueWriting("en");
+  writing.commit([{ id: "permit", baseVersion: "0", change: "upsert", reason: "", sourceIds: ["s1"],
+    content: { title: "Permit", explanation: "The complete rule.", sourceIds: ["s1"], requirementIds: ["r1"], actions: [] },
+  }], new Set(["s1"]), new Set(["r1"]));
+  const drafts: WritingDraft[] = [];
+  const write = createWritingProjection(draft => drafts.push(writing.publicSnapshot(draft)), undefined, true);
+  write('{"turn":{"decision":"answer","content":{"summary":"The Main');
+  assert.deepEqual(drafts.at(-1)!.blocks.map(block => block.key), ["turn/content/summary"]);
+  write(' Point.","summarySourceIds":["s1"],"conditionalBranches":[{"condition":"Private event","outcome":"Exempt');
+  assert.ok(drafts.at(-1)!.blocks.every(block => !block.key.startsWith("issue/")));
+  write('","sourceIds":["s1"]}]');
+  assert.equal(drafts.at(-1)!.blocks.at(-1)!.text, "The complete rule.");
+  write(',"assumptions":[],"risks":[],"deadlines":[{"title":"Deadline","calculationMethod":"Ten days","sourceIds":["s1"]}],"requiredDocuments":[],"referenceNotes":[],"clarificationQuestions":[]}}}');
+  const keys = drafts.at(-1)!.blocks.map(block => block.key);
+  assert.ok(keys.indexOf("turn/content/conditionalBranches/0/outcome") < keys.indexOf("issue/permit/title"));
+  assert.ok(keys.indexOf("issue/permit/explanation") < keys.indexOf("turn/content/deadlines/0/title"));
+  assert.deepEqual(drafts.at(-1)!.citations?.["issue/permit/explanation"], ["s1"]);
+  assert.deepEqual(Object.keys(writtenAnswerSchema.shape).slice(0, 4), ["summary", "summarySourceIds", "conditionalBranches", "issues"]);
+});
+
+test("qualified issue prose waits for the Main Point and conditional branches", () => {
   const drafts: WritingDraft[] = [];
   const write = createWritingProjection(draft => drafts.push(draft));
   write('{"turn":{"decision":"answer","content":{"issues":[{"title":"Permit","explanation":[{"statement":"Public events need a permit; private gatherings are exempt.","sourceIds":["s1"]}],"requirementIds":["permit"],"actions":[]}],');
-  assert.ok(drafts.at(-1)?.blocks.some(block => block.text === "Public events need a permit; private gatherings are exempt."));
-  assert.ok(!drafts.at(-1)?.blocks.some(block => block.key === "summary"));
-  write('"summary":"The permit requirement applies to public events.","summarySourceIds":["s1"]}}}');
+  assert.equal(drafts.length, 0);
+  write('"summary":"The permit requirement applies to public events.","summarySourceIds":["s1"],');
+  assert.deepEqual(drafts.at(-1)!.blocks.map(block => block.key), ["turn/content/summary"]);
+  write('"conditionalBranches":[]}}}');
   const final = drafts.at(-1)!;
   assert.ok(final.blocks.some(block => block.text === "Public events need a permit; private gatherings are exempt."));
   assert.ok(final.blocks.some(block => block.text === "The permit requirement applies to public events."));
@@ -78,7 +102,7 @@ test("unfinished structured output streams only answer prose, preserving split e
   assert.equal(drafts.at(-1)?.blocks[0].text, "Закон: ");
   write('\\u00');
   assert.equal(drafts.at(-1)?.blocks[0].text, "Закон: ");
-  write('abда\\u00bb","summarySourceIds":["s1"],"issues":[{"title":"Правило","explanation":[{"statement":"Есть право.","sourceIds":["secret"]}]}]}}}');
+  write('abда\\u00bb","summarySourceIds":["s1"],"conditionalBranches":[],"issues":[{"title":"Правило","explanation":[{"statement":"Есть право.","sourceIds":["secret"]}]}]}}}');
   assert.deepEqual(drafts.at(-1)?.blocks.map(block => block.text), ["Закон: «да»", "Правило", "Есть право."]);
   assert.ok(!JSON.stringify(drafts.map(draft=>draft.blocks)).includes("secret"));
   assert.deepEqual(drafts.at(-1)?.citations?.["turn/content/issues/0/explanation/0/statement"],["secret"]);

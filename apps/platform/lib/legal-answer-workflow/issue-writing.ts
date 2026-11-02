@@ -139,6 +139,13 @@ export class IssueWriting {
     return writtenAnswerSchema.parse({ ...content, referenceNotes: [...content.referenceNotes, ...this.changes] });
   }
   correctionCount() { return this.changes.length; }
+  /** Research prose stays private until the preceding displayed sections finish. */
+  publicSnapshot(extra: WritingDraft): WritingDraft {
+    if (!extra.openingComplete) return extra;
+    const draft = this.snapshot(extra);
+    const opening = draft.blocks.filter(block => /^turn\/content\/(?:summary|conditionalBranches\/)/u.test(block.key));
+    return { ...draft, blocks: [...opening, ...draft.blocks.filter(block => !opening.includes(block))] };
+  }
   correctionNotes() { return structuredClone(this.changes); }
   private activeIds() {
     const active = new Set(this.published().filter(item => item.content).map(item => item.id));

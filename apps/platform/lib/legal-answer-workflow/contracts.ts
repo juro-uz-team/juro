@@ -84,6 +84,11 @@ export function writtenAnswerForLanguage(language?: unknown, sourceIds?: readonl
   const statement = language === "uz" ? z.string().min(1).max(4000).regex(uzbekLatinProse) : z.string().min(1).max(4000);
   const title = language === "uz" ? id.regex(uzbekLatinProse) : id;
   return z.object({
+  // Generate in the same top-to-bottom order as the Legal Answer view.
+  summary: statement,
+  summarySourceIds: boundCitations,
+  conditionalBranches: z.array(z.object({ condition: statement, outcome: statement, sourceIds: boundCitations }).strict()).max(12)
+    .describe("Material alternative routes relevant to the requested decision, with their separate factual triggers and qualifications. Preserve routes available to multiple participants as well as actor-specific routes; explaining one participant's grounds does not exhaust the governing law's other relevant alternatives. Exclude unrelated hypothetical disputes. A branch must not contradict an earlier unqualified statement."),
   issues: z.array(z.object({
     title, explanation: statement.describe("State the complete source-supported rule and its application, retaining material conditions, exceptions and exclusions. Distinguish rules for different actors, claims or procedures; a general rule must not conceal an applicable special rule. Put the actor and governing-regime conditions in each affected statement, supported by its own citations; a later conditional branch cannot repair an earlier overbroad entitlement. Source silence does not establish permission, prohibition or absence of legal effect."),
     requirementIds: z.array(id).min(1).max(40), sourceIds: boundCitations,
@@ -92,8 +97,6 @@ export function writtenAnswerForLanguage(language?: unknown, sourceIds?: readonl
       sourceIds: boundCitations }).strict()).max(16),
   }).strict()).min(1).max(16)
     .describe("Explain every supported material research question, including directly connected effects and continuing rights, with its conditions and safeguards. Combine overlapping requirements in one issue when appropriate. Drop a provisional requirement only when the actual question and law make it irrelevant; do not silently omit a relevant supported requirement. Research missing material law before returning an answer."),
-  conditionalBranches: z.array(z.object({ condition: statement, outcome: statement, sourceIds: boundCitations }).strict()).max(12)
-    .describe("Material alternative routes relevant to the requested decision, with their separate factual triggers and qualifications. Preserve routes available to multiple participants as well as actor-specific routes; explaining one participant's grounds does not exhaust the governing law's other relevant alternatives. Exclude unrelated hypothetical disputes. A branch must not contradict an earlier unqualified statement."),
   assumptions: z.array(z.object({ statement, impact: statement }).strict()).max(12),
   risks: z.array(z.object({ level: z.enum(["low", "medium", "high", "critical"]),
     title, explanation: statement, sourceIds: boundCitations }).strict()).max(12),
@@ -105,10 +108,6 @@ export function writtenAnswerForLanguage(language?: unknown, sourceIds?: readonl
   referenceNotes: z.array(z.object({ title, note: statement, sourceIds: boundCitations }).strict()).max(12),
   clarificationQuestions: z.array(statement).max(8),
   urgency: z.enum(["normal", "high", "critical"]),
-  // Structured generation follows field order: derive the overview from the
-  // completed qualified explanations, rather than commit to it before them.
-  summary: statement,
-  summarySourceIds: boundCitations,
 }).strict();
 }
 export const writtenAnswerSchema = writtenAnswerForLanguage();

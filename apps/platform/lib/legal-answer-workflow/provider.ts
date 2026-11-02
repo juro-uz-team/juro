@@ -273,7 +273,9 @@ export function createResponsesModel(configuration: Configuration) {
           throw new Error("PROVIDER_HTTP_FAILED");
         }
         const envelope = envelopeSchema.parse(await readProviderResponse(response, signal,
-          operation.onWriting && !session?.privateReview ? createWritingProjection(operation.onWriting, session?.normalizeProse) : undefined,
+          operation.onWriting && !session?.privateReview ? createWritingProjection(operation.onWriting, session?.normalizeProse,
+            Boolean(operation.input && typeof operation.input === "object" && "publishedIssues" in operation.input
+              && Array.isArray(operation.input.publishedIssues) && operation.input.publishedIssues.length)) : undefined,
           metadata => { providerError = metadata; }, session?.onArguments));
         responseId = envelope.id;
         const usage = envelope.usage, cached = usage.input_tokens_details.cached_tokens;

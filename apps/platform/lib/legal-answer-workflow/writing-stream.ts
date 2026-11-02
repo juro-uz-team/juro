@@ -3,6 +3,8 @@ import { citationProseNormalizer } from "./citation-prose";
 /** Public prose only. Structured source IDs, research notes and provider reasoning are excluded. */
 export type WritingBlock = { key: string; text: string };
 export type WritingDraft = { blocks: WritingBlock[]; citations?: Record<string, string[]>; sources?: import("../ai/legal-chat-schema").LegalChatResponse["sources"]; revision?: number; notices?: string[];
+  /** Internal publication boundary; never derived from the presence of prose alone. */
+  openingComplete?: boolean;
   issueUpdate?: import("./issue-writing").IssueWritingUpdate };
 
 type Frame = { path: string[]; kind: "object" | "array"; key: string; index: number; expectingKey: boolean };
@@ -59,14 +61,22 @@ export function stringValues(input: string) {
 const publicProse = /^turn\/content\/(?:summary|issues\/\d+\/(?:title|explanation(?:\/\d+\/statement)?|actions\/\d+\/(?:title|description))|conditionalBranches\/\d+\/(?:condition|outcome)|assumptions\/\d+\/(?:statement|impact)|risks\/\d+\/(?:title|explanation)|deadlines\/\d+\/(?:title|calculationMethod)|requiredDocuments\/\d+\/(?:name|reason)|referenceNotes\/\d+\/(?:title|note)|clarificationQuestions\/\d+)$/u;
 
 export function createWritingProjection(onDraft: (draft: WritingDraft) => void,
-  normalize = citationProseNormalizer(undefined)) {
+  normalize = citationProseNormalizer(undefined), preparedIssues = false) {
   let text = "", previous = "";
   return (delta: string) => {
     text += delta;
     if (text.length > 2 * 1024 * 1024) throw new Error("PROVIDER_BODY_LIMIT");
     const { values, completed } = stringValues(text);
     if (values.get("turn/decision") !== "answer") return;
-    const blocks = [...values].filter(([key, value]) => publicProse.test(key) && value.length > 0)
+    const sections = ["summary", "conditionalBranches", "issues", "assumptions", "risks", "deadlines", "requiredDocuments", "referenceNotes", "clarificationQuestions"];
+    const visible = new Set<string>();
+    for (const section of sections) {
+      visible.add(section);
+      if (!(section === "issues" && preparedIssues) && !completed.has(`turn/content/${section}`)) break;
+    }
+    const openingComplete = completed.has("turn/content/summary") && completed.has("turn/content/conditionalBranches");
+    const blocks = [...values].filter(([key, value]) => publicProse.test(key) && value.length > 0 && visible.has(key.split("/")[2]))
+      .sort(([a], [b]) => sections.indexOf(a.split("/")[2]) - sections.indexOf(b.split("/")[2]))
       .map(([key, value]) => {
         const parent = key.slice(0, key.lastIndexOf("/"));
         const sources = `${parent}/${key.endsWith("/summary") ? "summarySourceIds" : "sourceIds"}`;
@@ -86,7 +96,7 @@ export function createWritingProjection(onDraft: (draft: WritingDraft) => void,
       const path=`${parent}/${block.key.endsWith("/summary") ? "summarySourceIds" : "sourceIds"}`;
       if(completed.has(path)) citations[block.key]=[...values].filter(([key])=>key.startsWith(`${path}/`)).map(([,id])=>id);
     }
-    const snapshot = JSON.stringify({blocks,citations});
-    if (snapshot !== previous) { previous = snapshot; onDraft({ blocks, ...(Object.keys(citations).length ? {citations} : {}) }); }
+    const snapshot = JSON.stringify({blocks,citations,openingComplete});
+    if (snapshot !== previous) { previous = snapshot; onDraft({ blocks, openingComplete, ...(Object.keys(citations).length ? {citations} : {}) }); }
   };
 }
