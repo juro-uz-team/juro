@@ -286,3 +286,7 @@
 .legal-answer__steps h4 { margin: 0; color: var(--text-primary); font-size: 0.98rem; font-weight: 700; line-height: 1.5; }
 .legal-answer__steps > li > div > .safe-markdown { margin-top: 8px; }
 .legal-answer[aria-busy="true"] > .legal-answer__section:first-child { padding-top: 0; border-top: 0; }
+
+.legal-answer .safe-markdown a { color: var(--brand-gold-text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 2px; }
+.legal-answer .safe-markdown a:hover { color: var(--text-primary); }
+.legal-answer .safe-markdown a:focus-visible { outline: 2px solid var(--brand-gold-text); outline-offset: 3px; }

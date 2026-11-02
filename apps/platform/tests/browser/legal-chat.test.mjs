@@ -68,7 +68,7 @@ before(async()=>{
       response.end(JSON.stringify(payload));return;
     }
     response.setHeader("content-type",url.pathname==="/bundle.js"?"text/javascript":"text/html");
-    response.end(url.pathname==="/bundle.js"?bundle.outputFiles[0].text:'<div id="root"></div><script src="/bundle.js"></script>');
+    response.end(url.pathname==="/bundle.js"?bundle.outputFiles[0].text:'<meta charset="utf-8"><div id="root"></div><script src="/bundle.js"></script>');
   });
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));origin=`http://127.0.0.1:${server.address().port}`;
   browser=await chromium.launch({channel:process.env.AUTH_BROWSER_CHANNEL||undefined,
@@ -202,7 +202,9 @@ for (const guest of [true, false]) test(`draft grows before completion and clear
 
 for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
   completed.clear(); stallMetadata=false; sendDeeperProgress=false;
-  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[0]}],actionPlan:[{title:"Check the grounds",description:"Request the written grounds and check the leave status.",sourceIds:[]}]}};
+  const sources=[{sourceId:'section',actTitle:'Трудовой кодекс Республики Узбекистан',actIdentifier:null,article:'§ 1. Особенности',excerpt:null,originalUrl:'https://lex.uz/ru/docs/6257288#section',status:'unconfirmed',effectiveDate:null,verifiedAt:'2026-11-03T00:00:00Z'}];
+  const rule='Статья 408 ТК; пп. 1, 4 и 5 ч. 2 ст. 161 ТК; Статьи 163, 409 ТК. ';
+  delivery={...saved,result:{...result,sources,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:rule+'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[0]}],actionPlan:[{title:"Check the grounds",description:"Request the written grounds and check the leave status.",sourceIds:[]}]}};
   const page=await browser.newPage({viewport:{width,height:900}});
   context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
   await page.goto(origin+'/signed');
@@ -230,9 +232,13 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
   await page.waitForTimeout(150);
   assert.notEqual(await spinner.evaluate(el=>getComputedStyle(el).transform),first);
   const response=pending.get('/api/platform/ai');assert(response);
+  response.write(`event: sources\ndata: ${JSON.stringify({sources})}\n\n`);
   const write=blocks=>response.write(`event: writing\ndata: ${JSON.stringify({blocks})}\n\n`);
-  write([{key:'issue/employment/title',text:'Employment protections'}, {key:'issue/employment/explanation',text:'The applicable rule and its qualifications. '.repeat(20)}]);
+  write([{key:'issue/employment/title',text:'Employment protections'}, {key:'issue/employment/explanation',text:rule+'The applicable rule and its qualifications. '.repeat(20)}]);
   await page.locator('[data-answer-writing]').getByText('Employment protections',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-answer-writing] .safe-markdown a').count(),4,await page.locator('[data-answer-writing]').innerHTML());
+  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),5,'Every mentioned article appears during streaming');
+  assert.equal(await page.locator('[data-answer-writing] .safe-markdown a').first().getAttribute('href'),'https://lex.uz/ru/docs/6257288');
   assert.equal(await page.locator('[data-answer-writing] .legal-answer__section--main').count(),0,'Issues stream before the Main Point exists');
   write([{key:'issue/employment/actions/0/title',text:'Check the grounds'}, {key:'issue/employment/actions/0/description',text:'Request the written grounds and check the leave status.'}]);
   await page.locator('[data-answer-writing]').getByText('Request the written grounds and check the leave status.',{exact:true}).waitFor();
@@ -245,13 +251,16 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
     return {before:heading.getBoundingClientRect().top-prose.getBoundingClientRect().bottom,after:list.getBoundingClientRect().top-heading.getBoundingClientRect().bottom};
   });
   assert(spacing.before>=23 && spacing.after>=11,'Guidance heading has clear spacing on both sides');
-  const dir=new URL('../../../../.scratch/full-answer-stream/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
+  const dir=new URL('../../../../.scratch/inline-legal-references/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
   await page.screenshot({path:fileURLToPath(new URL(`stream-${width}.png`,dir))});
   const proseStyle=el=>{const s=getComputedStyle(el);return {font:s.font,color:s.color,spacing:s.letterSpacing,width:el.getBoundingClientRect().width}};
   const streamedStyle=await page.locator('[data-answer-writing] .legal-answer__section--main .safe-markdown p').evaluate(proseStyle);
   const before=await page.evaluate(()=>window.scrollY);
   completed.add('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);pending.delete('/api/platform/ai');
   await page.locator('.ai-current-answer').waitFor();await page.waitForTimeout(350);
+  assert.equal(await page.locator('.ai-current-answer .safe-markdown a').count(),4);
+  assert.equal(await page.locator('.ai-evidence .ai-source-card').count(),5,'Mentioned articles persist after publication');
+  assert.equal(await page.locator('.ai-current-answer footer a').count(),0);
   assert.equal(await page.evaluate(()=>window.scrollY),before,'Final delivery must not scroll the page shell');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,'No vertical page overflow');
   assert.equal(await page.locator('.answer-activity').count(),0);

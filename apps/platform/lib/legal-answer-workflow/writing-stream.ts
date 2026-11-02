@@ -2,7 +2,7 @@ import { citationProseNormalizer } from "./citation-prose";
 
 /** Public prose only. Structured source IDs, research notes and provider reasoning are excluded. */
 export type WritingBlock = { key: string; text: string };
-export type WritingDraft = { blocks: WritingBlock[]; revision?: number; notices?: string[];
+export type WritingDraft = { blocks: WritingBlock[]; sources?: import("../ai/legal-chat-schema").LegalChatResponse["sources"]; revision?: number; notices?: string[];
   issueUpdate?: import("./issue-writing").IssueWritingUpdate };
 
 type Frame = { path: string[]; kind: "object" | "array"; key: string; index: number; expectingKey: boolean };

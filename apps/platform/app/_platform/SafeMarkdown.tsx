@@ -3,6 +3,8 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { legalReferenceMarkdown } from "../../lib/ai/legal-reference-markdown";
+import type { ReferenceSource } from "../../lib/ai/legal-inline-references";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
 function safeLink(value: string | undefined, allowedLinks?: ReadonlySet<string>): string | null {
@@ -27,11 +29,13 @@ function Table({ children, label, ...props }: ComponentPropsWithoutRef<"table"> 
 export function SafeMarkdown({
   children,
   allowedLinks,
+  referenceSources,
   className,
   locale = "ru",
 }: {
   children?: string;
   allowedLinks?: readonly string[];
+  referenceSources?: readonly ReferenceSource[];
   className?: string;
   locale?: PlatformLocale;
 }) {
@@ -41,7 +45,7 @@ export function SafeMarkdown({
   })) : undefined;
   return <div className={className ? `safe-markdown ${className}` : "safe-markdown"}>
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={referenceSources ? [remarkGfm, legalReferenceMarkdown(referenceSources)] : [remarkGfm]}
       skipHtml
       urlTransform={(url) => safeLink(url, allowlist) ?? ""}
       components={{

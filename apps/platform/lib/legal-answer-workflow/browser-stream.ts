@@ -1,6 +1,6 @@
 import { legalAnswerDeadlineMs } from "./deadline";
 import { z } from "zod";
-import { legalChatResponseSchema } from "../ai/legal-chat-schema";
+import { legalSourceRefSchema, legalChatResponseSchema } from "../ai/legal-chat-schema";
 import { withinSignal } from "./lifetime";
 import type { WritingDraft } from "./writing-stream";
 
@@ -47,6 +47,7 @@ export async function readLegalChatStream(response: Response, onStage: (stage: A
   const reader = response.body.getReader(), decoder = new TextDecoder();
   const writing = new Map<string, string>();
   let revision = 0;
+  let sources: WritingDraft["sources"];
   let notices: string[] = [];
   let buffer = "";
   try {
@@ -64,12 +65,15 @@ export async function readLegalChatStream(response: Response, onStage: (stage: A
           const progress = z.object({ stage: stageSchema, targetMissed: z.boolean().optional() }).parse(value);
           onStage(progress.targetMissed && ["interpreting", "researching", "focused_research"].includes(progress.stage)
             ? "deeper_research" : progress.stage);
+        } else if (event === "sources") {
+          sources = z.object({ sources: z.array(legalSourceRefSchema).max(1024) }).strict().parse(value).sources;
+          onWriting?.({ revision, notices: [...notices], blocks: [...writing].map(([key, text]) => ({ key, text })), sources });
         } else if (event === "writing") {
           const delta = writingDeltaSchema.parse(value);
           if ((revision > 0 && delta.revision === undefined) || (delta.revision !== undefined && delta.revision !== revision))
             throw new LegalChatClientError("LEGAL_ANSWER_INVALID_REVISION");
           for (const block of delta.blocks) writing.set(block.key, (writing.get(block.key) ?? "") + block.text);
-          onWriting?.({ ...writingSchema.parse({ blocks: [...writing].map(([key, text]) => ({ key, text })) }),
+          onWriting?.({ ...(sources ? { sources } : {}), ...writingSchema.parse({ blocks: [...writing].map(([key, text]) => ({ key, text })) }),
             ...(revision ? { revision, notices: [...notices] } : {}) });
           onStage("writing");
         } else if (event === "writing-revision") {
@@ -78,7 +82,7 @@ export async function readLegalChatStream(response: Response, onStage: (stage: A
             || notices.some((notice, index) => update.notices[index] !== notice)) throw new LegalChatClientError("LEGAL_ANSWER_INVALID_REVISION");
           revision = update.revision; notices = [...update.notices]; writing.clear();
           for (const block of update.blocks) writing.set(block.key, block.text);
-          onWriting?.({ revision, notices: [...notices], blocks: [...writing].map(([key, text]) => ({ key, text })) });
+          onWriting?.({ ...(sources ? { sources } : {}), revision, notices: [...notices], blocks: [...writing].map(([key, text]) => ({ key, text })) });
           onStage("writing");
         } else if (event === "result") return deliverySchema.parse(value);
         else if (event === "error") {

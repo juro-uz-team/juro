@@ -2,7 +2,7 @@ import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-strea
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { LegalAnswerView, type LegalAnswerViewResult } from "./LegalAnswerView";
 
-/** Project public prose only; sources and authority arrive after validation. */
+/** Project public prose with retained source metadata; authority awaits final validation. */
 export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
   const fields = new Map<string, string>();
   const issueIds = [...new Set(draft.blocks.flatMap(block => /^issue\/([^/]+)\//u.exec(block.key)?.[1] ?? []))];
@@ -21,7 +21,7 @@ export function writingResult(draft: WritingDraft): LegalAnswerViewResult {
     return /^\d+$/u.test(index) ? [Number(index)] : [];
   }))].sort((a, b) => a - b);
   const result: LegalAnswerViewResult = {
-    responseKind: "answer", summary: text("summary"), answer: "", sources: [],
+    responseKind: "answer", summary: text("summary"), answer: "", sources: draft.sources ?? [],
     confirmedFindings: [], issues: [], actionPlan: [], assumptions: [], risks: [],
     deadlines: [], requiredDocuments: [], referenceNotes: [], conditionalBranches: [],
     clarificationQuestions: [], urgency: "normal", suggestedDocument: null, legalDatabaseAsOf: "",

@@ -212,8 +212,11 @@ function CitationList({
 }
 
 function Markdown({ children, result, locale }: { children: string; result: LegalAnswerViewResult; locale: PlatformLocale }) {
-  const allowedLinks = result.sources.flatMap((source) => publicSourceUrl(source) ?? []);
-  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks}>{children}</SafeMarkdown>;
+  const allowedLinks = result.sources.flatMap(source => {
+    const href = publicSourceUrl(source); if (!href) return [];
+    const document = new URL(href); document.hash = ""; return [href, document.href];
+  });
+  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks} referenceSources={result.sources}>{children}</SafeMarkdown>;
 }
 
 function Section({ id, title, children, className = "" }: { id: string; title: string; children: ReactNode; className?: string }) {
@@ -300,13 +303,6 @@ export function LegalAnswerView({
 
   const important = result.assumptions.length > 0 || result.risks.length > 0 || result.urgency !== "normal";
   const prepare = result.requiredDocuments.length > 0 || Boolean(result.suggestedDocument);
-  const mainSourceIds = result.summarySourceIds ?? [...new Set([
-    ...result.confirmedFindings.map((finding) => finding.sourceIds),
-    ...(result.conditionalBranches ?? []).map((branch) => branch.sourceIds),
-    ...result.actionPlan.map((step) => step.sourceIds),
-    ...result.risks.map((risk) => risk.sourceIds),
-    ...result.deadlines.map((deadline) => deadline.sourceIds),
-  ].flatMap((sourceIds) => sourceIds ?? []))];
   return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>
     {result.summary && <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
@@ -381,14 +377,6 @@ export function LegalAnswerView({
     {!streaming && <footer className="legal-answer__sources">
     {internetNotice}
     <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{result.validationMethod === "programmatic" ? copy.programmatic : incomplete ? copy.partial : copy.authority[mode]}</p>
-      {[
-        { title: copy.main, sourceIds: mainSourceIds }, ...result.confirmedFindings,
-        ...(result.conditionalBranches ?? []).map(branch => ({ title: branch.condition, sourceIds: branch.sourceIds })),
-        ...result.actionPlan, ...result.risks, ...result.deadlines, ...(result.referenceNotes ?? []),
-      ].filter(item => item.sourceIds?.some(sourceId => result.sources.some(source => source.sourceId === sourceId))).map((item, index) => <div key={index} className="legal-answer__source-group">
-        <h3>{item.title}</h3>
-        <CitationList sourceIds={item.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
-      </div>)}
     </footer>}
   </article>;
 }

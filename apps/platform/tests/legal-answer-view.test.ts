@@ -16,8 +16,8 @@ import {
 function result(overrides: Partial<LegalAnswerViewResult> = {}): LegalAnswerViewResult {
   return {
     responseKind: "answer",
-    summary: "Работодатель, как правило, не может прекратить договор в период отпуска.",
-    answer: "Работодатель, как правило, не может прекратить договор в период отпуска.",
+    summary: "Работодатель, как правило, не может прекратить договор в период отпуска (ст. 163 ТК).",
+    answer: "Работодатель, как правило, не может прекратить договор в период отпуска (ст. 163 ТК).",
     clarificationQuestions: [],
     confirmedFindings: [{
       title: "Запрет в период отпуска",
@@ -62,8 +62,8 @@ test("issue cards display each rule beside its explicitly paired guidance",()=>{
 });
 
 test("a saved partial Main Point renders its citation without inventing an issue card",()=>{
-  const saved=JSON.parse(JSON.stringify(result({summary:"File within ten days after delivery.",
-    answer:"File within ten days after delivery.",summarySourceIds:["labor-code-163"],confirmedFindings:[],
+  const saved=JSON.parse(JSON.stringify(result({summary:"File within ten days after delivery (Article 163).",
+    answer:"File within ten days after delivery (Article 163).",summarySourceIds:["labor-code-163"],confirmedFindings:[],
     issues:[],actionPlan:[],risks:[],assumptions:[],deadlines:[],requiredDocuments:[],referenceNotes:[],urgency:"normal",coverageStatus:"partial_coverage",
     coverageGaps:["Additional details remain unverified."]})));
   const html=renderToStaticMarkup(createElement(LegalAnswerView,{locale:"en",result:saved}));
@@ -98,15 +98,16 @@ test("Russian Legal Answer uses the product-owned structure and delegates sectio
   const main = html.indexOf(">Главное<");
   const law = html.indexOf(">Что говорит закон<");
   const next = html.indexOf(">Что делать дальше<");
-  const mainCitation = html.indexOf("Ст. 163 — Трудовой кодекс РУз", main);
+  const mainCitation = html.indexOf(">ст. 163 ТК</a>", main);
   const additional = html.indexOf(">Дополнительные материалы<");
   const questions = html.indexOf(">Что нужно уточнить<");
   assert.ok(main >= 0 && law > main && next > law && additional > next && questions > additional);
   assert.match(html, /Эти материалы поясняют контекст, но не устанавливают правовые нормы, сроки, расчёты или обязательные действия\./u);
   assert.match(html.slice(questions), /Когда вы получили приказ\?/u);
-  assert.ok(mainCitation > questions, "the Main Point retains its supporting citation in the footer");
+  assert.ok(mainCitation > main && mainCitation < law, "the Main Point links its reference inline");
+  assert.doesNotMatch(html.slice(html.indexOf("<footer")), /href=/);
   assert.match(html, /Проверьте основание увольнения/u);
-  assert.match(html, /href="https:\/\/lex\.uz\/ru\/docs\/6257288"[^>]*>Ст\. 163 — Трудовой кодекс РУз/u);
+  assert.match(html, /href="https:\/\/lex\.uz\/ru\/docs\/6257288"[^>]*>ст\. 163 ТК<\/a>/u);
   assert.match(html, />Важно учесть</u);
   assert.match(html, />Сроки</u);
   assert.match(html, />Что подготовить</u);
@@ -123,7 +124,7 @@ test("Uzbek Legal Answer uses the approved localized section labels", () => {
   assert.match(html, />Asosiysi</u);
   assert.match(html, />Qonunda nima deyilgan</u);
   assert.match(html, />Keyingi qadamlar</u);
-  assert.match(html, />163-modda — Mehnat kodeksi O‘zR|>163-modda — Трудовой кодекс O‘zR/u);
+  assert.match(html, />ст\. 163 ТК<\/a>/u);
   assert.doesNotMatch(html, />Muhim jihatlar</u);
 });
 
@@ -132,7 +133,7 @@ test("Conditional Answer renders supported branches with their own citations", (
     result: result({
       conditionalBranches: [{
         condition: "Если инициатор — работодатель",
-        outcome: "Действует запрет на увольнение в период отпуска.",
+        outcome: "Действует запрет на увольнение в период отпуска (ст. 163 ТК).",
         sourceIds: ["labor-code-163"],
       }],
     }),
@@ -141,10 +142,10 @@ test("Conditional Answer renders supported branches with their own citations", (
 
   assert.match(html, />Как меняется ответ</u);
   assert.match(html, />Если инициатор — работодатель</u);
-  assert.match(html, /Ст\. 163 — Трудовой кодекс РУз/u);
+  assert.match(html, />ст\. 163 ТК<\/a>/u);
 });
 
-test("Main Point exposes sources from all supported findings in the synthesized conclusion", () => {
+test("Main Point links each named act directly in the synthesized conclusion", () => {
   const secondSource = {
     ...result().sources[0]!,
     sourceId: "civil-code-10",
@@ -153,7 +154,8 @@ test("Main Point exposes sources from all supported findings in the synthesized 
   };
   const html = renderToStaticMarkup(createElement(LegalAnswerView, {
     result: result({
-      sources: [...result().sources, secondSource],
+      summary: "Применяются ст. 163 ТК и ст. 10 ГК.",
+      sources: [...result().sources, {...secondSource, originalUrl: "https://lex.uz/docs/111"}],
       confirmedFindings: [
         ...result().confirmedFindings,
         { title: "Иной вопрос", explanation: "Применяется отдельная норма.", sourceIds: [secondSource.sourceId] },
@@ -161,9 +163,8 @@ test("Main Point exposes sources from all supported findings in the synthesized 
     }),
     locale: "ru",
   }));
-  const mainMarkup = html.slice(html.indexOf('class="legal-answer__source-group"')).split("</div>")[0];
-  assert.match(mainMarkup, /Ст\. 163 — Трудовой кодекс РУз/u);
-  assert.match(mainMarkup, /Ст\. 10 — Гражданский кодекс РУз/u);
+  assert.match(html, /href="https:\/\/lex\.uz\/ru\/docs\/6257288"[^>]*>ст\. 163 ТК<\/a>/u);
+  assert.match(html, /href="https:\/\/lex\.uz\/docs\/111"[^>]*>ст\. 10 ГК<\/a>/u);
 });
 
 test("branch-only Conditional Answer cites the branch that grounds its Main Point", () => {
@@ -172,14 +173,14 @@ test("branch-only Conditional Answer cites the branch that grounds its Main Poin
       confirmedFindings: [],
       conditionalBranches: [{
         condition: "Если инициатор — работодатель",
-        outcome: "Действует запрет на увольнение в период отпуска.",
+        outcome: "Действует запрет на увольнение в период отпуска (ст. 163 ТК).",
         sourceIds: ["labor-code-163"],
       }],
     }),
     locale: "ru",
   }));
-  const sources = html.slice(html.indexOf('<footer'));
-  assert.match(sources, /Ст\. 163 — Трудовой кодекс РУз/u);
+  assert.match(html, />ст\. 163 ТК<\/a>/u);
+  assert.doesNotMatch(html.slice(html.indexOf("<footer")), /href=/);
 });
 
 test("unsupported conclusions render an Insufficient-Evidence Result instead of empty legal sections", () => {

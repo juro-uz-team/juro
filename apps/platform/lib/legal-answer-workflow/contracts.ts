@@ -220,6 +220,7 @@ export type LegalOutcome = {
 export type PublishedAnswer = { answerId: string; outcome: LegalOutcome };
 export type CandidateRanking = { vectorRank: number; vectorScore: number; keywordRank: number; keywordScore: number; fusionScore: number };
 export type WorkflowPorts = {
+  citations?(evidence: readonly OfficialProvision[], signal: AbortSignal): Promise<readonly import("./citation-storage").CitationRecord[]>;
   /** Wait for cancelled provider operations to finish recording their reservations. */
   drain?(): Promise<void>;
   model: { issueWriting?: boolean; complete(operation: ModelOperation): Promise<unknown>;
