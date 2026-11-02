@@ -1,5 +1,5 @@
 "use client";
-import { inlineReferences } from "../../lib/ai/legal-inline-references";
+import { inlineReferences, referenceSourcesForPassage } from "../../lib/ai/legal-inline-references";
 
 import { ExternalLink } from "lucide-react";
 import { useId, type ReactNode } from "react";
@@ -218,13 +218,14 @@ function Markdown({ children, result, locale, sourceIds }: { children: string; r
     const href = publicSourceUrl(source); if (!href) return [];
     const document = new URL(href); document.hash = ""; return [href, document.href];
   });
-  const mentioned = new Set(inlineReferences(children,result.sources).filter(ref=>ref.source && !ref.navigationOnly && (ref.articleNumber || !ref.source.article)).map(ref=>ref.source!.sourceId));
+  const referenceSources = referenceSourcesForPassage(result.sources, sourceIds);
+  const mentioned = new Set(inlineReferences(children,referenceSources).filter(ref=>ref.source && !ref.navigationOnly && (ref.articleNumber || !ref.source.article)).map(ref=>ref.source!.sourceId));
   const supportingLinks = [...new Set(children.trim() ? sourceIds ?? [] : [])].flatMap(id=>{
     const source=result.sources.find(item=>item.sourceId===id);
     const href=source && publicSourceUrl(source);
     return source && href && !mentioned.has(id) ? [{label:citationText(source,locale),href}] : [];
   });
-  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks} referenceSources={result.sources} supportingLinks={supportingLinks}>{children}</SafeMarkdown>;
+  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks} referenceSources={referenceSources} supportingLinks={supportingLinks}>{children}</SafeMarkdown>;
 }
 
 function Section({ id, title, children, className = "" }: { id: string; title: string; children: ReactNode; className?: string }) {

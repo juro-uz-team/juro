@@ -17,8 +17,8 @@ import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteCont
 import {requestLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-answer-workflow/browser-stream";
 import type {LegalChatDelivery} from "../../lib/legal-answer-workflow/browser-stream";
 import {chatStageLabel} from "../../lib/legal-answer-workflow/browser-stream";
-import { answerReferenceContext, legalAnswerProse } from "../../lib/ai/legal-inline-references";
-import { AnswerWriting } from "./AnswerWriting";
+import { answerReferenceContext, legalAnswerPassages } from "../../lib/ai/legal-inline-references";
+import { AnswerWriting, writingResult } from "./AnswerWriting";
 import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-stream";
 import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
@@ -365,8 +365,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     void send({locale,answerMode,reasoningMode,conversationId:answer.conversationId,sourceMessageId,
       operation:"regenerate",legalContextDate:legalContextDate||undefined,idempotencyKey:crypto.randomUUID()});
   };
-  const referenceContext=answerReferenceContext<Source>(sourceResult?.sources??[], requestSending && writing
-    ? writing.blocks.map(block=>block.text).join("\n\n") : legalAnswerProse(citationContext?.result??answer?.result));
+  const referenceContext=answerReferenceContext<Source>(sourceResult?.sources??[], legalAnswerPassages(requestSending && writing
+    ? writingResult(writing) : citationContext?.result??answer?.result));
   const visibleSources=referenceContext.sources.filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl));
   const hasCaseFacts=Boolean(answer?.facts.length),hasAnswerContext=hasCaseFacts||visibleSources.length>0||referenceContext.unresolved.length>0;
   const hasPrivateSources=visibleSources.some(isTrustedPrivateSource),hasSecondarySources=visibleSources.some(isSafeSecondarySource);
