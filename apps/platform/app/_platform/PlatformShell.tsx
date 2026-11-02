@@ -75,6 +75,7 @@ type Props = {
   activeWorkspaceId: string;
   workspaces: WorkspaceOption[];
   profileSetup?: ProfileReadiness | null;
+  practiceAvailable?: boolean;
   children: React.ReactNode;
 };
 
@@ -157,6 +158,7 @@ export function PlatformShell({
   activeWorkspaceId,
   workspaces,
   profileSetup = null,
+  practiceAvailable = false,
   children,
 }: Props) {
   const pathname = usePathname();
@@ -477,6 +479,7 @@ export function PlatformShell({
           )}
           <nav>
             <div className="platform-nav-group">
+              {practiceAvailable && <Link href={`${base}/practice`} className={pathname.endsWith("/practice") ? "active" : ""} aria-current={pathname.endsWith("/practice") ? "page" : undefined} onClick={() => setOpen(false)} title={collapsed ? "JURO Practice" : undefined}><BriefcaseBusiness /><span>JURO Practice</span></Link>}
               {primaryItems.map(([slug, Icon, ru, uz, en]) => {
                 const href = `${base}/${slug}`;
                 const active = routeIsActive(slug);

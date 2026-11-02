@@ -1,3 +1,4 @@
+import "../lib/runtime/node-globals";
 import {initializeControlCenterEnvironment} from "../../../scripts/control-center-runtime.mjs";
 import { controlFeatureUnavailable } from "../lib/control-center/features";
 import { publicApiRequestBodyLimit } from "../lib/request-body";
@@ -11,6 +12,8 @@ import { handleInternalAdminRequest } from "../lib/auth/admin-internal-api";
 import { INTERNAL_REQUEST_PATH_HEADER, isAuthenticatedPlatformPathReady } from "../lib/platform/routing";
 import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
 import { routeNativeDomain } from "../lib/runtime/domain-routing";
+import { getSessionUser } from "../lib/auth/session";
+import { legacyPracticeAccessDenied, legacyPracticeSensitivePath } from "../lib/practice/access";
 
 initializeControlCenterEnvironment(process.env);
 const config = nativeHttpConfiguration(process.env, "platform");
@@ -97,6 +100,16 @@ createServer(async (request, response) => {
         return;
       }
       response.writeHead(404); response.end(); return;
+    }
+    if (legacyPracticeSensitivePath(decodeURIComponent(url.pathname))) {
+      const sessionHeaders = new Headers();
+      if (request.headers.cookie) sessionHeaders.set("cookie", request.headers.cookie);
+      const session = await getSessionUser(new Request(url, { headers: sessionHeaders }));
+      if (session && await legacyPracticeAccessDenied(session.userId, decodeURIComponent(url.pathname))) {
+        response.writeHead(403, { "content-type": "application/json", "cache-control": "private, no-store" });
+        response.end(JSON.stringify({ code: "PRACTICE_SCOPE_REQUIRED", error: "Откройте материал через JURO Practice / Open the item in JURO Practice / Materialni JURO Practice orqali oching." }));
+        return;
+      }
     }
     if(await controlFeatureUnavailable(url.pathname,request.method??"GET")){
       response.writeHead(503,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify({code:"FEATURE_UNAVAILABLE",error:"Функция временно недоступна."}));return;

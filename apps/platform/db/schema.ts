@@ -4048,3 +4048,5 @@ export const documentEvaluationReviewEvents = pgTable("document_evaluation_revie
   index("document_evaluation_run_package_idx").on(table.evaluationRunId, table.packageId, table.createdAt),
   index("document_evaluation_actor_created_idx").on(table.actorUserId, table.createdAt),
 ]);
+
+export * from "./practice-schema";

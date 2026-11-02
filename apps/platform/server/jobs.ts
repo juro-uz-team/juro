@@ -9,6 +9,7 @@ import { JOB_KINDS, expectedQueueName, handleQueue } from "../worker/platform-jo
 import { dispatchOutbox } from "../worker/platform-outbox";
 import { handleScheduled } from "../worker/platform-scheduled";
 import { consumeNativeHealth, nativeHealthEnabled, nativeHealthQueueName } from "../worker/native-dependency-health";
+import { runPracticeJobs } from "../lib/practice/jobs";
 
 const env = getSelfHostedRuntime();
 const pool = database().pool;
@@ -28,6 +29,8 @@ while (!stopping) {
       await reclaimObjects(pool, resolve(process.env.OBJECT_STORAGE_PATH ?? "../../.data/objects"), undefined, {wait:false});
       try { await handleScheduled({ cron: "*/5 * * * *", scheduledTime: Date.now(), noRetry() {} }, env); }
       catch (error) { console.error("Scheduled housekeeping failed", error instanceof Error ? error.message : "Unknown error"); }
+      try { await runPracticeJobs(); }
+      catch { console.error("Practice housekeeping failed"); }
     }
     await dispatchOutbox(env);
     let processed = false;
