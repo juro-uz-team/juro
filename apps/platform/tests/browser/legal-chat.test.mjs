@@ -202,7 +202,7 @@ for (const guest of [true, false]) test(`draft grows before completion and clear
 
 for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion stay inside the reading pane at ${width}px`, async context => {
   completed.clear(); stallMetadata=false; sendDeeperProgress=false;
-  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:Array.from({length:12},(_,i)=>({title:`Legal issue ${i+1}`,explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}))}};
+  delivery={...saved,result:{...result,responseKind:'answer',summary:'A supported main point.',answer:'A supported main point.',confirmedFindings:[{title:'Employment protections',explanation:'The applicable rule and its qualifications. '.repeat(20),sourceIds:[]}],issues:[{findingIndex:0,actionIndices:[]}]}};
   const page=await browser.newPage({viewport:{width,height:900}});
   context.after(async()=>{sendDeeperProgress=true;pending.get('/api/platform/ai')?.end();pending.delete('/api/platform/ai');await page.close();});
   await page.goto(origin+'/signed');
@@ -215,8 +215,11 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
     document.documentElement.dataset.theme='dark';
     const root=document.getElementById('root'), main=document.createElement('main');
     main.className='platform-main'; root.before(main);
+    const shell=document.createElement('div');shell.className='platform-shell';shell.style.gridTemplateColumns='minmax(0,1fr)';
+    main.before(shell);shell.append(main);
     const header=document.createElement('header');header.className='platform-topbar';header.textContent='JURO · Legal workspace';
-    main.append(header,root);
+    const content=document.createElement('main');content.className='platform-content';
+    main.append(header,content);content.append(root);root.style.height='100%';
   });
   await page.locator('#ai-question').fill('Can my employer terminate my contract?');
   await page.getByRole('button',{name:'Send',exact:true}).click();
@@ -232,11 +235,15 @@ for (const width of [390, 900, 1280, 1920]) test(`chat progress and completion s
   assert.equal(await page.locator('[data-answer-writing]').evaluate(el=>!!el.closest('.ai-answer')),true);
   const dir=new URL('../../../../.scratch/chat-ui/screenshots/',import.meta.url);await mkdir(dir,{recursive:true});
   await page.screenshot({path:fileURLToPath(new URL(`stream-${width}.png`,dir))});
+  const proseStyle=el=>{const s=getComputedStyle(el);return {font:s.font,color:s.color,spacing:s.letterSpacing,width:el.getBoundingClientRect().width}};
+  const streamedStyle=await page.locator('[data-answer-writing] .legal-answer__section--main .safe-markdown p').evaluate(proseStyle);
   const before=await page.evaluate(()=>window.scrollY);
   completed.add('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);pending.delete('/api/platform/ai');
   await page.locator('.ai-current-answer').waitFor();await page.waitForTimeout(350);
   assert.equal(await page.evaluate(()=>window.scrollY),before,'Final delivery must not scroll the page shell');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,'No vertical page overflow');
   assert.equal(await page.locator('.answer-activity').count(),0);
+  assert.deepEqual(await page.locator('.ai-current-answer .legal-answer__section--main .safe-markdown p').evaluate(proseStyle),streamedStyle,'Prose styles and measure stay identical');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'No horizontal page overflow');
   const composer=await page.locator('.ai-composer').boundingBox();assert(composer.y+composer.height<=900,'Composer stays in the viewport');
   if(width<=980) {

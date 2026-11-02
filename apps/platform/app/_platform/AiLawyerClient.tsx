@@ -247,12 +247,6 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   },[intakeHandle,selectedConversationId,workspaceId,requestJson,text]);
   useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
-  useEffect(()=>{
-    const transcript=transcriptRef.current, latest=latestAnswerRef.current;
-    if(answer&&nearBottom.current&&transcript&&latest) {
-      transcript.scrollTo({top:transcript.scrollTop+latest.getBoundingClientRect().top-transcript.getBoundingClientRect().top,behavior:"auto"});
-    }
-  },[answer]);
   useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"auto"});},[requestSending,optimisticQuestion,streamStatus,writing]);
   useEffect(()=>{if(planConfirmationOpen)planConfirmationRef.current?.focus();},[planConfirmationOpen]);
   useEffect(()=>{
@@ -620,13 +614,8 @@ function PendingConversationTurn({
   return <section className="ai-conversation-turn ai-conversation-turn-pending">
     <HumanMessage question={question} locale={locale} />
     <article className={`ai-answer ai-assistant-draft ${failed ? "is-failed" : ""}`}>
-      <small>JURO · {failed
-        ? aiText(locale, "ответ не завершён", "javob yakunlanmadi", "answer incomplete")
-        : preliminary
-          ? aiText(locale, "проверенный вывод · завершаю ответ", "tekshirilgan xulosa · javob yakunlanmoqda", "verified finding · completing the answer")
-          : aiText(locale, "отвечает", "javob bermoqda", "answering")}</small>
-      {submittedAt !== undefined && <AnswerActivity submittedAt={submittedAt} locale={locale} status={status} />}
       <AnswerWriting draft={writing} locale={locale} />
+      {submittedAt !== undefined && <AnswerActivity submittedAt={submittedAt} locale={locale} status={status} />}
       {!writing?.blocks.length && (preliminary
         ? <div className="ai-preliminary" role="status">
           <strong>{preliminary.message}</strong>

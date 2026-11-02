@@ -5,8 +5,6 @@
 .answer-activity__time { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-subtle); font-size: 12px; white-space: nowrap; }
 .answer-activity__time time { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .answer-activity > p { margin: 12px 0 0; font-size: 12px; line-height: 1.5; }
-.ai-answer-writing { margin-top: 24px; }
-.ai-answer-writing .legal-answer__section > p { margin: 0 0 16px; color: var(--text-primary); font-size: 15px; line-height: 1.75; }
 .ai-answer-revision { color: var(--text-secondary); font-size: 13px; }
 @keyframes answer-activity-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .answer-activity__spinner { animation: none; } }
@@ -68,7 +66,6 @@
   text-transform: uppercase;
 }
 
-.ai-answer-writing .legal-answer__section--main > p,
 .legal-answer__section--main > .safe-markdown p,
 .legal-answer__section--main > .legal-answer__markdown-fallback {
   max-width: 44rem;
@@ -280,3 +277,6 @@
   .legal-answer__citations :is(a, button, span),
   .legal-answer__steps > li::before { border: 1px solid ButtonText; }
 }
+
+.legal-answer__sources { border-top: 1px solid var(--legal-rule); padding-top: 24px; }
+.legal-answer__source-group + .legal-answer__source-group { margin-top: 20px; }

@@ -56,7 +56,7 @@ test("issue cards display each rule beside its explicitly paired guidance",()=>{
     issues:[{findingIndex:0,actionIndices:[0]}],
   })}));
   assert.match(html,/data-answer-issue="0"/);
-  assert.equal((html.match(/Получите документы/g)??[]).length,1);
+  assert.equal((html.split("<footer")[0].match(/Получите документы/g)??[]).length,1);
   assert.ok(html.indexOf("Запрет в период отпуска")<html.indexOf("Получите документы"));
   assert.doesNotMatch(html,/id="[^"]*-next"/);
 });
@@ -104,7 +104,7 @@ test("Russian Legal Answer uses the product-owned structure and delegates sectio
   assert.ok(main >= 0 && law > main && next > law && additional > next && questions > additional);
   assert.match(html, /Эти материалы поясняют контекст, но не устанавливают правовые нормы, сроки, расчёты или обязательные действия\./u);
   assert.match(html.slice(questions), /Когда вы получили приказ\?/u);
-  assert.ok(mainCitation > main && mainCitation < law, "the Main Point should carry its supporting citation");
+  assert.ok(mainCitation > questions, "the Main Point retains its supporting citation in the footer");
   assert.match(html, /Проверьте основание увольнения/u);
   assert.match(html, /href="https:\/\/lex\.uz\/ru\/docs\/6257288"[^>]*>Ст\. 163 — Трудовой кодекс РУз/u);
   assert.match(html, />Важно учесть</u);
@@ -161,9 +161,7 @@ test("Main Point exposes sources from all supported findings in the synthesized 
     }),
     locale: "ru",
   }));
-  const main = html.indexOf(">Главное<");
-  const law = html.indexOf(">Что говорит закон<");
-  const mainMarkup = html.slice(main, law);
+  const mainMarkup = html.slice(html.indexOf('class="legal-answer__source-group"')).split("</div>")[0];
   assert.match(mainMarkup, /Ст\. 163 — Трудовой кодекс РУз/u);
   assert.match(mainMarkup, /Ст\. 10 — Гражданский кодекс РУз/u);
 });
@@ -180,9 +178,8 @@ test("branch-only Conditional Answer cites the branch that grounds its Main Poin
     }),
     locale: "ru",
   }));
-  const main = html.indexOf(">Главное<");
-  const branches = html.indexOf(">Как меняется ответ<");
-  assert.match(html.slice(main, branches), /Ст\. 163 — Трудовой кодекс РУз/u);
+  const sources = html.slice(html.indexOf('<footer'));
+  assert.match(sources, /Ст\. 163 — Трудовой кодекс РУз/u);
 });
 
 test("unsupported conclusions render an Insufficient-Evidence Result instead of empty legal sections", () => {
@@ -317,12 +314,12 @@ test("incomplete evidence displays found provisions and focused questions withou
   assert.doesNotMatch(html, />Подтверждено официальными источниками</u);
 });
 
-test("internet provenance is visibly marked above answers using live or secondary sources", () => {
+test("internet provenance is visibly marked with answer sources using live or secondary sources", () => {
   for (const sourceOrigin of ["live", "web"] as const) {
     const html = renderToStaticMarkup(createElement(LegalAnswerView, {
       result: result({ sources: result().sources.map((source) => ({ ...source, sourceOrigin })) }), locale: "ru",
     }));
-    assert.ok(html.indexOf("Ответ использует интернет-источники") < html.indexOf(">Главное<"));
+    assert.ok(html.indexOf("Ответ использует интернет-источники") > html.indexOf("<footer"));
     assert.match(html, /data-source-notice="internet"/u);
   }
 });
@@ -357,4 +354,26 @@ test("programmatically checked answers do not display independent legal verifica
   const html=renderToStaticMarkup(createElement(LegalAnswerView,{locale:"en",result:result({validationMethod:"programmatic"})}));
   assert.match(html,/legal interpretation has not been independently reviewed/);
   assert.doesNotMatch(html,/Verified by official sources/);
+});
+
+// The public writing view shares the completed section tree and defers mutable research previews.
+test("streaming waits for the Main Point and keeps issue formatting and source boundaries", async () => {
+  const { AnswerWriting, writingResult } = await import("../app/_platform/AnswerWriting");
+  const research = { blocks: [{ key: "issue/employment/title", text: "Provisional" }] };
+  assert.equal(renderToStaticMarkup(createElement(AnswerWriting, { draft: research })), "");
+  const draft = { blocks: [
+    { key: "turn/content/summary", text: "A **supported** conclusion." },
+    { key: "turn/content/issues/0/title", text: "Employment" },
+    { key: "turn/content/issues/0/explanation/0/statement", text: "The ordinary rule." },
+    { key: "turn/content/issues/0/explanation/1/statement", text: "Its exception." },
+    { key: "turn/content/issues/0/actions/0/title", text: "Keep the order" },
+    { key: "turn/content/issues/0/actions/0/description", text: "Request a copy." },
+  ] };
+  const value = writingResult(draft);
+  assert.equal(value.confirmedFindings[0].explanation, "The ordinary rule.\n\nIts exception.");
+  const streamed = renderToStaticMarkup(createElement(LegalAnswerView, { result: value, locale: "en", streaming: true }));
+  const saved = renderToStaticMarkup(createElement(LegalAnswerView, { result: value, locale: "en" }));
+  assert.equal(streamed.replace(' aria-busy="true"', '').split('</article>')[0], saved.split('<footer')[0].trimEnd());
+  assert.match(streamed, /<strong>supported<\/strong>/);
+  assert.doesNotMatch(streamed, /legal-answer__authority|legal-answer__citations/);
 });

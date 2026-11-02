@@ -1,12 +1,12 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { lazy, Suspense, useId, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { deriveLegalEvidenceMode } from "../../lib/ai/legal-evidence-mode";
 import { questionInterpretationFailureText, officialResearchFailureText, answerVerificationFailureText, type LegalAnswerFailureReason } from "../../lib/ai/legal-answer-failure";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
-const SafeMarkdown = lazy(() => import("./SafeMarkdown").then((module) => ({ default: module.SafeMarkdown })));
+import { SafeMarkdown } from "./SafeMarkdown";
 
 export type LegalAnswerViewSource = {
   sourceId: string;
@@ -213,9 +213,7 @@ function CitationList({
 
 function Markdown({ children, result, locale }: { children: string; result: LegalAnswerViewResult; locale: PlatformLocale }) {
   const allowedLinks = result.sources.flatMap((source) => publicSourceUrl(source) ?? []);
-  return <Suspense fallback={<p className="legal-answer__markdown-fallback" aria-busy="true">{children}</p>}>
-    <SafeMarkdown locale={locale} allowedLinks={allowedLinks}>{children}</SafeMarkdown>
-  </Suspense>;
+  return <SafeMarkdown locale={locale} allowedLinks={allowedLinks}>{children}</SafeMarkdown>;
 }
 
 function Section({ id, title, children, className = "" }: { id: string; title: string; children: ReactNode; className?: string }) {
@@ -231,7 +229,9 @@ export function LegalAnswerView({
   className = "",
   onQuestionSelect,
   onCitationSelect,
+  streaming = false,
 }: {
+  streaming?: boolean;
   result: LegalAnswerViewResult;
   locale: PlatformLocale;
   className?: string;
@@ -307,18 +307,14 @@ export function LegalAnswerView({
     ...result.risks.map((risk) => risk.sourceIds),
     ...result.deadlines.map((deadline) => deadline.sourceIds),
   ].flatMap((sourceIds) => sourceIds ?? []))];
-  return <article className={rootClass} data-answer-kind="legal-answer">
-    {internetNotice}
-    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{result.validationMethod === "programmatic" ? copy.programmatic : incomplete ? copy.partial : copy.authority[mode]}</p>
+  return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>
     <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
-      <CitationList sourceIds={mainSourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
     </Section>
     {(result.conditionalBranches ?? []).length > 0 && <Section id={`${id}-branches`} title={copy.branches}>
       <div className="legal-answer__findings">{(result.conditionalBranches ?? []).map((branch) => <article key={`${branch.condition}:${branch.sourceIds.join(":")}`}>
         <h3>{branch.condition}</h3>
         <Markdown result={result} locale={locale}>{branch.outcome}</Markdown>
-        <CitationList sourceIds={branch.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}</div>
     </Section>}
     {result.issues?.map((issue,index)=>{
@@ -326,14 +322,12 @@ export function LegalAnswerView({
       return <section className="legal-answer__section" data-answer-issue={index} key={issue.findingIndex} aria-labelledby={`${id}-issue-${index}`}>
         <h2 id={`${id}-issue-${index}`}>{finding.title}</h2>
         <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
-        <CitationList sourceIds={finding.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
         {issue.actionIndices.length>0 && <>
           <h3>{copy.next}</h3>
           <ol className="legal-answer__steps">{issue.actionIndices.map(actionIndex=>{
             const step=result.actionPlan[actionIndex]!;
             return <li key={actionIndex}>
               <div><h4>{step.title}</h4><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
-              <CitationList sourceIds={step.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
             </li>;
           })}</ol>
         </>}
@@ -343,13 +337,11 @@ export function LegalAnswerView({
       <div className="legal-answer__findings">{result.confirmedFindings.map((finding) => <article key={`${finding.title}:${finding.sourceIds?.join(":") ?? ""}`}>
         <h3>{finding.title}</h3>
         <Markdown result={result} locale={locale}>{finding.explanation}</Markdown>
-        <CitationList sourceIds={finding.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}</div>
     </Section>}
     {!result.issues && result.actionPlan.length > 0 && <Section id={`${id}-next`} title={copy.next}>
       <ol className="legal-answer__steps">{result.actionPlan.map((step) => <li key={step.title}>
         <div><h3>{step.title}</h3><Markdown result={result} locale={locale}>{step.description}</Markdown></div>
-        <CitationList sourceIds={step.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </li>)}</ol>
     </Section>}
     {important && <Section id={`${id}-important`} title={copy.important} className="legal-answer__section--important">
@@ -359,14 +351,12 @@ export function LegalAnswerView({
       {result.assumptions.map((assumption) => <article key={assumption.statement}><h3>{assumption.statement}</h3><Markdown result={result} locale={locale}>{assumption.impact}</Markdown></article>)}
       {result.risks.map((risk) => <article className={`legal-answer__risk legal-answer__risk--${risk.level}`} key={`${risk.level}:${risk.title}`}>
         <h3>{risk.title}</h3><Markdown result={result} locale={locale}>{risk.explanation}</Markdown>
-        <CitationList sourceIds={risk.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}
     </Section>}
     {result.deadlines.length > 0 && <Section id={`${id}-deadlines`} title={copy.deadlines}>
       <div className="legal-answer__deadlines">{result.deadlines.map((deadline) => <article key={deadline.title}>
         <h3>{deadline.title}{deadline.dueDate ? ` · ${deadline.dueDate}` : ""}</h3>
         <Markdown result={result} locale={locale}>{deadline.calculationMethod}</Markdown>
-        <CitationList sourceIds={deadline.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}</div>
     </Section>}
     {prepare && <Section id={`${id}-prepare`} title={copy.prepare}>
@@ -379,7 +369,6 @@ export function LegalAnswerView({
       <p className="legal-answer__secondary-note">{copy.secondaryNote}</p>
       {(result.referenceNotes ?? []).map((note, index) => <article key={`${id}-reference-note-${index}`}>
         <h3>{note.title}</h3><Markdown result={result} locale={locale}>{note.note}</Markdown>
-        <CitationList sourceIds={note.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
       </article>)}
     </Section>}
     {coverageGaps}
@@ -389,5 +378,17 @@ export function LegalAnswerView({
         ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
         : <p key={question}>{question}</p>)}</div>
     </section>}
+    {!streaming && <footer className="legal-answer__sources">
+    {internetNotice}
+    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{result.validationMethod === "programmatic" ? copy.programmatic : incomplete ? copy.partial : copy.authority[mode]}</p>
+      {[
+        { title: copy.main, sourceIds: mainSourceIds }, ...result.confirmedFindings,
+        ...(result.conditionalBranches ?? []).map(branch => ({ title: branch.condition, sourceIds: branch.sourceIds })),
+        ...result.actionPlan, ...result.risks, ...result.deadlines, ...(result.referenceNotes ?? []),
+      ].filter(item => item.sourceIds?.some(sourceId => result.sources.some(source => source.sourceId === sourceId))).map((item, index) => <div key={index} className="legal-answer__source-group">
+        <h3>{item.title}</h3>
+        <CitationList sourceIds={item.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
+      </div>)}
+    </footer>}
   </article>;
 }
