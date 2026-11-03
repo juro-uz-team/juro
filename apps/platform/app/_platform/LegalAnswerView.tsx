@@ -63,7 +63,6 @@ type AnswerCopy = {
   checked: string;
   checkedBody: string;
   partial: string;
-  programmatic: string;
   missing: string;
   authority: Record<NonNullable<LegalAnswerViewResult["evidenceMode"]>, string>;
   citationLabel: string;
@@ -87,7 +86,6 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Пока нельзя подтвердить ответ",
     checked: "Что удалось проверить",
     checkedBody: "Доступных подтверждений недостаточно для полного правового вывода.",
-    programmatic: "Ответ ИИ на основе официальных источников. Правовая интерпретация не проверялась независимо.",
     partial: "Ответ неполный: остаются неподтверждённые вопросы",
     missing: "Нужны дополнительные факты или подтверждённая применимая норма. JURO не заменяет их предположением из общих знаний модели.",
     authority: {
@@ -116,7 +114,6 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "Javobni hozircha tasdiqlab bo‘lmaydi",
     checked: "Nimalar tekshirildi",
     checkedBody: "Mavjud tasdiqlar to‘liq huquqiy xulosa uchun yetarli emas.",
-    programmatic: "Rasmiy manbalarga asoslangan AI javobi. Huquqiy talqin mustaqil tekshirilmagan.",
     partial: "Javob to‘liq emas: tasdiqlanmagan masalalar qolmoqda",
     missing: "Qo‘shimcha faktlar yoki tasdiqlangan amaldagi norma kerak. JURO ularning o‘rniga modelning umumiy bilimiga asoslangan taxmin bermaydi.",
     authority: {
@@ -145,7 +142,6 @@ const COPY: Record<PlatformLocale, AnswerCopy> = {
     insufficient: "The answer cannot yet be verified",
     checked: "What was checked",
     checkedBody: "The available evidence is insufficient for a complete legal conclusion.",
-    programmatic: "AI answer based on official sources. The legal interpretation has not been independently reviewed.",
     partial: "This answer is incomplete: some issues remain unverified",
     missing: "Additional facts or a verified applicable rule are required. JURO will not replace them with an assumption based on a model's general knowledge.",
     authority: {
@@ -242,7 +238,9 @@ export function LegalAnswerView({
   onQuestionSelect,
   onCitationSelect,
   streaming = false,
+  toolbar,
 }: {
+  toolbar?: ReactNode;
   streaming?: boolean;
   result: LegalAnswerViewResult;
   locale: PlatformLocale;
@@ -272,6 +270,7 @@ export function LegalAnswerView({
     const researchFailed = result.failureReason === "official_research_unavailable";
     const verificationFailed = result.failureReason === "answer_verification_unavailable";
     return <article className={`${rootClass} legal-answer--insufficient`} data-answer-kind="insufficient-evidence">
+      {toolbar}
       {internetNotice}
       <p className="legal-answer__authority">{copy.authority.none}</p>
       <header className="legal-answer__insufficient-heading">
@@ -313,6 +312,7 @@ export function LegalAnswerView({
   const important = result.assumptions.length > 0 || result.risks.length > 0 || result.urgency !== "normal";
   const prepare = result.requiredDocuments.length > 0 || Boolean(result.suggestedDocument);
   return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>
+    {toolbar}
     {result.summary && <Section id={`${id}-main`} title={copy.main} className="legal-answer__section--main">
       <Markdown result={result} locale={locale} sourceIds={result.summarySourceIds}>{result.summary}</Markdown>
     </Section>}
@@ -383,9 +383,9 @@ export function LegalAnswerView({
         ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
         : <p key={question}>{question}</p>)}</div>
     </section>}
-    {!streaming && <footer className="legal-answer__sources">
+    {!streaming && (internetNotice || incomplete) && <footer className="legal-answer__sources">
     {internetNotice}
-    <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{result.validationMethod === "programmatic" ? copy.programmatic : incomplete ? copy.partial : copy.authority[mode]}</p>
+    {incomplete && <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{copy.partial}</p>}
     </footer>}
   </article>;
 }

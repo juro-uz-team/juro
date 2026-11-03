@@ -210,6 +210,7 @@
 
 .legal-answer__questions {
   padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
   border-top: 1px solid var(--legal-rule);
 }
 
@@ -279,6 +280,30 @@
 }
 
 .legal-answer__sources { border-top: 1px solid var(--legal-rule); padding-top: 24px; }
+
+/* Each answer owns its evidence and listening controls; prose remains primary. */
+.ai-answer-toolbar { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 24px; }
+.ai-answer-toolbar button { font: inherit; font-size: 13px; font-weight: 600; }
+.ai-answer-toolbar .ai-answer-sources,
+.ai-answer-toolbar .ai-speech-controls__actions > button,
+.ai-answer-toolbar .ai-speech-controls__player > button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 8px;
+  background: var(--surface-subtle); color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+}
+.ai-answer-toolbar .ai-answer-sources[aria-pressed="true"] { background: var(--surface-selected); color: var(--brand-gold-text); border-color: var(--border-accent); }
+.ai-answer-toolbar svg { width: 16px; height: 16px; flex: none; }
+.ai-answer-source-count { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.ai-answer-toolbar button:not(:disabled):hover { background: var(--surface-hover); color: var(--text-primary); }
+.ai-answer-toolbar button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.ai-answer-toolbar button:disabled { opacity: .5; cursor: not-allowed; }
+.ai-answer-toolbar .ai-speech-controls { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; display: grid; gap: 8px; }
+.ai-speech-controls__actions { display: flex; align-items: center; gap: 4px; }
+.ai-answer-toolbar .ai-speech-controls .juro-select { width: 96px; min-height: 40px; padding: 8px; border-color: transparent; background: transparent; font-size: 13px; color: var(--text-secondary); }
+.ai-speech-controls__player { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.ai-answer-toolbar .ai-speech-controls audio { width: 240px; max-width: 100%; min-width: 0; height: 40px; min-height: 40px; }
+.ai-answer-toolbar .ai-speech-controls__player > button { flex: none; width: 40px; padding: 8px; }
+.ai-answer-toolbar .ai-speech-controls p { font-size: 12px; max-width: 280px; }
 .legal-answer__source-group + .legal-answer__source-group { margin-top: 20px; }
 
 /* Practical guidance is a separate reading group within its legal issue. */

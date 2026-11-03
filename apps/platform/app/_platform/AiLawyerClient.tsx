@@ -4,7 +4,7 @@ import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
 
-import { AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, RotateCcw, Send, Settings2, ShieldAlert, Square, ThumbsUp, Trash2, X } from "lucide-react";
+import { AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, ThumbsUp, Trash2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveVoiceModeState, type VoiceModeState, type VoiceRecorderPhase, type VoiceSpeechPhase } from "../../lib/ai/voice-ui";
@@ -311,7 +311,6 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     operation:editSourceMessageId?"edit":answer?"follow_up":"new",sourceMessageId:editSourceMessageId||answer?.messageId,
     legalContextDate:legalContextDate||undefined,...(voiceRecordingId?{voiceRecordingId}:{}),idempotencyKey:crypto.randomUUID()});}
   const retryQuestion=()=>{if(retryRef.current)void send(retryRef.current);};
-  const regenerateAnswer=()=>{if(answer?.messageId)void send({locale,answerMode,reasoningMode,conversationId:answer.conversationId,sourceMessageId:answer.messageId,operation:"regenerate",legalContextDate:legalContextDate||undefined,idempotencyKey:crypto.randomUUID()});};
   const editQuestion=()=>{if(answer?.requestMessageId){setEditSourceMessageId(answer.requestMessageId);setQuestion(answer.question??"");composerRef.current?.focus();}};
   const cancelQuestionEdit=()=>{setEditSourceMessageId("");setQuestion("");};
   const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
@@ -325,6 +324,12 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const toggleHistory=()=>{const next=!historyCollapsed;setHistoryCollapsed(next);try{localStorage.setItem("juro:ai-history",next?"collapsed":"expanded");}catch{/* Keep the in-memory preference when storage is unavailable. */}},toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
   const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>setMobileContextOpen(false);
   const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=!answer?.facts.length?"sources":event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
+  const showAnswerSources=(messageId:string|undefined,result:LegalResult)=>{
+    if(!messageId)return;
+    setCitationContext({messageId,result});setEvidenceCollapsed(false);setMobileContextTab("sources");
+    if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(true);
+    requestAnimationFrame(()=>document.getElementById("ai-context-sources-title")?.focus());
+  };
   const revealCitation=(sourceId:string,turn?:ConversationTurn)=>{setCitationContext(turn?.result?{messageId:turn.responseMessageId,result:turn.result}:null);setEvidenceCollapsed(false);setMobileContextTab("sources");if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(true);requestAnimationFrame(()=>focusSourceCard(sourceId));};
   const toggleConversationDeletion=(id:string)=>setDeleteCandidateId(current=>current===id?"":id);
   async function deleteConversation(id:string){const scope=workspaceId;setDeletingConversationId(id);setConversationDeleteError("");try{await requestJson("/api/platform/ai",{method:"DELETE",body:JSON.stringify({conversationId:id})});if(activeScope.current!==scope)return;if(currentSelection.current===id)startNewQuestion();setDeleteCandidateId("");await refresh();}catch(cause){if(activeScope.current===scope)setConversationDeleteError(String(cause instanceof Error?cause.message:cause));}finally{if(activeScope.current===scope)setDeletingConversationId("");}}
@@ -358,19 +363,14 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     finally{if(handoffGeneration.current===generation)setCreatingSuggestedDocument(false);}
   }
   const sourceResult=requestSending && writing?.sources ? { sources: writing.sources, sourceAccessMode: "direct" as const,
-    coverageStatus: undefined, sourcesRetrievedAt: null } : citationContext?.result??answer?.result;
+    coverageStatus: undefined, sourceValidationStatus: undefined, sourcesRetrievedAt: null } : citationContext?.result??answer?.result;
   const sourceMessageId=requestSending ? undefined : citationContext?.messageId??answer?.messageId;
-  const askAgainFromCitation=()=>{
-    if(!sourceMessageId||!answer?.conversationId||sending)return;
-    void send({locale,answerMode,reasoningMode,conversationId:answer.conversationId,sourceMessageId,
-      operation:"regenerate",legalContextDate:legalContextDate||undefined,idempotencyKey:crypto.randomUUID()});
-  };
   const referenceContext=answerReferenceContext<Source>(sourceResult?.sources??[], legalAnswerPassages(requestSending && writing
     ? writingResult(writing) : citationContext?.result??answer?.result));
   const visibleSources=referenceContext.sources.filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl));
   const hasCaseFacts=Boolean(answer?.facts.length),hasAnswerContext=hasCaseFacts||visibleSources.length>0||referenceContext.unresolved.length>0;
   const hasPrivateSources=visibleSources.some(isTrustedPrivateSource),hasSecondarySources=visibleSources.some(isSafeSecondarySource);
-  const sourceWasUnavailable=answer?.result.sourceValidationStatus==="unavailable";
+  const sourceWasUnavailable=sourceResult?.sourceValidationStatus==="unavailable";
 
   return (
     <section className={`ai-workspace ${voiceMode ? "ai-workspace-voice" : ""} ${historyCollapsed ? "ai-history-collapsed" : ""} ${evidenceCollapsed ? "ai-evidence-collapsed" : ""}`}>
@@ -408,9 +408,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           ) : <>
             {answer && <>
             <div className="ai-transcript">
-              {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} />)}
+              {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} toolbar={turn.result && <AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} result={turn.result} disabled={sending} selected={sourceMessageId===turn.responseMessageId} onSources={()=>showAnswerSources(turn.responseMessageId,turn.result!)} />} />)}
               <HumanMessage question={answer.question || answer.turns?.at(-1)?.question || ""} locale={locale} />
-              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={selectFollowUpQuestion} /></div>
+              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={selectFollowUpQuestion} toolbar={<AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={answer.messageId} result={answer.result} disabled={sending} selected={sourceMessageId===answer.messageId} onSources={()=>showAnswerSources(answer.messageId,answer.result)} onSpeechPhaseChange={setVoiceSpeechPhase} />} /></div>
             </div>
             {answer.result.responseKind === "answer" && answer.result.actionPlan.length > 0 && dismissedPlanMessageId !== answer.messageId && <section className="ai-plan-card" aria-labelledby="ai-plan-card-title">
               <header><small>{text("После ответа AI", "AI javobidan so‘ng", "After the AI answer")}</small><h2 id="ai-plan-card-title">{text("Создать план действий", "Harakatlar rejasini yaratish", "Create an action plan")}</h2></header>
@@ -426,8 +426,6 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             <div className="ai-answer-actions">
               {answer.result.responseKind === "answer" && answer.result.suggestedDocument && <button type="button" disabled={!answer.messageId || sending || openingSuggestedDocument} onClick={() => void openSuggestedDocument()}><FilePlus2 />{openingSuggestedDocument ? text("Проверяем шаблон…", "Shablon tekshirilmoqda…", "Verifying template…") : text("Открыть шаблон JURO", "JURO shablonini ochish", "Open JURO template")}</button>}
               <button type="button" disabled={!answer.requestMessageId || sending} onClick={editQuestion}><Pencil />{text("Редактировать вопрос", "Savolni tahrirlash", "Edit question")}</button>
-              <button type="button" disabled={!answer.messageId || sending || !status?.configured} onClick={regenerateAnswer}><RotateCcw />{sourceWasUnavailable ? text("Повторить поиск источников", "Manbalarni qayta qidirish", "Retry source search") : text("Повторить ответ", "Javobni qayta yaratish", "Regenerate answer")}</button>
-              {answer.messageId && answer.result.responseKind === "answer" && <AssistantSpeechControls key={`${workspaceId}:${answer.messageId}`} workspaceId={workspaceId} locale={locale} assistantMessageId={answer.messageId} disabled={sending} onPhaseChange={setVoiceSpeechPhase} />}
             </div>
             {documentPrefill && documentPrefillMessageId === answer.messageId && <section className="ai-document-prefill" aria-labelledby="ai-document-prefill-title" aria-busy={creatingSuggestedDocument}>
               <header><div><small>{text("Проверка перед созданием", "Yaratishdan oldin tekshirish", "Review before creation")}</small><h2 id="ai-document-prefill-title">{documentPrefill.title}</h2><p>{documentPrefill.reason}</p></div><button type="button" aria-label={text("Закрыть проверку заполнения", "To‘ldirish tekshiruvini yopish", "Close prefill review")} disabled={creatingSuggestedDocument} onClick={dismissDocumentPrefill}><X /></button></header>
@@ -509,9 +507,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           <button ref={mobileSourcesTabRef} id="ai-context-sources-tab" type="button" role="tab" aria-selected={mobileContextTab === "sources" || !hasCaseFacts} aria-controls="ai-context-sources-panel" tabIndex={mobileContextTab === "sources" || !hasCaseFacts ? 0 : -1} onKeyDown={handleMobileContextTabKeyDown} onClick={() => setMobileContextTab("sources")}>{text("Источники", "Manbalar", "Sources")}</button>
         </div>
         {answer?.facts.length ? <section id="ai-context-facts-panel" role={mobileContextOpen ? "tabpanel" : undefined} aria-labelledby={mobileContextOpen ? "ai-context-facts-tab" : undefined} hidden={mobileContextOpen && mobileContextTab !== "facts"}><h2>{text("Факты для подтверждения", "Tasdiqlash uchun faktlar", "Facts to verify")}</h2>{answer.facts.map((fact) => <div className={`ai-fact ${fact.status}`} key={fact.id}><p>{fact.statement}</p>{fact.status === "proposed" ? <span><button onClick={() => void updateFact(fact.id, "confirmed")} aria-label={text("Подтвердить факт", "Faktni tasdiqlash", "Verify fact")}><Check /></button><button onClick={() => void updateFact(fact.id, "rejected")} aria-label={text("Отклонить факт", "Faktni rad etish", "Reject fact")}><X /></button></span> : <small>{fact.status === "confirmed" ? text("Подтверждено", "Tasdiqlandi", "Verified") : text("Отклонено", "Rad etildi", "Rejected")}</small>}</div>)}</section> : null}
-        {visibleSources.length || referenceContext.unresolved.length ? <section id="ai-context-sources-panel" role={mobileContextOpen ? "tabpanel" : undefined} aria-labelledby={mobileContextOpen ? "ai-context-sources-tab" : undefined} className="ai-evidence" hidden={mobileContextOpen && hasCaseFacts && mobileContextTab !== "sources"}><h2>{hasPrivateSources || hasSecondarySources ? text("Источники", "Manbalar", "Sources") : text("Основания в Lex.uz", "Lex.uz asoslari", "Lex.uz legal bases")}</h2>{sourceResult?.coverageStatus && <p className={`ai-coverage ai-coverage-${sourceResult.coverageStatus}`}>{coverageLabel(sourceResult.coverageStatus, locale)}</p>}{referenceContext.unresolved.map((reference,index)=><article className="ai-source-card" key={`unresolved-${index}`}>
+        {visibleSources.length || referenceContext.unresolved.length ? <section id="ai-context-sources-panel" role={mobileContextOpen ? "tabpanel" : undefined} aria-labelledby={mobileContextOpen ? "ai-context-sources-tab" : undefined} className="ai-evidence" hidden={mobileContextOpen && hasCaseFacts && mobileContextTab !== "sources"}><h2 id="ai-context-sources-title" tabIndex={-1}>{hasPrivateSources || hasSecondarySources ? text("Источники", "Manbalar", "Sources") : text("Основания в Lex.uz", "Lex.uz asoslari", "Lex.uz legal bases")}</h2>{sourceResult?.coverageStatus && <p className={`ai-coverage ai-coverage-${sourceResult.coverageStatus}`}>{coverageLabel(sourceResult.coverageStatus, locale)}</p>}{referenceContext.unresolved.map((reference,index)=><article className="ai-source-card" key={`unresolved-${index}`}>
           <div className="ai-source-card-body"><strong>{reference.label}</strong><small>{text("Упомянуто в ответе; официальный источник не определён", "Javobda keltirilgan; rasmiy manba aniqlanmadi", "Mentioned in the answer; official source not identified")}</small></div>
-        </article>)}{visibleSources.map((source) => <LegalSourceCard key={`${workspaceId}:${sourceMessageId}:${source.sourceId}:${source.article || "source"}`} source={source} messageId={sourceMessageId} retrievedAt={sourceResult?.sourcesRetrievedAt} sourceAccessMode={sourceResult?.sourceAccessMode} onAskAgain={askAgainFromCitation} askAgainDisabled={sending} cases={cases} locale={locale} />)}</section> : null}</> : <section className="ai-context-empty"><span><BookOpenCheck aria-hidden="true" /></span><h2>{text("Нет подтверждённых источников", "Tasdiqlangan manbalar yo‘q", "No verified sources")}</h2>{sourceResult?.coverageStatus && <p className={`ai-coverage ai-coverage-${sourceResult.coverageStatus}`}>{coverageLabel(sourceResult.coverageStatus, locale)}</p>}<p>{sourceWasUnavailable ? text("При сохранении этого ответа официальный источник был недоступен. Повторите поиск из ответа.", "Bu javob saqlanganda rasmiy manba mavjud emas edi. Javobdan qidiruvni takrorlang.", "The official source was unavailable when this answer was saved. Retry the source search from the answer.") : text("JURO не показывает статью или ссылку без подтверждённого основания.", "JURO tasdiqlangan asossiz modda yoki havolani ko‘rsatmaydi.", "JURO does not show an article or link without a verified legal basis.")}</p></section>}
+        </article>)}{visibleSources.map((source) => <LegalSourceCard key={`${workspaceId}:${sourceMessageId}:${source.sourceId}:${source.article || "source"}`} source={source} messageId={sourceMessageId} retrievedAt={sourceResult?.sourcesRetrievedAt} sourceAccessMode={sourceResult?.sourceAccessMode} cases={cases} locale={locale} />)}</section> : null}</> : <section className="ai-context-empty"><span><BookOpenCheck aria-hidden="true" /></span><h2>{text("Нет подтверждённых источников", "Tasdiqlangan manbalar yo‘q", "No verified sources")}</h2>{sourceResult?.coverageStatus && <p className={`ai-coverage ai-coverage-${sourceResult.coverageStatus}`}>{coverageLabel(sourceResult.coverageStatus, locale)}</p>}<p>{sourceWasUnavailable ? text("При сохранении этого ответа официальный источник был недоступен.", "Bu javob saqlanganda rasmiy manba mavjud emas edi.", "The official source was unavailable when this answer was saved.") : text("JURO не показывает статью или ссылку без подтверждённого основания.", "JURO tasdiqlangan asossiz modda yoki havolani ko‘rsatmaydi.", "JURO does not show an article or link without a verified legal basis.")}</p></section>}
       </aside>
     </section>
   );
@@ -595,10 +593,27 @@ function HumanMessage({ question, locale }: { question: string; locale: Platform
   </article>;
 }
 
-function ConversationTurnPair({ turn, locale, onCitationSelect }: { turn: ConversationTurn; locale: PlatformLocale; onCitationSelect?: (sourceId: string) => void }) {
+function AnswerToolbar({locale,workspaceId,messageId,result,disabled,selected,onSources,onSpeechPhaseChange}: {
+  locale:PlatformLocale;workspaceId:string;messageId?:string;result:LegalResult;disabled:boolean;selected:boolean;
+  onSources:()=>void;onSpeechPhaseChange?:(phase:VoiceSpeechPhase)=>void;
+}) {
+  const sources=answerReferenceContext<Source>(result.sources,legalAnswerPassages(result)).sources;
+  const count=sources.filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl)).length;
+  if(!messageId || (!count && result.responseKind!=="answer"))return null;
+  return <div className="ai-answer-toolbar" role="group" aria-label={aiText(locale,"Действия с ответом","Javob amallari","Answer actions")}>
+    {count>0 && <button className="ai-answer-sources" type="button" aria-controls="ai-context-panel" aria-pressed={selected} disabled={disabled}
+      onClick={onSources} title={aiText(locale,"Открыть источники этого ответа","Ushbu javob manbalarini ochish","Open sources for this answer")}>
+      <BookOpenCheck aria-hidden="true"/><span>{aiText(locale,"Источники","Manbalar","Sources")}</span><span className="ai-answer-source-count">{count}</span>
+    </button>}
+    {result.responseKind==="answer" && <AssistantSpeechControls key={`${workspaceId}:${messageId}`} workspaceId={workspaceId} locale={locale}
+      assistantMessageId={messageId} disabled={disabled} onPhaseChange={onSpeechPhaseChange}/>}
+  </div>;
+}
+
+function ConversationTurnPair({ turn, locale, onCitationSelect, toolbar }: { turn: ConversationTurn; locale: PlatformLocale; onCitationSelect?: (sourceId: string) => void; toolbar?: React.ReactNode }) {
   return <section className="ai-conversation-turn">
     <HumanMessage question={turn.question} locale={locale} />
-    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={onCitationSelect} />:<p className="ai-legacy-answer">{turn.answer}</p>}
+    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={onCitationSelect} toolbar={toolbar} />:<p className="ai-legacy-answer">{turn.answer}</p>}
   </section>;
 }
 
@@ -644,8 +659,6 @@ function LegalSourceCard({
   messageId,
   retrievedAt,
   sourceAccessMode,
-  onAskAgain,
-  askAgainDisabled,
   cases,
   locale,
 }: {
@@ -653,8 +666,6 @@ function LegalSourceCard({
   messageId?: string;
   retrievedAt?: string | null;
   sourceAccessMode?: LegalResult["sourceAccessMode"];
-  onAskAgain?:()=>void;
-  askAgainDisabled?:boolean;
   cases: CaseOption[];
   locale: PlatformLocale;
 }) {
@@ -759,7 +770,7 @@ function LegalSourceCard({
             "Исходный корпус источников удалён. Полный текст этой цитаты больше недоступен; сохранённый ответ и фрагмент остаются. Это не означает, что закон изменился.",
             "Dastlabki manbalar korpusi o‘chirildi. Bu iqtibosning to‘liq matni endi mavjud emas; saqlangan javob va parcha qoladi. Bu qonun o‘zgarganini anglatmaydi.",
             "The original source corpus was retired. This citation’s full text is no longer available; the saved answer and excerpt remain. This does not mean the law changed.")}</p>
-            {onAskAgain&&<button type="button" disabled={askAgainDisabled} onClick={()=>{closeSourceDialog();onAskAgain();}}>{aiText(locale,"Получить новый ответ","Yangi javob olish","Get a new answer")}</button>}</div>}
+            </div>}
           {display.evidenceUnavailable && display.evidenceUnavailableReason!=="retired" && <p className="ai-source-modal-warning" role="status">{aiText(locale,
             "Не удалось открыть полный текст цитированной редакции. Показан сохранённый проверенный фрагмент.",
             "Keltirilgan tahrirning to‘liq matnini ochib bo‘lmadi. Saqlangan tekshirilgan parcha ko‘rsatilmoqda.",
@@ -898,7 +909,9 @@ function LegalAnswer({
   locale,
   onQuestionSelect,
   onCitationSelect,
+  toolbar,
 }: {
+  toolbar?: React.ReactNode;
   result: LegalResult;
   freshness?: SourceFreshness;
   locale: PlatformLocale;
@@ -924,6 +937,7 @@ function LegalAnswer({
     </div>}
     <LegalAnswerView
       result={result}
+      toolbar={toolbar}
       locale={locale}
       className="ai-answer"
       onQuestionSelect={onQuestionSelect}

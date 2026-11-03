@@ -353,7 +353,8 @@ test("partial status and saved coverage gaps remain visible in every locale", ()
 
 test("programmatically checked answers do not display independent legal verification",()=>{
   const html=renderToStaticMarkup(createElement(LegalAnswerView,{locale:"en",result:result({validationMethod:"programmatic"})}));
-  assert.match(html,/legal interpretation has not been independently reviewed/);
+  assert.doesNotMatch(html,/legal interpretation has not been independently reviewed/);
+  assert.doesNotMatch(html,/Verified by official sources/);
   assert.doesNotMatch(html,/Verified by official sources/);
 });
 
