@@ -8,9 +8,9 @@ import {chromium} from 'playwright';
 
 test('answer tools select historical evidence and speech, remain compact and accessible',async()=>{
  const root=fileURLToPath(new URL('../../',import.meta.url));
- const artifacts=fileURLToPath(new URL('../../../../.scratch/answer-controls/',import.meta.url));await mkdir(artifacts,{recursive:true});
+ const artifacts=fileURLToPath(new URL('../../../../.scratch/answer-controls-refinement/',import.meta.url));await mkdir(artifacts,{recursive:true});
  const source=(id,title)=>({sourceId:id,actTitle:title,actIdentifier:null,article:'1',originalUrl:'https://lex.uz/docs/'+(id==='old'?111:222),status:'current',effectiveDate:null,verifiedAt:'2026-11-04T00:00:00Z',sourceClass:'OFFICIAL_LEGISLATION',sourceOrigin:'indexed'});
- const result=(id,title)=>({responseKind:'answer',summary:id==='old'?'Покупка недвижимости: что устанавливает постановление.':'Рабочая неделя: как применяется общее правило.',answer:'Объяснение нормы.',clarificationQuestions:['Покупка планируется у застройщика или у прежнего собственника, и будет ли договор заключён во время строительства?'],confirmedFindings:[{title:'Что устанавливает закон',explanation:'Проверьте условия и применимые положения официального документа.',sourceIds:[id]}],assumptions:[],risks:[],sources:[source(id,title)],requiredDocuments:[],actionPlan:[],deadlines:[],urgency:'normal',suggestedDocument:null,suggestLawyer:false,legalDatabaseAsOf:'2026-11-04',validationMethod:'programmatic',coverageStatus:'good_coverage',sourceAccessMode:'direct'});
+ const result=(id,title)=>({responseKind:'answer',summary:id==='old'?'Покупка недвижимости: что устанавливает постановление.':'Рабочая неделя: как применяется общее правило.',answer:'Объяснение нормы.',clarificationQuestions:['Покупка планируется у застройщика или у прежнего собственника, и будет ли договор заключён во время строительства?'],confirmedFindings:[{title:'Что устанавливает закон',explanation:'Проверьте условия и применимые положения официального документа.',sourceIds:[id]}],assumptions:[],risks:[],sources:[source(id,title)],requiredDocuments:[],actionPlan:[{title:'Check documents',description:'Review the official rule.'}],deadlines:[],urgency:'normal',suggestedDocument:null,suggestLawyer:false,legalDatabaseAsOf:'2026-11-04',validationMethod:'programmatic',coverageStatus:'good_coverage',sourceAccessMode:'direct'});
  const old=result('old','Постановление о приобретении недвижимости'),latest=result('new','Трудовой кодекс');
  const delivery={conversationId:'conversation',messageId:'latest-message',requestMessageId:'latest-request',branchId:'latest-branch',question:'Какая продолжительность рабочей недели?',facts:[],result:latest,turns:[{branchId:'old-branch',requestMessageId:'old-request',responseMessageId:'old-message',question:'О чём это постановление?',createdAt:'2026-11-04',result:old}]};
  const bundle=await build({stdin:{contents:`import {createRoot} from 'react-dom/client';import {AiLawyerClient} from './app/_platform/AiLawyerClient';import {PlatformRouteProvider} from './app/_platform/PlatformRouteContext';createRoot(document.getElementById('root')).render(<PlatformRouteProvider basePath="/ru/individual" workspaceId="workspace"><AiLawyerClient locale="ru"/></PlatformRouteProvider>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,jsx:'automatic',plugins:[{name:'navigation',setup(b){b.onResolve({filter:/^next\/navigation$/},()=>({path:'navigation',namespace:'test'}));b.onLoad({filter:/.*/,namespace:'test'},()=>({contents:`export const usePathname=()=>location.pathname;export const useSearchParams=()=>new URLSearchParams(location.search);export const useRouter=()=>({replace:()=>{},push:()=>{},prefetch:()=>{}});`,loader:'js'}));}}]});
@@ -27,7 +27,7 @@ test('answer tools select historical evidence and speech, remain compact and acc
    if(url.pathname.includes('/citations/')){detailRequests.push(url.pathname+url.search);res.end(JSON.stringify({documentTitle:old.sources[0].actTitle,fullArticle:true,officialUrl:old.sources[0].originalUrl,text:'Сохранённый текст официальной нормы.',availableLanguages:[],versionHistory:[]}));return;}
    res.end(JSON.stringify(url.pathname.endsWith('/feedback')?{feedback:[]}:url.searchParams.has('conversationId')?delivery:{provider:{configured:true},usage:{used:0,limit:100,periodEnd:'2099-01-01'},conversations:[],cases:[],next:null}));return;
   }
-  res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="ru" data-theme="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><div id="root"></div><script src="/bundle.js"></script></html>');
+  res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="ru" data-theme="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><style>body{font-family:Arial,sans-serif}</style><div id="root"></div><script src="/bundle.js"></script></html>');
  });await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({channel:process.env.AUTH_BROWSER_CHANNEL||'chrome'});
  try{
@@ -53,20 +53,30 @@ test('answer tools select historical evidence and speech, remain compact and acc
   await tools.last().locator('audio').waitFor();await page.waitForFunction(()=>document.querySelector('.ai-speech-controls audio')?.readyState>=2);
   await tools.last().screenshot({path:artifacts+'audio-player.png'});
   await tools.last().getByRole('button',{name:'Остановить',exact:true}).click();assert.equal(await tools.last().locator('audio').count(),0);
+  assert(await page.locator('.ai-answer-edit').evaluate(el=>Boolean(el.compareDocumentPosition(document.querySelector('.ai-plan-card')) & Node.DOCUMENT_POSITION_FOLLOWING)));
   // Reload clears simulated audio errors before reviewing the ordinary layout.
   await page.reload();await tools.first().waitFor();
   for(const width of [1600,390]){
    await page.setViewportSize({width,height:1100});await tools.first().scrollIntoViewIfNeeded();
    await page.screenshot({path:artifacts+`answer-${width}-dark.png`,fullPage:true});
    const metrics=await tools.first().evaluate(el=>({width:el.getBoundingClientRect().width,controls:[...el.querySelectorAll('button')].map(b=>({height:b.getBoundingClientRect().height,width:b.getBoundingClientRect().width}))}));
+   assert(await tools.first().evaluate(el=>Math.abs(el.getBoundingClientRect().right-el.querySelector('.ai-speech-controls').getBoundingClientRect().right)<2),'Listening aligns right');
    assert(metrics.controls.every(c=>c.height>=40),'Touch targets stay usable');
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal overflow');
    assert.equal(await page.locator('.legal-answer__questions').first().evaluate(el=>getComputedStyle(el).paddingBottom),'24px');
    await tools.first().getByRole('button',{name:'Источники 1',exact:true}).click();
    await page.locator('.ai-source-card').filter({hasText:old.sources[0].actTitle}).waitFor({state:'visible'});
+   const sticky=await page.locator('.ai-context').evaluate(el=>{
+    const spacer=document.createElement('div');spacer.style.height='1800px';el.append(spacer);
+    const header=el.querySelector('header');el.scrollTop=0;const before=header.getBoundingClientRect().top;
+    el.scrollTop=300;const after=header.getBoundingClientRect().top;const scrolled=el.scrollTop;
+    spacer.remove();el.scrollTop=0;return {before,after,scrolled};
+   });
+   assert(sticky.scrolled>0);assert(Math.abs(sticky.before-sticky.after)<2,'Context title remains stationary');
    if(width===390){assert.equal(await page.locator('#ai-context-panel').getAttribute('role'),'dialog');await page.keyboard.press('Escape');await tools.first().getByRole('button',{name:'Источники 1',exact:true}).waitFor({state:'visible'});}
    await page.evaluate(()=>document.documentElement.dataset.theme='light');await tools.first().scrollIntoViewIfNeeded();await page.screenshot({path:artifacts+`answer-${width}-light.png`,fullPage:true});await page.evaluate(()=>document.documentElement.dataset.theme='dark');
   }
+  await page.setViewportSize({width:1600,height:1100});await page.locator('.ai-answer-edit').scrollIntoViewIfNeeded();await page.screenshot({path:artifacts+'answer-footer.png'});
   assert.deepEqual(errors,[]);console.log('Checked historical/latest citations, answer-specific speech and voice selection, error state, desktop/mobile, themes, spacing, hit areas and dialog Escape.');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 });

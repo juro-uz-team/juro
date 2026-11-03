@@ -666,3 +666,23 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 @media (max-width: 900px) {
   .platform-shell--chat .platform-main { height: calc(100% - 68px - env(safe-area-inset-bottom)); }
 }
+
+/* Keep the evidence heading in view while its sources scroll underneath. */
+.ai-context > header {
+  position: sticky; top: -18px; z-index: 2;
+  min-height: 64px; height: auto; margin: -18px -16px 16px; padding: 12px 16px;
+  border-bottom: 1px solid var(--ai-line); background: var(--ai-panel);
+}
+.ai-answer-edit { display: flex; justify-content: flex-end; max-width: 900px; padding: 8px 0 0; }
+.ai-answer-edit > button {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--ai-muted);
+  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.ai-answer-edit > button > svg { width: 15px; height: 15px; }
+.ai-answer-edit > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ai-copy); }
+.ai-answer-edit > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ai-answer-edit > button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .ai-context > header { top: -16px; margin-top: -16px; }
+}

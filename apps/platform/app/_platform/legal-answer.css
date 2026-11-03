@@ -297,9 +297,10 @@
 .ai-answer-toolbar button:not(:disabled):hover { background: var(--surface-hover); color: var(--text-primary); }
 .ai-answer-toolbar button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .ai-answer-toolbar button:disabled { opacity: .5; cursor: not-allowed; }
-.ai-answer-toolbar .ai-speech-controls { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; display: grid; gap: 8px; }
-.ai-speech-controls__actions { display: flex; align-items: center; gap: 4px; }
-.ai-answer-toolbar .ai-speech-controls .juro-select { width: 96px; min-height: 40px; padding: 8px; border-color: transparent; background: transparent; font-size: 13px; color: var(--text-secondary); }
+.ai-answer-toolbar .ai-speech-controls { flex: 0 1 auto; min-width: 0; margin-inline-start: auto; padding: 0; border: 0; display: grid; justify-items: end; gap: 8px; }
+.ai-speech-controls__actions { display: flex; align-items: center; gap: 0; padding: 2px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-subtle); }
+.ai-answer-toolbar .ai-speech-controls__actions > button { border: 0; background: transparent; border-radius: 9px; }
+:root body .ai-answer-toolbar .ai-speech-controls .juro-select.juro-select { width: 92px; gap: 8px; min-height: 40px; padding: 8px; border: 0; border-inline-start: 1px solid var(--border-subtle); border-radius: 0 9px 9px 0; box-shadow: none; background: transparent; font-size: 13px; color: var(--text-secondary); }
 .ai-speech-controls__player { display: flex; align-items: center; gap: 8px; max-width: 100%; }
 .ai-answer-toolbar .ai-speech-controls audio { width: 240px; max-width: 100%; min-width: 0; height: 40px; min-height: 40px; }
 .ai-answer-toolbar .ai-speech-controls__player > button { flex: none; width: 40px; padding: 8px; }
@@ -315,3 +316,9 @@
 .legal-answer .safe-markdown a { color: var(--brand-gold-text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 2px; }
 .legal-answer .safe-markdown a:hover { color: var(--text-primary); }
 .legal-answer .safe-markdown a:focus-visible { outline: 2px solid var(--brand-gold-text); outline-offset: 3px; }
+
+@media (max-width: 620px) {
+  .ai-answer-toolbar { gap: 8px; }
+  .ai-answer-toolbar .ai-speech-controls__actions > button:not(.juro-select) { width: 40px; padding: 8px; }
+  .ai-speech-controls__actions > button:not(.juro-select) > span { display: none; }
+}
