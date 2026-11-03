@@ -115,6 +115,29 @@ test("a multi-megabyte act contributes only selected complete articles, with wid
   assert.deepEqual(item, original);
 });
 
+for (const language of ["en", "ru", "uz-Latn"]) test(`complete non-article acts can be read through the candidate adapter (${language})`, async () => {
+  const item = source();
+  item.prepared.units = [
+    { ordinal: 0, locator: "100", language, hierarchy: [], text: "1. Approve the attached list." },
+    { ordinal: 1, locator: "101", language, hierarchy: [], text: "2. The rule applies subject to the following exception." },
+    { ordinal: 2, locator: "200", language, hierarchy: [], text: "Annex 1" },
+    { ordinal: 3, locator: "201", language, hierarchy: [], text: "Complete list and its limiting condition." },
+  ];
+  await withReader(item, "current", async reader => {
+    const discovery = { search: async () => ({ candidates: ["hit"], sparseAvailable: true, denseAvailable: true }),
+      readCandidate: async () => ({ work: "work", source: item, unitMetadata: item.prepared.units[1] }) };
+    const corpus = createStoredCorpus({ current: discovery, history: discovery, objects: reader, provisions: reader.provisions });
+    const scope = { kind: "current" } as const, active = signal();
+    await corpus.search("general legal question", scope, active);
+    const locator = await corpus.resolve("hit", scope, active);
+    assert.ok(locator);
+    const provision = await readOfficialProvision(locator, corpus, scope, active);
+    for (const unit of item.prepared.units) assert.ok(provision.text.includes(unit.text));
+    assert.equal(provision.sourceStructure?.rangeKind, "document");
+    assert.equal(provision.sourceUrl, "https://lex.uz/docs/123#100");
+  });
+});
+
 test("an uncertain article boundary requires an explicit broader read instead of implicit document hydration", async () => {
   const item = source();
   item.prepared.units[1].text = "Unclosed quotation: «";

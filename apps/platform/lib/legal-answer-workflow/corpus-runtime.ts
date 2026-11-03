@@ -59,7 +59,10 @@ export function createCorpusRuntime(input: {
     },
   });
   return {
-    corpus: { ...corpus, automaticReadLimit: input.automaticReadLimit ?? 0,
+    // Every legal research entry acquires an initial complete source when one
+    // is readable. Navigation-only legacy settings must not strand all law
+    // behind repeated model navigation before the first evidence arrives.
+    corpus: { ...corpus, automaticReadLimit: Math.max(1, input.automaticReadLimit ?? 1),
       candidateReadScope: input.candidateReadScope ?? "provision",
       researchConcurrency: input.researchConcurrency ?? 3,
       entryNavigation: input.entryNavigation ?? false,

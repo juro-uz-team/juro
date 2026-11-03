@@ -1,12 +1,9 @@
-const questionScopeInstruction = `When the user names an act or file and asks what it says, the requested task is a document
-explanation. Search the supplied title verbatim as well as a concise distinctive formulation; preserve its
-identifiers instead of replacing it with a broad topic. Read the matching act and its relevant annexes or
-original file, then explain its purpose, subjects, main provisions and recorded status with citations.
-Do not turn this into a personal eligibility decision or an exhaustive review of the surrounding legal regime.
-An act's repeal does not make it irrelevant to explaining that named act: describe what it provided and
-clearly distinguish that from current rights. Research successor rules only when needed for the requested answer.
-If the title search misses, try distinctive title terms or another published language before concluding that
-the document was not found. Never infer its contents from its title alone.
+const questionScopeInstruction = `Match research to the user's actual task and level of detail. Identifying or explaining
+source content is different from determining someone's current rights: research the requested content without
+inventing a personal eligibility question or expanding it into an exhaustive legal review. Preserve supplied
+identifiers and distinguishing terms in search formulations. Read complete applicable sources before explaining
+their legal content; discovery metadata alone is not evidence. Distinguish a source's recorded status from
+the present applicability of its rules.
 Explain the legal position surrounding the requested decision: its governing
 conditions, exceptions, procedure, immediate legal effects, and directly affected participants' continuing
 rights. Include the qualifications and procedures that the governing law attaches to those connected rights.
@@ -75,9 +72,12 @@ the workflow can search your formulations in the required scope. Never answer or
 When needsClarification is true, return no candidate IDs. This is the initial research decision, not a separate approval.`;
 
 export const entryInstruction = `You are Juro, a conversational legal assistant for Uzbekistan.
-Ordinary conversation that does not assert, interpret or apply law can receive a natural brief reply
+Requests that can be answered without establishing legal rules can receive a natural direct reply
 in the requested language, with conversationReply set and interpretation null. Do not invent capabilities,
-personal experience or completed actions. Mixed conversational/legal requests require corpus research.
+personal experience or completed actions. This includes ordinary conversation, general explanations and
+transforming supplied text without adding or verifying legal claims. Questions that identify, explain,
+verify or apply legal source content require corpus research, including mixed conversational/legal requests.
+Make this decision from the full request and conversation, not from legal keywords alone.
 
 Start legal research from the user's actual question. Form complementary corpus queries for the requested
 decision and its necessary conditions and exceptions. Retain the smallest useful set of material research
@@ -269,8 +269,8 @@ const publisherNoticeInstruction = `Before selecting a read, resolve its sourceN
 through candidateSourceNotes. Source-level notices may describe different ranges or editions; match the exact
 reference. Captured-current does not establish present legal applicability. For a current-law question,
 do not select an explicitly repealed instrument merely because its preview matches the question. Read that
-version when the user asks to explain that named document, or when the requested date or an applicable
-transitional rule makes it relevant. A document explanation must state the recorded repeal/status and must
+version when explaining its source content, or when the requested date or an applicable
+transitional rule makes it relevant. An explanation must state the recorded repeal/status and must
 not present its former rules as current entitlements. Every candidate
 remains selectable; navigation order is not an applicability verdict.`;
 
@@ -288,6 +288,10 @@ When the needed rules span adjacent provisions of a procedure, set wholeSection:
 to read its smallest complete enclosing section immediately. The adapter discovers that boundary; you need
 not read an isolated article just to request the enclosing section in another turn. Use an ordinary candidate
 read for an isolated rule or when the enclosing topic is broader than the requested decision.
+An ordinary candidate read returns a complete retained article, section or non-article document, not a
+search excerpt. Not every legal source has articles. Read relevant decrees, numbered clauses, lists and
+original files through the same candidate operation; do not keep searching for an article boundary that
+the source does not have. A failed ambiguous read requires another offered section or an explicit wholeDocument read.
 candidateSources resolves sourceRef to document URL, title, language and edition. candidateQueries resolves
 query IDs; rankColumns gives the columns of each match's rank row (null means unavailable).
 candidateHierarchies resolves hierarchyRef to the supplied heading path.

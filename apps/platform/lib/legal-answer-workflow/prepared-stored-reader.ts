@@ -168,7 +168,13 @@ export function createPreparedStoredReader(input: { release: unknown; worker: Wo
     if (request.wholeSection === false && !request.wholeDocument) {
       const reader = await objects.rangeReader(request.work, signal);
       const extent = reader.describe(request);
-      if (!extent.articleTitle || extent.containsSectionHeadings) throw new Error("COMPLETE_PROVISION_SELECTION_REQUIRED");
+      if (!extent.articleTitle || extent.containsSectionHeadings) {
+        if (reader.hasArticleHeadings) throw new Error("COMPLETE_PROVISION_SELECTION_REQUIRED");
+        // Decrees, lists, forms and other non-article acts are complete source
+        // evidence too. Use their existing safe section, or the complete document
+        // when no narrower retained boundary exists. Never manufacture an article.
+        request = { ...request, wholeSection: undefined };
+      }
     }
     const provision = await objects.read(request, signal);
     if (request.publisherHeading !== undefined && (!provision.sectionTitle || provision.ordinals.length < 2)) {

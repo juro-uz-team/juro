@@ -132,12 +132,12 @@ test("runtime loads complete stored provisions and persists citations without pu
       if (delivered.kind !== "completed") throw new Error("Expected persisted delivery");
       assert.ok(delivered.response && typeof delivered.response === "object" && "responseKind" in delivered.response);
       assert.equal(delivered.response.responseKind, "answer");
-      assert.equal(generationCalls, 3);
+      assert.equal(generationCalls, 2, "initial research supplies complete evidence without an extra navigation-only model call");
       assert.equal(embeddingCalls, 4);
-      assert.deepEqual(categories, ["generation", "embedding", "embedding", "embedding", "embedding", "generation", "generation"]);
+      assert.deepEqual(categories, ["generation", "embedding", "embedding", "embedding", "embedding", "generation"]);
       assert.deepEqual([...attributedRuns], [delivered.runId]);
       const receipts = journal.records(delivered.runId);
-      assert.equal(receipts.filter(record => record.category === "generation" && record.receipt.event === "settled").length, 3);
+      assert.equal(receipts.filter(record => record.category === "generation" && record.receipt.event === "settled").length, 2);
       assert.equal(receipts.filter(record => record.category === "embedding" && record.receipt.event === "settled").length, 4);
       assert.equal(fixture.sqlite.prepare("SELECT count(*) AS n FROM legal_source_references WHERE ai_run_id=?").get(delivered.runId)?.n, 1);
       const freshReader = createPreparedStoredReader({ release: release("current"), worker });

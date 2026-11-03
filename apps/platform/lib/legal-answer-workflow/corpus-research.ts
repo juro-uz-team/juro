@@ -56,11 +56,9 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
             ? ports.corpus.resolveDocument!(identity, scope, researchSignal)
             : ports.corpus.resolve(identity, scope, researchSignal, sectionPosition));
           if (!locator) throw new Error("OFFICIAL_PROVISION_NOT_FOUND");
-          if (!wholeDocument && locator.sourceStructure?.rangeKind === "document")
-            throw new Error("WHOLE_DOCUMENT_SELECTION_REQUIRED");
           const provision = await withinSignal(researchSignal, () => readOfficialProvision(locator, ports.corpus, scope, researchSignal));
           retainEvidence(provision);
-          if (wholeDocument && choice) {
+          if ((wholeDocument || locator.sourceStructure?.rangeKind === "document") && choice) {
             completeDocuments.add(documentKey(choice));
             for (const item of discoveredCandidates) if (documentKey(item) === documentKey(choice))
               selectedCandidates.add(JSON.stringify([item.identity, item.scope]));
@@ -102,9 +100,15 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
           const allowed = new Set(["COMPLETE_PROVISION_SELECTION_REQUIRED", "WHOLE_DOCUMENT_SELECTION_REQUIRED", "OFFICIAL_PROVISION_NOT_FOUND", "EVIDENCE_INELIGIBLE", "EVIDENCE_INTEGRITY",
             "CORPUS_SOURCE_REQUIRES_RECOVERY", "CORPUS_UNIT_MEMBERSHIP", "PROVISION_CONTEXT_BOUND", "EVIDENCE_INVENTORY_LIMIT",
             "PREPARED_TEMPORAL_UNAVAILABLE", "CORPUS_CAPTURE_UNAVAILABLE", "PREPARED_EXTRACTION_GAP", "PREPARED_POSITION_UNAVAILABLE",
-            "PREPARED_TABLE_POSITION_UNAVAILABLE", "PREPARED_STRUCTURE_AMBIGUOUS"]);
+            "PREPARED_TABLE_POSITION_UNAVAILABLE", "PREPARED_STRUCTURE_AMBIGUOUS", "PREPARED_SECTION_UNAVAILABLE"]);
           const code = error instanceof Error && allowed.has(error.message) ? error.message : "OFFICIAL_READ_UNAVAILABLE";
           researchFailures.push({ candidate: identity, scope: structuredClone(scope), code });
+          if (choice && !choice.readRange && ports.corpus.describeCandidates) {
+            try {
+              const [description] = await withinSignal(researchSignal, () => ports.corpus.describeCandidates!([identity], scope, researchSignal, true));
+              if (description?.identity === identity) Object.assign(choice, description);
+            } catch { researchSignal.throwIfAborted(); }
+          }
           return false;
         }
       })();
@@ -188,9 +192,9 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
               } catch { researchSignal.throwIfAborted(); continue; }
             }
             const range = candidate.readRange;
-            // A discovery hit for an entire document is navigation, not permission
-            // to load an entire code. The model can request wholeDocument explicitly.
-            if (!range || range.kind === "document") continue;
+            // The reader admits complete non-article sources and rejects an
+            // ambiguous code boundary. A preview's range kind is not that decision.
+            if (!range) continue;
             const enclosure = ports.corpus.automaticReadScope === "section" && range.kind === "provision"
               && range.sections?.length === 1 ? range.sections[0] : undefined;
             const key = acquiredRangeKey(candidate, enclosure?.key ?? range.key);
@@ -310,7 +314,7 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
       if (!ports.corpus.resolveReference) throw new Error("REFERENCE_READ_UNAVAILABLE");
       const locator = await withinSignal(researchSignal, () => ports.corpus.resolveReference!(action.sourceId, action.url, scope, researchSignal));
       if (!locator) throw new Error("REFERENCE_READ_UNAVAILABLE");
-      if (locator.sourceStructure && locator.sourceStructure.rangeKind !== "article")
+      if (locator.sourceStructure?.rangeKind === "document" && !new URL(action.url).hash)
         throw new Error("COMPLETE_PROVISION_SELECTION_REQUIRED");
       const provision = await withinSignal(researchSignal, () => readOfficialProvision(locator, ports.corpus, scope, researchSignal));
       retainEvidence(provision);
@@ -357,8 +361,6 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
       if (!candidate) return { action, kind: rejected === "RECOVERY_CANDIDATE_ALREADY_ATTEMPTED" ? "duplicate" : "invalid", code: rejected };
       const choice = discoveredCandidates.find(item => item.id === candidate.id)!;
       let position = candidate.sectionPosition;
-      if (!candidate.wholeDocument && !candidate.wholeSection && !position && choice.readRange?.kind === "document")
-        return { action, kind: "unavailable", code: "WHOLE_DOCUMENT_SELECTION_REQUIRED" };
       if (candidate.wholeDocument) {
         if (!ports.corpus.resolveDocument) return { action, kind: "unavailable", code: "OFFICIAL_READ_UNAVAILABLE" };
         if (completeDocuments.has(documentKey(choice))) return { action, kind: "duplicate" };
@@ -404,8 +406,11 @@ export function createCorpusResearch(ports: WorkflowPorts, workspace: ResearchWo
           attemptedPublisherContents.add(key);
         }
       }
-      selectedCandidates.add(JSON.stringify([choice.identity, choice.scope]));
-      const provision = await acquireCandidate(choice.identity, choice.scope, position);
+      let provision = await acquireCandidate(choice.identity, choice.scope, position);
+      // A publisher TOC heading may not form a retained structural boundary.
+      // Try the selected candidate's complete source extent before abandoning it.
+      if (!provision && position) provision = await acquireCandidate(choice.identity, choice.scope);
+      if (provision) selectedCandidates.add(JSON.stringify([choice.identity, choice.scope]));
       const failure = researchFailures.find(item => item.candidate === choice.identity && JSON.stringify(item.scope) === JSON.stringify(choice.scope));
       return { action, kind: provision ? "complete_read" : "unavailable", ...(!provision && failure ? { code: failure.code } : {}) };
     } catch (error) {

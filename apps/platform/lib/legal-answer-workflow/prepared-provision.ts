@@ -299,5 +299,8 @@ export function createPreparedProvisionReader(value: unknown) {
     const complete = range({ ...target, position: first.locator, wholeSection: false, wholeDocument: false });
     return complete.articleTitle && complete.start === index && complete.end <= enclosing.end ? first.locator : null;
   };
-  return Object.assign(read, { describe, firstArticle });
+  // Raw headings also count when broken quotation boundaries prevent a safe
+  // article read. Such documents still require an explicit broader selection.
+  const hasArticleHeadings = source.units.some(unit => articleNumberFromHeading(unit.text) !== undefined);
+  return Object.assign(read, { describe, firstArticle, hasArticleHeadings });
 }

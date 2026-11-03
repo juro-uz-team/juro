@@ -83,19 +83,17 @@ test("whole documents require an explicit valid action and retain previously acq
   assert.equal((await research.execute(action, interpretation)).kind, "duplicate");
 });
 
-test("document navigation and uncertain-boundary fallbacks cannot silently load whole sources", async () => {
+test("a complete document selected by the corpus reader is retained and not read twice", async () => {
   for (const advertised of [true, false]) {
     const { research, workspace, reads, fetched } = fixture(0, false, true);
     await research.discover(interpretation.queries, interpretation);
     const candidate = research.discoveredCandidates[0];
     if (advertised) candidate.readRange = { kind: "document", key: "document", language: "en" };
     const result = await research.execute({ requirementId: "r", candidateId: candidate.id }, interpretation);
-    assert.equal(result.kind, "unavailable");
-    assert.equal(result.code, "WHOLE_DOCUMENT_SELECTION_REQUIRED");
-    assert.equal(workspace.active().length, 0);
-    assert.deepEqual(fetched, [], "reject broader locators before fetching their full contents");
-    if (advertised) assert.equal(reads.length, 0);
-    assert.equal((await research.execute({ requirementId: "r", candidateId: candidate.id, wholeDocument: true }, interpretation)).kind, "complete_read");
+    assert.equal(result.kind, "complete_read");
+    assert.equal(fetched.length, 1);
+    assert.equal(reads.length, 1);
+    assert.equal((await research.execute({ requirementId: "r", candidateId: candidate.id, wholeDocument: true }, interpretation)).kind, "duplicate");
     assert.equal(workspace.active().length, 1);
   }
 });

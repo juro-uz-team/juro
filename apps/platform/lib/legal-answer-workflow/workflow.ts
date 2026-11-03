@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { researchTurnSchema, unreadResearchTurnSchema, initialReadTurnSchema, entrySchema, navigationEntrySchema, maximumGenerationCalls, researchConcurrencySchema,
+import { researchTurnSchema, unreadResearchTurnSchema, initialReadTurnSchema, entrySchema, maximumGenerationCalls, researchConcurrencySchema,
   type ResearchTurn, type LegalOutcome, type LegalRequest, type PublishedAnswer, type WorkflowPorts } from "./contracts";
 import { researchWritingInstruction, unreadResearchInstruction, entryInstruction } from "./prompts";
 import { checkWrittenAnswer } from "./publication-checks";
@@ -13,7 +13,6 @@ import { createCorpusResearch } from "./corpus-research";
 import { ResearchWorkspace } from "./research-workspace";
 import { RequestController, requestControlPolicy, type StopReason } from "./request-controller";
 import { withResearchDiagnostics, emitResearchDiagnostic } from "./diagnostics";
-import { namedDocumentQuery, prepareInitialSearch } from "./initial-search";
 import { IssueWriting, issuedResearchTurn, issueUpdateSchema } from "./issue-writing";
 import { coverageRecordSchema } from "./research-workspace";
 
@@ -50,16 +49,9 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
   const workspace = new ResearchWorkspace();
   const issueWriting = new IssueWriting(request.language);
   const inventory = workspace.inventory;
-  const documentQuery = namedDocumentQuery(request.question);
-  // Longer or contextual questions still use the full interpretation path;
-  // eligibility changes scheduling, never the supplied conversation or law.
-  const entryNavigation = Boolean(ports.corpus.entryNavigation && ports.corpus.describeCandidates
-    && request.question.trim() && request.question.length <= 2000 && !request.history.length
-    && !request.privateDocuments.length && !request.caseContext?.facts.length && !request.caseContext?.memories.length
-    && !request.legalContextDate);
-  const initialSearch = prepareInitialSearch(request,
-    entryNavigation ? { ...ports.corpus, prefetchInitialSearch: false, questionFirstResearch: false } : ports.corpus, researchSignal);
-  const corpus = createCorpusResearch({ ...ports, corpus: initialSearch.corpus }, workspace, researchSignal, signal);
+  // Route from the full question/context before any corpus access. Search
+  // scheduling flags cannot make an ordinary reply depend on source availability.
+  const corpus = createCorpusResearch(ports, workspace, researchSignal, signal);
   const { navigation, discoveredCandidates, selectedCandidates, selectedSections, sectionReadKey, offeredSections,
     researchFailures, researchLimits, referenceReads, queryLabels } = corpus;
   let previousResearch: { gaps: ResearchTurn["gaps"]; consideredEvidenceIds: string[];
@@ -71,15 +63,13 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
   };
   try {
     request.onProgress?.("interpreting");
-    if (entryNavigation) await corpus.discover([...new Set([request.question, ...documentQuery ? [documentQuery] : []])], { scopes: [{ kind: "current" }] });
     controller.providerStarted();
     const raw = await withinSignal(researchSignal, () => ports.model.complete({ stage: "interpret", researchSession: true,
       instruction: entryInstruction, input: { question: request.question, language: request.language, format: request.format,
         legalContextDate: request.legalContextDate, history: request.history, privateDocuments: request.privateDocuments,
-        caseContext: request.caseContext, searchCapabilities: { resultWindowLimit: 50, continuationSupported: false, rankedPageExhaustsCorpus: false },
-        ...(entryNavigation ? { entryNavigation: true, ...modelResearchDiscovery(discoveredCandidates, undefined, queryLabels) } : {}) },
-      schema: z.toJSONSchema(entryNavigation ? navigationEntrySchema : entrySchema), signal: researchSignal }));
-    const entry = (entryNavigation ? navigationEntrySchema : entrySchema).parse(raw);
+        caseContext: request.caseContext, searchCapabilities: { resultWindowLimit: 50, continuationSupported: false, rankedPageExhaustsCorpus: false } },
+      schema: z.toJSONSchema(entrySchema), signal: researchSignal }));
+    const entry = entrySchema.parse(raw);
     if (entry.conversationReply !== null) {
       request.onBudgetSelected?.(15_000);
       return await publish({ kind: "conversation", text: entry.conversationReply, checkedEvidence: [], clarificationQuestions: [] });
@@ -103,22 +93,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
     };
     request.onProgress?.("researching"); navigation.beginBatch();
     try {
-      const selected = "candidateIds" in entry ? z.array(z.string()).parse(entry.candidateIds) : [];
-      if (selected.some(id => !discoveredCandidates.some(candidate => candidate.id === id))) throw new Error("INITIAL_CANDIDATE_INVALID");
-      const eligible = selected.filter(id => discoveredCandidates.some(candidate => candidate.id === id
-        && interpretation.scopes.some(scope => JSON.stringify(scope) === JSON.stringify(candidate.scope))));
-      for (const candidateId of selected.filter(id => !eligible.includes(id))) workspace.record({
-        action: { requirementId: interpretation.requirements[0].id, candidateId }, kind: "invalid", code: "RECOVERY_CANDIDATE_SCOPE",
-      });
-      const queries = [...new Set([...(await initialSearch.queries(interpretation)), ...documentQuery ? [documentQuery] : []])].filter(query => !(eligible.length
-        && query === request.question && interpretation.scopes.length === 1 && interpretation.scopes[0].kind === "current"));
-      await Promise.all([
-        ...(queries.length ? [corpus.acquire(queries, interpretation)] : []),
-        ...eligible.map(async candidateId => {
-          const result = await corpus.execute({ requirementId: interpretation.requirements[0].id, candidateId }, interpretation);
-          workspace.record(result);
-        }),
-      ]);
+      await corpus.acquire(interpretation.queries, interpretation);
       if (!researchSignal.aborted) await corpus.reconcile(interpretation);
     }
     catch (error) { signal.throwIfAborted(); if (!researchSignal.aborted) throw error; controller.finishResearch(); }
@@ -259,7 +234,6 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
     throw error;
   } finally {
     lifetime.dispose();
-    await initialSearch.finish();
     await ports.drain?.();
   }
 }

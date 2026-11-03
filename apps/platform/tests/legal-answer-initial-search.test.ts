@@ -35,7 +35,7 @@ test("follow-up discovery retains navigation until the model chooses a complete 
   });
 });
 
-test("cancelled entry navigation keeps its embedding settlement owned until drained", async () => {
+test("cancelled legal search keeps its embedding settlement owned until drained", async () => {
   const abort = new AbortController();
   let started!: () => void, release!: () => void;
   const dispatched = new Promise<void>(resolve => { started = resolve; });
@@ -58,7 +58,11 @@ test("cancelled entry navigation keeps its embedding settlement owned until drai
     corpus: { entryNavigation: true, search: async (query, _scope, signal) => {
       await embeddings.embed(query, signal); return { candidates: [], sparseAvailable: true, denseAvailable: true };
     }, describeCandidates: async () => [], resolve: async () => null, get: async () => null },
-    model: { complete: async () => assert.fail("Cancelled preload must not begin generation") },
+    model: { complete: async ({ stage }) => {
+      assert.equal(stage, "interpret");
+      return { conversationReply: null, interpretation: { complexity: "simple", needsClarification: false,
+        requirements: [{ id: "r", question: "Permit conditions" }], queries: [request.question], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: [] } };
+    } },
     publication: { publish: async () => assert.fail("Cancelled preload must not publish") },
     drain: () => embeddings.drain(),
   });
@@ -73,98 +77,24 @@ test("cancelled entry navigation keeps its embedding settlement owned until drai
   assert.equal(settled, true);
 });
 
-for (const scenario of ["current", "historical", "supplemental", "failed"]) test(`entry navigation selects complete law without losing scope or queries (${scenario})`, async () => {
-  const historical = scenario === "historical";
-  const searched: string[] = [], read: string[] = [], stages: string[] = [];
-  const request: LegalRequest = { question: "Artificial permit conditions", language: "en", format: "short", mode: "fast",
-    submittedAt: Date.now(), deadlineMs: 30_000, actor: { tenantId: "t", userId: "u" }, history: [], privateDocuments: [] };
-  const scope = historical ? { kind: "historical" as const, at: "2020-01-01" } : { kind: "current" as const };
-  await runLegalAnswer(request, {
-    corpus: { entryNavigation: true, candidateReadScope: "section", automaticReadLimit: 1,
-      search: async (query, scope) => { searched.push(`${scope.kind}:${query}`); return {
-        candidates: scenario === "failed" ? ["current", "alternative"] : [query === "Additional condition" ? "condition" : scope.kind], sparseAvailable: true, denseAvailable: true }; },
-      describeCandidates: async ids => ids.map(identity => ({ identity, sourceUrl: "https://lex.uz/docs/123",
-        text: "Artificial rule", truncated: true, readRange: { kind: "provision" as const, key: identity, language: "en" } })),
-      resolve: async (identity, scope) => { read.push(identity); if (scenario === "failed" && identity === "current") return null;
-        return { identity, snapshot: "revision", objectKey: identity,
-        sha256: "0".repeat(64), byteCount: 30, sourceUrl: "https://lex.uz/docs/123", privacyClass: "public_official_source" as const,
-        quarantined: false, canonicalizationConflict: false, currentPointerVerified: true,
-        temporalState: scope.kind === "current" ? "current_supported" as const : "historical_only" as const,
-        ...(scope.kind === "historical" ? { applicableAt: scope.at } : {}) }; },
-      get: async () => Buffer.from("Complete artificial permit law.") },
-    model: { complete: async ({ stage, input }) => {
-      stages.push(stage);
-      if (stage === "interpret") {
-        assert.deepEqual(searched, [`current:${request.question}`]);
-        assert.equal((input as { unreadCandidates: { id: string }[] }).unreadCandidates[0].id, "c1");
-        return { conversationReply: null, candidateIds: ["c1"], interpretation: { needsClarification: false, complexity: "simple",
-          requirements: [{ id: "r", question: "Artificial rule" }], queries: [scenario === "supplemental" ? "Additional condition" : request.question], scopes: [scope], facts: [], clarificationQuestions: [] } };
-      }
-      if (scenario === "failed" && stages.length === 2) {
-        const packet = input as { evidence: unknown[]; actionOutcomes: { kind: string }[] };
-        assert.equal(packet.evidence.length, 0);
-        assert.equal(packet.actionOutcomes[0].kind, "unavailable");
-        return { decision: "research", content: null, gaps: [], actions: [{ requirementId: "r", candidateId: "c2" }] };
-      }
-      assert.deepEqual((input as { evidence: { identity: string }[] }).evidence.map(item => item.identity).sort(),
-        scenario === "supplemental" ? ["condition", "current"] : scenario === "failed" ? ["alternative"] : [scope.kind]);
-      return { decision: "insufficient_evidence", content: null, actions: [], gaps: [{ requirementId: "r", description: "Fixture complete" }] };
-    } }, publication: { publish: async ({ outcome }) => ({ answerId: "entry-reads", outcome }) },
-  });
-  assert.deepEqual(stages, scenario === "failed" ? ["interpret", "write", "write"] : ["interpret", "write"]);
-  assert.deepEqual(read.sort(), scenario === "supplemental" ? ["condition", "current"] : scenario === "failed" ? ["alternative", "current"] : [scope.kind]);
-  assert.deepEqual(searched, historical ? [`current:${request.question}`, `historical:${request.question}`]
-    : scenario === "supplemental" ? [`current:${request.question}`, "current:Additional condition"] : [`current:${request.question}`]);
-});
-
-for (const contextual of [false, true]) test(`entry navigation preserves conversational outcomes and contextual input (${contextual})`, async () => {
-  let searches = 0;
-  const request: LegalRequest = { question: "Thanks", language: "en", format: "short", mode: "fast",
-    submittedAt: Date.now(), deadlineMs: 30_000, actor: { tenantId: "t", userId: "u" },
-    history: contextual ? [{ role: "user", content: "Earlier complete context." }] : [], privateDocuments: [] };
-  const result = await runLegalAnswer(request, {
-    corpus: { entryNavigation: true, prefetchInitialSearch: true,
-      search: async () => { searches++; return { candidates: [], sparseAvailable: true, denseAvailable: true }; },
-      describeCandidates: async () => [], resolve: async () => assert.fail("Conversation must not read law"), get: async () => null },
-    model: { complete: async ({ input }) => {
-      assert.deepEqual((input as { history: unknown }).history, request.history);
-      assert.equal(searches, contextual ? 0 : 1);
-      return { conversationReply: "You're welcome.", interpretation: null, ...(contextual ? {} : { candidateIds: [] }) };
-    } }, publication: { publish: async ({ outcome }) => ({ answerId: "conversation", outcome }) },
-  });
-  assert.equal(result.outcome.kind, "conversation");
-});
-
-for (const questionFirstResearch of [false, true])
-for (const historical of [false, true]) test(`initial discovery overlaps interpretation and respects the interpreted scope (historical: ${historical}, question first: ${questionFirstResearch})`, async () => {
+for (const historical of [false, true]) test(`legal research starts after routing in the interpreted scope (${historical})`, async () => {
   const searches: { query: string; scope: unknown }[] = [];
-  let started!: () => void;
-  const discoveryStarted = new Promise<void>(resolve => { started = resolve; });
-  const request: LegalRequest = { question: "An artificial legal question", language: "en", format: "short", mode: "fast",
-    submittedAt: Date.now(), deadlineMs: 30_000, actor: { tenantId: "t", userId: "u" }, history: [], privateDocuments: [] };
   const scope = historical ? { kind: "historical" as const, at: "2020-01-01" } : { kind: "current" as const };
-  const outcome = await runLegalAnswer(request, {
-    corpus: { prefetchInitialSearch: true, questionFirstResearch,
-      search: async (query, scope) => { searches.push({ query, scope }); started(); return {
-        candidates: [scope.kind === "current" ? "current" : "historical"], sparseAvailable: true, denseAvailable: true }; },
-      resolve: async () => { throw new Error("No complete reads requested"); }, get: async () => null },
+  const question = "An artificial legal question";
+  await runLegalAnswer({ question, language: "en", format: "short", mode: "fast", submittedAt: Date.now(), deadlineMs: 30_000,
+    actor: { tenantId: "t", userId: "u" }, history: [], privateDocuments: [] }, {
+    corpus: { prefetchInitialSearch: true, entryNavigation: true, questionFirstResearch: true,
+      search: async (query, scope) => { searches.push({ query, scope }); return { candidates: [], sparseAvailable: true, denseAvailable: true }; },
+      describeCandidates: async () => [], resolve: async () => null, get: async () => null },
     model: { complete: async ({ stage, input }) => {
       if (stage === "interpret") {
-        let timer!: ReturnType<typeof setTimeout>;
-        try { await Promise.race([discoveryStarted, new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Discovery did not overlap interpretation")), 250);
-        })]); } finally { clearTimeout(timer); }
+        assert.deepEqual(searches, []);
+        assert.equal((input as { question: string }).question, question);
         return { conversationReply: null, interpretation: { needsClarification: false, complexity: "simple",
           requirements: [{ id: "r", question: "Artificial rule" }], queries: ["Interpreted formulation"], scopes: [scope], facts: [], clarificationQuestions: [] } };
       }
-      const packet = input as { candidateQueries: Record<string, string>; interpretation: { queries: string[] } };
-      assert.deepEqual(packet.interpretation.queries, ["Interpreted formulation"]);
-      assert.deepEqual(Object.values(packet.candidateQueries), historical ? ["Interpreted formulation"]
-        : questionFirstResearch ? [request.question] : [request.question, "Interpreted formulation"]);
-      return { turn: { decision: "insufficient_evidence", content: null, actions: [], gaps: [{ requirementId: "r", description: "Synthetic test" }] } }.turn;
+      assert.deepEqual(searches, [{ query: "Interpreted formulation", scope }]);
+      return { decision: "insufficient_evidence", content: null, actions: [], gaps: [{ requirementId: "r", description: "Synthetic gap" }] };
     } }, publication: { publish: async ({ outcome }) => ({ answerId: "saved", outcome }) },
   });
-  assert.equal(outcome.outcome.kind, "insufficient_evidence");
-  assert.deepEqual(searches, [{ query: request.question, scope: { kind: "current" } },
-    ...(historical || !questionFirstResearch ? [{ query: "Interpreted formulation", scope }] : [])]);
 });

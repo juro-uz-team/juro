@@ -8,7 +8,7 @@ const title = "Об утверждении перечня иностранных
 const request: LegalRequest = { question: `${title} ; о чем говорится тут?`, language: "ru", format: "short", mode: "fast",
   actor: { tenantId: "t", userId: "u" }, submittedAt: Date.now(), deadlineMs: 30_000, history: [], privateDocuments: [] };
 
-test("a named act is searched verbatim and read before explaining its contents", async () => {
+test("a document question uses the model's search and reads evidence before explaining it", async () => {
   const searches: string[] = [], reads: string[] = [];
   const text = "Synthetic complete act for testing document explanation, not real law.";
   const result = await runLegalAnswer({ ...request, submittedAt: Date.now() }, {
@@ -20,10 +20,11 @@ test("a named act is searched verbatim and read before explaining its contents",
         canonicalizationConflict: false, currentPointerVerified: true, temporalState: "current_supported" }; }, get: async () => Buffer.from(text) },
     model: { complete: async ({ stage, input }) => {
       if (stage === "interpret") {
-        assert.ok(searches.includes(title), "Search the supplied title without conversational suffixes");
-        return { conversationReply: null, candidateIds: ["c1"], interpretation: { needsClarification: false, complexity: "simple",
-          requirements: [{ id: "r", question: "Explain the named act" }], queries: [request.question], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: [] } };
+        assert.deepEqual(searches, []);
+        return { conversationReply: null, interpretation: { needsClarification: false, complexity: "simple",
+          requirements: [{ id: "r", question: "Explain the named act" }], queries: [title], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: [] } };
       }
+      if (!(input as { evidence: unknown[] }).evidence.length) return { decision: "research", content: null, gaps: [], actions: [{ requirementId: "r", candidateId: "c1" }] };
       assert.deepEqual((input as { evidence: { identity: string }[] }).evidence.map(item => item.identity), ["act"]);
       return { decision: "answer", gaps: [], actions: [], content: { summary: "Описание тестового акта.", summarySourceIds: ["act"],
         issues: [{ title: "Содержание", explanation: "Описание тестового акта.", requirementIds: ["r"], sourceIds: ["act"], actions: [] }],
@@ -31,6 +32,7 @@ test("a named act is searched verbatim and read before explaining its contents",
     } }, publication: { publish: async ({ outcome }) => ({ answerId: "saved", outcome }) },
   });
   assert.equal(result.outcome.kind, "answer"); assert.deepEqual(reads, ["act"]);
+  assert.deepEqual(searches, [title]);
 });
 
 test("a completed unsuccessful search retains its specific gap without inventing an outage", async () => {
