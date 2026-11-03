@@ -1,4 +1,4 @@
-import { listAiBranches } from "../ai/branch-store";
+import { listAiBranches, listAiAnswerVersions } from "../ai/branch-store";
 import { withinSignal } from "./lifetime";
 
 type Input = { db: D1Database; workspaceId: string; userId: string; conversationId: string;
@@ -76,9 +76,10 @@ export async function readSavedAnswerConversation(input: Input) {
   const facts = await withinSignal(input.signal, () => input.db.prepare(`SELECT id,statement,status FROM confirmed_facts
     WHERE conversation_id=? ORDER BY created_at,id LIMIT 200`).bind(input.conversationId)
     .all<{id: string; statement: string; status: string}>());
-  const publicTurns = turns.map(turn => ({ branchId: turn.branchId, requestMessageId: turn.requestMessageId,
+  const publicTurns = await Promise.all(turns.map(async turn => ({ branchId: turn.branchId, requestMessageId: turn.requestMessageId,
     responseMessageId: turn.responseMessageId, question: turn.question, answer: turn.answer, createdAt: turn.createdAt,
-    result: turn.resultJson ? JSON.parse(turn.resultJson) as unknown : null }));
+    result: turn.resultJson ? JSON.parse(turn.resultJson) as unknown : null,
+    versions: await withinSignal(input.signal, () => listAiAnswerVersions({ ...input, branchId: turn.branchId, requestMessageId: turn.requestMessageId })) })));
   await assertAccess(input);
   return { conversationId: input.conversationId, messageId: selected.responseMessageId,
     requestMessageId: selected.requestMessageId, branchId: selected.branchId, operation: selected.operation,

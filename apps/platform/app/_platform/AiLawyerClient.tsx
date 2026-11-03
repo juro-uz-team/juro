@@ -1,5 +1,6 @@
 "use client";
 
+import { conversationVersions } from "../../lib/ai/conversation-versions";
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
@@ -127,8 +128,8 @@ type LegalResult = {
   coverageStatus?: "good_coverage" | "partial_coverage" | "weak_coverage" | "no_coverage";
 };
 type AiMessageOperation = "new" | "follow_up" | "edit" | "regenerate";
-type Branch = { branchId: string; parentBranchId: string | null; requestMessageId: string; responseMessageId: string; operation: AiMessageOperation; versionNumber: number; question: string; createdAt: string };
-type ConversationTurn = { branchId: string; requestMessageId: string; responseMessageId: string; question: string; createdAt: string; result: LegalResult|null; answer?:string; sourceFreshness?: SourceFreshness };
+type Branch = { branchId: string; parentBranchId: string | null; requestMessageId: string; responseMessageId: string; operation: AiMessageOperation; versionNumber: number; forkedFromMessageId?:string|null; question: string; createdAt: string };
+type ConversationTurn = { versions?:Branch[]; branchId: string; requestMessageId: string; responseMessageId: string; question: string; createdAt: string; result: LegalResult|null; answer?:string; sourceFreshness?: SourceFreshness };
 type Answer = { conversationId: string; messageId?: string; requestMessageId?: string | null; branchId?: string | null; operation?: AiMessageOperation; question?: string; branches?: Branch[]; turns?: ConversationTurn[]; result: LegalResult; facts: Fact[]; sourceFreshness?: SourceFreshness; usage?: Usage };
 type AiRequestPayload = {
   question?: string;
@@ -164,7 +165,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const savedDeliveryRef=useRef<{idempotencyKey:string;delivery:LegalChatDelivery}|null>(null);
   const deliveredAnswerRef=useRef<{workspaceId:string;answer:Answer}|null>(null);
   const [answerMode,setAnswerMode]=useState<"short"|"detailed">("detailed"),[reasoningMode,setReasoningMode]=useState<"fast"|"deep">("fast");
-  const [legalContextDate,setLegalContextDate]=useState(""),[editSourceMessageId,setEditSourceMessageId]=useState("");
+  const [legalContextDate,setLegalContextDate]=useState("");
+  const [replacementSource,setReplacementSource]=useState("");
   const [voiceMode,setVoiceMode]=useState(false),[voiceRecordingId,setVoiceRecordingId]=useState("");
   const [voiceRecorderPhase,setVoiceRecorderPhase]=useState<VoiceRecorderPhase>("idle"),[voiceSpeechPhase,setVoiceSpeechPhase]=useState<VoiceSpeechPhase>("idle");
   const [historyCollapsed,setHistoryCollapsed]=useState(false),[evidenceCollapsed,setEvidenceCollapsed]=useState(true);
@@ -226,7 +228,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     const delivered=pending?.workspaceId===workspaceId&&pending.answer.conversationId===selectedConversationId
       &&(pending.answer.branchId??"")===selectedBranchId?pending.answer:null;
     if(!delivered)deliveredAnswerRef.current=null;
-    const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(delivered);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId)&&!delivered);
+    const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(delivered);setQuestion("");setReplacementSource("");setOptimisticQuestion("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId)&&!delivered);
     if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)])).catch(()=>{if(!controller.signal.aborted&&!delivered)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
     else setAnswer(null);return()=>controller.abort();
   },[selectedConversationId,selectedBranchId,intakeHandle,loadAnswer,text,workspaceId]);
@@ -261,10 +263,13 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   },[mobileContextOpen]);
   async function send(payload:AiRequestPayload&{idempotencyKey:string}){
     if(streamAbortRef.current)return;const controller=new AbortController();streamAbortRef.current=controller;retryRef.current=payload;
+    // Invoked only by submit/retry/action handlers, never while rendering a turn.
+    // eslint-disable-next-line react-hooks/purity
     const submittedAt=Date.now();
     setRequestSubmittedAt(submittedAt);setStreamStatus(chatStageLabel("interpreting",locale));setWriting(null);
     // Required preflight shares the stream's total adaptive deadline.
     const ancillarySignal=()=>AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)]);
+    setReplacementSource(payload.operation==="edit"||payload.operation==="regenerate"?payload.sourceMessageId||"":"");
     setSending(true);setCanRetry(false);setError("");setOptimisticQuestion(payload.question||answer?.question||"");
     try {
       // Once committed, recovery loads that answer instead of resubmitting work.
@@ -280,16 +285,21 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       if(!saved.conversationId)throw new Error("Missing saved conversation");
       savedDeliveryRef.current={idempotencyKey:payload.idempotencyKey,delivery:saved};
       const previous=answer?.conversationId===saved.conversationId?answer:undefined;
-      const forkIndex=previous?.turns?.findIndex(turn=>turn.requestMessageId===payload.sourceMessageId
-        ||turn.responseMessageId===payload.sourceMessageId)??-1;
-      const delivered:Answer={...previous,...saved,conversationId:saved.conversationId,
+      const previousTurns=previous ? conversationTurns(previous) : [];
+      const forkIndex=previousTurns.findIndex(turn=>turn.requestMessageId===payload.sourceMessageId
+        ||turn.responseMessageId===payload.sourceMessageId);
+      let delivered:Answer={...previous,...saved,conversationId:saved.conversationId,
         question:payload.question||previous?.question||"",facts:previous?.facts??[],
-        turns:payload.operation==="follow_up"?previous?.turns:forkIndex>=0?previous?.turns?.slice(0,forkIndex):undefined,
+        turns:payload.operation==="follow_up"?previousTurns:forkIndex>=0?previousTurns.slice(0,forkIndex):undefined,
         operation:payload.operation,sourceFreshness:undefined};
+      try {
+        delivered=await requestJson<Answer>(`/api/platform/ai?${new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})})}`,{signal:ancillarySignal()});
+      } catch { /* The committed answer remains available if metadata reload fails. */ }
+      if(controller.signal.aborted)return;
       deliveredAnswerRef.current={workspaceId,answer:delivered};
       setAnswer(delivered);
       setWriting(null);setStreamStatus("");
-      setQuestion("");setEditSourceMessageId("");setVoiceRecordingId("");retryRef.current=null;setOptimisticQuestion("");
+      setQuestion("");setReplacementSource("");setVoiceRecordingId("");retryRef.current=null;setOptimisticQuestion("");
       // Sidebar metadata is ancillary to the already saved, loaded answer.
       void refresh(controller.signal).catch(()=>{});
       let intakeFinalized=true;
@@ -310,12 +320,20 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     } finally {if(streamAbortRef.current===controller){streamAbortRef.current=null;setSending(false);setStreamStatus("");}}
   }
   function submit(event:FormEvent){event.preventDefault();if(!question.trim()||sending||(selectedConversationId&&!answer))return;void send({question,locale,answerMode,reasoningMode,conversationId:answer?.conversationId,
-    operation:editSourceMessageId?"edit":answer?"follow_up":"new",sourceMessageId:editSourceMessageId||answer?.messageId,
+    operation:answer?"follow_up":"new",sourceMessageId:answer?.messageId,
     legalContextDate:legalContextDate||undefined,...(voiceRecordingId?{voiceRecordingId}:{}),idempotencyKey:crypto.randomUUID()});}
   const retryQuestion=()=>{if(retryRef.current)void send(retryRef.current);};
-  const editQuestion=(messageId:string,value:string)=>{setEditSourceMessageId(messageId);setQuestion(value);composerRef.current?.focus();};
-  const cancelQuestionEdit=()=>{setEditSourceMessageId("");setQuestion("");};
-  const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
+  const replaceTurn=(turn:ConversationTurn,operation:"edit"|"regenerate",value=turn.question)=>{
+    if(!answer||sending)return;
+    void send({question:value,locale,answerMode,reasoningMode,conversationId:answer.conversationId,
+      operation,sourceMessageId:operation==="edit"?turn.requestMessageId:turn.responseMessageId,
+      legalContextDate:legalContextDate||undefined,idempotencyKey:crypto.randomUUID()});
+  };
+  const selectVersion=(branchId:string)=>{
+    if(!answer||sending)return;
+    router.replace(aiLocation(new URLSearchParams({conversationId:answer.conversationId,branchId})),{scroll:false});
+  };
+  const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setReplacementSource("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
   const changeQuestion=(event:React.ChangeEvent<HTMLTextAreaElement>)=>{setQuestion(event.target.value);resizeComposer(event.currentTarget);};
   const handleComposerKeyDown=(event:KeyboardEvent<HTMLTextAreaElement>)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.form?.requestSubmit();}};
   const selectFollowUpQuestion=(value:string)=>{setQuestion(value);composerRef.current?.focus();};
@@ -324,7 +342,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const setComposerMode=(mode:"text"|"voice")=>setVoiceMode(mode==="voice");
   const trackTranscriptScroll=()=>{const element=transcriptRef.current;if(element)nearBottom.current=element.scrollHeight-element.scrollTop-element.clientHeight<100;};
   const toggleHistory=()=>{const next=!historyCollapsed;setHistoryCollapsed(next);try{localStorage.setItem("juro:ai-history",next?"collapsed":"expanded");}catch{/* Keep the in-memory preference when storage is unavailable. */}},toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
-  const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>{setMobileContextOpen(false);setEvidenceCollapsed(true);};
+  const closeMobileContext=()=>{setMobileContextOpen(false);setEvidenceCollapsed(true);};
   const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=!answer?.facts.length?"sources":event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
   const showAnswerSources=(messageId:string|undefined,result:LegalResult)=>{
     if(!messageId)return;
@@ -410,11 +428,24 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           ) : <>
             {answer && <>
             <div className="ai-transcript">
-              {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onEdit={!sending?()=>editQuestion(turn.requestMessageId,turn.question):undefined} footer={<AnswerActions locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} text={answerCopy(turn.result,turn.answer)} disabled={sending}/>} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} toolbar={turn.result && <AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} result={turn.result} disabled={sending} selected={contextOpen&&sourceMessageId===turn.responseMessageId} onSources={()=>showAnswerSources(turn.responseMessageId,turn.result!)} />} />)}
-              <HumanMessage question={answer.question || answer.turns?.at(-1)?.question || ""} locale={locale} onEdit={answer.requestMessageId&&!sending?()=>editQuestion(answer.requestMessageId!,answer.question||answer.turns?.at(-1)?.question||""):undefined} />
-              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={selectFollowUpQuestion} toolbar={<AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={answer.messageId} result={answer.result} disabled={sending} selected={contextOpen&&sourceMessageId===answer.messageId} onSources={()=>showAnswerSources(answer.messageId,answer.result)} />} /><AnswerActions key={`${workspaceId}:${answer.messageId}`} locale={locale} workspaceId={workspaceId} messageId={answer.messageId} text={answerCopy(answer.result)} disabled={sending} onSpeechPhaseChange={setVoiceSpeechPhase}/></div>
+              {conversationTurns(answer).slice(0,replacementSource&&optimisticQuestion?Math.max(0,conversationTurns(answer).findIndex(turn=>turn.requestMessageId===replacementSource||turn.responseMessageId===replacementSource)):undefined).map(turn=>{
+                const versions=conversationVersions(turn.versions??[],turn.branchId);
+                const current=turn.responseMessageId===answer.messageId;
+                return <section className="ai-conversation-turn" key={turn.responseMessageId}>
+                  <HumanMessage question={turn.question} locale={locale} disabled={sending}
+                    onEdit={value=>replaceTurn(turn,"edit",value)}
+                    versions={<VersionSelector locale={locale} kind="prompt" versions={versions.prompts} selected={turn.branchId} disabled={sending} onSelect={selectVersion}/>}/>
+                  <div className={current?"ai-current-answer":undefined} data-message-id={turn.responseMessageId} data-request-message-id={turn.requestMessageId} ref={current?latestAnswerRef:undefined}>
+                    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} onQuestionSelect={selectFollowUpQuestion}/>:<p className="ai-legacy-answer">{turn.answer}</p>}
+                    <AnswerActions locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} text={answerCopy(turn.result,turn.answer)} disabled={sending}
+                      onSpeechPhaseChange={current?setVoiceSpeechPhase:undefined} onRegenerate={()=>replaceTurn(turn,"regenerate")}
+                      sourcesSelected={contextOpen&&sourceMessageId===turn.responseMessageId} onSources={turn.result?()=>showAnswerSources(turn.responseMessageId,turn.result!):undefined}
+                      versions={<VersionSelector locale={locale} kind="answer" versions={versions.answers} selected={turn.branchId} disabled={sending} onSelect={selectVersion}/>}/>
+                  </div>
+                </section>;
+              })}
             </div>
-            {answer.result.responseKind === "answer" && answer.result.actionPlan.length > 0 && dismissedPlanMessageId !== answer.messageId && <section className="ai-plan-card" aria-labelledby="ai-plan-card-title">
+            {!optimisticQuestion && answer.result.responseKind === "answer" && answer.result.actionPlan.length > 0 && dismissedPlanMessageId !== answer.messageId && <section className="ai-plan-card" aria-labelledby="ai-plan-card-title">
               <header><small>{text("После ответа AI", "AI javobidan so‘ng", "After the AI answer")}</small><h2 id="ai-plan-card-title">{text("Создать план действий", "Harakatlar rejasini yaratish", "Create an action plan")}</h2></header>
               <p>{text("Сохраните следующие шаги из ответа как задачи в новом или существующем деле.", "Javobdagi keyingi qadamlarni yangi yoki mavjud ishda vazifalar sifatida saqlang.", "Save the next steps from this answer as tasks in a new or existing matter.")}</p>
               {planEditorOpen && <div className="ai-plan-destination"><label htmlFor="ai-plan-case">{text("Куда добавить план", "Rejani qayerga qo‘shish", "Where to add the plan")}</label><AiSelect id="ai-plan-case" value={targetCaseId} disabled={savingPlan} onChange={setTargetCaseId} options={[{ value: "", label: text("Новое дело", "Yangi ish", "New matter") }, ...cases.map((item) => ({ value: item.id, label: item.title }))]} /></div>}
@@ -425,7 +456,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
                 <div><button type="button" className="secondary" disabled={savingPlan} onClick={() => setPlanConfirmationOpen(false)}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button type="button" disabled={savingPlan} aria-busy={savingPlan} onClick={() => void savePlanToCase()}>{savingPlan ? <LoaderCircle className="spin" /> : <ListPlus />}{savingPlan ? text("Сохраняем…", "Saqlanmoqda…", "Saving…") : text("Подтвердить и сохранить", "Tasdiqlash va saqlash", "Confirm and save")}</button></div>
               </div>}
             </section>}
-            {answer.result.responseKind === "answer" && answer.result.suggestedDocument && <div className="ai-answer-actions">
+            {!optimisticQuestion && answer.result.responseKind === "answer" && answer.result.suggestedDocument && <div className="ai-answer-actions">
               {answer.result.responseKind === "answer" && answer.result.suggestedDocument && <button type="button" disabled={!answer.messageId || sending || openingSuggestedDocument} onClick={() => void openSuggestedDocument()}><FilePlus2 />{openingSuggestedDocument ? text("Проверяем шаблон…", "Shablon tekshirilmoqda…", "Verifying template…") : text("Открыть шаблон JURO", "JURO shablonini ochish", "Open JURO template")}</button>}
             </div>}
             {documentPrefill && documentPrefillMessageId === answer.messageId && <section className="ai-document-prefill" aria-labelledby="ai-document-prefill-title" aria-busy={creatingSuggestedDocument}>
@@ -442,12 +473,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               {documentPrefill.candidates.some((candidate) => candidate.sensitive) && <label className="ai-document-sensitive-consent"><input type="checkbox" checked={sensitivePrefillConsent} disabled={creatingSuggestedDocument} onChange={(event) => setSensitivePrefillConsent(event.target.checked)} /><span>{text("Я подтверждаю сохранение только выбранных конфиденциальных реквизитов в этом черновике.", "Faqat tanlangan maxfiy rekvizitlarni ushbu qoralamada saqlashni tasdiqlayman.", "I confirm that only the selected sensitive details may be saved in this draft.")}</span></label>}
               <footer><button type="button" className="secondary" disabled={creatingSuggestedDocument} onClick={dismissDocumentPrefill}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button type="button" disabled={creatingSuggestedDocument || (documentPrefill.candidates.some((candidate) => candidate.sensitive) && !sensitivePrefillConsent)} aria-busy={creatingSuggestedDocument} onClick={() => void confirmSuggestedDocument()}>{creatingSuggestedDocument ? <LoaderCircle className="spin" /> : <FilePlus2 />}{creatingSuggestedDocument ? text("Создаём черновик…", "Qoralama yaratilmoqda…", "Creating draft…") : text("Подтвердить и создать черновик", "Tasdiqlash va qoralama yaratish", "Confirm and create draft")}</button><span className="sr-only" role="status" aria-live="polite">{creatingSuggestedDocument ? text("JURO создаёт черновик документа", "JURO hujjat qoralamasini yaratmoqda", "JURO is creating the document draft") : ""}</span></footer>
             </section>}
-            {answer.branches && answer.branches.length > 1 && <nav className="ai-branch-history" aria-label={text("Версии ответа", "Javob versiyalari", "Answer versions")}>
-              <span><History />{text("Версии", "Versiyalar", "Versions")}</span>
-              <div>{answer.branches.map((branch) => <a aria-current={branch.branchId === answer.branchId ? "page" : undefined} key={branch.branchId} href={aiLocation(new URLSearchParams({ conversationId: answer.conversationId, branchId: branch.branchId }))}>{branch.versionNumber === 1 ? text("Исходный ответ", "Asl javob", "Original answer") : `${text("Версия", "Versiya", "Version")} ${branch.versionNumber}`}</a>)}</div>
-            </nav>}
             </>}
             {optimisticQuestion && <PendingConversationTurn question={optimisticQuestion} preliminary={preliminary} status={streamStatus} failed={Boolean(error) && !sending} locale={locale} writing={requestSending ? writing : null} submittedAt={requestSending ? requestSubmittedAt : undefined} />}
+            {replacementSource&&optimisticQuestion&&!sending&&error&&<button type="button" className="ai-restore-answer" onClick={()=>{setOptimisticQuestion("");setReplacementSource("");setError("");setCanRetry(false);retryRef.current=null;}}>{text("Вернуться к сохранённому ответу","Saqlangan javobga qaytish","Return to saved answer")}</button>}
           </>}
         </div>
         <form className="ai-composer" onSubmit={submit}>
@@ -472,21 +500,14 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               onTranscript={acceptVoiceTranscript}
               onClear={() => setVoiceRecordingId("")}
             />
-            {editSourceMessageId && <button type="button" className="ai-edit-cancel" onClick={cancelQuestionEdit} aria-label={text("Отменить редактирование", "Tahrirlashni bekor qilish", "Cancel editing")} title={text("Отменить редактирование", "Tahrirlashni bekor qilish", "Cancel editing")}><X/></button>}
             <label className="sr-only" htmlFor="ai-question">{text("Юридический вопрос", "Yuridik savol", "Legal question")}</label>
             <textarea ref={composerRef} id="ai-question" value={question} rows={1} onChange={changeQuestion} onKeyDown={handleComposerKeyDown} disabled={!status?.configured || sending} placeholder={text("Опишите ситуацию или задайте вопрос…", "Vaziyatni yozing yoki savol bering…", "Describe your situation or ask a question…")} />
             {sending
               ? <button key="stop" type="button" onClick={event => { event.preventDefault(); streamAbortRef.current?.abort(); }} aria-label={text("Остановить генерацию", "Javob yaratishni to‘xtatish", "Stop generation")}><Square /></button>
               : <button key="send" type="submit" disabled={!status?.configured || !question.trim() || Boolean(selectedConversationId&&!answer)} aria-label={text("Отправить", "Yuborish", "Send")}><Send /></button>}
           </div>
-          <small className="ai-composer-hint">{text("Enter — отправить · Shift + Enter — новая строка · не указывайте лишние персональные данные", "Enter — yuborish · Shift + Enter — yangi satr · ortiqcha shaxsiy ma’lumotlarni kiritmang", "Enter — send · Shift + Enter — new line · avoid unnecessary personal data")}</small>
         </form>
       </section>
-      <nav className="ai-mobile-context-bar" aria-label={text("Факты и источники ответа", "Javob faktlari va manbalari", "Answer facts and sources")}>
-        {hasCaseFacts && <button type="button" onClick={() => openMobileContext("facts")}><Check aria-hidden="true" />{text(`Факты ${answer?.facts.length ?? 0}`, `Faktlar ${answer?.facts.length ?? 0}`, `Facts ${answer?.facts.length ?? 0}`)}</button>}
-        <button type="button" onClick={() => openMobileContext("sources")}><BookOpenCheck aria-hidden="true" />{hasAnswerContext ? text(`Источники ${visibleSources.length}`, `Manbalar ${visibleSources.length}`, `Sources ${visibleSources.length}`) : text("Статус источников", "Manbalar holati", "Source status")}</button>
-      </nav>
-
       <ChatNotifications/>
       <aside inert={!contextOpen} ref={mobileContextRef} className={`ai-context ${mobileContextOpen ? "is-mobile-open" : ""}`} id="ai-context-panel" role={mobileContextOpen ? "dialog" : undefined} aria-modal={mobileContextOpen || undefined} aria-label={text("Факты и источники", "Faktlar va manbalar", "Facts and sources")}>
         <header id="ai-context-sources-title" tabIndex={-1}><BookOpenCheck aria-hidden="true" /><strong>{text("Контекст ответа", "Javob konteksti", "Answer context")}</strong><button className="ai-context-close" type="button" aria-label={text("Закрыть факты и источники", "Faktlar va manbalarni yopish", "Close facts and sources")} onClick={()=>{closeMobileContext();setEvidenceCollapsed(true);}}><X /></button></header>
@@ -574,35 +595,36 @@ function shiftCalendarMonth(value: string, amount: number) {
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function HumanMessage({ question, locale, onEdit }: { question: string; locale: PlatformLocale; onEdit?:()=>void }) {
-  if (!question) return null;
-  return <div className="ai-human-turn"><article className="ai-human-message">
-    <small>{aiText(locale, "Вы", "Siz", "You")}</small>
-    <p>{question}</p>
-  </article><div className="ai-question-actions"><CopyMessageButton text={question} locale={locale}/>{onEdit&&<button className="ai-icon-button" type="button" onClick={onEdit} title={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")} aria-label={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")}><Pencil/></button>}</div></div>;
+function conversationTurns(answer:Answer):ConversationTurn[] {
+  const turns=(answer.turns??[]).map(turn=>turn.responseMessageId===answer.messageId?{...turn,result:answer.result,sourceFreshness:answer.sourceFreshness??turn.sourceFreshness}:turn);
+  if(!answer.messageId||turns.some(turn=>turn.responseMessageId===answer.messageId))return turns;
+  return [...turns,{branchId:answer.branchId??"",requestMessageId:answer.requestMessageId??"",responseMessageId:answer.messageId,
+    question:answer.question??"",result:answer.result,createdAt:"",sourceFreshness:answer.sourceFreshness}];
 }
 
-function AnswerToolbar({locale,messageId,result,disabled,selected,onSources}: {
-  locale:PlatformLocale;workspaceId:string;messageId?:string;result:LegalResult;disabled:boolean;selected:boolean;
-  onSources:()=>void;
-}) {
-  const sources=answerReferenceContext<Source>(result.sources,legalAnswerPassages(result)).sources;
-  const count=sources.filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl)).length;
-  if(!messageId || (!count && result.responseKind!=="answer"))return null;
-  return <div className="ai-answer-toolbar" role="group" aria-label={aiText(locale,"Действия с ответом","Javob amallari","Answer actions")}>
-    {count>0 && <button className="ai-answer-sources" type="button" aria-controls="ai-context-panel" aria-pressed={selected} disabled={disabled}
-      onClick={onSources} title={aiText(locale,"Открыть источники этого ответа","Ushbu javob manbalarini ochish","Open sources for this answer")}>
-      <BookOpenCheck aria-hidden="true"/><span>{aiText(locale,"Источники","Manbalar","Sources")}</span><span className="ai-answer-source-count">{count}</span>
-    </button>}
-
-  </div>;
+function VersionSelector({locale,kind,versions,selected,disabled,onSelect}:{locale:PlatformLocale;kind:"prompt"|"answer";versions:Branch[];selected:string;disabled:boolean;onSelect:(id:string)=>void}) {
+  const index=versions.findIndex(version=>version.branchId===selected);
+  if(versions.length<2||index<0)return null;
+  const label=kind==="prompt"?aiText(locale,"Версии вопроса","Savol versiyalari","Prompt versions"):aiText(locale,"Версии ответа","Javob versiyalari","Answer versions");
+  return <nav className="ai-version-selector" aria-label={label}>
+    <button type="button" className="ai-icon-button" disabled={disabled||index===0} aria-label={aiText(locale,"Предыдущая версия","Oldingi versiya","Previous version")} onClick={()=>onSelect(versions[index-1].branchId)}><ChevronLeft/></button>
+    <span aria-live="polite">{index+1}<span>/</span>{versions.length}</span>
+    <button type="button" className="ai-icon-button" disabled={disabled||index===versions.length-1} aria-label={aiText(locale,"Следующая версия","Keyingi versiya","Next version")} onClick={()=>onSelect(versions[index+1].branchId)}><ChevronRight/></button>
+  </nav>;
 }
 
-function ConversationTurnPair({ turn, locale, onCitationSelect, toolbar, footer, onEdit }: { turn: ConversationTurn; locale: PlatformLocale; onCitationSelect?: (sourceId: string) => void; toolbar?: React.ReactNode; footer?:React.ReactNode; onEdit?:()=>void }) {
-  return <section className="ai-conversation-turn">
-    <HumanMessage question={turn.question} locale={locale} onEdit={onEdit} />
-    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={onCitationSelect} toolbar={toolbar} />:<p className="ai-legacy-answer">{turn.answer}</p>}{footer}
-  </section>;
+function HumanMessage({question,locale,onEdit,disabled,versions}:{question:string;locale:PlatformLocale;onEdit?:(value:string)=>void;disabled?:boolean;versions?:React.ReactNode}) {
+  const [editing,setEditing]=useState(false),[draft,setDraft]=useState(question);
+  const input=useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(()=>{if(editing&&input.current){resizeComposer(input.current);input.current.focus();input.current.setSelectionRange(input.current.value.length,input.current.value.length);}},[editing]);
+  if(!question)return null;
+  return <div className={`ai-human-turn${editing?" is-editing":""}`}><article className="ai-human-message">
+    <small>{aiText(locale,"Вы","Siz","You")}</small>
+    {editing?<form className="ai-prompt-editor" onSubmit={event=>{event.preventDefault();if(draft.trim()&&!disabled){onEdit?.(draft.trim());setEditing(false);}}}>
+      <textarea ref={input} aria-label={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")} value={draft} maxLength={12000} rows={2} disabled={disabled} onChange={event=>{setDraft(event.target.value);resizeComposer(event.currentTarget);}} onKeyDown={event=>{if(event.key==="Escape")setEditing(false);if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.form?.requestSubmit();}}}/>
+      <div><button type="button" className="quiet" onClick={()=>setEditing(false)}>{aiText(locale,"Отмена","Bekor qilish","Cancel")}</button><button type="submit" disabled={disabled||!draft.trim()}>{aiText(locale,"Сохранить и отправить","Saqlash va yuborish","Save and send")}</button></div>
+    </form>:<p>{question}</p>}
+  </article><div className="ai-prompt-controls">{versions}{!editing&&<div className="ai-question-actions"><CopyMessageButton text={question} locale={locale}/>{onEdit&&<button className="ai-icon-button" type="button" disabled={disabled} onClick={()=>{setDraft(question);setEditing(true);}} title={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")} aria-label={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")}><Pencil/></button>}</div>}</div></div>;
 }
 
 function PendingConversationTurn({

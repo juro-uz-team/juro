@@ -1,6 +1,6 @@
 "use client";
 
-import {Check, Copy, ThumbsDown, ThumbsUp, X} from "lucide-react";
+import {BookOpen, RefreshCw, Check, Copy, ThumbsDown, ThumbsUp, X} from "lucide-react";
 import {useEffect, useState} from "react";
 import {Button, Dialog, DialogTrigger, Heading, Popover} from "react-aria-components";
 import {aiText} from "../../lib/ai/localization";
@@ -17,7 +17,7 @@ export function CopyMessageButton({text,locale}:{text:string;locale:PlatformLoca
 }
 
 type FeedbackType="helpful"|"not_helpful"|"wrong_norm"|"incomplete"|"language";
-export function AnswerActions({locale,workspaceId,messageId,text,disabled,onSpeechPhaseChange}:{locale:PlatformLocale;workspaceId:string;messageId?:string;text:string;disabled:boolean;onSpeechPhaseChange?:(phase:VoiceSpeechPhase)=>void}) {
+export function AnswerActions({locale,workspaceId,messageId,text,disabled,onSpeechPhaseChange,onRegenerate,onSources,sourcesSelected,versions}:{onRegenerate?:()=>void;onSources?:()=>void;sourcesSelected?:boolean;versions?:React.ReactNode;locale:PlatformLocale;workspaceId:string;messageId?:string;text:string;disabled:boolean;onSpeechPhaseChange?:(phase:VoiceSpeechPhase)=>void}) {
   const [rating,setRating]=useState<string>(""),[open,setOpen]=useState(false),[category,setCategory]=useState<FeedbackType>("not_helpful"),[comment,setComment]=useState(""),[saving,setSaving]=useState(false),[status,setStatus]=useState("");
   const labels={helpful:aiText(locale,"Полезно","Foydali","Helpful"),not_helpful:aiText(locale,"Не полезно","Foydasiz","Not helpful"),wrong_norm:aiText(locale,"Неверная норма","Noto‘g‘ri norma","Wrong legal rule"),incomplete:aiText(locale,"Неполный ответ","To‘liq emas","Incomplete answer"),language:aiText(locale,"Сложно понять","Tushunish qiyin","Hard to understand")};
   useEffect(()=>{
@@ -52,7 +52,9 @@ export function AnswerActions({locale,workspaceId,messageId,text,disabled,onSpee
         </Popover>
       </DialogTrigger>
       <AssistantSpeechControls workspaceId={workspaceId} locale={locale} assistantMessageId={messageId} disabled={disabled} onPhaseChange={onSpeechPhaseChange}/>
-
+      {onRegenerate&&<button className="ai-icon-button" type="button" disabled={disabled} onClick={onRegenerate} title={aiText(locale,"Создать ответ заново","Javobni qayta yaratish","Regenerate answer")} aria-label={aiText(locale,"Создать ответ заново","Javobni qayta yaratish","Regenerate answer")}><RefreshCw/></button>}
+      {onSources&&<button className="ai-icon-button" type="button" disabled={disabled} onClick={onSources} aria-controls="ai-context-panel" aria-pressed={Boolean(sourcesSelected)} title={aiText(locale,"Источники","Manbalar","Sources")} aria-label={aiText(locale,"Источники","Manbalar","Sources")}><BookOpen/></button>}
+      {versions}
     </div>
     {!open&&status&&<p className="ai-action-status" role="alert">{status}</p>}
   </div>;

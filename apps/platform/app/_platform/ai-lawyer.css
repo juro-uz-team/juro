@@ -768,3 +768,32 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
  .ai-composer-mode { gap: 4px; flex: none; }
  .ai-composer-mode .ai-context-toggle { margin-left: 0; }
 }
+
+/* Conversation editions share the same quiet control rail as answer actions. */
+.ai-prompt-controls { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 40px; margin-top: 8px; padding-bottom: 8px; }
+.ai-prompt-controls .ai-question-actions { margin-top: 0; }
+.ai-version-selector { display: inline-flex; align-items: center; gap: 0; color: var(--ai-muted); }
+.ai-version-selector > span { display: inline-flex; gap: 3px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-version-selector > span > span { opacity: .5; }
+.ai-version-selector .ai-icon-button svg { width: 15px; height: 15px; }
+.ai-version-selector .ai-icon-button:disabled { opacity: .25; }
+.ai-message-actions { flex-wrap: wrap; }
+.ai-prompt-editor { display: grid; gap: 12px; }
+.ai-prompt-editor textarea { width: 100%; min-height: 80px; max-height: 45vh; resize: vertical; padding: 8px; color: var(--ai-copy); background: var(--ai-panel-subtle); border: 1px solid var(--border-accent); border-radius: 8px; font: inherit; line-height: 1.6; }
+.ai-prompt-editor > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.ai-prompt-editor button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--border-accent); border-radius: 10px; background: var(--surface-selected); color: var(--brand-gold-text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.ai-prompt-editor button.quiet { border-color: transparent; background: transparent; color: var(--ai-muted); }
+.ai-prompt-editor button:hover { filter: brightness(1.1); }
+.ai-prompt-editor button:disabled { opacity: .4; cursor: default; }
+.ai-answer-stream > .ai-plan-card { margin-block: 16px 24px; }
+.ai-answer-stream > .ai-conversation-turn-pending { margin-top: 24px; }
+.ai-composer { gap: 2px; padding-top: 4px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+.ai-composer-options > summary { min-height: 40px; }
+.ai-composer-input { grid-template-columns: 40px minmax(0, 1fr) 40px; padding: 4px; border-radius: 14px; }
+.ai-composer-input > textarea { min-height: 40px; padding: 9px 7px; }
+.ai-composer-input > textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }
+.ai-composer-input > button,
+.ai-composer-input > .ai-voice-controls[data-phase="idle"],
+.ai-composer-input > .ai-voice-controls[data-phase="idle"] .ai-voice-actions button { width: 40px; height: 40px; min-height: 40px; }
+
+@media (max-width: 980px) { .ai-workspace { grid-template-rows: minmax(0, 1fr); } }

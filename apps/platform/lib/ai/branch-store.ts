@@ -18,6 +18,7 @@ export type AiBranchSummary = {
   responseMessageId: string;
   operation: AiMessageOperation;
   versionNumber: number;
+  forkedFromMessageId?: string | null;
   question: string;
   createdAt: string;
 };
@@ -43,6 +44,7 @@ export async function listAiBranches(input: {
   const rows = await input.db.prepare(
     `SELECT b.id AS branchId,b.parent_branch_id AS parentBranchId,b.request_message_id AS requestMessageId,
       b.response_message_id AS responseMessageId,b.operation,mv.version_number AS versionNumber,
+      b.forked_from_message_id AS forkedFromMessageId,
       request.content AS question,b.created_at AS createdAt
      FROM message_branches b
      JOIN conversations c ON c.id=b.conversation_id
@@ -97,6 +99,7 @@ export async function listAiAnswerVersions(input: {
      )
      SELECT b.id AS branchId,b.parent_branch_id AS parentBranchId,b.request_message_id AS requestMessageId,
        b.response_message_id AS responseMessageId,b.operation,mv.version_number AS versionNumber,
+      b.forked_from_message_id AS forkedFromMessageId,
        request.content AS question,b.created_at AS createdAt
      FROM message_branches b
      JOIN conversations c ON c.id=b.conversation_id
