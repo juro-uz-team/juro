@@ -4,7 +4,7 @@ import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
 
-import { AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, ThumbsUp, Trash2, X } from "lucide-react";
+import { AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, Trash2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveVoiceModeState, type VoiceModeState, type VoiceRecorderPhase, type VoiceSpeechPhase } from "../../lib/ai/voice-ui";
@@ -24,7 +24,8 @@ import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
 import { AnswerActivity } from "./AnswerActivity";
 import { LegalAnswerView } from "./LegalAnswerView";
-import { AssistantSpeechControls, VoiceMessageControls } from "./VoiceMessageControls";
+import { AnswerActions, CopyMessageButton } from "./AnswerActions";
+import { VoiceMessageControls } from "./VoiceMessageControls";
 
 type ProviderStatus = { configured: boolean; provider: string | null; model: string | null; fallbackConfigured: boolean };
 type Usage = { used: number; limit: number | null; periodEnd: string };
@@ -139,11 +140,9 @@ type AiRequestPayload = {
   voiceRecordingId?: string;
   legalContextDate?: string;
 };
-type AiFeedbackType = "helpful" | "not_helpful" | "wrong_norm" | "broken_link" | "outdated" | "incomplete" | "language" | "unsafe" | "ignored_facts";
-type AiFeedback = { feedbackType: AiFeedbackType; comment: string | null; updatedAt: string };
 type DocumentPrefillCandidate = { fieldId: string; label: string; value: string; source: "profile" | "workspace" | "ai_answer"; sensitive: boolean };
 type DocumentPrefillPreview = { templateCode: string; categorySlug: string; title: string; reason: string; caseId: string | null; candidates: DocumentPrefillCandidate[] };
-const feedbackOptions: AiFeedbackType[] = ["wrong_norm", "incomplete", "language", "not_helpful"];
+
 
 export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const router=useRouter(),pathname=usePathname(),params=useSearchParams();
@@ -167,7 +166,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const [legalContextDate,setLegalContextDate]=useState(""),[editSourceMessageId,setEditSourceMessageId]=useState("");
   const [voiceMode,setVoiceMode]=useState(false),[voiceRecordingId,setVoiceRecordingId]=useState("");
   const [voiceRecorderPhase,setVoiceRecorderPhase]=useState<VoiceRecorderPhase>("idle"),[voiceSpeechPhase,setVoiceSpeechPhase]=useState<VoiceSpeechPhase>("idle");
-  const [historyCollapsed,setHistoryCollapsed]=useState(false),[evidenceCollapsed,setEvidenceCollapsed]=useState(false);
+  const [historyCollapsed,setHistoryCollapsed]=useState(false),[evidenceCollapsed,setEvidenceCollapsed]=useState(true);
   const [mobileContextOpen,setMobileContextOpen]=useState(false),[mobileContextTab,setMobileContextTab]=useState<"facts"|"sources">("sources");
   const [deleteCandidateId,setDeleteCandidateId]=useState(""),[deletingConversationId,setDeletingConversationId]=useState(""),[conversationDeleteError,setConversationDeleteError]=useState("");
   const [dismissedPlanMessageId,setDismissedPlanMessageId]=useState(""),[planEditorOpen,setPlanEditorOpen]=useState(false);
@@ -175,8 +174,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const [openingSuggestedDocument,setOpeningSuggestedDocument]=useState(false),[creatingSuggestedDocument,setCreatingSuggestedDocument]=useState(false);
   const [documentPrefill,setDocumentPrefill]=useState<DocumentPrefillPreview|null>(null),[documentPrefillMessageId,setDocumentPrefillMessageId]=useState("");
   const [sensitivePrefillConsent,setSensitivePrefillConsent]=useState(false);
-  const [feedback,setFeedback]=useState<AiFeedback[]>([]),[savingFeedback,setSavingFeedback]=useState(false),[feedbackStatus,setFeedbackStatus]=useState("");
-  const [feedbackType,setFeedbackType]=useState<AiFeedbackType>("incomplete"),[feedbackComment,setFeedbackComment]=useState("");
+
+
   const composerRef=useRef<HTMLTextAreaElement>(null),transcriptRef=useRef<HTMLDivElement>(null),latestAnswerRef=useRef<HTMLDivElement>(null);
   const mobileContextRef=useRef<HTMLElement>(null),mobileFactsTabRef=useRef<HTMLButtonElement>(null),mobileSourcesTabRef=useRef<HTMLButtonElement>(null);
   const planConfirmationRef=useRef<HTMLDivElement>(null),streamAbortRef=useRef<AbortController|null>(null);
@@ -215,8 +214,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     const query=new URLSearchParams({conversationId});if(branchId)query.set("branchId",branchId);
     const saved=await requestJson<Answer>(`/api/platform/ai?${query}`,{signal});
     if(signal?.aborted)return;setAnswer(saved);setOptimisticQuestion("");
-    const data=await requestJson<{feedback:AiFeedback[]}>(`/api/platform/ai/feedback?${new URLSearchParams({assistantMessageId:saved.messageId??""})}`,{signal}).catch(()=>({feedback:[]}));
-    if(!signal?.aborted)setFeedback(data.feedback);
+
   },[requestJson]);
   useEffect(()=>{try{setHistoryCollapsed(localStorage.getItem("juro:ai-history")==="collapsed");}catch{/* Storage can be disabled; the control remains usable. */}},[]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(text("Чат временно недоступен.","Suhbat vaqtincha mavjud emas.","Chat is temporarily unavailable."));});return()=>controller.abort();},[refresh,text]);
@@ -224,7 +222,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     const delivered=pending?.workspaceId===workspaceId&&pending.answer.conversationId===selectedConversationId
       &&(pending.answer.branchId??"")===selectedBranchId?pending.answer:null;
     if(!delivered)deliveredAnswerRef.current=null;
-    const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(delivered);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setFeedback([]);setFeedbackStatus("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId)&&!delivered);
+    const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setError("");setCanRetry(false);retryRef.current=null;setAnswer(delivered);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setDocumentPrefill(null);setCitationContext(null);setLoadingConversation(Boolean(selectedConversationId)&&!delivered);
     if(selectedConversationId)void loadAnswer(selectedConversationId,selectedBranchId||undefined,AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)])).catch(()=>{if(!controller.signal.aborted&&!delivered)setError(text("Диалог недоступен.","Suhbat mavjud emas.","Conversation unavailable."));}).finally(()=>{if(!controller.signal.aborted)setLoadingConversation(false);});
     else setAnswer(null);return()=>controller.abort();
   },[selectedConversationId,selectedBranchId,intakeHandle,loadAnswer,text,workspaceId]);
@@ -311,7 +309,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     operation:editSourceMessageId?"edit":answer?"follow_up":"new",sourceMessageId:editSourceMessageId||answer?.messageId,
     legalContextDate:legalContextDate||undefined,...(voiceRecordingId?{voiceRecordingId}:{}),idempotencyKey:crypto.randomUUID()});}
   const retryQuestion=()=>{if(retryRef.current)void send(retryRef.current);};
-  const editQuestion=()=>{if(answer?.requestMessageId){setEditSourceMessageId(answer.requestMessageId);setQuestion(answer.question??"");composerRef.current?.focus();}};
+  const editQuestion=(messageId:string,value:string)=>{setEditSourceMessageId(messageId);setQuestion(value);composerRef.current?.focus();};
   const cancelQuestionEdit=()=>{setEditSourceMessageId("");setQuestion("");};
   const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setEditSourceMessageId("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
   const changeQuestion=(event:React.ChangeEvent<HTMLTextAreaElement>)=>{setQuestion(event.target.value);resizeComposer(event.currentTarget);};
@@ -322,7 +320,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const setComposerMode=(mode:"text"|"voice")=>setVoiceMode(mode==="voice");
   const trackTranscriptScroll=()=>{const element=transcriptRef.current;if(element)nearBottom.current=element.scrollHeight-element.scrollTop-element.clientHeight<100;};
   const toggleHistory=()=>{const next=!historyCollapsed;setHistoryCollapsed(next);try{localStorage.setItem("juro:ai-history",next?"collapsed":"expanded");}catch{/* Keep the in-memory preference when storage is unavailable. */}},toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
-  const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>setMobileContextOpen(false);
+  const openMobileContext=(tab:"facts"|"sources")=>{setMobileContextTab(tab);setMobileContextOpen(true);},closeMobileContext=()=>{setMobileContextOpen(false);setEvidenceCollapsed(true);};
   const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=!answer?.facts.length?"sources":event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
   const showAnswerSources=(messageId:string|undefined,result:LegalResult)=>{
     if(!messageId)return;
@@ -334,8 +332,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const toggleConversationDeletion=(id:string)=>setDeleteCandidateId(current=>current===id?"":id);
   async function deleteConversation(id:string){const scope=workspaceId;setDeletingConversationId(id);setConversationDeleteError("");try{await requestJson("/api/platform/ai",{method:"DELETE",body:JSON.stringify({conversationId:id})});if(activeScope.current!==scope)return;if(currentSelection.current===id)startNewQuestion();setDeleteCandidateId("");await refresh();}catch(cause){if(activeScope.current===scope)setConversationDeleteError(String(cause instanceof Error?cause.message:cause));}finally{if(activeScope.current===scope)setDeletingConversationId("");}}
   async function updateFact(factId:string,status:"confirmed"|"rejected"){try{await requestJson("/api/platform/ai/facts",{method:"POST",body:JSON.stringify({factId,status})});setAnswer(current=>current?{...current,facts:current.facts.map(fact=>fact.id===factId?{...fact,status}:fact)}:current);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}}
-  async function saveFeedback(feedbackType:AiFeedbackType,comment?:string){if(!answer?.messageId||savingFeedback)return;const messageId=answer.messageId;setSavingFeedback(true);try{await requestJson("/api/platform/ai/feedback",{method:"POST",body:JSON.stringify({assistantMessageId: answer.messageId,feedbackType,comment})});const data=await requestJson<{feedback:AiFeedback[]}>(`/api/platform/ai/feedback?${new URLSearchParams({assistantMessageId:answer.messageId})}`);if(currentMessage.current!==messageId)return;setFeedback(data.feedback);setFeedbackStatus(text("Отзыв сохранён.","Fikr saqlandi.","Feedback saved."));}catch(cause){if(currentMessage.current===messageId)setFeedbackStatus(String(cause instanceof Error?cause.message:cause));}finally{setSavingFeedback(false);}}
-  const feedbackLabel=(value:AiFeedbackType)=>({helpful:text("Полезно","Foydali","Helpful"),not_helpful:text("Не полезно","Foydasiz","Not helpful"),wrong_norm:text("Неверная норма","Noto‘g‘ri norma","Wrong legal rule"),broken_link:text("Ссылка не работает","Havola ishlamaydi","Broken link"),outdated:text("Устарело","Eskirgan","Outdated"),incomplete:text("Неполно","To‘liq emas","Incomplete"),language:text("Язык","Til","Language"),unsafe:text("Небезопасно","Xavfli","Unsafe"),ignored_facts:text("Факты не учтены","Faktlar hisobga olinmagan","Facts ignored")}[value]);
+
   async function savePlanToCase(){if(!answer?.messageId||savingPlan)return;setSavingPlan(true);try{const saved=await requestJson<{caseId:string}>("/api/platform/ai/action-plan",{method:"POST",headers:{"idempotency-key":`plan-${answer.messageId}-${targetCaseId||"new"}`},body:JSON.stringify({assistantMessageId:answer.messageId,targetCaseId:targetCaseId||undefined,locale})});setPlanConfirmationOpen(false);router.push(`${basePath}/cases/${encodeURIComponent(saved.caseId)}`);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}finally{setSavingPlan(false);}}
   function dismissDocumentPrefill(){handoffGeneration.current++;setOpeningSuggestedDocument(false);setCreatingSuggestedDocument(false);setDocumentPrefill(null);setDocumentPrefillMessageId("");setSensitivePrefillConsent(false);handoffKey.current=crypto.randomUUID();}
   async function openSuggestedDocument(){
@@ -407,9 +404,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           ) : <>
             {answer && <>
             <div className="ai-transcript">
-              {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} toolbar={turn.result && <AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} result={turn.result} disabled={sending} selected={sourceMessageId===turn.responseMessageId} onSources={()=>showAnswerSources(turn.responseMessageId,turn.result!)} />} />)}
-              <HumanMessage question={answer.question || answer.turns?.at(-1)?.question || ""} locale={locale} />
-              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={selectFollowUpQuestion} toolbar={<AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={answer.messageId} result={answer.result} disabled={sending} selected={sourceMessageId===answer.messageId} onSources={()=>showAnswerSources(answer.messageId,answer.result)} onSpeechPhaseChange={setVoiceSpeechPhase} />} /><div className="ai-answer-edit"><button type="button" disabled={!answer.requestMessageId || sending} onClick={editQuestion}><Pencil />{text("Редактировать вопрос", "Savolni tahrirlash", "Edit question")}</button></div></div>
+              {(answer.turns ?? []).filter((turn) => turn.responseMessageId !== answer.messageId).map((turn) => <ConversationTurnPair key={turn.branchId} turn={turn} locale={locale} onEdit={!sending?()=>editQuestion(turn.requestMessageId,turn.question):undefined} footer={<AnswerActions locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} text={answerCopy(turn.result,turn.answer)} disabled={sending}/>} onCitationSelect={sourceId=>revealCitation(sourceId,turn)} toolbar={turn.result && <AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={turn.responseMessageId} result={turn.result} disabled={sending} selected={(!evidenceCollapsed||mobileContextOpen)&&sourceMessageId===turn.responseMessageId} onSources={()=>showAnswerSources(turn.responseMessageId,turn.result!)} />} />)}
+              <HumanMessage question={answer.question || answer.turns?.at(-1)?.question || ""} locale={locale} onEdit={answer.requestMessageId&&!sending?()=>editQuestion(answer.requestMessageId!,answer.question||answer.turns?.at(-1)?.question||""):undefined} />
+              <div className="ai-current-answer" data-message-id={answer.messageId} data-request-message-id={answer.requestMessageId} ref={latestAnswerRef}><LegalAnswer result={answer.result} freshness={answer.sourceFreshness} locale={locale} onCitationSelect={revealCitation} onQuestionSelect={selectFollowUpQuestion} toolbar={<AnswerToolbar locale={locale} workspaceId={workspaceId} messageId={answer.messageId} result={answer.result} disabled={sending} selected={(!evidenceCollapsed||mobileContextOpen)&&sourceMessageId===answer.messageId} onSources={()=>showAnswerSources(answer.messageId,answer.result)} />} /><AnswerActions key={`${workspaceId}:${answer.messageId}`} locale={locale} workspaceId={workspaceId} messageId={answer.messageId} text={answerCopy(answer.result)} disabled={sending} onSpeechPhaseChange={setVoiceSpeechPhase}/></div>
             </div>
             {answer.result.responseKind === "answer" && answer.result.actionPlan.length > 0 && dismissedPlanMessageId !== answer.messageId && <section className="ai-plan-card" aria-labelledby="ai-plan-card-title">
               <header><small>{text("После ответа AI", "AI javobidan so‘ng", "After the AI answer")}</small><h2 id="ai-plan-card-title">{text("Создать план действий", "Harakatlar rejasini yaratish", "Create an action plan")}</h2></header>
@@ -439,21 +436,6 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               {documentPrefill.candidates.some((candidate) => candidate.sensitive) && <label className="ai-document-sensitive-consent"><input type="checkbox" checked={sensitivePrefillConsent} disabled={creatingSuggestedDocument} onChange={(event) => setSensitivePrefillConsent(event.target.checked)} /><span>{text("Я подтверждаю сохранение только выбранных конфиденциальных реквизитов в этом черновике.", "Faqat tanlangan maxfiy rekvizitlarni ushbu qoralamada saqlashni tasdiqlayman.", "I confirm that only the selected sensitive details may be saved in this draft.")}</span></label>}
               <footer><button type="button" className="secondary" disabled={creatingSuggestedDocument} onClick={dismissDocumentPrefill}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button type="button" disabled={creatingSuggestedDocument || (documentPrefill.candidates.some((candidate) => candidate.sensitive) && !sensitivePrefillConsent)} aria-busy={creatingSuggestedDocument} onClick={() => void confirmSuggestedDocument()}>{creatingSuggestedDocument ? <LoaderCircle className="spin" /> : <FilePlus2 />}{creatingSuggestedDocument ? text("Создаём черновик…", "Qoralama yaratilmoqda…", "Creating draft…") : text("Подтвердить и создать черновик", "Tasdiqlash va qoralama yaratish", "Confirm and create draft")}</button><span className="sr-only" role="status" aria-live="polite">{creatingSuggestedDocument ? text("JURO создаёт черновик документа", "JURO hujjat qoralamasini yaratmoqda", "JURO is creating the document draft") : ""}</span></footer>
             </section>}
-            {answer.messageId && <section className="ai-feedback" aria-labelledby="ai-feedback-heading">
-              <div><h2 id="ai-feedback-heading">{text("Оцените этот ответ", "Bu javobni baholang", "Rate this answer")}</h2><p>{text("Отзыв привязан к этому сохранённому ответу и помогает проверить качество источников.", "Fikr-mulohaza shu saqlangan javobga bog‘lanadi va manbalar sifatini tekshirishga yordam beradi.", "Your feedback is linked to this saved answer and helps JURO review source quality.")}</p></div>
-              <div className="ai-feedback-actions">
-                <button type="button" className={feedback.some((item) => item.feedbackType === "helpful") ? "selected" : undefined} disabled={savingFeedback} onClick={() => void saveFeedback("helpful")}><ThumbsUp />{feedback.some((item) => item.feedbackType === "helpful") ? text("Полезно — сохранено", "Foydali — saqlandi", "Helpful — saved") : feedbackLabel("helpful")}</button>
-                <details>
-                  <summary><CircleAlert aria-hidden="true" /><span>{text("Сообщить о проблеме", "Muammo haqida xabar berish", "Report an issue")}</span></summary>
-                  <div className="ai-feedback-form">
-                    <div className="ai-feedback-categories" role="group" aria-labelledby="ai-feedback-type-label"><span id="ai-feedback-type-label">{text("Что не так", "Nima noto‘g‘ri", "What went wrong")}</span><div>{feedbackOptions.map((item) => <button type="button" className={feedbackType === item ? "selected" : undefined} aria-pressed={feedbackType === item} key={item} onClick={() => setFeedbackType(item)}>{feedbackLabel(item)}</button>)}</div></div>
-                    <label>{text("Комментарий — необязательно", "Izoh — ixtiyoriy", "Comment — optional")}<textarea value={feedbackComment} maxLength={2_000} onChange={(event) => setFeedbackComment(event.target.value)} placeholder={text("Не указывайте лишние персональные данные.", "Ortiqcha shaxsiy ma’lumotlarni kiritmang.", "Avoid unnecessary personal data.")} /></label>
-                    <button type="button" disabled={savingFeedback} onClick={() => void saveFeedback(feedbackType, feedbackComment)}>{savingFeedback ? text("Сохраняем…", "Saqlanmoqda…", "Saving…") : text("Сохранить отзыв", "Fikrni saqlash", "Save feedback")}</button>
-                  </div>
-                </details>
-              </div>
-              {feedbackStatus && <p className="ai-feedback-status" role="status">{feedbackStatus}</p>}
-            </section>}
             {answer.branches && answer.branches.length > 1 && <nav className="ai-branch-history" aria-label={text("Версии ответа", "Javob versiyalari", "Answer versions")}>
               <span><History />{text("Версии", "Versiyalar", "Versions")}</span>
               <div>{answer.branches.map((branch) => <a aria-current={branch.branchId === answer.branchId ? "page" : undefined} key={branch.branchId} href={aiLocation(new URLSearchParams({ conversationId: answer.conversationId, branchId: branch.branchId }))}>{branch.versionNumber === 1 ? text("Исходный ответ", "Asl javob", "Original answer") : `${text("Версия", "Versiya", "Version")} ${branch.versionNumber}`}</a>)}</div>
@@ -463,7 +445,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
           </>}
         </div>
         <form className="ai-composer" onSubmit={submit}>
-          {editSourceMessageId && <div className="ai-edit-notice" role="status"><span>{text("Редактирование создаст новую версию; исходный ответ сохранится.", "Tahrirlash yangi versiya yaratadi; oldingi javob saqlanadi.", "Editing creates a new version; the original answer remains available.")}</span><button type="button" onClick={cancelQuestionEdit}>{text("Отменить", "Bekor qilish", "Cancel")}</button></div>}
+
           <details className="ai-composer-options">
             <summary><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Простой", "Oddiy", "Simple") : text("Глубоко", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
             <div className="ai-modes">
@@ -484,6 +466,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               onTranscript={acceptVoiceTranscript}
               onClear={() => setVoiceRecordingId("")}
             />
+            {editSourceMessageId && <button type="button" className="ai-edit-cancel" onClick={cancelQuestionEdit} aria-label={text("Отменить редактирование", "Tahrirlashni bekor qilish", "Cancel editing")} title={text("Отменить редактирование", "Tahrirlashni bekor qilish", "Cancel editing")}><X/></button>}
             <label className="sr-only" htmlFor="ai-question">{text("Юридический вопрос", "Yuridik savol", "Legal question")}</label>
             <textarea ref={composerRef} id="ai-question" value={question} rows={1} onChange={changeQuestion} onKeyDown={handleComposerKeyDown} disabled={!status?.configured || sending} placeholder={text("Опишите ситуацию или задайте вопрос…", "Vaziyatni yozing yoki savol bering…", "Describe your situation or ask a question…")} />
             {sending
@@ -497,8 +480,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         {hasCaseFacts && <button type="button" onClick={() => openMobileContext("facts")}><Check aria-hidden="true" />{text(`Факты ${answer?.facts.length ?? 0}`, `Faktlar ${answer?.facts.length ?? 0}`, `Facts ${answer?.facts.length ?? 0}`)}</button>}
         <button type="button" onClick={() => openMobileContext("sources")}><BookOpenCheck aria-hidden="true" />{hasAnswerContext ? text(`Источники ${visibleSources.length}`, `Manbalar ${visibleSources.length}`, `Sources ${visibleSources.length}`) : text("Статус источников", "Manbalar holati", "Source status")}</button>
       </nav>
-      <aside ref={mobileContextRef} className={`ai-context ${mobileContextOpen ? "is-mobile-open" : ""}`} id="ai-context-panel" role={mobileContextOpen ? "dialog" : undefined} aria-modal={mobileContextOpen || undefined} aria-label={text("Факты и источники", "Faktlar va manbalar", "Facts and sources")}>
-        <header id="ai-context-sources-title" tabIndex={-1}><BookOpenCheck aria-hidden="true" /><strong>{text("Контекст ответа", "Javob konteksti", "Answer context")}</strong><button className="ai-context-close" type="button" aria-label={text("Закрыть факты и источники", "Faktlar va manbalarni yopish", "Close facts and sources")} onClick={closeMobileContext}><X /></button></header>
+      <button type="button" className="ai-context-edge" aria-controls="ai-context-panel" aria-expanded={!evidenceCollapsed} onClick={toggleEvidencePanel} aria-label={evidenceCollapsed?text("Открыть контекст ответа","Javob kontekstini ochish","Open answer context"):text("Свернуть контекст ответа","Javob kontekstini yopish","Collapse answer context")}>{evidenceCollapsed?<ChevronLeft/>:<ChevronRight/>}</button>
+      <aside inert={evidenceCollapsed&&!mobileContextOpen} ref={mobileContextRef} className={`ai-context ${mobileContextOpen ? "is-mobile-open" : ""}`} id="ai-context-panel" role={mobileContextOpen ? "dialog" : undefined} aria-modal={mobileContextOpen || undefined} aria-label={text("Факты и источники", "Faktlar va manbalar", "Facts and sources")}>
+        <header id="ai-context-sources-title" tabIndex={-1}><BookOpenCheck aria-hidden="true" /><strong>{text("Контекст ответа", "Javob konteksti", "Answer context")}</strong><button className="ai-context-close" type="button" aria-label={text("Закрыть факты и источники", "Faktlar va manbalarni yopish", "Close facts and sources")} onClick={()=>{closeMobileContext();setEvidenceCollapsed(true);}}><X /></button></header>
 
         {hasAnswerContext ? <><div className="ai-context-tabs" role="tablist" aria-label={text("Раздел контекста", "Kontekst bo‘limi", "Context section")}>
           {hasCaseFacts && <button ref={mobileFactsTabRef} id="ai-context-facts-tab" type="button" role="tab" aria-selected={mobileContextTab === "facts"} aria-controls="ai-context-facts-panel" tabIndex={mobileContextTab === "facts" ? 0 : -1} onKeyDown={handleMobileContextTabKeyDown} onClick={() => setMobileContextTab("facts")}>{text("Факты", "Faktlar", "Facts")}</button>}
@@ -583,17 +567,17 @@ function shiftCalendarMonth(value: string, amount: number) {
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function HumanMessage({ question, locale }: { question: string; locale: PlatformLocale }) {
+function HumanMessage({ question, locale, onEdit }: { question: string; locale: PlatformLocale; onEdit?:()=>void }) {
   if (!question) return null;
-  return <article className="ai-human-message">
+  return <div className="ai-human-turn"><article className="ai-human-message">
     <small>{aiText(locale, "Вы", "Siz", "You")}</small>
     <p>{question}</p>
-  </article>;
+  </article><div className="ai-question-actions"><CopyMessageButton text={question} locale={locale}/>{onEdit&&<button className="ai-icon-button" type="button" onClick={onEdit} title={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")} aria-label={aiText(locale,"Редактировать вопрос","Savolni tahrirlash","Edit question")}><Pencil/></button>}</div></div>;
 }
 
-function AnswerToolbar({locale,workspaceId,messageId,result,disabled,selected,onSources,onSpeechPhaseChange}: {
+function AnswerToolbar({locale,messageId,result,disabled,selected,onSources}: {
   locale:PlatformLocale;workspaceId:string;messageId?:string;result:LegalResult;disabled:boolean;selected:boolean;
-  onSources:()=>void;onSpeechPhaseChange?:(phase:VoiceSpeechPhase)=>void;
+  onSources:()=>void;
 }) {
   const sources=answerReferenceContext<Source>(result.sources,legalAnswerPassages(result)).sources;
   const count=sources.filter(source=>isTrustedPrivateSource(source)||isSafeSecondarySource(source)||safeOfficialUrl(source.originalUrl)).length;
@@ -603,15 +587,14 @@ function AnswerToolbar({locale,workspaceId,messageId,result,disabled,selected,on
       onClick={onSources} title={aiText(locale,"Открыть источники этого ответа","Ushbu javob manbalarini ochish","Open sources for this answer")}>
       <BookOpenCheck aria-hidden="true"/><span>{aiText(locale,"Источники","Manbalar","Sources")}</span><span className="ai-answer-source-count">{count}</span>
     </button>}
-    {result.responseKind==="answer" && <AssistantSpeechControls key={`${workspaceId}:${messageId}`} workspaceId={workspaceId} locale={locale}
-      assistantMessageId={messageId} disabled={disabled} onPhaseChange={onSpeechPhaseChange}/>}
+
   </div>;
 }
 
-function ConversationTurnPair({ turn, locale, onCitationSelect, toolbar }: { turn: ConversationTurn; locale: PlatformLocale; onCitationSelect?: (sourceId: string) => void; toolbar?: React.ReactNode }) {
+function ConversationTurnPair({ turn, locale, onCitationSelect, toolbar, footer, onEdit }: { turn: ConversationTurn; locale: PlatformLocale; onCitationSelect?: (sourceId: string) => void; toolbar?: React.ReactNode; footer?:React.ReactNode; onEdit?:()=>void }) {
   return <section className="ai-conversation-turn">
-    <HumanMessage question={turn.question} locale={locale} />
-    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={onCitationSelect} toolbar={toolbar} />:<p className="ai-legacy-answer">{turn.answer}</p>}
+    <HumanMessage question={turn.question} locale={locale} onEdit={onEdit} />
+    {turn.result?<LegalAnswer result={turn.result} freshness={turn.sourceFreshness} locale={locale} onCitationSelect={onCitationSelect} toolbar={toolbar} />:<p className="ai-legacy-answer">{turn.answer}</p>}{footer}
   </section>;
 }
 
@@ -1038,3 +1021,5 @@ function resizeComposer(textarea: HTMLTextAreaElement) {
   textarea.style.height = "0px";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 176)}px`;
 }
+
+function answerCopy(result?:LegalResult|null,fallback="") {return result?legalAnswerPassages(result).map(passage=>passage.text).join("\n\n"):fallback;}

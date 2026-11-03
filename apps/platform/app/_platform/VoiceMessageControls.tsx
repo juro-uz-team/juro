@@ -1,8 +1,7 @@
 "use client";
 
-import { Select } from "../_components/Select";
 
-import { Mic, Pause, Play, RotateCcw, Square, Trash2, Volume2, X, LoaderCircle } from "lucide-react";
+import { Mic, Pause, Play, RotateCcw, Square, Trash2, Volume2, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { deleteVoiceRecording, uploadAndTranscribeVoice } from "../../lib/ai/client-voice";
@@ -231,7 +230,6 @@ export function VoiceMessageControls(props: {
 
 export function AssistantSpeechControls(props: { locale: PlatformLocale; assistantMessageId: string; workspaceId?: string; disabled?: boolean; onPhaseChange?: (phase: VoiceSpeechPhase) => void }) {
   const t = voiceCopy[props.locale], {onPhaseChange} = props;
-  const [voice, setVoice] = useState<"marin" | "cedar">("marin");
   const [loading, setLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(""), [error, setError] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -242,6 +240,9 @@ export function AssistantSpeechControls(props: { locale: PlatformLocale; assista
     requestRef.current?.abort(); const controller = new AbortController(); requestRef.current = controller;
     setLoading(true); setError(""); onPhaseChange?.("preparing");
     try {
+      const preference = await fetch("/api/platform/voice/preferences", {signal: controller.signal});
+      if (!preference.ok) throw Error(t.speechUnavailable);
+      const {voice} = await preference.json() as {voice: "marin" | "cedar"};
       const response = await fetch("/api/platform/voice/speech", {method: "POST", signal: controller.signal,
         headers: {"content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": props.locale,
           ...(props.workspaceId ? {"x-juro-workspace-id": props.workspaceId} : {})},
@@ -252,24 +253,19 @@ export function AssistantSpeechControls(props: { locale: PlatformLocale; assista
     } catch {if (!controller.signal.aborted) {setError(t.speechUnavailable); onPhaseChange?.("error");}}
     finally {if (!controller.signal.aborted) setLoading(false);}
   }
-  function stop() {audioRef.current?.pause(); setAudioUrl(""); onPhaseChange?.("completed");}
-  function handleAudioPause() {onPhaseChange?.(audioRef.current?.ended ? "completed" : "paused");}
+  function stop() {requestRef.current?.abort();audioRef.current?.pause();setLoading(false);setAudioUrl("");onPhaseChange?.("completed");}
+  useEffect(()=>{const halt=()=>{requestRef.current?.abort();audioRef.current?.pause();setLoading(false);setAudioUrl("");onPhaseChange?.("completed");};window.addEventListener("juro:stop-answer-audio",halt);return()=>window.removeEventListener("juro:stop-answer-audio",halt);},[onPhaseChange]);
+  useEffect(()=>{
+    if(!audioUrl)return;
+    const audio=audioRef.current;
+    void audio?.play().catch(()=>{setError(t.speechUnavailable);setAudioUrl("");onPhaseChange?.("error");});
+  },[audioUrl,onPhaseChange,t.speechUnavailable]);
   return <div className="ai-speech-controls" aria-label={t.speakAnswer}>
-    <div className="ai-speech-controls__actions">
-      <button type="button" disabled={props.disabled || loading} onClick={() => void speak()} title={t.syntheticNotice} aria-label={t.speakAnswer} aria-busy={loading}>
-        {loading ? <LoaderCircle className="spin" aria-hidden="true"/> : <Volume2 aria-hidden="true"/>}
-        <span>{loading ? t.preparingAudio : props.locale==="ru" ? "Слушать" : props.locale==="uz" ? "Tinglash" : "Listen"}</span>
-      </button>
-      <Select aria-label={t.aiVoice} value={voice} disabled={props.disabled || loading} onChange={(event) => {stop();setVoice(event.target.value as "marin" | "cedar");}}>
-        <option value="marin">Marin</option><option value="cedar">Cedar</option>
-      </Select>
-    </div>
-    {audioUrl && <div className="ai-speech-controls__player">
-      <audio ref={audioRef} src={audioUrl} controls autoPlay preload="metadata" aria-label={t.speakAnswer}
-        onPlay={() => {document.querySelectorAll<HTMLAudioElement>(".ai-speech-controls audio").forEach(audio=>{if(audio!==audioRef.current)audio.pause();});onPhaseChange?.("speaking");}}
-        onPause={handleAudioPause} onEnded={() => onPhaseChange?.("completed")} onError={() => {setError(t.speechUnavailable);onPhaseChange?.("error");}}/>
-      <button type="button" onClick={stop} aria-label={t.stop} title={t.stop}><X aria-hidden="true"/></button>
-    </div>}
+    <button className="ai-icon-button" type="button" disabled={props.disabled} onClick={()=>{if(loading||audioUrl)stop();else {window.dispatchEvent(new Event("juro:stop-answer-audio"));void speak();}}}
+      title={loading?t.preparingAudio:audioUrl?t.stop:t.speakAnswer} aria-label={loading?t.stop:audioUrl?t.stop:t.speakAnswer} aria-busy={loading}>
+      {loading?<LoaderCircle className="spin" aria-hidden="true"/>:audioUrl?<span className="ai-audio-stop"><Square aria-hidden="true"/></span>:<Volume2 aria-hidden="true"/>}
+    </button>
+    {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" onPlay={()=>onPhaseChange?.("speaking")} onEnded={stop} onError={()=>{stop();setError(t.speechUnavailable);onPhaseChange?.("error");}}/>}
     <span className="sr-only">{t.syntheticNotice}</span>
     {error && <p role="alert">{error}</p>}
   </div>;

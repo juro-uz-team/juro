@@ -14,6 +14,7 @@ import { Select } from "../_components/Select";
 import { usePlatformBasePath } from "./PlatformRouteContext";
 import { LawyerProfessionalProfile } from "./LawyerProfessionalProfile";
 import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
+import { VoicePreferences } from "./VoicePreferences";
 import { MemoryPanel } from "./MemoryPanel";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated profile data is hydrated after the first browser render */
@@ -1278,6 +1279,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
         <button type="submit" className="account-button" disabled={saving || !dirty} aria-busy={saving}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{copy.saveChanges}</button>
       </div></footer>
     </form>}
+    {view === "settings" && data && <VoicePreferences locale={locale} />}
     {accountType === "lawyer" && view === "profile" && <AccountDisclosure id="professional-profile" defaultOpen title={ui.professional} description={ui.professionalDescription} icon={UserRound}><LawyerProfessionalProfile locale={locale} accountName={data?.profile.fullName} /></AccountDisclosure>}
     {view === "privacy" && <AnalyticsPreferences locale={locale} />}
     {view === "settings" && <NotificationPreferencesPanel locale={locale} />}

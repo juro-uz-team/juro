@@ -811,3 +811,8 @@
 .lawyer-application-steps a:hover { background: var(--interactive-hover); border-color: var(--border-accent); }
 .lawyer-application-steps a:focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
 .lawyer-professional-profile [id^='lawyer-'] { scroll-margin-top: calc(var(--account-toolbar-height, 72px) + var(--account-heading-height, 128px) + 24px); }
+.ai-voice-preference { margin-block: 24px; }
+.ai-voice-preference > label { display: grid; gap: 8px; max-width: 320px; }
+.ai-voice-preference > p { min-height: 20px; font-size: 13px; color: var(--text-secondary); }
+
+.ai-voice-preference > label { margin-top: 20px; }
