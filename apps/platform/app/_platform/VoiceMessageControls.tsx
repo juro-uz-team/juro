@@ -4,6 +4,7 @@
 import { Mic, Pause, Play, RotateCcw, Square, Trash2, Volume2, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import {streamAnswerAudio} from "./stream-answer-audio";
 import { deleteVoiceRecording, uploadAndTranscribeVoice } from "../../lib/ai/client-voice";
 import type { VoiceRecorderPhase, VoiceSpeechPhase } from "../../lib/ai/voice-ui";
 import type { PlatformLocale } from "../../lib/platform/routing";
@@ -248,24 +249,23 @@ export function AssistantSpeechControls(props: { locale: PlatformLocale; assista
           ...(props.workspaceId ? {"x-juro-workspace-id": props.workspaceId} : {})},
         body: JSON.stringify({assistantMessageId: props.assistantMessageId, locale: props.locale, voice})});
       if (!response.ok) throw Error(t.speechUnavailable);
-      const blob = await response.blob(); if (controller.signal.aborted) return;
-      setAudioUrl(URL.createObjectURL(blob)); onPhaseChange?.("paused");
-    } catch {if (!controller.signal.aborted) {setError(t.speechUnavailable); onPhaseChange?.("error");}}
-    finally {if (!controller.signal.aborted) setLoading(false);}
+      await streamAnswerAudio(response,controller.signal,setAudioUrl);
+    } catch {if (!controller.signal.aborted) {controller.abort();setLoading(false);setAudioUrl("");setError(t.speechUnavailable); onPhaseChange?.("error");}}
   }
   function stop() {requestRef.current?.abort();audioRef.current?.pause();setLoading(false);setAudioUrl("");onPhaseChange?.("completed");}
   useEffect(()=>{const halt=()=>{requestRef.current?.abort();audioRef.current?.pause();setLoading(false);setAudioUrl("");onPhaseChange?.("completed");};window.addEventListener("juro:stop-answer-audio",halt);return()=>window.removeEventListener("juro:stop-answer-audio",halt);},[onPhaseChange]);
   useEffect(()=>{
     if(!audioUrl)return;
-    const audio=audioRef.current;
-    void audio?.play().catch(()=>{setError(t.speechUnavailable);setAudioUrl("");onPhaseChange?.("error");});
+    const audio=audioRef.current,request=requestRef.current;let disposed=false;
+    void audio?.play().catch(()=>{if(disposed||request?.signal.aborted)return;request?.abort();setLoading(false);setError(t.speechUnavailable);setAudioUrl("");onPhaseChange?.("error");});
+    return()=>{disposed=true;audio?.pause();};
   },[audioUrl,onPhaseChange,t.speechUnavailable]);
   return <div className="ai-speech-controls" aria-label={t.speakAnswer}>
     <button className="ai-icon-button" type="button" disabled={props.disabled} onClick={()=>{if(loading||audioUrl)stop();else {window.dispatchEvent(new Event("juro:stop-answer-audio"));void speak();}}}
       title={loading?t.preparingAudio:audioUrl?t.stop:t.speakAnswer} aria-label={loading?t.stop:audioUrl?t.stop:t.speakAnswer} aria-busy={loading}>
       {loading?<LoaderCircle className="spin" aria-hidden="true"/>:audioUrl?<span className="ai-audio-stop"><Square aria-hidden="true"/></span>:<Volume2 aria-hidden="true"/>}
     </button>
-    {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" onPlay={()=>onPhaseChange?.("speaking")} onEnded={stop} onError={()=>{stop();setError(t.speechUnavailable);onPhaseChange?.("error");}}/>}
+    {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" onPlaying={()=>{setLoading(false);onPhaseChange?.("speaking");}} onWaiting={()=>setLoading(true)} onEnded={stop} onError={()=>{stop();setError(t.speechUnavailable);onPhaseChange?.("error");}}/>}
     <span className="sr-only">{t.syntheticNotice}</span>
     {error && <p role="alert">{error}</p>}
   </div>;

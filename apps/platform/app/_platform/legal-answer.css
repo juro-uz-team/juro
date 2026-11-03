@@ -68,7 +68,7 @@
 
 .legal-answer__section--main > .safe-markdown p,
 .legal-answer__section--main > .legal-answer__markdown-fallback {
-  max-width: 44rem;
+  max-width: none;
   margin: 0;
   color: var(--text-primary);
   font-size: clamp(1rem, 1.1vw, 1.1rem);

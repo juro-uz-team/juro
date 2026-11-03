@@ -2,7 +2,7 @@ import {z} from "zod";
 import {assertSafeWrite,withApiErrors} from "../../../../../lib/document-builder/auth/api";
 import {parseJsonRequest} from "../../../../../lib/auth/input";
 import {optionalSignedAnswerOwner as legalChatOwner} from "../../../../../lib/legal-answer-workflow/platform-auth";
-import {aiFeedbackInputSchema,listAiFeedback,saveAiFeedback,AiFeedbackError} from "../../../../../lib/ai/feedback";
+import {aiFeedbackInputSchema,listAiFeedback,saveAiFeedback,removeAiFeedback,AiFeedbackError} from "../../../../../lib/ai/feedback";
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:{"cache-control":"private, no-store",pragma:"no-cache"}});
 export const GET=withApiErrors(async(request:Request)=>{
   const scope=await legalChatOwner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
@@ -17,5 +17,14 @@ export const POST=withApiErrors(async(request:Request)=>{
   const parsed=await parseJsonRequest(request,aiFeedbackInputSchema,12288);
   if(!parsed.ok)return response({code:"INVALID_REQUEST"},400);
   try {return response(await saveAiFeedback({...scope,...parsed.data,now:new Date().toISOString()}));}
+  catch(error){if(error instanceof AiFeedbackError)return response({code:error.code},404);throw error;}
+});
+
+export const DELETE=withApiErrors(async(request:Request)=>{
+  assertSafeWrite(request);
+  const scope=await legalChatOwner(request);if(!scope)return response({code:"WORKSPACE_UNAVAILABLE"},404);
+  const parsed=await parseJsonRequest(request,aiFeedbackInputSchema,12288);
+  if(!parsed.ok)return response({code:"INVALID_REQUEST"},400);
+  try {return response(await removeAiFeedback({...scope,...parsed.data,now:new Date().toISOString()}));}
   catch(error){if(error instanceof AiFeedbackError)return response({code:error.code},404);throw error;}
 });

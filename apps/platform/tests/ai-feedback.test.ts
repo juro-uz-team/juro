@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { AiFeedbackError, listAiFeedback, saveAiFeedback } from "../lib/ai/feedback";
+import { AiFeedbackError, listAiFeedback, saveAiFeedback, removeAiFeedback } from "../lib/ai/feedback";
 import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 const USER_ID = "user_ai_feedback";
@@ -82,4 +82,15 @@ test("AI feedback remains connected to its saved answer in the browser",()=>{
   const client=source("app/_platform/AiLawyerClient.tsx");
   assert.match(client, /\/api\/platform\/ai\/feedback/);
   assert.match(client, /assistantMessageId: answer\.messageId/);
+});
+
+test("helpful feedback can be removed only by its answer owner",async()=>{
+ const {d1:db,sqlite}=seed();
+ const input={db,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ANSWER_ID,feedbackType:"helpful" as const,comment:null,now:NOW};
+ await saveAiFeedback(input);
+ await assert.rejects(()=>removeAiFeedback({...input,userId:"another-user"}),AiFeedbackError);
+ assert.equal((await listAiFeedback(input)).length,1);
+ await removeAiFeedback(input);
+ assert.equal((await listAiFeedback(input)).length,0);
+ sqlite.close();
 });

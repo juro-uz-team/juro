@@ -86,3 +86,14 @@ export async function saveAiFeedback(input: FeedbackInput & { db: D1; workspaceI
   ]);
   return { feedbackId, replay: Boolean(existing), feedbackType: input.feedbackType, updatedAt: input.now };
 }
+
+export async function removeAiFeedback(input: Pick<FeedbackInput,"assistantMessageId"|"feedbackType"> & {db:D1;workspaceId:string;userId:string;now:string}) {
+  await ownedAiResponse(input.db,input.workspaceId,input.userId,input.assistantMessageId);
+  await input.db.batch([
+    input.db.prepare("DELETE FROM ai_feedback WHERE workspace_id=? AND user_id=? AND assistant_message_id=? AND feedback_type=?")
+      .bind(input.workspaceId,input.userId,input.assistantMessageId,input.feedbackType),
+    input.db.prepare("INSERT INTO workspace_audit_events (id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at) VALUES (?,?,?,'ai_feedback',?,'ai_feedback_removed',?,?)")
+      .bind(crypto.randomUUID(),input.workspaceId,input.userId,input.assistantMessageId,JSON.stringify({feedbackType:input.feedbackType}),input.now),
+  ]);
+  return {removed:true};
+}

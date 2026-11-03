@@ -260,6 +260,7 @@ test("TTS is server-side, bounded to a configured model/voice, and returns provi
     },
   });
   assert.equal(response.status, 200);
+  await response.arrayBuffer();
   assert.equal(request.current?.url, "https://api.openai.com/v1/audio/speech");
   assert.equal(request.current?.headers.get("authorization"), "Bearer test-openai-key");
   assert.ok(request.current);
@@ -272,7 +273,7 @@ test("TTS is server-side, bounded to a configured model/voice, and returns provi
 
 test("English TTS sends an explicit English voice instruction", async () => {
   let providerRequest: Request | null = null;
-  await synthesizeAssistantSpeech({
+  const speechResponse = await synthesizeAssistantSpeech({
     apiKey: "test-openai-key",
     model: "gpt-4o-mini-tts",
     voice: "cedar",
@@ -283,6 +284,7 @@ test("English TTS sends an explicit English voice instruction", async () => {
       return new Response(Uint8Array.from([0x49, 0x44, 0x33]), { headers: { "content-type": "audio/mpeg" } });
     },
   });
+  await speechResponse.arrayBuffer();
   assert.ok(providerRequest);
   const body = JSON.parse(await (providerRequest as Request).text()) as Record<string, unknown>;
   assert.match(String(body.instructions), /Speak calmly, professionally and clearly/);
@@ -297,4 +299,18 @@ test("voice retention is inert before migration 0066", async () => {
     eligible: 0,
     purged: 0,
   });
+});
+
+test("TTS forwards the first audio chunk before completion and cancels upstream",async()=>{
+ let upstream:ReadableStreamDefaultController<Uint8Array>|undefined;let cancelled=false;
+ const response=await synthesizeAssistantSpeech({apiKey:"test",model:"test",voice:"marin",text:"Hello",locale:"en",fetcher:async()=>new Response(new ReadableStream<Uint8Array>({start(target){upstream=target;target.enqueue(new Uint8Array([1,2,3]));},cancel(){cancelled=true;}}))});
+ const reader=response.body!.getReader();assert.deepEqual((await reader.read()).value,new Uint8Array([1,2,3]));
+ upstream!.enqueue(new Uint8Array([4,5]));assert.deepEqual((await reader.read()).value,new Uint8Array([4,5]));
+ await reader.cancel();assert.equal(cancelled,true);
+});
+
+test("TTS streams every chunk of a long answer in order",async()=>{
+ const inputs:string[]=[];const text="Complete legal guidance. ".repeat(350)+"Final question.";
+ const response=await synthesizeAssistantSpeech({apiKey:"test",model:"test",voice:"marin",text,locale:"en",fetcher:async(_url,init)=>{inputs.push(JSON.parse(String(init?.body)).input);return new Response(new Uint8Array([inputs.length]));}});
+ const audio=new Uint8Array(await response.arrayBuffer());assert.equal(inputs.join(""),text);assert(inputs.every(value=>value.length<=4096));assert.deepEqual([...audio],inputs.map((_,index)=>index+1));
 });
