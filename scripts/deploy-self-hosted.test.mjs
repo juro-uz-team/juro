@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { coordinateDeploymentActivation, corpusDeploymentCommand } from "./deploy-self-hosted.mjs";
+import { coordinateDeploymentActivation, corpusDeploymentCommand, pruneReleases } from "./deploy-self-hosted.mjs";
+import { mkdtemp, mkdir, readdir, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("retention keeps the actual rollback release instead of a newer failed build", async () => {
+  const root = await mkdtemp(join(tmpdir(), "juro-release-retention-"));
+  try {
+    const releases = join(root, "releases");
+    const names = [1, 2, 3, 4].map(i => `${String(i).repeat(40)}-${i}`);
+    for (const name of names) await mkdir(join(releases, name), { recursive: true });
+    await symlink(join(releases, names[2]), join(root, "current"), "junction");
+    const removed = await pruneReleases(root, join(releases, names[2]), join(releases, names[1]));
+    assert.deepEqual(removed.sort(), [join(releases, names[0]), join(releases, names[3])].sort());
+    assert.deepEqual((await readdir(releases)).sort(), [names[1], names[2]].sort());
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("retention refuses changed current and protects referenced releases and symlinks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "juro-release-retention-"));
+  try {
+    const releases = join(root, "releases");
+    const active = join(releases, `${"a".repeat(40)}-1`);
+    const referenced = join(releases, `${"b".repeat(40)}-2`);
+    await mkdir(active, { recursive: true });
+    await mkdir(referenced);
+    await symlink(active, join(root, "current"), "junction");
+    await symlink(root, join(releases, `${"c".repeat(40)}-3`), "junction");
+    await assert.rejects(pruneReleases(root, referenced, active), /Active release changed/);
+    await assert.rejects(pruneReleases(root, active, root), /escapes/);
+    assert.deepEqual(await pruneReleases(root, active, undefined, { referenced: async () => referenced }), []);
+    assert.equal((await readdir(releases)).length, 3);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 const target = { environment: "production", revision: "a".repeat(40), release: "/srv/juro/production/releases/new", previous: "/srv/juro/production/releases/old" };
 const originalSelectionSha256 = "b".repeat(64);

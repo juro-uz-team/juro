@@ -1,10 +1,58 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { access, lstat, mkdir, readFile, readlink, realpath, rename, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, rmdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
+
+/** Retain the active release and its explicit rollback target, never a failed build. */
+export async function pruneReleases(root, active, previous, { referenced = async () => "" } = {}) {
+  const releases = join(await realpath(root), "releases");
+  if (await realpath(releases) !== releases) throw new Error("Release directory must not be a symlink");
+  for (const path of [active, previous].filter(Boolean)) {
+    if (dirname(path) !== releases || await realpath(path) !== path) throw new Error("Retained release escapes release directory");
+  }
+  if (await realpath(join(root, "current")) !== active) throw new Error("Active release changed before cleanup");
+  const references = await referenced();
+  const removed = [];
+  for (const entry of await readdir(releases, { withFileTypes: true })) {
+    const path = join(releases, entry.name);
+    if (!entry.isDirectory() || !/^[a-f0-9]{40}-\d+$/.test(entry.name) || path === active || path === previous) continue;
+    if (references.includes(path)) {
+      console.warn(`Retaining release still referenced by a process or service: ${path}`);
+      continue;
+    }
+    if (await realpath(path) !== path || await realpath(join(root, "current")) !== active) throw new Error("Release paths changed before cleanup");
+    await rm(path, { recursive: true });
+    removed.push(path);
+  }
+  return removed;
+}
+
+async function runtimeReleaseReferences(root) {
+  const references = [];
+  for (const entry of await readdir("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    for (const name of ["cmdline", "maps"]) {
+      try { references.push(await readFile(`/proc/${entry}/${name}`, "utf8")); }
+      catch (error) { if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(error.code)) throw error; }
+    }
+    try { references.push(await readlink(`/proc/${entry}/cwd`)); } catch { /* Other accounts may be inaccessible. */ }
+  }
+  async function units(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true }).catch(error => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await units(path);
+      else if (entry.isFile()) references.push(await readFile(path, "utf8"));
+    }
+  }
+  await units(join(root, ".config/systemd/user"));
+  return references.join("\n");
+}
 
 /** Application-only releases trust the provisioned corpus and do not change its selection. */
 export function corpusDeploymentCommand(config, settings) {
@@ -153,6 +201,7 @@ await mkdir(join(root, "releases"), { recursive: true, mode: 0o700 });
 const lock = join(root, ".deploy-lock");
 await mkdir(lock, { mode: 0o700 }); // Atomic host-side lock; stale locks require operator inspection.
 let previous;
+let candidate;
 let preserveLock = false;
 try {
   const current = join(root, "current");
@@ -180,6 +229,7 @@ try {
     return;
   }
   const release = join(root, "releases", `${revision}-${Date.now()}`);
+  candidate = release;
   await writeFile(join(lock, "owner.json"), JSON.stringify({ version: 1, environment, revision, release, previous: previous ?? null }), { flag: "wx", mode: 0o600 });
   run("git", ["clone", "--single-branch", "--branch", branch, "--no-checkout", config.repository, release], root);
   run("git", ["checkout", "--detach", revision], release);
@@ -218,9 +268,32 @@ try {
       await rename(next, current);
     },
   });
+  // Cleanup follows successful activation, so a failed build cannot displace rollback.
+  // A cleanup error must never roll back an already activated application.
+  try {
+    if (previous) {
+      const next = join(root, `.previous-${Date.now()}`);
+      await symlink(previous, next);
+      await rename(next, join(root, "previous"));
+    }
+    const removed = await pruneReleases(root, release, previous, { referenced: () => runtimeReleaseReferences(root) });
+    console.log(`Removed ${removed.length} obsolete ${environment} releases; retained active and rollback releases`);
+  } catch (error) { console.warn(`Release cleanup requires attention: ${error.message}`); }
   console.log(`Activated ${environment} revision ${revision}`);
 } catch (error) {
   preserveLock = error.preserveDeploymentLock === true;
+  if (!preserveLock && candidate) {
+    try {
+      const active = await realpath(join(root, "current")).catch(error => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (active !== candidate && dirname(candidate) === join(root, "releases")
+        && !(await runtimeReleaseReferences(root)).includes(candidate)) {
+        await rm(candidate, { recursive: true, force: true });
+      }
+    } catch (cleanupError) { console.warn(`Failed release cleanup requires attention: ${cleanupError.message}`); }
+  }
   console.error(error.message);
   throw error;
 } finally {
