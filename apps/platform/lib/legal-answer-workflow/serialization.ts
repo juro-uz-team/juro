@@ -51,7 +51,9 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
       sources: structuredClone(presentation.sources), legalDatabaseAsOf: presentation.legalDatabaseAsOf,
       successOutlook: null, suggestedDocument: null, suggestLawyer: false,
       evidenceMode: presentation.sources.length ? "official" : "none", validationMethod: "programmatic",
-      sourceValidationStatus: "unavailable", ...(!clarification ? { failureReason: "official_research_unavailable" as const } : {}),
+      // An unfinished legal assessment does not establish a search/document outage.
+      // Keep its specific gaps visible instead of selecting legacy outage copy.
+      sourceValidationStatus: "unavailable",
     };
   }
   const content = outcome.content;

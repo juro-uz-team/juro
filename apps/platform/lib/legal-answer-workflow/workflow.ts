@@ -13,7 +13,7 @@ import { createCorpusResearch } from "./corpus-research";
 import { ResearchWorkspace } from "./research-workspace";
 import { RequestController, requestControlPolicy, type StopReason } from "./request-controller";
 import { withResearchDiagnostics, emitResearchDiagnostic } from "./diagnostics";
-import { prepareInitialSearch } from "./initial-search";
+import { namedDocumentQuery, prepareInitialSearch } from "./initial-search";
 import { IssueWriting, issuedResearchTurn, issueUpdateSchema } from "./issue-writing";
 import { coverageRecordSchema } from "./research-workspace";
 
@@ -50,6 +50,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
   const workspace = new ResearchWorkspace();
   const issueWriting = new IssueWriting(request.language);
   const inventory = workspace.inventory;
+  const documentQuery = namedDocumentQuery(request.question);
   // Longer or contextual questions still use the full interpretation path;
   // eligibility changes scheduling, never the supplied conversation or law.
   const entryNavigation = Boolean(ports.corpus.entryNavigation && ports.corpus.describeCandidates
@@ -70,7 +71,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
   };
   try {
     request.onProgress?.("interpreting");
-    if (entryNavigation) await corpus.discover([request.question], { scopes: [{ kind: "current" }] });
+    if (entryNavigation) await corpus.discover([...new Set([request.question, ...documentQuery ? [documentQuery] : []])], { scopes: [{ kind: "current" }] });
     controller.providerStarted();
     const raw = await withinSignal(researchSignal, () => ports.model.complete({ stage: "interpret", researchSession: true,
       instruction: entryInstruction, input: { question: request.question, language: request.language, format: request.format,
@@ -90,13 +91,13 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
       throw new Error("INTERPRETATION_DATE_MISMATCH");
     if (interpretation.needsClarification) return await publish({ kind: "clarification_required", checkedEvidence: [],
       clarificationQuestions: interpretation.clarificationQuestions });
-    const unfinished = async (reason: StopReason) => {
+    const unfinished = async (reason: StopReason, gaps?: ResearchTurn["gaps"]) => {
       controller.stop(reason);
       const withdrawal = issueWriting.withdrawIncomplete();
       if (withdrawal) request.onWriting?.(withdrawal);
       return publish({ kind: "insufficient_evidence", researchIncomplete: true, checkedEvidence: workspace.active(),
         revisionNotes: issueWriting.correctionNotes(),
-        gaps: interpretation.requirements.map(item => ({ requirementId: item.id, description: unavailableText[request.language][
+        gaps: gaps?.length ? gaps : interpretation.requirements.map(item => ({ requirementId: item.id, description: unavailableText[request.language][
           ["context_capacity", "context_repair_limit", "provider_budget", "provider_limit", "composition_deadline"].includes(reason) ? "write" : "research"] })),
         clarificationQuestions: interpretation.clarificationQuestions });
     };
@@ -109,7 +110,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
       for (const candidateId of selected.filter(id => !eligible.includes(id))) workspace.record({
         action: { requirementId: interpretation.requirements[0].id, candidateId }, kind: "invalid", code: "RECOVERY_CANDIDATE_SCOPE",
       });
-      const queries = (await initialSearch.queries(interpretation)).filter(query => !(eligible.length
+      const queries = [...new Set([...(await initialSearch.queries(interpretation)), ...documentQuery ? [documentQuery] : []])].filter(query => !(eligible.length
         && query === request.question && interpretation.scopes.length === 1 && interpretation.scopes[0].kind === "current"));
       await Promise.all([
         ...(queries.length ? [corpus.acquire(queries, interpretation)] : []),
@@ -198,7 +199,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
           checkWrittenAnswer(content, interpretation, null, evidence);
           return await publish({ kind: "answer", content, evidence });
         }
-        if (turn.decision !== "research") return await unfinished("research_unfinished");
+        if (turn.decision !== "research") return await unfinished("research_unfinished", turn.gaps);
         if (!canResearch) return await unfinished("repeated_work");
         navigation.beginBatch();
         const selections = turn.actions.filter(action => "selectSourceIds" in action);

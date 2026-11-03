@@ -1,5 +1,16 @@
 import type { Interpretation, LegalRequest, WorkflowPorts } from "./contracts";
 
+/** Preserve an explicitly supplied act title separately from the conversational request. */
+export function namedDocumentQuery(question: string): string | undefined {
+  const text = question.trim();
+  const quoted = /[«“"]([^»”"\n]{40,1000})[»”"]/u.exec(text)?.[1];
+  const prefix = text.split(/\s*[;\n]\s*/u)[0];
+  const title = (quoted ?? (prefix !== text ? prefix : undefined))?.trim();
+  if (!title || title.length < 40 || title.length > 1000
+    || !/^(?:об?\s|закон\s|постановление\s|указ\s|on\s|law\s|resolution\s|decree\s)/iu.test(title)) return undefined;
+  return title;
+}
+
 /** Speculative navigation overlaps interpretation; only its confirmed scope may enter research. */
 export function prepareInitialSearch(request: LegalRequest, corpus: WorkflowPorts["corpus"], signal: AbortSignal) {
   const local = new AbortController(), searchSignal = AbortSignal.any([signal, local.signal]);
