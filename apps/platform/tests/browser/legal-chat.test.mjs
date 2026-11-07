@@ -289,3 +289,19 @@ for (const width of [390, 900, 1280, 1920, 2560]) test(`chat progress and comple
   assert.notEqual(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY),'clip','Other routes regain normal document scrolling');
   await page.emulateMedia({reducedMotion:'reduce'});
 });
+
+for (const width of [390,1920]) test(`loading cards and history control remain legible at ${width}px`, async context=>{
+  const page=await browser.newPage({viewport:{width,height:900}});context.after(()=>page.close());
+  await page.route('**/api/platform/ai?**',()=>{});
+  await page.route('**/api/platform/ai',()=>{});
+  await page.goto(origin+'/en/individual/ai-chat?conversationId=loading');await styleChat(page);
+  await page.locator('.ai-loading-conversation').waitFor();
+  const history=page.getByRole('button',{name:'History',exact:true});
+  assert(await history.isVisible());
+  const label=await history.locator('span').boundingBox();assert(label.width>20);
+  await history.hover();
+  assert.equal(await page.locator('.ai-conversation-marker').count(),0);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  const dir=new URL('../../../../.scratch/chat-loading-polish/',import.meta.url);await mkdir(dir,{recursive:true});
+  await page.screenshot({path:fileURLToPath(new URL(`loading-${width}.png`,dir))});
+});

@@ -396,8 +396,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         <button className="ai-new" onClick={startNewQuestion}><Plus />{text("Новый вопрос", "Yangi savol", "New question")}</button>
         <nav className="ai-conversation-list" aria-label={text("История диалогов", "Suhbatlar tarixi", "Conversation history")}>
           {conversationDeleteError && <p className="ai-conversation-delete-error" role="alert">{conversationDeleteError}</p>}
-          {!status && !error ? <ChatSkeleton label={text("Загружаем историю…","Tarix yuklanmoqda…","Loading history…")} /> : conversations.length ? conversations.map((item) => <div className="ai-conversation-item" key={item.id}>
-            <a onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();window.history.pushState(null,"",aiLocation(new URLSearchParams({conversationId:item.id})));}} aria-current={item.id === selectedConversationId ? "page" : undefined} href={aiLocation(new URLSearchParams({ conversationId: item.id }))}><span className="ai-conversation-marker" aria-hidden="true" /><strong>{item.title}</strong><small>{formatDate(item.updatedAt, locale)}</small></a>
+          {!status && !error ? <ChatSkeleton variant="history" label={text("Загружаем историю…","Tarix yuklanmoqda…","Loading history…")} /> : conversations.length ? conversations.map((item) => <div className="ai-conversation-item" key={item.id}>
+            <a onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();window.history.pushState(null,"",aiLocation(new URLSearchParams({conversationId:item.id})));}} aria-current={item.id === selectedConversationId ? "page" : undefined} href={aiLocation(new URLSearchParams({ conversationId: item.id }))}><strong>{item.title}</strong><small>{formatDate(item.updatedAt, locale)}</small></a>
             <button className="ai-conversation-delete" type="button" disabled={sending || Boolean(deletingConversationId)} aria-expanded={deleteCandidateId === item.id} aria-label={text(`Удалить диалог «${item.title}»`, `“${item.title}” suhbatini o‘chirish`, `Delete conversation “${item.title}”`)} title={text("Удалить диалог", "Suhbatni o‘chirish", "Delete conversation")} onClick={() => toggleConversationDeletion(item.id)}><Trash2 /></button>
             {deleteCandidateId === item.id && <div className="ai-conversation-delete-confirm" role="group" aria-label={text("Подтверждение удаления", "O‘chirishni tasdiqlash", "Confirm deletion")}><span>{text("Удалить без возможности восстановления?", "Tiklash imkoniyatisiz o‘chirilsinmi?", "Permanently delete this conversation?")}</span><button type="button" disabled={Boolean(deletingConversationId)} onClick={() => setDeleteCandidateId("")}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button className="is-danger" type="button" disabled={Boolean(deletingConversationId)} onClick={() => void deleteConversation(item.id)}>{deletingConversationId === item.id ? text("Удаляем…", "O‘chirilmoqda…", "Deleting…") : text("Удалить", "O‘chirish", "Delete")}</button></div>}
           </div>) : <p>{text("История появится после первого обработанного вопроса.", "Tarix birinchi qayta ishlangan savoldan keyin paydo bo‘ladi.", "Your history will appear after the first completed question.")}</p>}
@@ -1050,4 +1050,13 @@ function resizeComposer(textarea: HTMLTextAreaElement) {
 
 function answerCopy(result?:LegalResult|null,fallback="") {return result?legalAnswerPassages(result).map(passage=>passage.text).join("\n\n"):fallback;}
 
-function ChatSkeleton({label}:{label:string}) { return <div className="ai-loading-messages" role="status" aria-label={label}><span className="sr-only">{label}</span>{[0,1,2].map(index=><div className="ai-loading-message" key={index} aria-hidden="true"><i/><i/><i/></div>)}</div>; }
+function ChatSkeleton({label,variant="conversation"}:{label:string;variant?:"conversation"|"history"}) {
+  const lines=(count:number)=>Array.from({length:count},(_,index)=><i className="ai-skeleton-line" key={index}/>);
+  return <div className={`ai-loading-${variant}`} role="status" aria-label={label}>
+    <span className="sr-only">{label}</span>
+    {variant==="history" ? Array.from({length:5},(_,index)=><div className="ai-history-placeholder" key={index} aria-hidden="true"><div>{lines(2)}</div><i className="ai-skeleton-line ai-skeleton-meta"/></div>) : <div className="ai-transcript" aria-hidden="true">
+      <div className="ai-human-turn"><div className="ai-human-message"><i className="ai-skeleton-line ai-skeleton-label"/>{lines(1)}</div></div>
+      <div className="ai-answer"><i className="ai-skeleton-line ai-skeleton-label"/><div className="ai-skeleton-paragraph">{lines(5)}</div><i className="ai-skeleton-line ai-skeleton-heading"/><div className="ai-skeleton-paragraph">{lines(3)}</div></div>
+    </div>}
+  </div>;
+}

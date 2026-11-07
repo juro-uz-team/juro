@@ -804,15 +804,32 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 .ai-identity > span { color:var(--brand-gold-text); display:grid; place-items:center; }
 .ai-dialog > header .ai-panel-controls { grid-column:1; grid-row:1; margin:0; justify-self:start; }
 .ai-dialog > header .ai-composer-mode { grid-column:3; grid-row:1; justify-self:end; }
-.ai-panel-controls button span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
-.ai-panel-controls button { justify-content:center; }
-.ai-loading-messages { display:grid; gap:20px; padding:20px; width:100%; }
-.ai-loading-message { padding:20px; border-radius:16px; background:var(--ai-panel); display:grid; gap:12px; }
-.ai-loading-message:nth-child(2) { margin-left:20%; }
-.ai-loading-message i { height:10px; border-radius:8px; background:var(--ai-line); animation:ai-loading-pulse 1.6s ease-in-out infinite alternate; }
-.ai-loading-message i:last-child { width:60%; }
-@keyframes ai-loading-pulse { to { opacity:.35; } }
-@media(prefers-reduced-motion:reduce) { .ai-loading-message i { animation:none; } }
+/* Loading geometry follows the real conversation and navigation cards. */
+.ai-dialog > header .ai-panel-controls button { width:auto; min-width:44px; padding:0 12px; justify-content:center; gap:8px; }
+.ai-dialog > header .ai-panel-controls button span { position:static; width:auto; height:auto; overflow:visible; clip:auto; clip-path:none; }
+.ai-panel-controls button:hover, .ai-panel-controls button[aria-expanded="true"] { background:var(--surface-selected); color:var(--brand-gold-text); border-color:var(--border-accent); }
+.ai-panel-controls button:focus-visible { outline:2px solid var(--focus-ring); outline-offset:3px; }
+.ai-panel-controls button:active { transform:scale(.97); }
+.ai-conversation-list a { grid-template-columns:minmax(0,1fr); padding-left:16px; }
+.ai-conversation-item:not(:last-child)::after { content:none; }
+.ai-loading-conversation { width:100%; }
+.ai-loading-conversation .ai-transcript { display:grid; gap:56px; }
+.ai-loading-conversation .ai-human-turn { width:min(72%,650px); }
+.ai-loading-conversation .ai-human-message { display:grid; gap:16px; }
+.ai-skeleton-line { display:block; height:12px; width:100%; border-radius:6px; background:color-mix(in srgb,var(--text-secondary) 20%,transparent); animation:ai-loading-pulse 1.6s ease-in-out infinite alternate; }
+.ai-skeleton-label { width:64px; height:10px; background:color-mix(in srgb,var(--brand-gold-text) 25%,transparent); }
+.ai-skeleton-heading { width:36%; height:16px; margin:36px 0 20px; }
+.ai-skeleton-paragraph { display:grid; gap:16px; margin-top:24px; }
+.ai-skeleton-paragraph .ai-skeleton-line:last-child { width:68%; }
+.ai-loading-history { display:grid; gap:12px; }
+.ai-history-placeholder { min-height:80px; padding:16px 48px 16px 16px; border:1px solid var(--border-subtle); border-radius:.8rem; background:var(--surface-raised); }
+.ai-history-placeholder > div { display:grid; gap:8px; }
+.ai-history-placeholder .ai-skeleton-line { height:10px; }
+.ai-history-placeholder > div .ai-skeleton-line:last-child { width:76%; }
+.ai-history-placeholder .ai-skeleton-meta { width:60%; height:8px; margin-top:12px; }
+@keyframes ai-loading-pulse { to { opacity:.4; } }
+@media(prefers-reduced-motion:reduce) { .ai-skeleton-line { animation:none; } }
+@media(max-width:700px) { .ai-dialog > header { grid-template-rows:auto auto; } .ai-dialog > header .ai-identity { grid-column:1 / -1; grid-row:1; } .ai-dialog > header .ai-panel-controls, .ai-dialog > header .ai-composer-mode { grid-row:2; } .ai-loading-conversation .ai-transcript { gap:40px; } .ai-loading-conversation .ai-answer { padding:20px 16px; } }
 @media(max-width:700px) { .ai-dialog > header { grid-template-columns:44px minmax(0,1fr) auto; gap:8px; padding:12px; } .ai-identity > span { display:none; } .ai-dialog > header .ai-identity { justify-self:center; } .ai-identity p { display:none; } .ai-dialog .ai-identity h1 { font-size:14px; } }
 
 @media(max-width:1380px) { .ai-workspace > .ai-context { position:absolute; top:0; right:0; bottom:0; width:min(360px,100%); } }
