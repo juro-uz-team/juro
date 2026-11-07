@@ -40,6 +40,7 @@ before(async()=>{
       builder.onResolve({filter:/^next\/(navigation|image|link)$/},args=>({path:args.path,namespace:"adapter"}));
       builder.onLoad({filter:/.*/,namespace:"adapter"},args=>({contents:args.path.endsWith("navigation")
         ? `import {useSyncExternalStore} from 'react';
+           for(const method of ['pushState','replaceState']){const original=history[method].bind(history);history[method]=(...args)=>{original(...args);dispatchEvent(new PopStateEvent('popstate'));};}
            const subscribe=callback=>{addEventListener('popstate',callback);return()=>removeEventListener('popstate',callback)};
            export const usePathname=()=>useSyncExternalStore(subscribe,()=>location.pathname);
            export const useSearchParams=()=>new URLSearchParams(useSyncExternalStore(subscribe,()=>location.search));
@@ -270,10 +271,7 @@ for (const width of [390, 900, 1280, 1920, 2560]) test(`chat progress and comple
   assert.deepEqual(await page.locator('.ai-current-answer .legal-answer__section--main .safe-markdown p').evaluate(proseStyle),streamedStyle,'Prose styles and measure stay identical');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'No horizontal page overflow');
   const composer=await page.locator('.ai-composer').boundingBox();assert(composer.y+composer.height<=900,'Composer stays in the viewport');
-  if(width<=980) {
-    const contextBar=await page.locator('.ai-mobile-context-bar').boundingBox();
-    assert(contextBar.y>=composer.y+composer.height-1,'Context controls must not cover the composer');
-  }
+  assert(await page.locator('.ai-context-toggle').isVisible(), 'Context remains accessible in the header');
   await page.screenshot({path:fileURLToPath(new URL(`final-${width}.png`,dir))});
   await page.evaluate(()=>window.scrollTo(0,100000));
   assert.equal(await page.evaluate(()=>window.scrollY),0,'The outer page cannot scroll below the workspace');

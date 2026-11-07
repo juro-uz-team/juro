@@ -5,7 +5,7 @@ import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
 
-import { PanelRightClose, PanelRightOpen, AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, History, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, Trash2, X } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, Trash2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveVoiceModeState, type VoiceModeState, type VoiceRecorderPhase, type VoiceSpeechPhase } from "../../lib/ai/voice-ui";
@@ -185,7 +185,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const composerRef=useRef<HTMLTextAreaElement>(null),transcriptRef=useRef<HTMLDivElement>(null),latestAnswerRef=useRef<HTMLDivElement>(null);
   const mobileContextRef=useRef<HTMLElement>(null),mobileFactsTabRef=useRef<HTMLButtonElement>(null),mobileSourcesTabRef=useRef<HTMLButtonElement>(null);
   const planConfirmationRef=useRef<HTMLDivElement>(null),streamAbortRef=useRef<AbortController|null>(null);
-  const retryRef=useRef<(AiRequestPayload&{idempotencyKey:string})|null>(null),nearBottom=useRef(true);
+  const retryRef=useRef<(AiRequestPayload&{idempotencyKey:string})|null>(null),nearBottom=useRef(true),lastScrollTop=useRef(0);
   const handoffKey=useRef(crypto.randomUUID()),handoffGeneration=useRef(0);
   const selectedConversationId=params.get("conversationId")??"",selectedBranchId=params.get("branchId")??"",intakeHandle=params.get("intake")??"";
   useLayoutEffect(()=>{activeScope.current=workspaceId;currentMessage.current=answer?.messageId;currentSelection.current=selectedConversationId;},[workspaceId,answer?.messageId,selectedConversationId]);
@@ -288,13 +288,10 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       const previousTurns=previous ? conversationTurns(previous) : [];
       const forkIndex=previousTurns.findIndex(turn=>turn.requestMessageId===payload.sourceMessageId
         ||turn.responseMessageId===payload.sourceMessageId);
-      let delivered:Answer={...previous,...saved,conversationId:saved.conversationId,
+      const delivered:Answer={...previous,...saved,conversationId:saved.conversationId,
         question:payload.question||previous?.question||"",facts:previous?.facts??[],
         turns:payload.operation==="follow_up"?previousTurns:forkIndex>=0?previousTurns.slice(0,forkIndex):undefined,
         operation:payload.operation,sourceFreshness:undefined};
-      try {
-        delivered=await requestJson<Answer>(`/api/platform/ai?${new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})})}`,{signal:ancillarySignal()});
-      } catch { /* The committed answer remains available if metadata reload fails. */ }
       if(controller.signal.aborted)return;
       deliveredAnswerRef.current={workspaceId,answer:delivered};
       setAnswer(delivered);
@@ -310,7 +307,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       if(controller.signal.aborted)return;
       const nextParams=new URLSearchParams({conversationId:saved.conversationId,...(saved.branchId?{branchId:saved.branchId}:{})});
       savedDeliveryRef.current=null;
-      router.replace(aiLocation(nextParams, !intakeFinalized), { scroll: false });
+      window.history.replaceState(null, "", aiLocation(nextParams, !intakeFinalized));
     } catch(cause){
       if(streamAbortRef.current!==controller)return;
       retryRef.current=shouldReuseLegalChatRequest(cause)?payload:{...payload,idempotencyKey:crypto.randomUUID()};
@@ -331,16 +328,16 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   };
   const selectVersion=(branchId:string)=>{
     if(!answer||sending)return;
-    router.replace(aiLocation(new URLSearchParams({conversationId:answer.conversationId,branchId})),{scroll:false});
+    window.history.replaceState(null, "", aiLocation(new URLSearchParams({conversationId:answer.conversationId,branchId})));
   };
-  const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setReplacementSource("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;router.push(aiLocation(new URLSearchParams()));};
+  const startNewQuestion=()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();setSending(false);setLoadingConversation(false);setAnswer(null);setQuestion("");setReplacementSource("");setOptimisticQuestion("");setError("");setCanRetry(false);retryRef.current=null;window.history.pushState(null, "", aiLocation(new URLSearchParams()));};
   const changeQuestion=(event:React.ChangeEvent<HTMLTextAreaElement>)=>{setQuestion(event.target.value);resizeComposer(event.currentTarget);};
   const handleComposerKeyDown=(event:KeyboardEvent<HTMLTextAreaElement>)=>{if(event.key==="Enter"&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();event.currentTarget.form?.requestSubmit();}};
   const selectFollowUpQuestion=(value:string)=>{setQuestion(value);composerRef.current?.focus();};
   const changeLegalContextDate=(value:string)=>setLegalContextDate(value);
   const acceptVoiceTranscript=({recordingId,transcript}:{recordingId:string;transcript:string})=>{setVoiceRecordingId(recordingId);setQuestion(transcript);composerRef.current?.focus();};
   const setComposerMode=(mode:"text"|"voice")=>setVoiceMode(mode==="voice");
-  const trackTranscriptScroll=()=>{const element=transcriptRef.current;if(element)nearBottom.current=element.scrollHeight-element.scrollTop-element.clientHeight<100;};
+  const trackTranscriptScroll=()=>{const element=transcriptRef.current;if(element){if(element.scrollTop<lastScrollTop.current-1)nearBottom.current=false;else if(element.scrollHeight-element.scrollTop-element.clientHeight<8)nearBottom.current=true;lastScrollTop.current=element.scrollTop;}};
   const toggleHistory=()=>{const next=!historyCollapsed;setHistoryCollapsed(next);try{localStorage.setItem("juro:ai-history",next?"collapsed":"expanded");}catch{/* Keep the in-memory preference when storage is unavailable. */}},toggleEvidencePanel=()=>{if(window.matchMedia("(max-width: 1380px)").matches)setMobileContextOpen(value=>!value);else setEvidenceCollapsed(value=>!value);};
   const closeMobileContext=()=>{setMobileContextOpen(false);setEvidenceCollapsed(true);};
   const handleMobileContextTabKeyDown=(event:KeyboardEvent<HTMLButtonElement>)=>{if(["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){event.preventDefault();const tab=!answer?.facts.length?"sources":event.key==="Home"?"facts":event.key==="End"?"sources":mobileContextTab==="facts"?"sources":"facts";setMobileContextTab(tab);(tab==="facts"?mobileFactsTabRef:mobileSourcesTabRef).current?.focus();}};
@@ -399,8 +396,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         <button className="ai-new" onClick={startNewQuestion}><Plus />{text("Новый вопрос", "Yangi savol", "New question")}</button>
         <nav className="ai-conversation-list" aria-label={text("История диалогов", "Suhbatlar tarixi", "Conversation history")}>
           {conversationDeleteError && <p className="ai-conversation-delete-error" role="alert">{conversationDeleteError}</p>}
-          {conversations.length ? conversations.map((item) => <div className="ai-conversation-item" key={item.id}>
-            <a aria-current={item.id === selectedConversationId ? "page" : undefined} href={aiLocation(new URLSearchParams({ conversationId: item.id }))}><span className="ai-conversation-marker" aria-hidden="true" /><strong>{item.title}</strong><small>{formatDate(item.updatedAt, locale)}</small></a>
+          {!status && !error ? <ChatSkeleton label={text("Загружаем историю…","Tarix yuklanmoqda…","Loading history…")} /> : conversations.length ? conversations.map((item) => <div className="ai-conversation-item" key={item.id}>
+            <a onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();window.history.pushState(null,"",aiLocation(new URLSearchParams({conversationId:item.id})));}} aria-current={item.id === selectedConversationId ? "page" : undefined} href={aiLocation(new URLSearchParams({ conversationId: item.id }))}><span className="ai-conversation-marker" aria-hidden="true" /><strong>{item.title}</strong><small>{formatDate(item.updatedAt, locale)}</small></a>
             <button className="ai-conversation-delete" type="button" disabled={sending || Boolean(deletingConversationId)} aria-expanded={deleteCandidateId === item.id} aria-label={text(`Удалить диалог «${item.title}»`, `“${item.title}” suhbatini o‘chirish`, `Delete conversation “${item.title}”`)} title={text("Удалить диалог", "Suhbatni o‘chirish", "Delete conversation")} onClick={() => toggleConversationDeletion(item.id)}><Trash2 /></button>
             {deleteCandidateId === item.id && <div className="ai-conversation-delete-confirm" role="group" aria-label={text("Подтверждение удаления", "O‘chirishni tasdiqlash", "Confirm deletion")}><span>{text("Удалить без возможности восстановления?", "Tiklash imkoniyatisiz o‘chirilsinmi?", "Permanently delete this conversation?")}</span><button type="button" disabled={Boolean(deletingConversationId)} onClick={() => setDeleteCandidateId("")}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button className="is-danger" type="button" disabled={Boolean(deletingConversationId)} onClick={() => void deleteConversation(item.id)}>{deletingConversationId === item.id ? text("Удаляем…", "O‘chirilmoqda…", "Deleting…") : text("Удалить", "O‘chirish", "Delete")}</button></div>}
           </div>) : <p>{text("История появится после первого обработанного вопроса.", "Tarix birinchi qayta ishlangan savoldan keyin paydo bo‘ladi.", "Your history will appear after the first completed question.")}</p>}
@@ -408,9 +405,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         </nav>
       </aside>
       <section className="ai-dialog" aria-labelledby="ai-lawyer-heading">
-        <header><span><Bot /></span><div><h1 id="ai-lawyer-heading">{text("AI-юрист JURO", "JURO AI-yuristi", "JURO AI Lawyer")}</h1><p>{status?.configured ? (usage?.limit === null
+        <header><div className="ai-identity"><span><Bot /></span><div><h1 id="ai-lawyer-heading">{text("AI-юрист JURO", "JURO AI-yuristi", "JURO AI Lawyer")}</h1><p>{status?.configured ? (usage?.limit === null
           ? text(`Право Узбекистана · безлимитно (локально) · ${usage.used} ответов`, `O‘zbekiston huquqi · lokal cheklanmagan · ${usage.used} javob`, `Law of Uzbekistan · unlimited locally · ${usage.used} answers`)
-          : text(`Право Узбекистана · ${usage?.used ?? 0} из ${usage?.limit ?? 20} ответов`, `O‘zbekiston huquqi · ${usage?.used ?? 0}/${usage?.limit ?? 20} javob`, `Law of Uzbekistan · ${usage?.used ?? 0} of ${usage?.limit ?? 20} answers`)) : text("Провайдер не подключён", "Provayder ulanmagan", "Provider not connected")}</p></div><div className="ai-panel-controls"><button type="button" aria-controls="ai-conversations-panel" aria-expanded={!historyCollapsed} onClick={toggleHistory}><History aria-hidden="true" /><span>{text("История", "Tarix", "History")}</span></button></div><nav className="ai-composer-mode" aria-label={text("Способ общения", "Muloqot usuli", "Interaction mode")}><button type="button" aria-pressed={!voiceMode} onClick={() => setComposerMode("text")}><Keyboard />{text("Текст", "Matn", "Text")}</button><button type="button" aria-pressed={voiceMode} onClick={() => setComposerMode("voice")}><Mic />{text("Голос", "Ovoz", "Voice")}</button><button type="button" className="ai-context-toggle" aria-controls="ai-context-panel" aria-expanded={contextOpen} aria-label={text("Контекст ответа", "Javob konteksti", "Answer context")} title={text("Контекст ответа", "Javob konteksti", "Answer context")} onClick={toggleEvidencePanel}>{contextOpen?<PanelRightClose/>:<PanelRightOpen/>}</button></nav></header>
+          : text(`Право Узбекистана · ${usage?.used ?? 0} из ${usage?.limit ?? 20} ответов`, `O‘zbekiston huquqi · ${usage?.used ?? 0}/${usage?.limit ?? 20} javob`, `Law of Uzbekistan · ${usage?.used ?? 0} of ${usage?.limit ?? 20} answers`)) : text("Провайдер не подключён", "Provayder ulanmagan", "Provider not connected")}</p></div></div><div className="ai-panel-controls"><button type="button" aria-controls="ai-conversations-panel" aria-expanded={!historyCollapsed} onClick={toggleHistory}>{historyCollapsed?<PanelLeftOpen aria-hidden="true"/>:<PanelLeftClose aria-hidden="true"/>}<span>{text("История", "Tarix", "History")}</span></button></div><nav className="ai-composer-mode" aria-label={text("Способ общения", "Muloqot usuli", "Interaction mode")}><button type="button" aria-pressed={!voiceMode} onClick={() => setComposerMode("text")}><Keyboard />{text("Текст", "Matn", "Text")}</button><button type="button" aria-pressed={voiceMode} onClick={() => setComposerMode("voice")}><Mic />{text("Голос", "Ovoz", "Voice")}</button><button type="button" className="ai-context-toggle" aria-controls="ai-context-panel" aria-expanded={contextOpen} aria-label={text("Контекст ответа", "Javob konteksti", "Answer context")} title={text("Контекст ответа", "Javob konteksti", "Answer context")} onClick={toggleEvidencePanel}>{contextOpen?<PanelRightClose/>:<PanelRightOpen/>}</button></nav></header>
         {voiceMode && <VoiceModeStage
           locale={locale}
           configured={Boolean(status?.configured)}
@@ -422,8 +419,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         {status?.configured === false && <div className="ai-unavailable" role="status"><ShieldAlert /><div><strong>{text("AI пока недоступен", "AI hozircha ishlamaydi", "AI is currently unavailable")}</strong><p>{text("Попробуйте позже. Сохранённые диалоги по-прежнему доступны.", "Keyinroq qayta urinib ko‘ring. Saqlangan suhbatlar hali ham mavjud.", "Please try again later. Your saved conversations are still available.")}</p></div></div>}
         {error && <div className="ai-error" role="alert"><CircleAlert /><div><p>{error}</p>{canRetry && <button type="button" disabled={sending} onClick={retryQuestion}>{text("Безопасно повторить запрос", "So‘rovni xavfsiz qaytarish", "Retry safely")}</button>}</div></div>}
         <p className="sr-only" role="status" aria-live="polite">{sending ? streamStatus : answer?.messageId ? text("Ответ готов", "Javob tayyor", "Answer ready") : ""}</p>
-        <div className="ai-answer-stream" ref={transcriptRef} role="log" aria-label={text("Юридический диалог", "Huquqiy suhbat", "Legal conversation")} aria-busy={sending} onScroll={trackTranscriptScroll}>
-          {!answer && !optimisticQuestion ? (
+        <div className="ai-answer-stream" ref={transcriptRef} role="log" aria-label={text("Юридический диалог", "Huquqiy suhbat", "Legal conversation")} aria-busy={sending} onWheel={event=>{if(event.deltaY<0)nearBottom.current=false;}} onTouchMove={()=>{nearBottom.current=false;}} onKeyDown={event=>{if(["ArrowUp","PageUp","Home"].includes(event.key))nearBottom.current=false;}} onScroll={trackTranscriptScroll}>
+          {!answer && (loadingConversation || Boolean(selectedConversationId)) && !error ? <ChatSkeleton label={text("Загружаем диалог…","Suhbat yuklanmoqda…","Loading conversation…")} /> : !answer && !optimisticQuestion ? (
             <div className="ai-start"><FileQuestion /><h2>{text("Опишите юридическую ситуацию", "Yuridik vaziyatni yozing", "Describe your legal situation")}</h2><p>{text("Не указывайте лишние персональные данные. JURO отделит подтверждённые нормы от предположений.", "Ortiqcha shaxsiy ma’lumotlarni yozmang. JURO tasdiqlangan normalarni taxminlardan ajratadi.", "Avoid unnecessary personal data. JURO separates verified law from assumptions.")}</p></div>
           ) : <>
             {answer && <>
@@ -1052,3 +1049,5 @@ function resizeComposer(textarea: HTMLTextAreaElement) {
 }
 
 function answerCopy(result?:LegalResult|null,fallback="") {return result?legalAnswerPassages(result).map(passage=>passage.text).join("\n\n"):fallback;}
+
+function ChatSkeleton({label}:{label:string}) { return <div className="ai-loading-messages" role="status" aria-label={label}><span className="sr-only">{label}</span>{[0,1,2].map(index=><div className="ai-loading-message" key={index} aria-hidden="true"><i/><i/><i/></div>)}</div>; }
