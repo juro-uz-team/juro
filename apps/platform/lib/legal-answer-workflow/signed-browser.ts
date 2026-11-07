@@ -48,8 +48,8 @@ async function listConversations(actor: Actor, cursor: { before?: string; before
 
 /** Retained browser read/delete contract, independent of generation and retired chat adapters. */
 export async function handleSignedAnswerBrowser(request: Request, configuration: Configuration): Promise<Response> {
-  if (!["GET", "DELETE"].includes(request.method)) return Response.json({ code: "METHOD_NOT_ALLOWED" }, { status: 405, headers });
-  if (request.method === "DELETE" && (request.headers.get("origin") !== new URL(configuration.publicOrigin).origin
+  if (!["GET", "DELETE", "PATCH"].includes(request.method)) return Response.json({ code: "METHOD_NOT_ALLOWED" }, { status: 405, headers });
+  if (request.method !== "GET" && (request.headers.get("origin") !== new URL(configuration.publicOrigin).origin
     || request.headers.get("x-juro-csrf") !== "1"
     || (request.headers.has("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "same-origin"))) {
     return Response.json({ code: "REQUEST_ORIGIN_INVALID" }, { status: 403, headers });
@@ -59,6 +59,12 @@ export async function handleSignedAnswerBrowser(request: Request, configuration:
   try { actor = await withinSignal(signal, () => configuration.authenticate(request, signal)); await assertMembership(actor, signal); }
   catch { return Response.json({ code: "AUTHENTICATION_REQUIRED" }, { status: 401, headers }); }
   try {
+    if (request.method === "PATCH") {
+      if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") return Response.json({code:"REQUEST_CONTENT_TYPE_INVALID"},{status:415,headers});
+      const {conversationId,title}=z.object({conversationId:identifier,title:z.string().trim().min(1).max(200)}).strict().parse(await readAnswerPayload(request,signal));
+      const row=await withinSignal(signal,()=>actor.db.prepare("UPDATE conversations SET title=? WHERE id=? AND workspace_id=? AND owner_user_id=? AND status='active' RETURNING id").bind(title,conversationId,actor.workspaceId,actor.userId).first());
+      return Response.json({updated:Boolean(row)},{status:row?200:404,headers});
+    }
     if (request.method === "DELETE") {
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
         return Response.json({ code: "REQUEST_CONTENT_TYPE_INVALID" }, { status: 415, headers });

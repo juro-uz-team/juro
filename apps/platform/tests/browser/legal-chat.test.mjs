@@ -305,3 +305,27 @@ for (const width of [390,1920]) test(`loading cards and history control remain l
   const dir=new URL('../../../../.scratch/chat-loading-polish/',import.meta.url);await mkdir(dir,{recursive:true});
   await page.screenshot({path:fileURLToPath(new URL(`loading-${width}.png`,dir))});
 });
+
+test('home intake starts processing without a second submit',async context=>{
+  const page=await browser.newPage();context.after(()=>page.close());
+  await page.route('**/api/platform/ai/intake/consume',route=>route.fulfill({json:{question:'Question from the home form'}}));
+  const request=page.waitForRequest(request=>request.url().endsWith('/api/platform/ai')&&request.method()==='POST');
+  await page.goto(origin+'/signed?intake='+'a'.repeat(43));
+  const sent=await request;assert.equal(sent.postDataJSON().question,'Question from the home form');
+  assert.equal(sent.postDataJSON().idempotencyKey,'intake:'+'a'.repeat(43));
+  await page.getByRole('button',{name:'Stop generation',exact:true}).click();
+});
+test('history menu pins, renames and requests deletion',async context=>{
+  const page=await browser.newPage({viewport:{width:1920,height:900}});context.after(()=>page.close());
+  let title='Saved conversation';let renamed=false;
+  await page.route('**/api/platform/ai',async route=>{if(route.request().method()==='PATCH'){title=route.request().postDataJSON().title;renamed=true;await route.fulfill({json:{updated:true}});return;}await route.fulfill({json:{provider:{configured:true},usage:{used:0,limit:10},conversations:[{id:'history',title,updatedAt:'2026-11-01T00:00:00Z'},...Array.from({length:15},(_,i)=>({id:'older-'+i,title:'Earlier question '+i,updatedAt:'2026-10-01T00:00:00Z'}))],cases:[],next:null}});});
+  await page.goto(origin+'/en/individual/ai-chat');await styleChat(page);
+  const row=page.locator('.ai-conversation-item').first();await row.hover();await page.getByRole('button',{name:'Actions: Saved conversation'}).click();
+  await page.getByRole('menuitem',{name:'Pin',exact:true}).click();await page.locator('.ai-history-pin').waitFor();
+  await row.hover();await page.getByRole('button',{name:'Actions: Saved conversation'}).click();await page.getByRole('menuitem',{name:'Rename'}).click();
+  await page.getByRole('textbox',{name:'Conversation title'}).fill('Updated title');await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByRole('link',{name:/Updated title/}).waitFor();assert(renamed);
+  await row.hover();await page.getByRole('button',{name:'Actions: Updated title'}).click();
+  assert.equal(await page.locator('.ai-conversation-list').evaluate(el=>getComputedStyle(el,'::-webkit-scrollbar-button').display),'none');
+  const dir=new URL('../../../../.scratch/chat-history-actions/',import.meta.url);await mkdir(dir,{recursive:true});await page.screenshot({path:fileURLToPath(new URL('menu.png',dir))});
+  await page.getByRole('menuitem',{name:'Delete',exact:true}).click();await page.getByRole('group',{name:'Confirm deletion'}).waitFor();
+});

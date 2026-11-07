@@ -29,6 +29,12 @@ test("signed browser paginates tied timestamps, reopens saved answers and fences
     const run = await (await get(`?idempotencyKey=${fixture.input.idempotencyKey}`)).json();
     assert.equal(run.kind, "completed");
     assert.equal((await get("?before=2020-01-01T00%3A00%3A00.000Z")).status, 400);
+    const rename=(origin:string,title:string,conversationId=saved.conversationId)=>handleSignedAnswerBrowser(new Request("https://juro.example/api/platform/ai",{method:"PATCH",headers:{origin,"x-juro-csrf":"1","content-type":"application/json"},body:JSON.stringify({conversationId,title})}),config);
+    assert.equal((await rename("https://foreign.example","Renamed")).status,403);
+    assert.equal((await rename("https://juro.example","   ")).status,400);
+    assert.equal((await rename("https://juro.example","Renamed","missing")).status,404);
+    assert.equal((await rename("https://juro.example","Renamed")).status,200);
+    assert.equal(fixture.sqlite.prepare("SELECT title FROM conversations WHERE id=?").get(saved.conversationId)?.title,"Renamed");
     const remove = (origin: string) => handleSignedAnswerBrowser(new Request("https://juro.example/api/platform/ai", {
       method: "DELETE", headers: { origin, "x-juro-csrf": "1", "content-type": "application/json" },
       body: JSON.stringify({ conversationId: saved.conversationId }),

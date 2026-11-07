@@ -837,3 +837,21 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 
 .ai-answer.ai-assistant-draft { max-width:1100px; }
 @media(max-width:980px) { .ai-workspace.ai-evidence-collapsed, .ai-workspace.ai-history-collapsed, .ai-workspace.ai-history-collapsed.ai-evidence-collapsed { grid-template-columns:minmax(0,1fr); } }
+
+.ai-conversations { padding-inline:0; }
+.ai-conversations > header, .ai-conversations > .ai-new { margin-inline:16px; }
+.ai-conversations > .ai-new { width:calc(100% - 32px); }
+.ai-conversation-list { padding-inline:16px; overflow-y:auto; scrollbar-gutter:stable; }
+.ai-history-menu-trigger { position:absolute; top:16px; right:8px; display:grid; place-items:center; width:40px; height:40px; border:0; border-radius:8px; background:transparent; color:var(--text-secondary); opacity:0; pointer-events:none; }
+.ai-history-menu-trigger svg { width:20px; height:20px; }
+.ai-conversation-item:hover .ai-history-menu-trigger, .ai-conversation-item:focus-within .ai-history-menu-trigger, .ai-history-menu-trigger[aria-expanded=true] { opacity:1; pointer-events:auto; }
+.ai-history-menu-trigger:hover, .ai-history-menu-trigger[data-pressed] { background:var(--surface-selected); color:var(--brand-gold-text); }
+.ai-history-menu { z-index:150; min-width:180px; padding:6px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-elevated); color:var(--text-primary); box-shadow:0 8px 24px var(--shadow-color); }
+.ai-history-menu [role=menuitem] { display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 12px; border-radius:8px; outline:none; cursor:pointer; }
+.ai-history-menu [role=menuitem][data-focused] { background:var(--surface-selected); }
+.ai-history-menu svg { width:18px; height:18px; }
+.ai-history-pin { position:absolute; right:22px; bottom:12px; width:12px; height:12px; color:var(--brand-gold-text); }
+.ai-history-rename { display:flex; flex-wrap:wrap; gap:8px; padding:12px 0; }
+.ai-history-rename input { width:100%; padding:8px; background:var(--ai-canvas); color:var(--ai-copy); border:1px solid var(--ai-line); border-radius:8px; }
+.ai-history-rename button { padding:8px; border:1px solid var(--ai-line); border-radius:8px; background:var(--ai-panel); color:var(--ai-copy); }
+@media(hover:none) { .ai-history-menu-trigger { opacity:1; pointer-events:auto; } }

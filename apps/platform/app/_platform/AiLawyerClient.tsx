@@ -1,11 +1,12 @@
 "use client";
 
 import { conversationVersions } from "../../lib/ai/conversation-versions";
+import {Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover} from "react-aria-components";
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated remote data is hydrated after the first browser render */
 
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, Trash2, X } from "lucide-react";
+import { MoreVertical, Pin, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, AudioLines, BookmarkPlus, BookOpenCheck, Bot, CalendarDays, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FilePlus2, FileQuestion, Keyboard, ListPlus, LoaderCircle, Mic, Pencil, Plus, Send, Settings2, ShieldAlert, Square, Trash2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveVoiceModeState, type VoiceModeState, type VoiceRecorderPhase, type VoiceSpeechPhase } from "../../lib/ai/voice-ui";
@@ -150,6 +151,15 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   const router=useRouter(),pathname=usePathname(),params=useSearchParams();
   const basePath=usePlatformBasePath(),workspaceId=usePlatformWorkspaceId();
   const text=useCallback((ru:string,uz:string,en:string)=>aiText(locale,ru,uz,en),[locale]);
+  const autoIntake=useRef("");
+  const [pendingIntake,setPendingIntake]=useState("");
+  const [pinned,setPinned]=useState<string[]>([]);
+  const [renaming,setRenaming]=useState("");
+  const [renameTitle,setRenameTitle]=useState("");
+  const [savingTitle,setSavingTitle]=useState(false);
+  useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem(`juro:chat-pins:${workspaceId}`)||"[]");setPinned(Array.isArray(saved)?saved.filter((id:unknown):id is string=>typeof id==="string"):[]);}catch{setPinned([]);}},[workspaceId]);
+  function togglePin(id:string){const next=pinned.includes(id)?pinned.filter(value=>value!==id):[...pinned,id];setPinned(next);try{localStorage.setItem(`juro:chat-pins:${workspaceId}`,JSON.stringify(next));}catch{}}
+  async function renameConversation(id:string){if(!renameTitle.trim()||savingTitle)return;setSavingTitle(true);try{await requestJson("/api/platform/ai",{method:"PATCH",body:JSON.stringify({conversationId:id,title:renameTitle.trim()})});setConversations(items=>items.map(item=>item.id===id?{...item,title:renameTitle.trim()}:item));setRenaming("");}catch(cause){setConversationDeleteError(cause instanceof Error?cause.message:String(cause));}finally{setSavingTitle(false);}}
   const [status,setStatus]=useState<ProviderStatus|null>(null),[usage,setUsage]=useState<Usage|null>(null);
   const [conversations,setConversations]=useState<Conversation[]>([]),[cases,setCases]=useState<CaseOption[]>([]);
   const [answer,setAnswer]=useState<Answer|null>(null),[question,setQuestion]=useState("");
@@ -247,10 +257,11 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       .then(data=>{
         if(controller.signal.aborted)return;
         if(typeof data.question!=="string"||!data.question.trim()||data.question.length>4000)throw new Error(unavailable);
-        setQuestion(current=>current||data.question);composerRef.current?.focus();
+        setQuestion(current=>current||data.question);setPendingIntake(intakeHandle);
       }).catch(()=>{if(!controller.signal.aborted)setError(unavailable);});
     return()=>controller.abort();
   },[intakeHandle,selectedConversationId,workspaceId,requestJson,text]);
+  useEffect(()=>{if(!pendingIntake||pendingIntake!==intakeHandle||autoIntake.current===pendingIntake||!status?.configured||sending||!question.trim())return;autoIntake.current=pendingIntake;setPendingIntake("");composerRef.current?.form?.requestSubmit();},[pendingIntake,intakeHandle,status,sending,question]);
   useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
   useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"auto"});},[requestSending,optimisticQuestion,streamStatus,writing]);
@@ -318,7 +329,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   }
   function submit(event:FormEvent){event.preventDefault();if(!question.trim()||sending||(selectedConversationId&&!answer))return;void send({question,locale,answerMode,reasoningMode,conversationId:answer?.conversationId,
     operation:answer?"follow_up":"new",sourceMessageId:answer?.messageId,
-    legalContextDate:legalContextDate||undefined,...(voiceRecordingId?{voiceRecordingId}:{}),idempotencyKey:crypto.randomUUID()});}
+    legalContextDate:legalContextDate||undefined,...(voiceRecordingId?{voiceRecordingId}:{}),idempotencyKey:intakeHandle&&!answer?`intake:${intakeHandle}`:crypto.randomUUID()});}
   const retryQuestion=()=>{if(retryRef.current)void send(retryRef.current);};
   const replaceTurn=(turn:ConversationTurn,operation:"edit"|"regenerate",value=turn.question)=>{
     if(!answer||sending)return;
@@ -396,9 +407,17 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         <button className="ai-new" onClick={startNewQuestion}><Plus />{text("Новый вопрос", "Yangi savol", "New question")}</button>
         <nav className="ai-conversation-list" aria-label={text("История диалогов", "Suhbatlar tarixi", "Conversation history")}>
           {conversationDeleteError && <p className="ai-conversation-delete-error" role="alert">{conversationDeleteError}</p>}
-          {!status && !error ? <ChatSkeleton variant="history" label={text("Загружаем историю…","Tarix yuklanmoqda…","Loading history…")} /> : conversations.length ? conversations.map((item) => <div className="ai-conversation-item" key={item.id}>
+          {!status && !error ? <ChatSkeleton variant="history" label={text("Загружаем историю…","Tarix yuklanmoqda…","Loading history…")} /> : conversations.length ? [...conversations].sort((a,b)=>Number(pinned.includes(b.id))-Number(pinned.includes(a.id))).map((item) => <div className="ai-conversation-item" key={item.id}>
             <a onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();window.history.pushState(null,"",aiLocation(new URLSearchParams({conversationId:item.id})));}} aria-current={item.id === selectedConversationId ? "page" : undefined} href={aiLocation(new URLSearchParams({ conversationId: item.id }))}><strong>{item.title}</strong><small>{formatDate(item.updatedAt, locale)}</small></a>
-            <button className="ai-conversation-delete" type="button" disabled={sending || Boolean(deletingConversationId)} aria-expanded={deleteCandidateId === item.id} aria-label={text(`Удалить диалог «${item.title}»`, `“${item.title}” suhbatini o‘chirish`, `Delete conversation “${item.title}”`)} title={text("Удалить диалог", "Suhbatni o‘chirish", "Delete conversation")} onClick={() => toggleConversationDeletion(item.id)}><Trash2 /></button>
+            {pinned.includes(item.id)&&<Pin className="ai-history-pin" aria-label={text("Закреплён","Mahkamlangan","Pinned")}/>}
+            <MenuTrigger><AriaButton className="ai-history-menu-trigger" isDisabled={sending||Boolean(deletingConversationId)} aria-label={text(`Действия: ${item.title}`,`Amallar: ${item.title}`,`Actions: ${item.title}`)}><MoreVertical/></AriaButton>
+              <Popover className="ai-history-menu" placement="bottom end" offset={4}><Menu aria-label={text("Действия с диалогом","Suhbat amallari","Conversation actions")} onAction={key=>{if(key==="pin")togglePin(item.id);if(key==="rename"){setRenaming(item.id);setRenameTitle(item.title);}if(key==="delete")toggleConversationDeletion(item.id);}}>
+                <MenuItem id="pin"><Pin/>{pinned.includes(item.id)?text("Открепить","Ajratish","Unpin"):text("Закрепить","Mahkamlash","Pin")}</MenuItem>
+                <MenuItem id="rename"><Pencil/>{text("Переименовать","Nomini o‘zgartirish","Rename")}</MenuItem>
+                <MenuItem id="delete" className="is-danger"><Trash2/>{text("Удалить","O‘chirish","Delete")}</MenuItem>
+              </Menu></Popover>
+            </MenuTrigger>
+            {renaming===item.id&&<form className="ai-history-rename" onSubmit={event=>{event.preventDefault();void renameConversation(item.id);}}><input autoFocus aria-label={text("Название диалога","Suhbat nomi","Conversation title")} maxLength={200} value={renameTitle} onChange={event=>setRenameTitle(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenaming("");}}/><button disabled={savingTitle||!renameTitle.trim()}>{text("Сохранить","Saqlash","Save")}</button><button type="button" onClick={()=>setRenaming("")}>{text("Отмена","Bekor qilish","Cancel")}</button></form>}
             {deleteCandidateId === item.id && <div className="ai-conversation-delete-confirm" role="group" aria-label={text("Подтверждение удаления", "O‘chirishni tasdiqlash", "Confirm deletion")}><span>{text("Удалить без возможности восстановления?", "Tiklash imkoniyatisiz o‘chirilsinmi?", "Permanently delete this conversation?")}</span><button type="button" disabled={Boolean(deletingConversationId)} onClick={() => setDeleteCandidateId("")}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button className="is-danger" type="button" disabled={Boolean(deletingConversationId)} onClick={() => void deleteConversation(item.id)}>{deletingConversationId === item.id ? text("Удаляем…", "O‘chirilmoqda…", "Deleting…") : text("Удалить", "O‘chirish", "Delete")}</button></div>}
           </div>) : <p>{text("История появится после первого обработанного вопроса.", "Tarix birinchi qayta ishlangan savoldan keyin paydo bo‘ladi.", "Your history will appear after the first completed question.")}</p>}
           {historyCursor&&<button type="button" disabled={loadingHistory} onClick={()=>void loadMoreHistory()}>{loadingHistory?text("Загружаем…","Yuklanmoqda…","Loading…"):text("Ещё диалоги","Yana suhbatlar","More conversations")}</button>}

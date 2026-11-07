@@ -31,3 +31,5 @@ export const GET=platformLegalAnswerBrowser;
 export const POST=platformLegalAnswerPost;
 
 export const DELETE=platformLegalAnswerBrowser;
+
+export const PATCH=platformLegalAnswerBrowser;
