@@ -9,7 +9,7 @@ import type { PlatformLocale } from "../../lib/platform/routing";
 
 import { SafeMarkdown } from "./SafeMarkdown";
 
-import {legalAnswerCopy as COPY, type LegalAnswerViewSource, type LegalAnswerViewResult} from "../../lib/ai/legal-answer-presentation";
+import {isConversationalReply, legalAnswerCopy as COPY, type LegalAnswerViewSource, type LegalAnswerViewResult} from "../../lib/ai/legal-answer-presentation";
 export type {LegalAnswerViewSource,LegalAnswerViewResult} from "../../lib/ai/legal-answer-presentation";
 
 function publicSourceUrl(source: LegalAnswerViewSource): string | null {
@@ -162,15 +162,7 @@ export function LegalAnswerView({
     </article>;
   }
 
-  // Before presentationKind was persisted, conversational outcomes had this empty,
-  // programmatically validated shape. Never apply it to an in-progress legal draft.
-  const legacyConversation = !streaming && !result.presentationKind && result.validationMethod === "programmatic"
-    && result.evidenceMode === "none" && result.sources.length === 0 && result.confirmedFindings.length === 0
-    && result.actionPlan.length === 0 && result.assumptions.length === 0 && result.risks.length === 0
-    && result.clarificationQuestions.length === 0 && result.requiredDocuments.length === 0
-    && !(result.conditionalBranches?.length) && !(result.referenceNotes?.length) && !(result.coverageGaps?.length)
-    && result.deadlines.length === 0 && result.urgency === "normal" && !result.suggestedDocument;
-  if (result.presentationKind === "conversation" || legacyConversation) {
+  if (!streaming && isConversationalReply(result)) {
     return <article className={rootClass} data-answer-kind="conversation">{toolbar}
       <Markdown result={result} locale={locale}>{result.summary}</Markdown>
     </article>;

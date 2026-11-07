@@ -909,3 +909,10 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
  .ai-live-voice { gap:8px; padding:12px; min-height:112px; }
  .ai-voice-wave { height:100px; max-width:calc(100% - 112px); }
 }
+
+/* Voice replaces the composer, retaining its compact height and control alignment. */
+.ai-live-voice { min-height:64px; padding:6px 8px 6px 16px; gap:12px; border-radius:20px; }
+.ai-voice-wave { height:48px; width:auto; max-width:none; flex:1 1 auto; min-width:0; }
+.ai-live-voice button { width:40px; height:40px; }
+.ai-live-voice:has([role=alert]) .ai-voice-wave { flex-basis:calc(100% - 156px); }
+@media(max-width:700px) { .ai-live-voice { min-height:60px; padding:6px 8px; gap:8px; } .ai-voice-wave { height:44px; } }

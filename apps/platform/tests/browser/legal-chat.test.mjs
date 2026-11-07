@@ -339,9 +339,10 @@ test('composer switches between typing and voice and releases the microphone',as
  assert(Number(await page.locator('.ai-context-toggle span').evaluate(el=>getComputedStyle(el).fontSize.replace('px','')))>0);
  await page.locator('#ai-question').fill('A question');await page.getByRole('button',{name:'Send',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Voice conversation',exact:true}).count(),0);
  await page.locator('#ai-question').fill('');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();await page.getByText('Listening…',{exact:true}).waitFor();
- assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
+ assert((await page.locator('.ai-live-voice').boundingBox()).height<=70);assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
  await page.getByRole('button',{name:'Unmute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),true);
  const dir=new URL('../../../../.scratch/voice-composer/',import.meta.url);await mkdir(dir,{recursive:true});await page.screenshot({path:fileURLToPath(new URL('voice-mobile.png',dir))});
+ await page.setViewportSize({width:1920,height:900});assert((await page.locator('.ai-live-voice').boundingBox()).height<=70);await page.screenshot({path:fileURLToPath(new URL('voice-desktop.png',dir))});await page.setViewportSize({width:390,height:900});
  await page.getByRole('button',{name:'Exit voice mode'}).click();await page.locator('#ai-question').waitFor();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].readyState),'ended');
  await page.screenshot({path:fileURLToPath(new URL('text-mobile.png',dir))});
 });
@@ -362,7 +363,7 @@ test('chat attachments reject archives and wait for a processed document',async 
 test('voice conversation submits after silence and plays the saved voice preference',async context=>{
  stallMetadata=false;completed.clear();delivery={...saved};voicePatch=undefined;
  const browserContext=await browser.newContext({permissions:['microphone']});context.after(()=>browserContext.close());const page=await browserContext.newPage();let voice;
- await page.addInitScript(()=>{const original=AudioContext.prototype.createMediaStreamSource;AudioContext.prototype.createMediaStreamSource=function(stream){const source=original.call(this,stream),connect=source.connect.bind(source),start=performance.now();source.connect=destination=>{if(destination instanceof AnalyserNode)destination.getByteTimeDomainData=array=>{for(let i=0;i<array.length;i++)array[i]=performance.now()-start<600?128+Math.round(25*Math.sin(i)):128;};return connect(destination);};return source;};});
+ await page.addInitScript(()=>{window.cueTones=[];const oscillator=AudioContext.prototype.createOscillator;AudioContext.prototype.createOscillator=function(){const node=oscillator.call(this),start=node.start.bind(node);node.start=(...args)=>{window.cueTones.push(node.frequency.value);return start(...args);};return node;};const original=AudioContext.prototype.createMediaStreamSource;AudioContext.prototype.createMediaStreamSource=function(stream){const source=original.call(this,stream),connect=source.connect.bind(source),start=performance.now();source.connect=destination=>{if(destination instanceof AnalyserNode)destination.getByteTimeDomainData=array=>{for(let i=0;i<array.length;i++)array[i]=performance.now()-start<600?128+Math.round(2*Math.sin(i)):128;};return connect(destination);};return source;};});
  const wav=Buffer.alloc(44+16000);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(16000,40);for(let i=0;i<8000;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/8000)*6000),44+i*2);
  await page.route('**/api/platform/voice/preferences',route=>route.fulfill({json:{voice:'cedar'}}));
  await page.route('**/api/platform/voice/speech',route=>{voice=route.request().postDataJSON().voice;return route.fulfill({contentType:'audio/wav',body:wav});});
@@ -370,7 +371,7 @@ test('voice conversation submits after silence and plays the saved voice prefere
  await page.getByText('Listening…',{exact:true}).waitFor();await page.locator('.ai-assistant-draft').waitFor();
  const response=pending.get('/api/platform/ai');assert(response);completed.add('/api/platform/ai');pending.delete('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);
  await page.getByText('JURO is speaking…',{exact:true}).waitFor();await page.waitForFunction(()=>Number(document.querySelector('.ai-voice-wave')?.dataset.level)>.2);
- await page.getByText('Listening…',{exact:true}).waitFor();assert.equal(voice,'cedar');await page.getByRole('button',{name:'Exit voice mode'}).click();
+ await page.getByText('Listening…',{exact:true}).waitFor();assert.equal(voice,'cedar');assert.deepEqual((await page.evaluate(()=>window.cueTones)).slice(0,4).map(Math.round),[523,784,659,523]);await page.getByRole('button',{name:'Exit voice mode'}).click();
 });
 
 for (const legacy of [false,true]) test(`greetings render without a legal heading after reload (legacy: ${legacy})`, async context=>{

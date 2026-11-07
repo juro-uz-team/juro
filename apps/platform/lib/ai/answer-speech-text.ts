@@ -1,4 +1,4 @@
-import {legalAnswerCopy, type LegalAnswerViewResult} from "./legal-answer-presentation";
+import {isConversationalReply, legalAnswerCopy, type LegalAnswerViewResult} from "./legal-answer-presentation";
 import {questionInterpretationFailureText,officialResearchFailureText,answerVerificationFailureText} from "./legal-answer-failure";
 import type {PlatformLocale} from "../platform/routing";
 
@@ -15,6 +15,8 @@ export function answerSpeechText(result:LegalAnswerViewResult,locale:PlatformLoc
     if(result.confirmedFindings.length)add(copy.law);
     for(const finding of result.confirmedFindings)add(finding.title,finding.explanation);
     gaps();notes();
+  }else if(isConversationalReply(result)){
+    add(result.summary);
   }else{
     if(result.summary)add(copy.main,result.summary);
     if(result.conditionalBranches?.length){add(copy.branches);for(const branch of result.conditionalBranches)add(branch.condition,branch.outcome);}

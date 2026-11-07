@@ -19,6 +19,25 @@ export function VoiceConversation({locale,workspaceId,busy,messageId,onTranscrip
  useEffect(()=>{
   const controller=new AbortController();let stream:MediaStream|undefined,context:AudioContext|undefined,recorder:MediaRecorder|undefined,frame=0,url="";
   const text=(ru:string,uz:string,en:string)=>aiText(locale,ru,uz,en);
+  async function cue(kind:"listening"|"processing") {
+   if(!context || controller.signal.aborted)return;
+   const audioContext=context;
+   const start=audioContext.currentTime;
+   // Soft sine tones with short attack/release envelopes; never record the cue.
+   const frequencies=kind==="listening"?[523.25,783.99]:[659.25,523.25];
+   await new Promise<void>(resolve=>{
+    const done=()=>{controller.signal.removeEventListener("abort",done);resolve();};
+    controller.signal.addEventListener("abort",done,{once:true});
+    frequencies.forEach((frequency,index)=>{
+     const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
+     const at=start+index*.085;oscillator.frequency.value=frequency;
+     gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.045,at+.012);gain.gain.exponentialRampToValueAtTime(.0001,at+.13);
+     oscillator.connect(gain);gain.connect(audioContext.destination);
+     oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();if(index===frequencies.length-1)done();};
+     oscillator.start(at);oscillator.stop(at+.15);
+    });
+   });
+  }
   const meter=(analyser:AnalyserNode,onLevel?:(level:number)=>void)=>{
    const data=new Uint8Array(analyser.frequencyBinCount);let smooth=0;
    const reduced=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -68,27 +87,28 @@ export function VoiceConversation({locale,workspaceId,busy,messageId,onTranscrip
      await Promise.all([download,playback]);
      played.current=messageId;cancelAnimationFrame(frame);await context?.close();context=undefined;URL.revokeObjectURL(url);url="";audio.current=null;
     }
-    setPhase("starting");stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});if(controller.signal.aborted){stream.getTracks().forEach(track=>track.stop());return;}
+    setPhase("starting");context=new AudioContext();await context.resume();stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});if(controller.signal.aborted){stream.getTracks().forEach(track=>track.stop());return;}
     microphone.current=stream;stream.getAudioTracks().forEach(track=>{track.enabled=!mutedRef.current;});
-    context=new AudioContext();await context.resume();const analyser=context.createAnalyser();context.createMediaStreamSource(stream).connect(analyser);
-    const mimeType=["audio/webm","audio/mp4"].find(type=>MediaRecorder.isTypeSupported(type));recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);const chunks:Blob[]=[];const started=performance.now();let bytes=0,lastSpeech=started,heard=false;
+    if(!mutedRef.current)await cue("listening");if(controller.signal.aborted)return;
+    const analyser=context.createAnalyser();context.createMediaStreamSource(stream).connect(analyser);
+    const mimeType=["audio/webm","audio/mp4"].find(type=>MediaRecorder.isTypeSupported(type));recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);const chunks:Blob[]=[];const started=performance.now();let bytes=0,lastSpeech=started,heard=false,speechSince=0;
     recorder.ondataavailable=event=>{if(event.data.size){chunks.push(event.data);bytes+=event.data.size;}};
     recorder.onstop=()=>{stream?.getTracks().forEach(track=>track.stop());cancelAnimationFrame(frame);if(controller.signal.aborted)return;
      if(!heard){setAttempt(value=>value+1);return;}
      pending.current={blob:new Blob(chunks,{type:recorder!.mimeType}),durationMs:Math.min(300000,Math.round(performance.now()-started)),idempotencyKey:crypto.randomUUID()};
-     void transcribe();
+     setPhase("processing");void cue("processing").then(()=>{if(!controller.signal.aborted)void transcribe();});
     };
-    activeRecorder.current=recorder;recorder.start(250);if(mutedRef.current)recorder.pause();setPhase("listening");meter(analyser,level=>{const now=performance.now();if(mutedRef.current){lastSpeech=now;return;}if(level>0.025){heard=true;lastSpeech=now;}if(recorder?.state==="recording"&&((heard&&now-lastSpeech>1400)||now-started>120000||bytes>20*1024*1024))recorder.stop();});
+    activeRecorder.current=recorder;recorder.start(250);if(mutedRef.current)recorder.pause();setPhase("listening");meter(analyser,level=>{const now=performance.now();if(mutedRef.current){lastSpeech=now;return;}if(level>0.008){if(!speechSince)speechSince=now;if(now-speechSince>=100)heard=true;lastSpeech=now;}else{speechSince=0;}if(recorder?.state==="recording"&&((heard&&now-lastSpeech>1400)||now-started>120000||bytes>20*1024*1024))recorder.stop();});
    }catch{if(!controller.signal.aborted){cleanup();setPhase("error");setError(text("Голосовой режим недоступен. Проверьте микрофон и повторите попытку.","Ovozli rejim mavjud emas. Mikrofonni tekshiring.","Voice mode is unavailable. Check microphone access and retry."));}}
   }
   void run();return()=>{controller.abort();cleanup();};
  },[locale,workspaceId,busy,messageId,attempt]);
  const label=error||(muted&&phase==="listening"?aiText(locale,"Микрофон выключен","Mikrofon o‘chirilgan","Microphone muted"):null)||aiText(locale,phase==="listening"?"Слушаю…":phase==="speaking"?"JURO отвечает…":phase==="muted"?"Микрофон выключен":"Обрабатываем…",phase==="listening"?"Tinglayapman…":phase==="speaking"?"JURO javob bermoqda…":phase==="muted"?"Mikrofon o‘chirilgan":"Qayta ishlanmoqda…",phase==="listening"?"Listening…":phase==="speaking"?"JURO is speaking…":phase==="muted"?"Microphone muted":"Processing…");
- return <div className="ai-live-voice" data-phase={phase}><svg className="ai-voice-wave" ref={wave} viewBox="0 0 320 160" aria-hidden="true">
+ return <div className="ai-live-voice" data-phase={phase}><svg className="ai-voice-wave" ref={wave} viewBox="0 0 320 160" preserveAspectRatio="none" aria-hidden="true">
   <defs><linearGradient id={`${waveId}-base`} x2="0" y2="1"><stop stopColor="var(--surface-canvas)"/><stop offset="1" stopColor="var(--surface-elevated)"/></linearGradient>
   <linearGradient id={`${waveId}-light`} x2="0" y2="1"><stop stopColor="var(--brand-gold-text)" stopOpacity="0"/><stop offset=".7" stopColor="var(--brand-gold-text)" stopOpacity=".6"/><stop offset="1" stopColor="var(--brand-gold-text)"/></linearGradient>
   <filter id={`${waveId}-blur`} x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="12"/></filter>
-  <clipPath id={`${waveId}-clip`}><rect width="320" height="160" rx="80"/></clipPath></defs>
+  <clipPath id={`${waveId}-clip`}><rect width="320" height="160" rx="16" ry="80"/></clipPath></defs>
   <g clipPath={`url(#${waveId}-clip)`}><rect width="320" height="160" fill={`url(#${waveId}-base)`}/>
    {[0,1,2].map(index=><path key={index} data-wave={index} d={`M0,${92-index*7} Q160,65 320,92 L320,160 L0,160 Z`} fill={`url(#${waveId}-light)`} opacity={.45+index*.2} filter={`url(#${waveId}-blur)`}/>)}</g>
  </svg><span role={error?"alert":"status"}>{label}</span>{error&&<button type="button" onClick={()=>setAttempt(n=>n+1)} aria-label={aiText(locale,"Повторить","Qayta urinish","Retry")}><RotateCcw/></button>}<button type="button" aria-pressed={muted} aria-label={aiText(locale,muted?"Включить микрофон":"Выключить микрофон",muted?"Mikrofonni yoqish":"Mikrofonni o‘chirish",muted?"Unmute microphone":"Mute microphone")} onClick={()=>setMuted(value=>!value)}>{muted?<MicOff/>:<Mic/>}</button><button type="button" onClick={onClose} aria-label={aiText(locale,"Выйти из голосового режима","Ovozli rejimdan chiqish","Exit voice mode")}><X/></button></div>;

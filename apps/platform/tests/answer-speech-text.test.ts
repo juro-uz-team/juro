@@ -16,3 +16,8 @@ test("long narration is split without truncation or broken Unicode",()=>{
  const text=("Sentence with a legal condition. 🏠 ").repeat(400)+"Final clarification question.";
  const chunks=speechTextChunks(text);assert(chunks.length>1);assert.equal(chunks.join(""),text);assert(chunks.every(chunk=>chunk.length<=3500));assert(chunks.every(chunk=>!/[\uD800-\uDBFF]$/u.test(chunk)));
 });
+
+for(const legacy of [false,true])test(`greeting narration matches the visible reply (legacy: ${legacy})`,()=>{
+ const greeting:LegalAnswerViewResult={...result,presentationKind:legacy?undefined:"conversation",validationMethod:"programmatic",evidenceMode:"none",summary:"Привет! Чем могу помочь?",confirmedFindings:[],actionPlan:[],assumptions:[],risks:[],deadlines:[],requiredDocuments:[],referenceNotes:[],coverageGaps:[],clarificationQuestions:[],urgency:"normal",suggestedDocument:null};
+ assert.equal(answerSpeechText(greeting,"ru"),greeting.summary);
+});

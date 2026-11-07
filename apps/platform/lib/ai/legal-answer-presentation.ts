@@ -152,3 +152,14 @@ export const legalAnswerCopy: Record<PlatformLocale, AnswerCopy> = {
   },
 };
 
+
+/** Shared by visible answers and narration, including saved replies predating the marker. */
+export function isConversationalReply(result: LegalAnswerViewResult): boolean {
+  if (result.responseKind !== "answer") return false;
+  return result.presentationKind === "conversation" || (!result.presentationKind && result.validationMethod === "programmatic"
+    && result.evidenceMode === "none" && result.sources.length === 0 && result.confirmedFindings.length === 0
+    && result.actionPlan.length === 0 && result.assumptions.length === 0 && result.risks.length === 0
+    && result.clarificationQuestions.length === 0 && result.requiredDocuments.length === 0
+    && !(result.conditionalBranches?.length) && !(result.referenceNotes?.length) && !(result.coverageGaps?.length)
+    && result.deadlines.length === 0 && result.urgency === "normal" && !result.suggestedDocument);
+}
