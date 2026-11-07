@@ -1,3 +1,4 @@
+import {ApiAuthError} from "../document-builder/auth/api";
 import type { UserProfile } from "../document-builder/types";
 import { requireD1 } from "../document-builder/storage/runtime";
 import {
@@ -143,8 +144,9 @@ export async function workspaceForUser(user: UserProfile): Promise<WorkspaceOpti
   };
 }
 
-export async function workspaceForContentEditor(user: UserProfile): Promise<WorkspaceOption> {
-  const workspace = await workspaceForUser(user);
+export async function workspaceForContentEditor(user: UserProfile, selectedWorkspaceId?: string | null): Promise<WorkspaceOption> {
+  const workspace = selectedWorkspaceId ? await workspaceForUserById(user.id, selectedWorkspaceId, {activate:false}) : await workspaceForUser(user);
+  if (!workspace) throw new ApiAuthError("Workspace unavailable",403);
   requireWorkspaceContentEditor(workspace.role);
   return workspace;
 }

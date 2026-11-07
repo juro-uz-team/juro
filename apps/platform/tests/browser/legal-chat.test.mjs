@@ -89,7 +89,7 @@ for(const extended of [false,true])test(`voice transcript saving shares the subm
     const controller=new AbortController();setTimeout(()=>controller.abort(new DOMException('Timed out','TimeoutError')),milliseconds);return controller.signal;
   };});
   await page.clock.install();await page.goto(origin+'/signed');
-  await page.getByRole('button',{name:'Voice',exact:true}).click();
+
   await page.locator('.ai-voice-controls[data-phase="idle"] button').click();
   await page.locator('.ai-voice-controls[data-phase="listening"]').waitFor();
   // The browser supplies a synthetic microphone; the real MediaRecorder and
@@ -322,10 +322,52 @@ test('history menu pins, renames and requests deletion',async context=>{
   await page.goto(origin+'/en/individual/ai-chat');await styleChat(page);
   const row=page.locator('.ai-conversation-item').first();await row.hover();await page.getByRole('button',{name:'Actions: Saved conversation'}).click();
   await page.getByRole('menuitem',{name:'Pin',exact:true}).click();await page.locator('.ai-history-pin').waitFor();
-  await row.hover();await page.getByRole('button',{name:'Actions: Saved conversation'}).click();await page.getByRole('menuitem',{name:'Rename'}).click();
-  await page.getByRole('textbox',{name:'Conversation title'}).fill('Updated title');await page.getByRole('button',{name:'Save',exact:true}).click();await page.getByRole('link',{name:/Updated title/}).waitFor();assert(renamed);
+  await row.hover();await page.getByRole('button',{name:'Actions: Saved conversation'}).click();await page.getByRole('menuitem',{name:'Rename'}).click();await page.getByRole('dialog').waitFor();
+  await page.getByRole('textbox',{name:'Conversation title'}).fill('Updated title');await page.getByRole('button',{name:'Rename',exact:true}).click();await page.getByRole('link',{name:/Updated title/}).waitFor();assert(renamed);
   await row.hover();await page.getByRole('button',{name:'Actions: Updated title'}).click();
   assert.equal(await page.locator('.ai-conversation-list').evaluate(el=>getComputedStyle(el,'::-webkit-scrollbar-button').display),'none');
   const dir=new URL('../../../../.scratch/chat-history-actions/',import.meta.url);await mkdir(dir,{recursive:true});await page.screenshot({path:fileURLToPath(new URL('menu.png',dir))});
+  const outside=await page.locator('#ai-lawyer-heading').boundingBox();await page.mouse.click(outside.x+5,outside.y+5);await page.getByRole('menu').waitFor({state:'detached'});await page.waitForFunction(()=>getComputedStyle(document.querySelector('.ai-history-menu-trigger')).opacity==='0');
+  await row.hover();await page.getByRole('button',{name:'Actions: Updated title'}).click();
   await page.getByRole('menuitem',{name:'Delete',exact:true}).click();await page.getByRole('group',{name:'Confirm deletion'}).waitFor();
+});
+
+test('composer switches between typing and voice and releases the microphone',async context=>{
+ stallMetadata=false;completed.clear();const browserContext=await browser.newContext({permissions:['microphone'],viewport:{width:390,height:900}});context.after(()=>browserContext.close());const page=await browserContext.newPage();
+ await page.addInitScript(()=>{const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async options=>{const stream=await original(options);window.testMicrophone=stream;return stream;};});
+ await page.goto(origin+'/en/individual/ai-chat');await styleChat(page);
+ await page.locator('#ai-question').fill('A question');await page.getByRole('button',{name:'Send',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Voice conversation',exact:true}).count(),0);
+ await page.locator('#ai-question').fill('');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();await page.getByText('Listening…',{exact:true}).waitFor();
+ assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
+ await page.getByRole('button',{name:'Unmute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),true);
+ const dir=new URL('../../../../.scratch/voice-composer/',import.meta.url);await mkdir(dir,{recursive:true});await page.screenshot({path:fileURLToPath(new URL('voice-mobile.png',dir))});
+ await page.getByRole('button',{name:'Exit voice mode'}).click();await page.locator('#ai-question').waitFor();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].readyState),'ended');
+ await page.screenshot({path:fileURLToPath(new URL('text-mobile.png',dir))});
+});
+test('chat attachments reject archives and wait for a processed document',async context=>{
+ stallMetadata=false;const page=await browser.newPage();context.after(()=>page.close());let posted;
+ await page.route('**/api/platform/document-analysis/uploads',route=>route.fulfill({json:{analysis:{id:'analysis'}}}));
+ await page.route('**/api/platform/document-analysis/uploads/analysis',route=>route.fulfill({json:{}}));
+ await page.route('**/api/platform/document-analysis/uploads/analysis/finalize',route=>route.fulfill({json:{analysis:{id:'analysis'}}}));
+ await page.route('**/api/platform/ai/attachments?**',route=>route.fulfill({json:{status:'completed',documentId:'document-version'}}));
+ await page.goto(origin+'/signed');
+ await page.locator('input[type=file]').setInputFiles({name:'bundle.zip',mimeType:'application/zip',buffer:Buffer.from('archive')});await page.getByRole('alert').filter({hasText:'Archives are not accepted'}).waitFor();
+ await page.locator('input[type=file]').setInputFiles({name:'contract.txt',mimeType:'text/plain',buffer:Buffer.from('A contract')});await page.locator('.ai-attachment-list').getByText('Ready',{exact:true}).waitFor();
+ await page.route('**/api/platform/ai',async route=>{if(route.request().method()==='POST'){posted=route.request().postDataJSON();await route.fulfill({status:503,json:{error:'Test complete'}});}else await route.continue();});
+ await page.locator('#ai-question').fill('Review the contract');await page.getByRole('button',{name:'Send',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.ai-error'));
+ assert.deepEqual(posted.documentIds,['document-version']);
+});
+
+test('voice conversation submits after silence and plays the saved voice preference',async context=>{
+ stallMetadata=false;completed.clear();delivery={...saved};voicePatch=undefined;
+ const browserContext=await browser.newContext({permissions:['microphone']});context.after(()=>browserContext.close());const page=await browserContext.newPage();let voice;
+ await page.addInitScript(()=>{const original=AudioContext.prototype.createMediaStreamSource;AudioContext.prototype.createMediaStreamSource=function(stream){const source=original.call(this,stream),connect=source.connect.bind(source),start=performance.now();source.connect=destination=>{if(destination instanceof AnalyserNode)destination.getByteTimeDomainData=array=>{for(let i=0;i<array.length;i++)array[i]=performance.now()-start<600?128+Math.round(25*Math.sin(i)):128;};return connect(destination);};return source;};});
+ const wav=Buffer.alloc(44+16000);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(16000,40);for(let i=0;i<8000;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/8000)*6000),44+i*2);
+ await page.route('**/api/platform/voice/preferences',route=>route.fulfill({json:{voice:'cedar'}}));
+ await page.route('**/api/platform/voice/speech',route=>{voice=route.request().postDataJSON().voice;return route.fulfill({contentType:'audio/wav',body:wav});});
+ await page.goto(origin+'/signed');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();
+ await page.getByText('Listening…',{exact:true}).waitFor();await page.locator('.ai-assistant-draft').waitFor();
+ const response=pending.get('/api/platform/ai');assert(response);completed.add('/api/platform/ai');pending.delete('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);
+ await page.getByText('JURO is speaking…',{exact:true}).waitFor();await page.waitForFunction(()=>Array.from(document.querySelectorAll('.ai-voice-meter i')).some(bar=>Number(bar.style.transform.match(/scaleY\(([^)]+)/)?.[1])>.2));
+ await page.getByText('Listening…',{exact:true}).waitFor();assert.equal(voice,'cedar');await page.getByRole('button',{name:'Exit voice mode'}).click();
 });

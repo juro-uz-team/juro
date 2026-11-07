@@ -20,7 +20,7 @@ function response(body: unknown, status = 200, headers?: HeadersInit) {
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   try {
     if (!request.headers.get("content-type")?.toLocaleLowerCase().startsWith("application/json")) {
       return response({ code: "INVALID_CONTENT_TYPE", error: "Инициализация загрузки принимает только JSON." }, 415);

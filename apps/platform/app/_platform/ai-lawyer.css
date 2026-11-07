@@ -844,7 +844,7 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 .ai-conversation-list { padding-inline:16px; overflow-y:auto; scrollbar-gutter:stable; }
 .ai-history-menu-trigger { position:absolute; top:16px; right:8px; display:grid; place-items:center; width:40px; height:40px; border:0; border-radius:8px; background:transparent; color:var(--text-secondary); opacity:0; pointer-events:none; }
 .ai-history-menu-trigger svg { width:20px; height:20px; }
-.ai-conversation-item:hover .ai-history-menu-trigger, .ai-conversation-item:focus-within .ai-history-menu-trigger, .ai-history-menu-trigger[aria-expanded=true] { opacity:1; pointer-events:auto; }
+.ai-conversation-item:hover .ai-history-menu-trigger, .ai-conversation-item .ai-history-menu-trigger[data-focus-visible], .ai-history-menu-trigger[aria-expanded=true] { opacity:1; pointer-events:auto; }
 .ai-history-menu-trigger:hover, .ai-history-menu-trigger[data-pressed] { background:var(--surface-selected); color:var(--brand-gold-text); }
 .ai-history-menu { z-index:150; min-width:180px; padding:6px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-elevated); color:var(--text-primary); box-shadow:0 8px 24px var(--shadow-color); }
 .ai-history-menu [role=menuitem] { display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 12px; border-radius:8px; outline:none; cursor:pointer; }
@@ -855,3 +855,38 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 .ai-history-rename input { width:100%; padding:8px; background:var(--ai-canvas); color:var(--ai-copy); border:1px solid var(--ai-line); border-radius:8px; }
 .ai-history-rename button { padding:8px; border:1px solid var(--ai-line); border-radius:8px; background:var(--ai-panel); color:var(--ai-copy); }
 @media(hover:none) { .ai-history-menu-trigger { opacity:1; pointer-events:auto; } }
+
+.ai-rename-overlay { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:24px; background:var(--overlay); backdrop-filter:blur(4px); }
+.ai-rename-modal { width:min(520px,100%); padding:28px; border:1px solid var(--border-subtle); border-radius:24px; background:var(--surface-elevated); color:var(--text-primary); box-shadow:var(--shadow-soft); }
+.ai-rename-modal h2 { margin:0 0 28px; font-size:22px; }
+.ai-rename-modal input { width:100%; padding:16px; border:1px solid var(--border-strong); border-radius:12px; background:var(--surface-canvas); color:var(--text-primary); font:inherit; }
+.ai-rename-modal footer { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }
+.ai-rename-modal button { min-height:44px; padding:10px 20px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-raised); color:var(--text-primary); font:inherit; }
+.ai-rename-modal button:last-child { background:var(--interactive-primary); color:var(--text-on-action); }
+.ai-rename-modal button:disabled { opacity:.45; }
+.ai-composer-input { grid-template-columns:44px minmax(0,1fr) auto 44px; grid-template-areas:"attach question voice send"; }
+.ai-composer-input > .ai-attach-trigger { grid-area:attach; background:transparent; border:0; color:var(--text-secondary); }
+.ai-composer-input > .ai-voice-controls { grid-area:voice; }
+.ai-composer-input > button:last-child { border-radius:50%; }
+.ai-attachment-list { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
+.ai-attachment-list > div { display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--border-subtle); border-radius:12px; }
+.ai-attachment-list small { display:block; color:var(--text-secondary); }
+.ai-attachment-list button { background:transparent; color:var(--text-secondary); border:0; }
+.ai-attachment-list svg { width:18px; height:18px; }
+.ai-live-voice { display:flex; align-items:center; gap:12px; min-height:100px; padding:16px; border:1px solid var(--border-subtle); border-radius:24px; background:var(--surface-raised); }
+.ai-live-voice > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.ai-live-voice:has([role=alert]) { flex-wrap:wrap; }
+.ai-live-voice > [role=alert] { position:static; width:100%; height:auto; clip-path:none; }
+.ai-voice-meter { flex:1; display:flex; align-items:center; justify-content:center; gap:4px; height:64px; overflow:hidden; }
+.ai-voice-meter i { flex:0 1 5px; height:56px; background:var(--brand-gold-text); border-radius:8px; transform:scaleY(.12); }
+.ai-live-voice button { display:grid; place-items:center; flex:none; width:48px; height:48px; border:1px solid var(--border-subtle); border-radius:50%; background:var(--surface-selected); color:var(--brand-gold-text); }
+.ai-live-voice button svg { width:22px; }
+.ai-live-voice button[aria-pressed=true] { background:var(--surface-canvas); color:var(--text-secondary); }
+@media(max-width:700px) { .ai-composer-input { grid-template-columns:40px minmax(0,1fr) auto 40px; } .ai-voice-meter { gap:2px; } }
+@media(prefers-reduced-motion:reduce) { .ai-voice-meter i { transform:scaleY(.3)!important; } }
+
+.ai-composer-input:has(> .ai-voice-controls:not([data-phase="idle"])) { grid-template-columns:44px minmax(0,1fr) auto 44px; grid-template-areas:"voice voice voice voice" "attach question question send"; }
+.ai-live-voice { flex-wrap:wrap; }
+.ai-live-voice > span { position:static; order:5; flex-basis:100%; width:auto; height:auto; overflow:visible; clip-path:none; text-align:center; color:var(--text-secondary); font-size:12px; }
+
+@media(max-width:700px) { .ai-dialog > header { grid-template-columns:auto minmax(0,1fr) 44px; grid-template-rows:auto; } .ai-dialog > header .ai-identity { grid-column:2; grid-row:1; } .ai-dialog > header .ai-panel-controls, .ai-dialog > header .ai-composer-mode { grid-row:1; } }

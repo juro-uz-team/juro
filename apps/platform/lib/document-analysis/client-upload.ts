@@ -28,6 +28,7 @@ export async function uploadDocumentForAnalysis(
   onProgress?: (progress: SecureDocumentUploadProgress) => void,
   caseId?: string | null,
   analysisLocale: SupportedDocumentAnalysisLocale = defaultDocumentAnalysisLocale(locale),
+  workspaceId?: string,
 ): Promise<SecureDocumentUploadResult> {
   if (file.size <= 0 || file.size > 50 * 1024 * 1024) {
     throw new Error(locale === "ru"
@@ -46,6 +47,7 @@ export async function uploadDocumentForAnalysis(
       headers: {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,
+        ...(workspaceId ? {"x-juro-workspace-id":workspaceId} : {}),
         "x-juro-csrf": "1",
         "x-juro-locale": locale,
       },
@@ -70,11 +72,12 @@ export async function uploadDocumentForAnalysis(
     sha256,
     locale,
     (loaded, total) => onProgress?.({ phase: "uploading", loaded, total }),
+    workspaceId,
   );
   onProgress?.({ phase: "finalizing", loaded: file.size, total: file.size });
   return jsonRequest<SecureDocumentUploadResult>(
     `/api/platform/document-analysis/uploads/${encodeURIComponent(analysisId)}/finalize`,
-    { method: "POST", headers: { "x-juro-csrf": "1" } },
+    { method: "POST", headers: { "x-juro-csrf": "1", ...(workspaceId ? {"x-juro-workspace-id":workspaceId} : {}) } },
     [202],
     locale,
   );
@@ -109,10 +112,12 @@ function putFileWithProgress(
   sha256: string,
   locale: PlatformLocale,
   onProgress: (loaded: number, total: number) => void,
+  workspaceId?: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("PUT", url);
+    if(workspaceId)request.setRequestHeader("x-juro-workspace-id",workspaceId);
     request.setRequestHeader("content-type", file.type);
     request.setRequestHeader("x-juro-csrf", "1");
     request.setRequestHeader("x-juro-file-sha256", sha256);

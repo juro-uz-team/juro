@@ -38,7 +38,7 @@ export const GET = withApiErrors(async function GET(_request: Request, context: 
 export const PUT = withApiErrors(async function PUT(request: Request, context: Context) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const { analysisId } = await context.params;
   const db = requireD1();
   try {

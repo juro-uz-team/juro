@@ -30,7 +30,7 @@ export const POST = withApiErrors(async function POST(
 ) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const { analysisId } = await context.params;
   const db = requireD1();
   try {
