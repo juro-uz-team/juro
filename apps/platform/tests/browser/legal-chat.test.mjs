@@ -339,10 +339,10 @@ test('composer switches between typing and voice and releases the microphone',as
  assert(Number(await page.locator('.ai-context-toggle span').evaluate(el=>getComputedStyle(el).fontSize.replace('px','')))>0);
  await page.locator('#ai-question').fill('A question');await page.getByRole('button',{name:'Send',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Voice conversation',exact:true}).count(),0);
  await page.locator('#ai-question').fill('');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();await page.getByText('Listening…',{exact:true}).waitFor();
- assert((await page.locator('.ai-live-voice').boundingBox()).height<=70);assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
+ assert((await page.locator('.ai-live-voice').boundingBox()).height<=84);assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
  await page.getByRole('button',{name:'Unmute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),true);
  const dir=new URL('../../../../.scratch/voice-composer/',import.meta.url);await mkdir(dir,{recursive:true});await page.screenshot({path:fileURLToPath(new URL('voice-mobile.png',dir))});
- await page.setViewportSize({width:1920,height:900});assert((await page.locator('.ai-live-voice').boundingBox()).height<=70);await page.screenshot({path:fileURLToPath(new URL('voice-desktop.png',dir))});await page.setViewportSize({width:390,height:900});
+ await page.setViewportSize({width:1920,height:900});assert((await page.locator('.ai-live-voice').boundingBox()).height<=84);await page.screenshot({path:fileURLToPath(new URL('voice-desktop.png',dir))});await page.setViewportSize({width:390,height:900});
  await page.getByRole('button',{name:'Exit voice mode'}).click();await page.locator('#ai-question').waitFor();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].readyState),'ended');
  await page.screenshot({path:fileURLToPath(new URL('text-mobile.png',dir))});
 });

@@ -108,8 +108,8 @@ export function VoiceConversation({locale,workspaceId,busy,messageId,onTranscrip
   <defs><linearGradient id={`${waveId}-base`} x2="0" y2="1"><stop stopColor="var(--surface-canvas)"/><stop offset="1" stopColor="var(--surface-elevated)"/></linearGradient>
   <linearGradient id={`${waveId}-light`} x2="0" y2="1"><stop stopColor="var(--brand-gold-text)" stopOpacity="0"/><stop offset=".7" stopColor="var(--brand-gold-text)" stopOpacity=".6"/><stop offset="1" stopColor="var(--brand-gold-text)"/></linearGradient>
   <filter id={`${waveId}-blur`} x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="12"/></filter>
-  <clipPath id={`${waveId}-clip`}><rect width="320" height="160" rx="16" ry="80"/></clipPath></defs>
-  <g clipPath={`url(#${waveId}-clip)`}><rect width="320" height="160" fill={`url(#${waveId}-base)`}/>
+  </defs>
+  <g><rect width="320" height="160" fill={`url(#${waveId}-base)`}/>
    {[0,1,2].map(index=><path key={index} data-wave={index} d={`M0,${92-index*7} Q160,65 320,92 L320,160 L0,160 Z`} fill={`url(#${waveId}-light)`} opacity={.45+index*.2} filter={`url(#${waveId}-blur)`}/>)}</g>
  </svg><span role={error?"alert":"status"}>{label}</span>{error&&<button type="button" onClick={()=>setAttempt(n=>n+1)} aria-label={aiText(locale,"Повторить","Qayta urinish","Retry")}><RotateCcw/></button>}<button type="button" aria-pressed={muted} aria-label={aiText(locale,muted?"Включить микрофон":"Выключить микрофон",muted?"Mikrofonni yoqish":"Mikrofonni o‘chirish",muted?"Unmute microphone":"Mute microphone")} onClick={()=>setMuted(value=>!value)}>{muted?<MicOff/>:<Mic/>}</button><button type="button" onClick={onClose} aria-label={aiText(locale,"Выйти из голосового режима","Ovozli rejimdan chiqish","Exit voice mode")}><X/></button></div>;
 }

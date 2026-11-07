@@ -873,7 +873,7 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 .ai-attachment-list small { display:block; color:var(--text-secondary); }
 .ai-attachment-list button { background:transparent; color:var(--text-secondary); border:0; }
 .ai-attachment-list svg { width:18px; height:18px; }
-.ai-live-voice { display:flex; align-items:center; gap:12px; min-height:100px; padding:16px; border:1px solid var(--border-subtle); border-radius:24px; background:var(--surface-raised); }
+.ai-live-voice { display:flex; align-items:center; justify-content:center; flex-wrap:nowrap; gap:12px; min-height:80px; padding:8px 0; border:0; background:transparent; }
 .ai-live-voice > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .ai-live-voice:has([role=alert]) { flex-wrap:wrap; }
 .ai-live-voice > [role=alert] { position:static; width:100%; height:auto; clip-path:none; }
@@ -883,14 +883,14 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 @media(max-width:700px) { .ai-composer-input { grid-template-columns:40px minmax(0,1fr) auto 40px; } }
 
 .ai-composer-input:has(> .ai-voice-controls:not([data-phase="idle"])) { grid-template-columns:44px minmax(0,1fr) auto 44px; grid-template-areas:"voice voice voice voice" "attach question question send"; }
-.ai-live-voice { flex-wrap:wrap; }
+
 
 
 @media(max-width:700px) { .ai-dialog > header { grid-template-columns:auto minmax(0,1fr) 44px; grid-template-rows:auto; } .ai-dialog > header .ai-identity { grid-column:2; grid-row:1; } .ai-dialog > header .ai-panel-controls, .ai-dialog > header .ai-composer-mode { grid-row:1; } }
 
 /* Voice remains a single calm focal point, with a shared history action slot. */
-.ai-live-voice { justify-content:center; flex-wrap:nowrap; gap:16px; padding:20px; min-height:140px; }
-.ai-voice-wave { width:280px; height:140px; max-width:calc(100% - 128px); flex:0 1 280px; overflow:visible; }
+
+.ai-voice-wave { width:calc(60% - 76.8px); height:64px; flex:0 1 calc(60% - 76.8px); min-width:0; overflow:hidden; border-radius:999px; }
 .ai-live-voice:has([role=alert]) { flex-wrap:wrap; }
 .ai-history-pin { top:28px; right:20px; bottom:auto; width:16px; height:16px; pointer-events:none; }
 .ai-conversation-item:hover .ai-history-pin, .ai-conversation-item:has(.ai-history-menu-trigger[data-focus-visible]) .ai-history-pin, .ai-conversation-item:has(.ai-history-menu-trigger[aria-expanded=true]) .ai-history-pin { opacity:0; }
@@ -906,13 +906,8 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
  .ai-dialog > header .ai-identity { grid-column:1 / -1; grid-row:1; }
  .ai-dialog > header .ai-panel-controls { grid-column:1; grid-row:2; justify-self:start; }
  .ai-dialog > header .ai-composer-mode { grid-column:2; grid-row:2; justify-self:end; }
- .ai-live-voice { gap:8px; padding:12px; min-height:112px; }
- .ai-voice-wave { height:100px; max-width:calc(100% - 112px); }
+ .ai-live-voice { gap:8px; min-height:72px; }
+ .ai-voice-wave { height:56px; width:calc(60% - 67.2px); flex-basis:calc(60% - 67.2px); }
 }
 
-/* Voice replaces the composer, retaining its compact height and control alignment. */
-.ai-live-voice { min-height:64px; padding:6px 8px 6px 16px; gap:12px; border-radius:20px; }
-.ai-voice-wave { height:48px; width:auto; max-width:none; flex:1 1 auto; min-width:0; }
 .ai-live-voice button { width:40px; height:40px; }
-.ai-live-voice:has([role=alert]) .ai-voice-wave { flex-basis:calc(100% - 156px); }
-@media(max-width:700px) { .ai-live-voice { min-height:60px; padding:6px 8px; gap:8px; } .ai-voice-wave { height:44px; } }
