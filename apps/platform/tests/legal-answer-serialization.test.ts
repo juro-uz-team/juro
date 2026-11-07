@@ -50,3 +50,11 @@ test("citation metadata cannot substitute a different source URL for authenticat
       originalUrl: "https://lex.uz/docs/999", status: "current", effectiveDate: null, verifiedAt: "2026-10-28T00:00:00Z" },
   ] }), /CITATION_PRESENTATION_MISMATCH/);
 });
+
+test("conversational replies retain their plain presentation through serialization", () => {
+  const result = serializeLegalOutcome({kind: "conversation", text: "Здравствуйте! Чем могу помочь?", checkedEvidence: [], clarificationQuestions: []},
+    {...request, language: "ru"}, {sources: [], legalDatabaseAsOf: "2026-10-28"});
+  assert.equal(result.presentationKind, "conversation");
+  assert.equal(result.summary, "Здравствуйте! Чем могу помочь?");
+  assert.equal(result.responseKind, "answer");
+});

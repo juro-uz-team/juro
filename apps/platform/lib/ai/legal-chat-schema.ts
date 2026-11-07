@@ -110,6 +110,7 @@ export const legalChatResponseSchema = z.object({
     actionIndices: z.array(z.number().int().nonnegative()).max(MAX_LEGAL_ACTION_STEPS),
   }).strict()).max(16).optional(),
   responseKind: z.enum(["answer", "clarification_required"]),
+  presentationKind: z.enum(["conversation", "legal_answer"]).optional(),
   summary: z.string().min(1).max(1_500),
   summarySourceIds: sourceIdList.optional(),
   answer: z.string().min(1).max(20_000),

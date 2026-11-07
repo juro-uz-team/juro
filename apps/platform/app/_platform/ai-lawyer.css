@@ -877,16 +877,35 @@ html.platform-chat-page, body.platform-chat-page { height: 100%; min-height: 0; 
 .ai-live-voice > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .ai-live-voice:has([role=alert]) { flex-wrap:wrap; }
 .ai-live-voice > [role=alert] { position:static; width:100%; height:auto; clip-path:none; }
-.ai-voice-meter { flex:1; display:flex; align-items:center; justify-content:center; gap:4px; height:64px; overflow:hidden; }
-.ai-voice-meter i { flex:0 1 5px; height:56px; background:var(--brand-gold-text); border-radius:8px; transform:scaleY(.12); }
 .ai-live-voice button { display:grid; place-items:center; flex:none; width:48px; height:48px; border:1px solid var(--border-subtle); border-radius:50%; background:var(--surface-selected); color:var(--brand-gold-text); }
 .ai-live-voice button svg { width:22px; }
 .ai-live-voice button[aria-pressed=true] { background:var(--surface-canvas); color:var(--text-secondary); }
-@media(max-width:700px) { .ai-composer-input { grid-template-columns:40px minmax(0,1fr) auto 40px; } .ai-voice-meter { gap:2px; } }
-@media(prefers-reduced-motion:reduce) { .ai-voice-meter i { transform:scaleY(.3)!important; } }
+@media(max-width:700px) { .ai-composer-input { grid-template-columns:40px minmax(0,1fr) auto 40px; } }
 
 .ai-composer-input:has(> .ai-voice-controls:not([data-phase="idle"])) { grid-template-columns:44px minmax(0,1fr) auto 44px; grid-template-areas:"voice voice voice voice" "attach question question send"; }
 .ai-live-voice { flex-wrap:wrap; }
-.ai-live-voice > span { position:static; order:5; flex-basis:100%; width:auto; height:auto; overflow:visible; clip-path:none; text-align:center; color:var(--text-secondary); font-size:12px; }
+
 
 @media(max-width:700px) { .ai-dialog > header { grid-template-columns:auto minmax(0,1fr) 44px; grid-template-rows:auto; } .ai-dialog > header .ai-identity { grid-column:2; grid-row:1; } .ai-dialog > header .ai-panel-controls, .ai-dialog > header .ai-composer-mode { grid-row:1; } }
+
+/* Voice remains a single calm focal point, with a shared history action slot. */
+.ai-live-voice { justify-content:center; flex-wrap:nowrap; gap:16px; padding:20px; min-height:140px; }
+.ai-voice-wave { width:280px; height:140px; max-width:calc(100% - 128px); flex:0 1 280px; overflow:visible; }
+.ai-live-voice:has([role=alert]) { flex-wrap:wrap; }
+.ai-history-pin { top:28px; right:20px; bottom:auto; width:16px; height:16px; pointer-events:none; }
+.ai-conversation-item:hover .ai-history-pin, .ai-conversation-item:has(.ai-history-menu-trigger[data-focus-visible]) .ai-history-pin, .ai-conversation-item:has(.ai-history-menu-trigger[aria-expanded=true]) .ai-history-pin { opacity:0; }
+.ai-history-menu-trigger { isolation:isolate; border-radius:50%; }
+.ai-history-menu-trigger:hover, .ai-history-menu-trigger[data-pressed] { background:transparent; }
+.ai-history-menu-trigger::before { content:""; position:absolute; inset:6px; border-radius:50%; z-index:-1; }
+.ai-history-menu-trigger:hover::before, .ai-history-menu-trigger[data-pressed]::before, .ai-history-menu-trigger[aria-expanded=true]::before { background:var(--surface-selected); }
+.ai-composer-mode .ai-context-toggle { width:auto; min-width:40px; display:inline-flex; align-items:center; gap:8px; padding:8px 12px; margin:0; white-space:nowrap; font-size:12px; font-weight:600; }
+.ai-composer-mode .ai-context-toggle:hover { color:var(--brand-gold-text); background:var(--surface-selected); border-color:var(--border-accent); }
+@media(hover:none) { .ai-history-pin { display:none; } }
+@media(max-width:700px) {
+ .ai-dialog > header { grid-template-columns:1fr 1fr; grid-template-rows:auto auto; }
+ .ai-dialog > header .ai-identity { grid-column:1 / -1; grid-row:1; }
+ .ai-dialog > header .ai-panel-controls { grid-column:1; grid-row:2; justify-self:start; }
+ .ai-dialog > header .ai-composer-mode { grid-column:2; grid-row:2; justify-self:end; }
+ .ai-live-voice { gap:8px; padding:12px; min-height:112px; }
+ .ai-voice-wave { height:100px; max-width:calc(100% - 112px); }
+}

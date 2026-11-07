@@ -17,6 +17,7 @@ export type LegalAnswerViewSource = {
 
 export type LegalAnswerViewResult = {
   responseKind: "answer" | "clarification_required";
+  presentationKind?: "conversation" | "legal_answer";
   summary: string;
   summarySourceIds?: string[];
   answer: string;

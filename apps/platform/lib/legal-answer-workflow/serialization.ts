@@ -18,7 +18,8 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
   }
   if (outcome.kind === "conversation") {
     if (evidence.length) throw new Error("CONVERSATION_EVIDENCE_INVALID");
-    return { responseKind: "answer", summary: outcome.text, answer: outcome.text,
+    return { responseKind: "answer",
+      presentationKind: "conversation", summary: outcome.text, answer: outcome.text,
       confirmedFindings: [], actionPlan: [], conditionalBranches: [],
       language: request.language, jurisdiction: "UZ", answerMode: request.format, reasoningMode: request.mode,
       clarificationQuestions: [], coverageGaps: [], assumptions: [], risks: [], deadlines: [], requiredDocuments: [],

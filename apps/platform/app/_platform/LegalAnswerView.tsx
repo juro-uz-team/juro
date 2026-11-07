@@ -162,6 +162,20 @@ export function LegalAnswerView({
     </article>;
   }
 
+  // Before presentationKind was persisted, conversational outcomes had this empty,
+  // programmatically validated shape. Never apply it to an in-progress legal draft.
+  const legacyConversation = !streaming && !result.presentationKind && result.validationMethod === "programmatic"
+    && result.evidenceMode === "none" && result.sources.length === 0 && result.confirmedFindings.length === 0
+    && result.actionPlan.length === 0 && result.assumptions.length === 0 && result.risks.length === 0
+    && result.clarificationQuestions.length === 0 && result.requiredDocuments.length === 0
+    && !(result.conditionalBranches?.length) && !(result.referenceNotes?.length) && !(result.coverageGaps?.length)
+    && result.deadlines.length === 0 && result.urgency === "normal" && !result.suggestedDocument;
+  if (result.presentationKind === "conversation" || legacyConversation) {
+    return <article className={rootClass} data-answer-kind="conversation">{toolbar}
+      <Markdown result={result} locale={locale}>{result.summary}</Markdown>
+    </article>;
+  }
+
   const important = result.assumptions.length > 0 || result.risks.length > 0 || result.urgency !== "normal";
   const prepare = result.requiredDocuments.length > 0 || Boolean(result.suggestedDocument);
   return <article className={rootClass} data-answer-kind="legal-answer" aria-busy={streaming || undefined}>

@@ -336,6 +336,7 @@ test('composer switches between typing and voice and releases the microphone',as
  stallMetadata=false;completed.clear();const browserContext=await browser.newContext({permissions:['microphone'],viewport:{width:390,height:900}});context.after(()=>browserContext.close());const page=await browserContext.newPage();
  await page.addInitScript(()=>{const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async options=>{const stream=await original(options);window.testMicrophone=stream;return stream;};});
  await page.goto(origin+'/en/individual/ai-chat');await styleChat(page);
+ assert(Number(await page.locator('.ai-context-toggle span').evaluate(el=>getComputedStyle(el).fontSize.replace('px','')))>0);
  await page.locator('#ai-question').fill('A question');await page.getByRole('button',{name:'Send',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Voice conversation',exact:true}).count(),0);
  await page.locator('#ai-question').fill('');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();await page.getByText('Listening…',{exact:true}).waitFor();
  assert.equal(await page.locator('#ai-question').count(),0);await page.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await page.evaluate(()=>window.testMicrophone.getAudioTracks()[0].enabled),false);
@@ -368,6 +369,27 @@ test('voice conversation submits after silence and plays the saved voice prefere
  await page.goto(origin+'/signed');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();
  await page.getByText('Listening…',{exact:true}).waitFor();await page.locator('.ai-assistant-draft').waitFor();
  const response=pending.get('/api/platform/ai');assert(response);completed.add('/api/platform/ai');pending.delete('/api/platform/ai');response.end(`event: result\ndata: ${JSON.stringify(delivery)}\n\n`);
- await page.getByText('JURO is speaking…',{exact:true}).waitFor();await page.waitForFunction(()=>Array.from(document.querySelectorAll('.ai-voice-meter i')).some(bar=>Number(bar.style.transform.match(/scaleY\(([^)]+)/)?.[1])>.2));
+ await page.getByText('JURO is speaking…',{exact:true}).waitFor();await page.waitForFunction(()=>Number(document.querySelector('.ai-voice-wave')?.dataset.level)>.2);
  await page.getByText('Listening…',{exact:true}).waitFor();assert.equal(voice,'cedar');await page.getByRole('button',{name:'Exit voice mode'}).click();
+});
+
+for (const legacy of [false,true]) test(`greetings render without a legal heading after reload (legacy: ${legacy})`, async context=>{
+ stallMetadata=false;completed.clear();const page=await browser.newPage();context.after(()=>page.close());
+ await page.route('**/api/platform/ai?**',route=>route.fulfill({json:{...prior,result:{...result,responseKind:'answer',presentationKind:legacy?undefined:'conversation',validationMethod:'programmatic',evidenceMode:'none',summary:'Hello, how can I help?'},turns:undefined}}));
+ await page.goto(origin+'/signed?conversationId=prior');
+ await page.locator('[data-answer-kind="conversation"]').waitFor();
+ assert.equal(await page.locator('[data-answer-kind="conversation"] h2').count(),0);
+});
+
+test('voice retry reuses the recorded turn without asking for speech again', async context=>{
+ stallMetadata=false;completed.clear();voicePatch=undefined;
+ const browserContext=await browser.newContext({permissions:['microphone']});context.after(()=>browserContext.close());const page=await browserContext.newPage();
+ await page.addInitScript(()=>{window.micRequests=0;const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=options=>{window.micRequests++;return get(options);};const original=AudioContext.prototype.createMediaStreamSource;AudioContext.prototype.createMediaStreamSource=function(stream){const source=original.call(this,stream),connect=source.connect.bind(source),start=performance.now();source.connect=destination=>{if(destination instanceof AnalyserNode)destination.getByteTimeDomainData=array=>{for(let i=0;i<array.length;i++)array[i]=performance.now()-start<600?128+Math.round(25*Math.sin(i)):128;};return connect(destination);};return source;};});
+ let attempts=0;const keys=[];
+ await page.route('**/api/platform/voice/recordings',route=>{keys.push(route.request().headers()['idempotency-key']);return route.fulfill({json:{recording:{id:voiceId,status:'uploaded'}}});});
+ await page.route('**/api/platform/voice/recordings/*/transcribe',route=>{attempts++;return route.fulfill(attempts===1?{status:503,json:{error:'Temporary failure'}}:{json:{transcript:'The saved voice question'}});});
+ await page.goto(origin+'/signed');await page.getByRole('button',{name:'Voice conversation',exact:true}).click();await page.getByRole('alert').waitFor();
+ await page.getByRole('button',{name:'Retry',exact:true}).click();await page.locator('.ai-assistant-draft').waitFor();
+ assert.equal(attempts,2);assert.equal(await page.evaluate(()=>window.micRequests),1);assert.equal(keys.length,2);assert.ok(keys[0]);assert.equal(keys[0],keys[1]);
+ await page.getByRole('button',{name:'Exit voice mode'}).click();
 });
