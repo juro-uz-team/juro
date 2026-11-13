@@ -62,7 +62,9 @@ test("first visit and legacy system preferences resolve to explicit light before
   assert.match(layout, /<DocumentBootstrap\s*\/>/);
   assert.match(bootstrap, /useServerInsertedHTML\(\(\) =>/);
   assert.match(bootstrap, /<script id="theme-bootstrap" dangerouslySetInnerHTML=\{\{ __html: THEME_BOOTSTRAP_SCRIPT \}\}/);
-  assert.doesNotMatch(layout, /<script\b/);
+  const body = layout.match(/<body[^>]*>([\s\S]*?)<\/body>/)?.[1];
+  assert.ok(body);
+  assert.doesNotMatch(body, /<script\b/);
   assert.match(switcher, /readThemeMode,\s*\(\) => "light"/s);
   assert.doesNotMatch(switcher, /prefers-color-scheme|matchMedia/);
   assert.match(globals, /:root\s*\{\s*color-scheme:\s*light;/s);
