@@ -11,6 +11,7 @@ import "./_platform/legal-answer.css";
 import "./_components/motion.css";
 import "./_components/brand.css";
 import { DocumentBootstrap } from "./_theme/DocumentBootstrap";
+import { googleTagBootstrap, googleTagSource } from "../../../scripts/google-tag.mjs";
 import {
   INTERNAL_REQUEST_PATH_HEADER,
   isLocale,
@@ -55,6 +56,9 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: googleTagBootstrap }} />
+        {/* Defer keeps React from hoisting the loader above the consent defaults. */}
+        <script defer src={googleTagSource} />
         <link rel="icon" href="/brand/juro-app-icon.png" />
         <link rel="shortcut icon" href="/brand/juro-app-icon.png" />
         <link rel="apple-touch-icon" href="/brand/juro-app-icon.png" />

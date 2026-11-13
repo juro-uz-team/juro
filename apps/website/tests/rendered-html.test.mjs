@@ -96,6 +96,10 @@ test("renders the production landing with localized canonical metadata and real 
     assert.match(response.headers.get("permissions-policy") ?? "", /camera=\(\)/);
     const html = await response.text();
     const head = html.slice(0, html.indexOf("</head>"));
+    assert.equal((head.match(/<script[^>]+src="https:\/\/www\.googletagmanager\.com\/gtm\.js\?id=GTM-NQCKWLZB"/g) ?? []).length, 1);
+    assert.ok(head.indexOf("analytics_storage:") < head.indexOf('src="https://www.googletagmanager.com/gtm.js'));
+    assert.match(response.headers.get("content-security-policy") ?? "", /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(response.headers.get("content-security-policy") ?? "", /connect-src[^;]*https:\/\/\*\.google-analytics\.com/);
     assert.match(html, /<link rel="icon" href="\/brand\/juro-app-icon\.png" type="image\/png"\/>/);
     assert.match(html, /<link rel="apple-touch-icon" href="\/brand\/juro-app-icon\.png"\/>/);
     assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest"\/>/);

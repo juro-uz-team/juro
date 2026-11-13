@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import next from "next";
 import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
+import { googleTagCsp } from "../../../scripts/google-tag.mjs";
 
 const config = nativeHttpConfiguration(process.env, "website");
 const { port } = config;
@@ -35,7 +36,7 @@ createServer(async (request, response) => {
   response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   response.setHeader("X-Frame-Options", "DENY");
   if (config.privateMode || process.env.DEPLOYMENT_ENVIRONMENT === "staging") response.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-  response.setHeader("Content-Security-Policy", `default-src 'self'; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' ${platformOrigin}; img-src 'self' data: blob: ${platformOrigin}; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'` + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'") + "; connect-src 'self' ws://localhost:*; media-src 'self' blob:");
+  response.setHeader("Content-Security-Policy", `default-src 'self'; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' ${platformOrigin}; img-src 'self' data: blob: ${platformOrigin} ${googleTagCsp.image}; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' ${googleTagCsp.script}` + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'") + `; connect-src 'self' ws://localhost:* ${googleTagCsp.connect}; frame-src 'self' ${googleTagCsp.frame}; media-src 'self' blob:`);
   try { await handle(request, response); }
   catch { if (!response.headersSent) response.writeHead(500); response.end(); }
 }).listen(port, "127.0.0.1", () => console.log(`Website listening on http://127.0.0.1:${port}`));

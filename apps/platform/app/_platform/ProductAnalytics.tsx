@@ -55,7 +55,7 @@ function saveConsent(value: Consent) {
     localStorage.setItem("juro-cookie-consent", value);
     transientChoice = undefined;
   } catch { transientChoice = value; }
-  window.dispatchEvent(new Event(consentChanged));
+  window.dispatchEvent(new CustomEvent(consentChanged, { detail: value }));
 }
 
 export function AnalyticsPreferences({ locale }: { locale: "en" | "ru" | "uz" }) {

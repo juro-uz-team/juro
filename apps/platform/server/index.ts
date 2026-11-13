@@ -11,6 +11,7 @@ import { getSelfHostedRuntime } from "../lib/runtime/self-hosted";
 import { handleInternalAdminRequest } from "../lib/auth/admin-internal-api";
 import { INTERNAL_REQUEST_PATH_HEADER, isAuthenticatedPlatformPathReady } from "../lib/platform/routing";
 import { nativeHttpConfiguration, normalizeNativeRequest } from "../../../scripts/native-http.mjs";
+import { googleTagCsp } from "../../../scripts/google-tag.mjs";
 import { routeNativeDomain } from "../lib/runtime/domain-routing";
 import { getSessionUser } from "../lib/auth/session";
 import { legacyPracticeAccessDenied, legacyPracticeSensitivePath } from "../lib/practice/access";
@@ -31,7 +32,7 @@ function secureResponse(response: ServerResponse) {
   response.setHeader("Permissions-Policy", "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)");
   response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-  response.setHeader("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'") + "; connect-src 'self' ws://localhost:*; media-src 'self' blob:; worker-src 'self' blob:");
+  response.setHeader("Content-Security-Policy", `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: ${googleTagCsp.image}; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' ${googleTagCsp.script}` + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'") + `; connect-src 'self' ws://localhost:* ${googleTagCsp.connect}; frame-src 'self' ${googleTagCsp.frame}; media-src 'self' blob:; worker-src 'self' blob:`);
 }
 
 function boundedBody(request: IncomingMessage, response: ServerResponse, limit: number): boolean {
