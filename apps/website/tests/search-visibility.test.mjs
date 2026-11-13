@@ -77,6 +77,9 @@ test("every discoverable public page has consistent metadata, language links and
     assert.ok(page.meta.description?.length > 20, path);
     assert.equal(attributes(find(page.root, node => node.tagName === "html")[0]).lang, path.split("/")[1], path);
     assert.equal(find(page.root, node => node.tagName === "h1").length, 1, path);
+    const snippetExclusions = find(page.root, node => Object.hasOwn(attributes(node), "data-nosnippet"));
+    assert.ok(snippetExclusions.length >= 3, path);
+    for (const node of snippetExclusions) assert.ok(["span", "div", "section"].includes(node.tagName), "Google-supported snippet exclusion: " + path);
     if (/^\/(ru|uz|en)$/.test(path)) {
       const heading = text(find(page.root, node => node.tagName === "h1")[0]);
       assert.match(heading, /AI/);

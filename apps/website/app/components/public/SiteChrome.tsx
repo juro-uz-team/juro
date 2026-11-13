@@ -208,8 +208,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
     [t.lawyers, `/${locale}/lawyers`],
   ] as const;
   return (
-    <footer data-nosnippet="" className={`${styles.footer} ${footerRailStyles.footer}`}>
-      <div className={`${styles.footerTop} ${footerRailStyles.top}`}>
+    <footer className={`${styles.footer} ${footerRailStyles.footer}`}>
+      <div data-nosnippet="" className={`${styles.footerTop} ${footerRailStyles.top}`}>
         <div className={`${styles.footerBrand} ${footerRailStyles.brand}`}>
           <Link aria-label="JURO" className={brandStyles.footerLogo} href={`/${locale}`}>
             <OfficialLogo inverse />
@@ -226,8 +226,8 @@ export function SiteFooter({ locale }: { locale: Locale }) {
         <a className={footerRailStyles.contactCard} href="mailto:admin@juro.uz"><Mail aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Написать нам" : locale === "uz" ? "Bizga yozing" : "Write to us"}</small><strong>admin@juro.uz</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
         <a className={footerRailStyles.contactCard} href="tel:+998974022292"><Phone aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Позвонить" : locale === "uz" ? "Qo‘ng‘iroq qilish" : "Call us"}</small><strong>+998 97 402 22 92</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
       </address>
-      <div className={footerRailStyles.signature} aria-hidden="true"><span>JURO</span><small>LEGAL INTELLIGENCE<br />HUMAN DIRECTION.</small></div>
-      <div className={`${styles.footerBottom} ${footerContactStyles.bottom} ${footerRailStyles.bottom}`}><span>© {year} JURO</span><p>{t.note}</p><span className={styles.footerLanguages}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={`/${target}`} key={target}>{languageLabels[target]}</Link>)}</span></div>
+      <div data-nosnippet="" className={footerRailStyles.signature} aria-hidden="true"><span>JURO</span><small>LEGAL INTELLIGENCE<br />HUMAN DIRECTION.</small></div>
+      <div data-nosnippet="" className={`${styles.footerBottom} ${footerContactStyles.bottom} ${footerRailStyles.bottom}`}><span>© {year} JURO</span><p>{t.note}</p><span className={styles.footerLanguages}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={`/${target}`} key={target}>{languageLabels[target]}</Link>)}</span></div>
     </footer>
   );
 }
