@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,17 +11,11 @@ import { LegalPrintButton } from "../LegalPrintButton";
 type Props = { params: Promise<{ locale: string; legalSlug: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { locale, legalSlug } = await params;
-  if (!isLegalLocale(locale)) return {};
-  const document = getLegalDocument(locale, legalSlug);
-  if (!document) return {};
-  const canonical = `https://juro.uz${legalPath(locale, legalSlug)}`;
-  return {
-    title: document.title,
-    description: document.description,
-    robots: legalConfig.mode === "PRE_INCORPORATION_PREVIEW" ? { index: false, follow: true, nocache: true } : { index: true, follow: true },
-    alternates: { canonical, languages: { ru: `https://juro.uz${legalPath("ru", legalSlug)}`, uz: `https://juro.uz${legalPath("uz", legalSlug)}`, "x-default": `https://juro.uz${legalPath("ru", legalSlug)}` } },
-  };
+ const { locale, legalSlug } = await params;
+ if (!isLegalLocale(locale)) return {};
+ const document = getLegalDocument(locale, legalSlug);
+ if (!document) return {};
+ return publicMetadata({ locale, title: document.title, description: document.description, path: "/legal/" + legalSlug, image: "legal", noindex: legalConfig.mode === "PRE_INCORPORATION_PREVIEW", languages: ["ru", "uz"] });
 }
 
 function LegalBlockView({ block }: { block: LegalBlock }) {

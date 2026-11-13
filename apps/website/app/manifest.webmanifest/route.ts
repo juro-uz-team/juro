@@ -1,5 +1,5 @@
 const manifest = {
-  name: "JURO — Юрист в кармане",
+  name: "JURO — AI-юрист в Узбекистане",
   short_name: "JURO",
   description: "Юридическая ситуация превращается в понятные факты, риски и следующий шаг.",
   start_url: "/ru",
@@ -8,6 +8,7 @@ const manifest = {
   theme_color: "#061827",
   lang: "ru",
   icons: [
+    { src: "/brand/juro-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "/brand/juro-app-icon.png", sizes: "512x512", type: "image/png" },
   ],
 };

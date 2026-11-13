@@ -1,3 +1,6 @@
+import { publicPlatformJson, publicPlatformOrigin } from "../../../lib/public-platform";
+import { cache } from "react";
+
 export type PublicLawyer = {
   id: string;
   displayName: string;
@@ -22,7 +25,7 @@ export type PublicLawyer = {
 };
 
 function platformOrigin() {
-  return (process.env.JURO_PUBLIC_PLATFORM_ORIGIN || "http://localhost:3000").replace(/\/$/, "");
+  return publicPlatformOrigin();
 }
 
 function asLawyer(value: unknown): PublicLawyer | null {
@@ -79,24 +82,20 @@ export function localizePublicLawyer(lawyer: PublicLawyer, locale: "ru" | "uz" |
   };
 }
 
-export async function getPublicLawyers() {
+export const getPublicLawyers = cache(async function getPublicLawyers() {
   try {
-    const response = await fetch(`${platformOrigin()}/api/public/lawyers`, { cache: "no-store", headers: { accept: "application/json" } });
-    if (!response.ok) return { lawyers: [] as PublicLawyer[], available: false };
-    const payload = await response.json() as { lawyers?: unknown };
+    const payload = await publicPlatformJson<{ lawyers?: unknown }>("/api/public/lawyers");
     return { lawyers: Array.isArray(payload.lawyers) ? payload.lawyers.map(asLawyer).filter((item): item is PublicLawyer => item !== null) : [], available: true };
   } catch {
     return { lawyers: [] as PublicLawyer[], available: false };
   }
-}
+});
 
-export async function getPublicLawyer(id: string) {
+export const getPublicLawyer = cache(async function getPublicLawyer(id: string) {
   try {
-    const response = await fetch(`${platformOrigin()}/api/public/lawyers/${encodeURIComponent(id)}`, { cache: "no-store", headers: { accept: "application/json" } });
-    if (!response.ok) return null;
-    const payload = await response.json() as { lawyer?: unknown };
+    const payload = await publicPlatformJson<{ lawyer?: unknown }>(`/api/public/lawyers/${encodeURIComponent(id)}`);
     return asLawyer(payload.lawyer);
   } catch {
     return null;
   }
-}
+});

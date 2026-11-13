@@ -1,37 +1,11 @@
+import { publicMetadata } from "../../../lib/public-seo";
+import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { englishInvestorVideo } from "../../investor-video";
 import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
 import styles from "../../[locale]/video/video.module.css";
 
-const canonical = "https://juro.uz/en/video";
-
-export const metadata: Metadata = {
-  title: "JURO video presentation",
-  description: "A short JURO video presentation: legal help, AI tools, and the next step in one platform.",
-  alternates: {
-    canonical,
-    languages: {
-      ru: "https://juro.uz/ru/video",
-      uz: "https://juro.uz/uz/video",
-      en: canonical,
-      "x-default": "https://juro.uz/ru/video",
-    },
-  },
-  openGraph: {
-    title: "JURO video presentation",
-    description: "See how JURO turns a legal question into a clear next step.",
-    url: canonical,
-    siteName: "JURO",
-    locale: "en_US",
-    alternateLocale: ["ru_RU", "uz_UZ"],
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "JURO video presentation",
-    description: "See how JURO turns a legal question into a clear next step.",
-  },
-};
+export const metadata: Metadata = publicMetadata({ locale: "en", ...searchPages.en.video, path: "/video", image: "video" });
 
 export default function EnglishInvestorVideoPage() {
   return (

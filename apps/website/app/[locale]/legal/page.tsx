@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,16 +10,9 @@ import styles from "./legal.module.css";
 type Props = { params: Promise<{ locale: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { locale } = await params;
-  if (!isLegalLocale(locale)) return {};
-  const ru = locale === "ru";
-  const canonical = `https://juro.uz/${locale}/legal`;
-  return {
-    title: ru ? "Юридический центр" : "Yuridik markaz",
-    description: ru ? "Все юридические документы JURO в одном каталоге." : "JUROning barcha yuridik hujjatlari bitta katalogda.",
-    robots: legalConfig.mode === "PRE_INCORPORATION_PREVIEW" ? { index: false, follow: true, nocache: true } : { index: true, follow: true },
-    alternates: { canonical, languages: { ru: "https://juro.uz/ru/legal", uz: "https://juro.uz/uz/legal", "x-default": "https://juro.uz/ru/legal" } },
-  };
+ const { locale } = await params;
+ if (!isLegalLocale(locale)) return {};
+ return publicMetadata({ locale, title: locale === "ru" ? "Юридический центр" : "Yuridik markaz", description: locale === "ru" ? "Документы, условия использования и политики платформы JURO." : "JURO platformasining hujjatlari, foydalanish shartlari va siyosatlari.", path: "/legal", noindex: legalConfig.mode === "PRE_INCORPORATION_PREVIEW", languages: ["ru", "uz"] });
 }
 
 export default async function LegalCenter({ params }: Props) {

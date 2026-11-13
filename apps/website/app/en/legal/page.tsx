@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
@@ -16,12 +17,7 @@ const documentLabels: Record<string, string> = {
   "legal-information": "Legal information", "user-agreement": "User agreement", "public-offer": "Public offer", "privacy-policy": "Privacy policy", "personal-data-processing-policy": "Personal data processing policy", "personal-data-consent": "Personal data consent", "cross-border-ai-consent": "Cross-border AI consent", "cookie-policy": "Cookie policy", "payments-subscriptions-refunds": "Payments, subscriptions and refunds", "ai-use-policy": "AI use policy", "marketplace-client-rules": "Marketplace client rules", "lawyer-platform-terms": "Terms for legal professionals", "document-storage-rules": "Document storage rules", "electronic-communications-consent": "Electronic communications consent", "marketing-consent": "Marketing consent", "acceptable-use-policy": "Acceptable use policy", "complaints-disputes": "Complaints and disputes", "data-subject-request-form": "Data subject request form",
 };
 
-export const metadata: Metadata = {
-  title: "Legal Centre",
-  description: "English navigation for JURO’s published legal documents, with links to the Russian and Uzbek originals.",
-  robots: { index: false, follow: true, nocache: true },
-  alternates: { canonical: "https://juro.uz/en/legal", languages: { ru: "https://juro.uz/ru/legal", uz: "https://juro.uz/uz/legal", en: "https://juro.uz/en/legal", "x-default": "https://juro.uz/ru/legal" } },
-};
+export const metadata: Metadata = publicMetadata({ locale: "en", title: "Legal Centre", description: "English navigation for JURO’s legal documents, with links to the Russian and Uzbek originals.", path: "/legal", image: "legal", noindex: true, languages: ["en"] });
 
 export default function EnglishLegalCenter() {
   return <div className={styles.page} lang="en">

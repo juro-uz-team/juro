@@ -15,6 +15,7 @@ import { googleTagCsp } from "../../../scripts/google-tag.mjs";
 import { routeNativeDomain } from "../lib/runtime/domain-routing";
 import { getSessionUser } from "../lib/auth/session";
 import { legacyPracticeAccessDenied, legacyPracticeSensitivePath } from "../lib/practice/access";
+import { publicProfilePhotoRequest } from "../lib/platform/public-profile-media";
 
 initializeControlCenterEnvironment(process.env);
 const config = nativeHttpConfiguration(process.env, "platform");
@@ -26,12 +27,13 @@ const app = next({ dev: process.env.NODE_ENV !== "production", hostname: new URL
 await app.prepare();
 const handle = app.getRequestHandler();
 
-function secureResponse(response: ServerResponse) {
+function secureResponse(request: IncomingMessage, response: ServerResponse) {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   response.setHeader("Permissions-Policy", "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)");
   response.setHeader("X-Frame-Options", "DENY");
-  response.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+  // The public-photo handler sets its own rule after checking publication.
+  if (!publicProfilePhotoRequest(request)) response.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
   response.setHeader("Content-Security-Policy", `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: ${googleTagCsp.image}; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' ${googleTagCsp.script}` + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'") + `; connect-src 'self' ws://localhost:* ${googleTagCsp.connect}; frame-src 'self' ${googleTagCsp.frame}; media-src 'self' blob:; worker-src 'self' blob:`);
 }
 
@@ -59,7 +61,7 @@ function boundedBody(request: IncomingMessage, response: ServerResponse, limit: 
 }
 
 createServer(async (request, response) => {
-  secureResponse(response);
+  secureResponse(request, response);
   const privateAdminRequest = !config.privateMode && internalConfig.hosts.includes(request.headers.host ?? "")
     && (request.url ?? "").startsWith("/api/internal/admin/");
   let url = normalizeNativeRequest(request, privateAdminRequest ? internalConfig : config);

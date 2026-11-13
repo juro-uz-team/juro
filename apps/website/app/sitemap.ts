@@ -1,49 +1,49 @@
 import type { MetadataRoute } from "next";
-import { knowledgeSlugs } from "../content/knowledge";
+import { knowledgeArticles, knowledgeSlugs } from "../content/knowledge";
 import { seoLandingSlugs } from "../content/seo-landings";
+import { publicLanguages, publicOrigin, localizedAlternates, articleDate } from "../lib/public-seo";
+import { publishedArticles } from "../lib/site-content";
+import { getPublicLawyers } from "./[locale]/lawyers/catalog";
 import { legalConfig } from "./legal-config";
-import { legalPath, legalSlugs } from "./legal-content";
+import { legalSlugs } from "./legal-content";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const updated = new Date("2026-08-23T00:00:00+05:00");
-  const legalEntries = legalConfig.mode === "INCORPORATED"
-    ? (["ru", "uz", "en"] as const).flatMap((locale) => [
-      { url: `https://juro.uz/${locale}/legal`, lastModified: updated, changeFrequency: "monthly" as const, priority: 0.65 },
-      ...legalSlugs.map((slug) => ({ url: locale === "en" ? `https://juro.uz/en/legal/${slug}` : `https://juro.uz${legalPath(locale, slug)}`, lastModified: updated, changeFrequency: "monthly" as const, priority: 0.5 })),
-    ])
-    : [];
-  return [
-    { url: "https://juro.uz/ru", lastModified: updated, changeFrequency: "weekly", priority: 1 },
-    { url: "https://juro.uz/uz", lastModified: updated, changeFrequency: "weekly", priority: 1 },
-    { url: "https://juro.uz/en", lastModified: updated, changeFrequency: "weekly", priority: 1 },
-    ...(["ru", "uz", "en"] as const).flatMap((locale) => [
-      {
-        url: `https://juro.uz/${locale}/trust`,
-        lastModified: updated,
-        changeFrequency: "monthly" as const,
-        priority: 0.75,
-      },
-      {
-        url: `https://juro.uz/${locale}/video`,
-        lastModified: updated,
-        changeFrequency: "monthly" as const,
-        priority: 0.7,
-      },
-      {
-        url: `https://juro.uz/${locale}/lawyers`,
-        lastModified: updated,
-        changeFrequency: "daily" as const,
-        priority: 0.75,
-      },
-      { url: `https://juro.uz/${locale}/knowledge`, lastModified: updated, changeFrequency: "weekly" as const, priority: 0.7 },
-      ...knowledgeSlugs.map((slug) => ({
-        url: `https://juro.uz/${locale}/knowledge/${slug}`,
-        lastModified: updated,
-        changeFrequency: "monthly" as const,
-        priority: 0.65,
-      })),
-      ...seoLandingSlugs.map((slug) => ({ url: `https://juro.uz/${locale}/${slug}`, lastModified: updated, changeFrequency: "monthly" as const, priority: 0.8 })),
-    ]),
-    ...legalEntries,
-  ];
+export const dynamic = "force-dynamic";
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  if (process.env.DEPLOYMENT_ENVIRONMENT === "staging") return [];
+  const paths = ["", "/trust", "/video", "/lawyers", "/knowledge", ...seoLandingSlugs.map(slug => "/" + slug)];
+  const entries: MetadataRoute.Sitemap = publicLanguages.flatMap(locale => paths.map(path => ({
+    url: `${publicOrigin}/${locale}${path}`, alternates: { languages: localizedAlternates(path) },
+  })));
+  for (const locale of publicLanguages) for (const slug of knowledgeSlugs) entries.push({
+    url: `${publicOrigin}/${locale}/knowledge/${slug}`,
+    lastModified: articleDate(knowledgeArticles[locale][slug].updatedAt),
+    alternates: { languages: localizedAlternates(`/knowledge/${slug}`) },
+  });
+  const [catalogue, editorial] = await Promise.all([
+    getPublicLawyers(),
+    Promise.all(publicLanguages.map(async locale => {
+      const [pages, news] = await Promise.all([publishedArticles(locale, "page"), publishedArticles(locale, "news")]);
+      return { locale, pages, news };
+    })),
+  ]);
+  for (const lawyer of catalogue.lawyers.filter(profile => profile.marketplaceStatus === "public_approved")) {
+    const path = "/lawyers/" + encodeURIComponent(lawyer.id);
+    for (const locale of publicLanguages) entries.push({ url: `${publicOrigin}/${locale}${path}`, alternates: { languages: localizedAlternates(path) } });
+  }
+  for (const edition of editorial) {
+    const newsLanguages = editorial.filter(value => value.news.some(article => article.body.trim())).map(value => value.locale);
+    if (newsLanguages.includes(edition.locale)) entries.push({ url: `${publicOrigin}/${edition.locale}/news`, alternates: { languages: localizedAlternates("/news", newsLanguages) } });
+    for (const page of edition.pages.filter(page => page.body.trim())) {
+      const path = "/pages/" + encodeURIComponent(page.slug);
+      const translations = editorial.filter(value => value.pages.some(other => other.slug === page.slug && other.body.trim())).map(value => value.locale);
+      entries.push({ url: `${publicOrigin}/${edition.locale}${path}`, alternates: { languages: localizedAlternates(path, translations) } });
+    }
+  }
+  if (legalConfig.mode === "INCORPORATED") {
+    for (const locale of ["ru", "uz"] as const) for (const path of ["/legal", ...legalSlugs.map(slug => "/legal/" + slug)]) {
+      entries.push({ url: `${publicOrigin}/${locale}${path}`, alternates: { languages: localizedAlternates(path, ["ru", "uz"]) } });
+    }
+  }
+  return entries;
 }

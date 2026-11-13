@@ -1,3 +1,4 @@
+import { publicMetadata, articleDate, breadcrumbSchema } from "../../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,33 +24,12 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const values = await params;
-  const parsed = parse(values.locale, values.slug);
-  if (!parsed) return {};
-  const article = knowledgeArticles[parsed.locale][parsed.slug];
-  const canonical = `https://juro.uz/${parsed.locale}/knowledge/${parsed.slug}`;
-  return {
-    title: article.title,
-    description: article.description,
-    alternates: {
-      canonical,
-      languages: {
-        ru: `https://juro.uz/ru/knowledge/${parsed.slug}`,
-        uz: `https://juro.uz/uz/knowledge/${parsed.slug}`,
-        en: `https://juro.uz/en/knowledge/${parsed.slug}`,
-        "x-default": `https://juro.uz/ru/knowledge/${parsed.slug}`,
-      },
-    },
-    openGraph: {
-      title: article.title,
-      description: article.description,
-      url: canonical,
-      type: "article",
-      siteName: "JURO",
-      modifiedTime: "2026-08-09T00:00:00+05:00",
-      images: ["/juro-og.png"],
-    },
-  };
+ const values = await params;
+ const parsed = parse(values.locale, values.slug);
+ if (!parsed) return {};
+ const article = knowledgeArticles[parsed.locale][parsed.slug];
+ const metadata = publicMetadata({ locale: parsed.locale, title: article.title, description: article.description, path: "/knowledge/" + parsed.slug, image: "knowledge-" + parsed.slug, type: "article" });
+ return { ...metadata, openGraph: { ...metadata.openGraph, type: "article", modifiedTime: articleDate(article.updatedAt) } };
 }
 
 export default async function KnowledgeArticlePage({ params }: Props) {
@@ -66,22 +46,24 @@ export default async function KnowledgeArticlePage({ params }: Props) {
     "@type": "Article",
     headline: article.title,
     description: article.description,
-    dateModified: "2026-08-09",
+    dateModified: articleDate(article.updatedAt),
     inLanguage: parsed.locale,
-    author: { "@type": "Organization", name: "JURO" },
-    publisher: { "@type": "Organization", name: "JURO", url: "https://juro.uz" },
+    author: { "@type": "Organization", name: article.author },
+    publisher: { "@id": "https://juro.uz/#organization" },
+    image: `https://juro.uz/og/${parsed.locale}/knowledge-${parsed.slug}.png`,
     mainEntityOfPage: `https://juro.uz/${parsed.locale}/knowledge/${parsed.slug}`,
   };
 
   return (
     <div className={styles.page} lang={parsed.locale}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema(parsed.locale, [{ name: labels.knowledge, path: "/knowledge" }, { name: article.title, path: "/knowledge/" + parsed.slug }])).replaceAll("<", "\\u003c") }} />
       <SiteHeader languageHref={`/ru/knowledge/${parsed.slug}`} locale={parsed.locale} />
       <main id="main-content">
         <article className={styles.article}>
           <div className={styles.breadcrumbs}>
             <Link href={`/${parsed.locale}`}>JURO</Link><span>/</span>
-            <Link href={`/${parsed.locale}#resources`}>{labels.knowledge}</Link><span>/</span>
+            <Link href={`/${parsed.locale}/knowledge`}>{labels.knowledge}</Link><span>/</span>
             <span>{article.category}</span>
           </div>
           <span className={styles.category}>{article.category}</span>

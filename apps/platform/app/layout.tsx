@@ -59,9 +59,9 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: googleTagBootstrap }} />
         {/* Defer keeps React from hoisting the loader above the consent defaults. */}
         <script defer src={googleTagSource} />
-        <link rel="icon" href="/brand/juro-app-icon.png" />
-        <link rel="shortcut icon" href="/brand/juro-app-icon.png" />
-        <link rel="apple-touch-icon" href="/brand/juro-app-icon.png" />
+        <link rel="icon" href="/favicon.ico" sizes="32x32 48x48 96x96" type="image/x-icon" />
+        <link rel="icon" href="/brand/juro-icon-96.png" sizes="96x96" type="image/png" />
+        <link rel="apple-touch-icon" href="/brand/juro-apple-touch-icon.png" sizes="180x180" />
       </head>
       <body className="antialiased">
         <DocumentBootstrap />

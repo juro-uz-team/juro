@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,25 +20,16 @@ const copy = {
 } as const;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { locale: rawLocale, profileId } = await params;
-  const locale = localeOf(rawLocale);
-  if (!locale) return {};
-  const sourceLawyer = await getPublicLawyer(profileId);
-  const lawyer = sourceLawyer && localizePublicLawyer(sourceLawyer, locale);
-  if (!lawyer) return {};
-  const pending = lawyer.marketplaceStatus === "pending_review";
-  const description = lawyer.bio || lawyer.specialties.join(", ");
-  const canonical = `https://juro.uz/${locale}/lawyers/${lawyer.id}`;
-  const photo = publicPhotoUrl(lawyer.profilePhotoUrl);
-  const images = photo ? [{ url: photo, alt: lawyer.displayName }] : [];
-  return {
-    title: lawyer.displayName,
-    description,
-    robots: { index: !pending, follow: true },
-    alternates: { canonical, languages: { ru: `https://juro.uz/ru/lawyers/${lawyer.id}`, uz: `https://juro.uz/uz/lawyers/${lawyer.id}`, en: `https://juro.uz/en/lawyers/${lawyer.id}`, "x-default": `https://juro.uz/ru/lawyers/${lawyer.id}` } },
-    openGraph: { title: lawyer.displayName, description, url: canonical, siteName: "JURO", type: "profile", images },
-    twitter: { card: "summary", title: lawyer.displayName, description, images: photo ? [photo] : [] },
-  };
+ const { locale: rawLocale, profileId } = await params;
+ const locale = localeOf(rawLocale);
+ if (!locale) return {};
+ const source = await getPublicLawyer(profileId);
+ const lawyer = source && localizePublicLawyer(source, locale);
+ if (!lawyer) return {};
+ const description = (lawyer.bio || lawyer.specialties.join(", ") || copy[locale].unknown).replace(/\s+/g, " ").trim().slice(0, 180);
+ const metadata = publicMetadata({ locale, title: lawyer.displayName, description, path: "/lawyers/" + encodeURIComponent(lawyer.id), image: "lawyers", type: "profile", noindex: lawyer.marketplaceStatus !== "public_approved" });
+ const photo = publicPhotoUrl(lawyer.profilePhotoUrl);
+ return photo?.startsWith("https://") ? { ...metadata, openGraph: { ...metadata.openGraph, type: "profile", images: [{ url: photo, alt: lawyer.displayName }] }, twitter: { card: "summary", title: lawyer.displayName, description, images: [photo] } } : metadata;
 }
 
 export default async function LawyerProfilePage({ params }: Props) {

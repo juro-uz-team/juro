@@ -1,3 +1,5 @@
+import { publicMetadata } from "../../../lib/public-seo";
+import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,36 +20,9 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { locale: rawLocale } = await params;
-  const locale = parseLocale(rawLocale);
-  if (!locale) return {};
-  const ru = locale === "ru";
-  const title = locale === "en" ? "Trust Center — JURO security and data" : ru ? "Trust Center — безопасность и данные JURO" : "Trust Center — JURO xavfsizligi va ma’lumotlari";
-  const description = locale === "en"
-    ? "Verifiable information about access, documents, retention, deletion, AI providers and JURO policies."
-    : ru ? "Проверяемая информация о доступе, документах, хранении, удалении, AI-провайдерах и политиках JURO."
-      : "JUROdagi kirish, hujjatlar, saqlash, o‘chirish, AI-provayderlar va siyosatlar haqida tekshiriladigan ma’lumot.";
-  return {
-    title,
-    description,
-    alternates: {
-      canonical: `https://juro.uz/${locale}/trust`,
-      languages: {
-        ru: "https://juro.uz/ru/trust",
-        uz: "https://juro.uz/uz/trust",
-        en: "https://juro.uz/en/trust",
-        "x-default": "https://juro.uz/ru/trust",
-      },
-    },
-    openGraph: {
-      title,
-      description,
-      url: `https://juro.uz/${locale}/trust`,
-      type: "website",
-      siteName: "JURO",
-      images: ["/juro-og.png"],
-    },
-  };
+ const locale = parseLocale((await params).locale);
+ if (!locale) return {};
+ return publicMetadata({ locale, ...searchPages[locale].trust, path: "/trust", image: "trust" });
 }
 
 function EnglishTrustPage() {

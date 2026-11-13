@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,28 +18,10 @@ export function generateStaticParams() {
 }
 
 export async function generateSeoLandingMetadata(slug: SeoLandingSlug, { params }: Props): Promise<Metadata> {
-  const locale = localeOf((await params).locale);
-  if (!locale) return {};
-  const content = seoLandings[locale][slug];
-  const canonical = `https://juro.uz/${locale}/${slug}`;
-  return {
-    title: content.title,
-    description: content.description,
-    alternates: {
-      canonical,
-      languages: Object.fromEntries(["ru", "uz", "en"].map((language) => [language, `https://juro.uz/${language}/${slug}`]).concat([["x-default", `https://juro.uz/ru/${slug}`]])),
-    },
-    openGraph: {
-      title: content.title,
-      description: content.description,
-      url: canonical,
-      siteName: "JURO",
-      locale: locale === "ru" ? "ru_RU" : locale === "uz" ? "uz_UZ" : "en_US",
-      type: "website",
-      images: [{ url: "/juro-og.png", width: 1681, height: 909, alt: "JURO" }],
-    },
-    twitter: { card: "summary_large_image", title: content.title, description: content.description, images: ["/juro-og.png"] },
-  };
+ const locale = localeOf((await params).locale);
+ if (!locale) return {};
+ const content = seoLandings[locale][slug];
+ return publicMetadata({ locale, title: content.title, description: content.description, path: "/" + slug, image: slug });
 }
 
 export async function SeoLanding({ slug, params }: { slug: SeoLandingSlug; params: Props["params"] }) {
@@ -66,7 +49,11 @@ export async function SeoLanding({ slug, params }: { slug: SeoLandingSlug; param
         {content.steps.map((step, index) => <article key={step.title}><span>0{index + 1}</span><h2>{step.title}</h2><p>{step.body}</p></article>)}
       </section>
       <section className={styles.boundaries}><div><p className={styles.eyebrow}>JURO</p><h2>{content.boundariesTitle}</h2></div><ul>{content.boundaries.map((item) => <li key={item}>{item}</li>)}</ul></section>
-      <section className={styles.next}><div><p>{content.related.label}</p><Link href={content.related.href}>→</Link></div><a className={styles.secondary} href={content.cta.href}>{content.cta.label}</a></section>
+      <section className={styles.next}><div><p>{content.related.label}</p><Link aria-label={content.related.label} href={content.related.href}>→</Link></div><a className={styles.secondary} href={content.cta.href}>{content.cta.label}</a></section>
+      <section className={styles.related} aria-label={locale === "ru" ? "Другие инструменты JURO" : locale === "uz" ? "Boshqa JURO vositalari" : "More JURO tools"}>
+        <h2>{locale === "ru" ? "Другие инструменты JURO" : locale === "uz" ? "Boshqa JURO vositalari" : "More JURO tools"}</h2>
+        <ul>{seoLandingSlugs.filter(value => value !== slug).map(value => <li key={value}><Link href={`/${locale}/${value}`}>{seoLandings[locale][value].title}</Link></li>)}</ul>
+      </section>
     </main>
     <SiteFooter locale={locale} />
   </div>;

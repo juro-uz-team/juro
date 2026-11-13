@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../lib/public-seo";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CinematicLandingPage } from "../components/cinematic/CinematicLandingPage";
@@ -17,40 +18,10 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { locale: rawLocale } = await params;
-  const locale = parseLocale(rawLocale);
-  if (!locale) return {};
-  const content = locale === "ru" ? ru : locale === "uz" ? uz : en;
-  const canonical = `https://juro.uz/${locale}`;
-  return {
-    title: content.meta.title,
-    description: content.meta.description,
-    alternates: {
-      canonical,
-      languages: {
-        ru: "https://juro.uz/ru",
-        uz: "https://juro.uz/uz",
-        en: "https://juro.uz/en",
-        "x-default": "https://juro.uz/ru",
-      },
-    },
-    openGraph: {
-      title: content.meta.title,
-      description: content.meta.description,
-      url: canonical,
-      siteName: "JURO",
-      locale: locale === "ru" ? "ru_RU" : locale === "uz" ? "uz_UZ" : "en_US",
-      alternateLocale: ["ru_RU", "uz_UZ", "en_US"].filter((candidate) => candidate !== (locale === "ru" ? "ru_RU" : locale === "uz" ? "uz_UZ" : "en_US")),
-      type: "website",
-      images: [{ url: "/juro-og.png", width: 1681, height: 909, alt: content.meta.title }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: content.meta.title,
-      description: content.meta.description,
-      images: ["/juro-og.png"],
-    },
-  };
+ const locale = parseLocale((await params).locale);
+ if (!locale) return {};
+ const content = locale === "ru" ? ru : locale === "uz" ? uz : en;
+ return publicMetadata({ locale, ...content.meta });
 }
 
 export default async function LocalizedHome({ params }: Props) {

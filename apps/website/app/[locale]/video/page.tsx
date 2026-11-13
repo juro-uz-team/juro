@@ -1,3 +1,5 @@
+import { publicMetadata } from "../../../lib/public-seo";
+import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
@@ -41,39 +43,9 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const locale = parseLocale((await params).locale);
-  if (!locale) return {};
-  const content = copy[locale];
-  const canonical = `https://juro.uz/${locale}/video`;
-  return {
-    title: content.title,
-    description: content.description,
-    alternates: {
-      canonical,
-      languages: {
-        ru: "https://juro.uz/ru/video",
-        uz: "https://juro.uz/uz/video",
-        en: "https://juro.uz/en/video",
-        "x-default": "https://juro.uz/ru/video",
-      },
-    },
-    openGraph: {
-      title: content.title,
-      description: content.description,
-      url: canonical,
-      siteName: "JURO",
-      locale: locale === "ru" ? "ru_RU" : "uz_UZ",
-      alternateLocale: locale === "ru" ? ["uz_UZ", "en_US"] : ["ru_RU", "en_US"],
-      type: "website",
-      images: [{ url: investorVideo.poster, width: 1920, height: 1080, alt: content.title }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: content.title,
-      description: content.description,
-      images: [investorVideo.poster],
-    },
-  };
+ const locale = parseLocale((await params).locale);
+ if (!locale) return {};
+ return publicMetadata({ locale, ...searchPages[locale].video, path: "/video", image: "video" });
 }
 
 export default async function InvestorVideoPage({ params }: Props) {

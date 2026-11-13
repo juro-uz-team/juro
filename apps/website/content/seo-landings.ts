@@ -1,11 +1,13 @@
 import { platformPersonalHref } from "../app/components/public/platform-hrefs";
 import type { PublicLanguage } from "./types";
+import { productLandingSlugs, productLandings } from "./product-landings";
 
-export const seoLandingSlugs = ["ai-lawyer", "online-lawyer", "contract-review"] as const;
+const coreLandingSlugs = ["ai-lawyer", "online-lawyer", "contract-review"] as const;
+export const seoLandingSlugs = [...coreLandingSlugs, ...productLandingSlugs] as const;
 
 export type SeoLandingSlug = (typeof seoLandingSlugs)[number];
 
-type SeoLanding = {
+export type SeoLanding = {
   title: string;
   description: string;
   eyebrow: string;
@@ -20,14 +22,14 @@ type SeoLanding = {
   related: { label: string; href: string };
 };
 
-export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLanding>> = {
+const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[number], SeoLanding>> = {
   ru: {
     "ai-lawyer": {
-      title: "AI-юрист для права Узбекистана",
+      title: "AI-юрист по праву Узбекистана",
       description: "AI-помощник JURO помогает структурировать юридический вопрос, факты и следующий шаг по праву Узбекистана.",
       eyebrow: "JURO · AI-ПОМОЩНИК",
-      heading: "Начните с вопроса, а не с догадки",
-      lead: "JURO помогает разложить ситуацию на факты, документы, риски и следующий шаг. Если нужен индивидуальный совет, подготовленный контекст можно передать выбранному специалисту только после отдельного подтверждения.",
+      heading: "AI-юрист по праву Узбекистана",
+      lead: "JURO — помощник на основе искусственного интеллекта для юридических вопросов по праву Узбекистана. Он помогает разложить ситуацию на факты, документы, риски и следующий шаг. Если нужен индивидуальный совет, подготовленный контекст можно передать выбранному специалисту только после отдельного подтверждения.",
       scenarioTitle: "Как это выглядит на практике",
       scenario: "Например, при задержке зарплаты сначала важно отделить известные даты, документы и суммы от предположений. Это делает следующий шаг проверяемым, а не автоматически «готовым ответом».",
       steps: [
@@ -41,10 +43,10 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "Какие факты нужны для плана действий", href: "/ru/knowledge/facts-for-action-plan" },
     },
     "online-lawyer": {
-      title: "Онлайн-юрист: выбрать специалиста в JURO",
+      title: "Онлайн-консультация юриста в Узбекистане",
       description: "Каталог JURO помогает сравнить доступных юридических специалистов и оставить запрос на консультацию в защищённом контуре.",
       eyebrow: "JURO · СПЕЦИАЛИСТЫ",
-      heading: "Найдите специалиста для следующего шага",
+      heading: "Выберите юриста для онлайн-консультации",
       lead: "В публичном каталоге можно сравнить специализации, опыт, языки и доступность. Материалы дела не публикуются: передача контекста специалисту требует отдельного действия и подтверждения пользователя.",
       scenarioTitle: "Когда полезен живой специалист",
       scenario: "Индивидуальный совет особенно важен, когда есть срок, спор, существенная сумма, риск для бизнеса или необходимость представить интересы перед третьими лицами.",
@@ -59,7 +61,7 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "Когда нужен профессиональный разбор", href: "/ru/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {
-      title: "Проверка договора: подготовить документ к анализу",
+      title: "Проверка договоров онлайн в Узбекистане",
       description: "JURO помогает подготовить договор к проверке: собрать версии, вопросы, сроки и условия, которые важно оценить.",
       eyebrow: "JURO · ПРОВЕРКА ДОКУМЕНТА",
       heading: "Проверка договора начинается с контекста сделки",
@@ -79,11 +81,11 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
   },
   uz: {
     "ai-lawyer": {
-      title: "O‘zbekiston huquqi uchun AI-yurist",
+      title: "O‘zbekiston huquqi bo‘yicha AI-yurist",
       description: "JURO AI-yordamchisi yuridik savol, faktlar va keyingi qadamni O‘zbekiston huquqi doirasida tartibga solishga yordam beradi.",
       eyebrow: "JURO · AI-YORDAMCHI",
-      heading: "Taxmin bilan emas, savol bilan boshlang",
-      lead: "JURO vaziyatni faktlar, hujjatlar, xavflar va keyingi qadamga ajratishga yordam beradi. Individual maslahat zarur bo‘lsa, tayyorlangan kontekst faqat alohida tasdiqdan keyin tanlangan mutaxassisga beriladi.",
+      heading: "O‘zbekiston huquqi bo‘yicha AI-yurist",
+      lead: "JURO — sun’iy intellekt asosidagi yuridik yordamchi. U O‘zbekiston huquqi doirasida vaziyatni faktlar, hujjatlar, xavflar va keyingi qadamga ajratishga yordam beradi. Individual maslahat zarur bo‘lsa, tayyorlangan kontekst faqat alohida tasdiqdan keyin tanlangan mutaxassisga beriladi.",
       scenarioTitle: "Amalda qanday ishlaydi",
       scenario: "Masalan, ish haqi kechiksa, avval ma’lum sanalar, hujjatlar va summalarni taxminlardan ajratish kerak. Shunda keyingi qadam tekshiriladigan bo‘ladi.",
       steps: [
@@ -97,10 +99,10 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "Harakatlar rejasi uchun qanday faktlar kerak", href: "/uz/knowledge/facts-for-action-plan" },
     },
     "online-lawyer": {
-      title: "Onlayn yurist: JUROda mutaxassis tanlash",
+      title: "O‘zbekistonda onlayn yurist maslahati",
       description: "JURO katalogi mavjud yuridik mutaxassislarni taqqoslash va himoyalangan muhitda maslahat so‘rovini yuborishga yordam beradi.",
       eyebrow: "JURO · MUTAXASSISLAR",
-      heading: "Keyingi qadam uchun mutaxassis toping",
+      heading: "Onlayn maslahat uchun yurist tanlang",
       lead: "Ochiq katalogda mutaxassislik, tajriba, til va mavjudlikni taqqoslash mumkin. Ish materiallari e’lon qilinmaydi: kontekstni berish foydalanuvchining alohida harakati va tasdig‘ini talab qiladi.",
       scenarioTitle: "Qachon jonli mutaxassis kerak bo‘ladi",
       scenario: "Muddat, nizo, katta summa, biznes xavfi yoki uchinchi shaxslar oldida manfaatni ifodalash masalasi bo‘lsa, individual maslahat ayniqsa muhim.",
@@ -115,7 +117,7 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "Qachon professional tahlil kerak", href: "/uz/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {
-      title: "Shartnomani tekshirish: hujjatni tahlilga tayyorlash",
+      title: "O‘zbekistonda shartnomalarni onlayn tekshirish",
       description: "JURO shartnomani tekshirishga tayyorlashga yordam beradi: versiyalar, savollar, muddatlar va muhim shartlarni jamlang.",
       eyebrow: "JURO · HUJJATNI TEKSHIRISH",
       heading: "Shartnoma tekshiruvi bitim kontekstidan boshlanadi",
@@ -138,7 +140,7 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       title: "AI legal assistant for Uzbekistan",
       description: "JURO helps structure a legal question, facts and a next step under the law of Uzbekistan.",
       eyebrow: "JURO · AI LEGAL ASSISTANT",
-      heading: "Start with the question, not an assumption",
+      heading: "AI legal assistance for Uzbekistan law",
       lead: "JURO helps separate facts, documents, risks and the next step. Where individual advice is needed, a user can hand prepared context to a chosen professional only after a separate confirmation.",
       scenarioTitle: "What this looks like",
       scenario: "For a delayed salary, first separate known dates, documents and amounts from assumptions. That makes the next step reviewable rather than an automatic final answer.",
@@ -156,7 +158,7 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       title: "Online lawyer: find a professional in Uzbekistan",
       description: "JURO’s public catalogue helps compare legal professionals and request a consultation through a protected product flow.",
       eyebrow: "JURO · LEGAL PROFESSIONALS",
-      heading: "Find a professional for the next step",
+      heading: "Find a lawyer for an online consultation",
       lead: "Compare specialisms, experience, languages and availability in JURO’s public catalogue. Case materials are not published: sharing prepared context requires a separate action and confirmation from the user.",
       scenarioTitle: "When a professional review matters",
       scenario: "Individual advice is especially important where there is a deadline, dispute, material amount, business risk or a need to represent an interest before another party.",
@@ -171,7 +173,7 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "When professional review is needed", href: "/en/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {
-      title: "Contract review in Uzbekistan: prepare a document",
+      title: "Contract Review in Uzbekistan",
       description: "JURO helps prepare a contract for review by collecting versions, questions, deadlines and terms that need attention.",
       eyebrow: "JURO · CONTRACT REVIEW",
       heading: "Contract review starts with the deal context",
@@ -189,4 +191,10 @@ export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLandi
       related: { label: "How to prepare for contract review", href: "/en/knowledge/contract-review-preparation" },
     },
   },
+};
+
+export const seoLandings: Record<PublicLanguage, Record<SeoLandingSlug, SeoLanding>> = {
+  ru: { ...coreLandings.ru, ...productLandings.ru },
+  uz: { ...coreLandings.uz, ...productLandings.uz },
+  en: { ...coreLandings.en, ...productLandings.en },
 };

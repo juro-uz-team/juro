@@ -81,8 +81,8 @@ test("scroll storytelling keeps layout reads out of the hot scroll path", () => 
 test("renders the production landing with localized canonical metadata and real actions", async () => {
   const worker = await createWorker();
   const descriptions = {
-    ru: "JURO — AI-помощь, документы и юристы в одном сервисе.",
-    uz: "JURO — AI-yordam, hujjatlar va yuristlar bitta xizmatda.",
+    ru: "AI-юрист по праву Узбекистана: юридические вопросы, проверка договоров, подготовка документов и поиск юриста. JURO на русском, узбекском и английском.",
+    uz: "O‘zbekiston huquqi bo‘yicha AI-yurist: yuridik savollar, shartnomalarni tekshirish, hujjat tayyorlash va yurist topish. JURO o‘zbek, rus va ingliz tillarida.",
   };
   for (const locale of ["ru", "uz"]) {
     const response = await worker.fetch(new Request(`http://localhost/${locale}`, { headers: { accept: "text/html", "user-agent": chromeUserAgent } }), runtime, context);
@@ -100,8 +100,8 @@ test("renders the production landing with localized canonical metadata and real 
     assert.ok(head.indexOf("analytics_storage:") < head.indexOf('src="https://www.googletagmanager.com/gtm.js'));
     assert.match(response.headers.get("content-security-policy") ?? "", /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.match(response.headers.get("content-security-policy") ?? "", /connect-src[^;]*https:\/\/\*\.google-analytics\.com/);
-    assert.match(html, /<link rel="icon" href="\/brand\/juro-app-icon\.png" type="image\/png"\/>/);
-    assert.match(html, /<link rel="apple-touch-icon" href="\/brand\/juro-app-icon\.png"\/>/);
+    assert.match(html, /<link rel="icon" href="\/brand\/juro-icon-96\.png" sizes="96x96" type="image\/png"\/>/);
+    assert.match(html, /<link rel="apple-touch-icon" href="\/brand\/juro-apple-touch-icon\.png" sizes="180x180"\/>/);
     assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest"\/>/);
     assert.match(head, /<meta name="description" content="[^"]+"/);
     assert.match(head, /<meta name="robots" content="index, follow"/);
@@ -166,7 +166,8 @@ test("serves the public manifest from a same-origin route", async () => {
   assert.equal(response.headers.get("cache-control"), "public, max-age=3600, must-revalidate");
   const body = await response.json();
   assert.equal(body.start_url, "/ru");
-  assert.equal(body.icons[0].src, "/brand/juro-app-icon.png");
+  assert.equal(body.icons[0].src, "/brand/juro-icon-192.png");
+  assert.ok(body.icons.some(icon => icon.src === "/brand/juro-app-icon.png" && icon.sizes === "512x512"));
 });
 
 test("renders the complete English public landing and keeps product actions on English auth", async () => {
@@ -178,10 +179,10 @@ test("renders the complete English public landing and keeps product actions on E
   assert.match(html, /<link rel="canonical" href="https:\/\/juro\.uz\/en"/);
   for (const tag of ["description", "og:description", "twitter:description"]) {
     const attribute = tag === "description" ? "name" : tag.startsWith("og:") ? "property" : "name";
-    assert.match(html, new RegExp(`<meta ${attribute}="${tag}" content="JURO — AI assistance, documents and legal professionals in one service\."`));
+    assert.match(html, new RegExp(`<meta ${attribute}="${tag}" content="AI legal help for Uzbekistan: ask legal questions, review contracts, prepare documents and find a lawyer. Use JURO in English, Russian or Uzbek\."`));
   }
-  assert.match(html, /Legal complexity/);
-  assert.match(html, /Made clear/);
+  assert.match(html, /AI legal help/);
+  assert.match(html, /in Uzbekistan/);
   assert.match(html, /CASE 024/);
   assert.doesNotMatch(html, /aria-label="Ish bosqichlari"/);
   assert.match(html, /http:\/\/localhost:3000\/en\/auth\/register\?accountType=individual/);

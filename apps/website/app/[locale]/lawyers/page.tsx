@@ -1,3 +1,5 @@
+import { publicMetadata } from "../../../lib/public-seo";
+import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { PublicLanguage } from "../../../content/types";
@@ -18,19 +20,12 @@ const copy = {
 function localeOf(value: string): PublicLanguage | null { return value === "ru" || value === "uz" || value === "en" ? value : null; }
 function first(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] || "" : value || ""; }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const locale = localeOf((await params).locale);
-  if (!locale) return {};
-  const t = copy[locale];
-  const canonical = `https://juro.uz/${locale}/lawyers`;
-  return {
-    title: t.title,
-    description: t.description,
-    robots: { index: true, follow: true },
-    alternates: { canonical, languages: { ru: "https://juro.uz/ru/lawyers", uz: "https://juro.uz/uz/lawyers", en: "https://juro.uz/en/lawyers", "x-default": "https://juro.uz/ru/lawyers" } },
-    openGraph: { title: t.title, description: t.description, url: canonical, siteName: "JURO", type: "website", images: [{ url: "/juro-og.png", width: 1681, height: 909, alt: "JURO" }] },
-    twitter: { card: "summary_large_image", title: t.title, description: t.description, images: ["/juro-og.png"] },
-  };
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+ const locale = localeOf((await params).locale);
+ if (!locale) return {};
+ const query = await searchParams;
+ const filtered = ["q", "specialty", "language", "availability", "experience"].some(key => first(query[key]).trim() !== "");
+ return publicMetadata({ locale, ...searchPages[locale].lawyers, path: "/lawyers", image: "lawyers", noindex: filtered });
 }
 
 export default async function LawyersPage({ params, searchParams }: Props) {

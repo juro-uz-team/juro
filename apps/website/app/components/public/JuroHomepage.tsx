@@ -4,7 +4,7 @@
 import { JurobekAvatar } from "./JurobekAvatar";
 import { IntelligenceScene } from "./IntelligenceScene";
 import Link from "next/link";
-import { platformAuthHref, platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
+import { platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -37,10 +37,10 @@ const copy = {
   ru: {
     hero: {
       eyebrow: "JURO · Юрист в кармане",
-      titleA: "Расскажите,",
-      titleB: "что произошло.",
-      titleC: "Получите ясный следующий шаг.",
-      lead: "JURO превращает вопрос, договор или срок по праву Узбекистана в понятные факты, риски и план — с возможностью подключить живого юриста.",
+      titleA: "AI-юрист",
+      titleB: "в Узбекистане.",
+      titleC: "Понятный следующий шаг.",
+      lead: "Задавайте юридические вопросы по праву Узбекистана, проверяйте договоры, готовьте документы и находите юристов для консультации в JURO.",
       primary: "Разобрать ситуацию бесплатно",
       secondary: "Увидеть JURO в работе",
       note: "Первичный сценарий можно начать бесплатно. Без загрузки данных на публичной странице.",
@@ -172,10 +172,10 @@ const copy = {
   uz: {
     hero: {
       eyebrow: "JURO · Cho‘ntagingizdagi yurist",
-      titleA: "Nima bo‘lganini",
-      titleB: "aytib bering.",
-      titleC: "Aniq keyingi qadamni oling.",
-      lead: "JURO O‘zbekiston huquqi bo‘yicha savol, shartnoma yoki muddatni tushunarli faktlar, xavflar va rejaga aylantiradi — zarur bo‘lsa jonli yuristni ulaydi.",
+      titleA: "AI-yurist",
+      titleB: "O‘zbekistonda.",
+      titleC: "Aniq keyingi qadam.",
+      lead: "JUROda O‘zbekiston huquqi bo‘yicha yuridik savol bering, shartnomani tekshiring, hujjat tayyorlang va maslahat uchun yurist toping.",
       primary: "Vaziyatni bepul tahlil qilish",
       secondary: "JURO qanday ishlashini ko‘rish",
       note: "Birinchi ssenariyni bepul boshlash mumkin. Ommaviy sahifaga ma’lumot yuklanmaydi.",
@@ -214,10 +214,10 @@ const copy = {
 const englishCopy = {
   hero: {
     eyebrow: "JURO · Legal guidance in your pocket",
-    titleA: "Tell us",
-    titleB: "what happened.",
-    titleC: "Get a clear next step.",
-    lead: "JURO turns a question, contract or deadline under Uzbekistan law into understandable facts, risks and a plan — with the option to involve a legal professional.",
+    titleA: "AI legal help",
+    titleB: "in Uzbekistan.",
+    titleC: "A clear next step.",
+    lead: "Ask legal questions about Uzbekistan law, review contracts, prepare documents and find a lawyer for a consultation in JURO.",
     primary: "Explore your situation",
     secondary: "See JURO in action",
     note: "You can explore the first scenario without charge. Do not upload case materials on this public page.",
@@ -254,7 +254,7 @@ const englishCopy = {
 
 export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const t = language === "en" ? englishCopy : copy[language];
-  const headline = language === "ru" ? ["Право становится", "понятным.", "AI, документы и юристы. В одной системе."] : language === "uz" ? ["Huquq endi", "tushunarli.", "AI, hujjatlar va yuristlar. Bitta tizimda."] : ["Legal complexity.", "Made clear.", "AI, documents and lawyers. One connected workspace."];
+  const headline = [t.hero.titleA, t.hero.titleB, t.hero.titleC];
   const baseContent = language === "ru" ? ru : language === "uz" ? uz : en;
   const [publishedFaq,setPublishedFaq]=useState<{question:string;answer:string}[]|null>(null);
   useEffect(()=>{let active=true;fetch(`/api/site-content?kind=faq&locale=${language}`).then(r=>r.ok?r.json():null).then(rows=>{if(active&&Array.isArray(rows)&&rows.length)setPublishedFaq(rows.map((r:{title:string;body:string})=>({question:r.title,answer:r.body})));}).catch(()=>{});return()=>{active=false;setPublishedFaq(null);};},[language]);

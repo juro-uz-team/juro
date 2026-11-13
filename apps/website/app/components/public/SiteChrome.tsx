@@ -2,7 +2,7 @@
 
 import { OfficialLogo } from "./OfficialLogo";
 import Link from "next/link";
-import { platformAuthHref, platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
+import { platformAuthHref, platformRegistrationHref } from "./platform-hrefs";
 import { ArrowRight, Mail, MapPin, Menu, Phone, X } from "lucide-react";
 import { type MouseEvent, useEffect, useId, useRef, useState } from "react";
 import type { PublicLanguage } from "../../../content/types";
@@ -202,11 +202,13 @@ export function SiteFooter({ locale }: { locale: Locale }) {
   const productLinks = [
     [t.ai, `/${locale}/ai-lawyer`],
     [t.document, `/${locale}/contract-review`],
-    [t.plan, platformPersonalHref(locale, "/cases")],
+    [locale === "ru" ? "Создание документов" : locale === "uz" ? "Hujjat tayyorlash" : "Document builder", `/${locale}/document-builder`],
+    [locale === "ru" ? "Сравнение договоров" : locale === "uz" ? "Shartnomalarni taqqoslash" : "Compare contracts", `/${locale}/document-comparison`],
+    [t.plan, `/${locale}/legal-action-plan`],
     [t.lawyers, `/${locale}/lawyers`],
   ] as const;
   return (
-    <footer className={`${styles.footer} ${footerRailStyles.footer}`}>
+    <footer data-nosnippet="" className={`${styles.footer} ${footerRailStyles.footer}`}>
       <div className={`${styles.footerTop} ${footerRailStyles.top}`}>
         <div className={`${styles.footerBrand} ${footerRailStyles.brand}`}>
           <Link aria-label="JURO" className={brandStyles.footerLogo} href={`/${locale}`}>
@@ -217,7 +219,7 @@ export function SiteFooter({ locale }: { locale: Locale }) {
         </div>
         <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.productLabel}</strong>{productLinks.map(([label, href]) => href.startsWith("/") ? <Link href={href} key={href}>{label}</Link> : <a href={href} key={href}>{label}</a>)}</div>
         <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.companyLabel}</strong><Link href={`/${locale}/trust`}>Trust Center</Link><Link href={`/${locale}/video`}>{t.video}</Link><Link href={`/${locale}/knowledge`}>{t.knowledge}</Link></div>
-        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.legalLabel}</strong><Link href={`/${locale}/legal`}>{t.legal}</Link><Link href={`/${locale}/privacy-policy`}>{t.privacy}</Link><Link href={`/${locale}/terms`}>{t.terms}</Link><Link href={`/${locale}/personal-data-processing`}>{t.data}</Link><Link href={`/${locale}/ai-rules`}>{t.aiRules}</Link></div>
+        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.legalLabel}</strong><Link href={`/${locale}/legal`}>{t.legal}</Link><Link href={`/${locale}/legal/privacy-policy`}>{t.privacy}</Link><Link href={`/${locale}/legal/user-agreement`}>{t.terms}</Link><Link href={`/${locale}/legal/personal-data-processing-policy`}>{t.data}</Link><Link href={`/${locale}/legal/ai-use-policy`}>{t.aiRules}</Link></div>
       </div>
       <address aria-label={t.contacts} className={`${footerContactStyles.contacts} ${footerRailStyles.contacts}`}>
         <div className={footerRailStyles.contactIntro}><span className={footerRailStyles.contactEyebrow}>{t.contacts}</span><strong>{locale === "ru" ? "На связи. По делу." : locale === "uz" ? "Aloqadamiz. Ish yuzasidan." : "A conversation. A next step."}</strong><span><MapPin aria-hidden="true" size={14} />{t.address}</span></div>

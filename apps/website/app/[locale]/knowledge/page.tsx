@@ -1,3 +1,5 @@
+import { publicMetadata } from "../../../lib/public-seo";
+import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -19,17 +21,9 @@ function localeOf(value: string): PublicLanguage | null { return value === "ru" 
 export function generateStaticParams() { return ["ru", "uz", "en"].map((locale) => ({ locale })); }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const locale = localeOf((await params).locale);
-  if (!locale) return {};
-  const content = copy[locale];
-  const canonical = `https://juro.uz/${locale}/knowledge`;
-  return {
-    title: content.title,
-    description: content.description,
-    alternates: { canonical, languages: { ru: "https://juro.uz/ru/knowledge", uz: "https://juro.uz/uz/knowledge", en: "https://juro.uz/en/knowledge", "x-default": "https://juro.uz/ru/knowledge" } },
-    openGraph: { title: content.title, description: content.description, url: canonical, siteName: "JURO", type: "website", images: [{ url: "/juro-og.png", width: 1681, height: 909, alt: "JURO" }] },
-    twitter: { card: "summary_large_image", title: content.title, description: content.description, images: ["/juro-og.png"] },
-  };
+ const locale = localeOf((await params).locale);
+ if (!locale) return {};
+ return publicMetadata({ locale, ...searchPages[locale].knowledge, path: "/knowledge", image: "knowledge" });
 }
 
 export default async function KnowledgeHub({ params }: Props) {

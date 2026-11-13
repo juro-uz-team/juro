@@ -3,8 +3,8 @@ import LawyersPage, { generateMetadata as generateLocalizedMetadata } from "../.
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata(): Promise<Metadata> {
-  return generateLocalizedMetadata({ params: Promise.resolve({ locale: "en" }), searchParams: Promise.resolve({}) });
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  return generateLocalizedMetadata({ params: Promise.resolve({ locale: "en" }), searchParams });
 }
 
 export default async function EnglishLawyersPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

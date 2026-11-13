@@ -1,0 +1,148 @@
+import { platformPersonalHref } from "../app/components/public/platform-hrefs";
+import type { PublicLanguage } from "./types";
+import type { SeoLanding } from "./seo-landings";
+
+export const productLandingSlugs = ["document-builder", "document-comparison", "legal-action-plan"] as const;
+export const productLandings: Record<PublicLanguage, Record<(typeof productLandingSlugs)[number], SeoLanding>> = {
+  ru: {
+    "document-builder": {
+      title: "Конструктор документов и договоров в Узбекистане",
+      description: "Подготовьте проект документа в JURO: выберите доступный шаблон, заполните условия, проверьте текст и сохраните документ для дальнейшей работы.",
+      eyebrow: "JURO · ПОДГОТОВКА ДОКУМЕНТОВ", heading: "Создавайте документы по шагам",
+      lead: "Конструктор документов JURO помогает перейти от задачи к редактируемому проекту. Выберите доступный шаблон, заполните сведения и условия, затем проверьте документ перед использованием. Это рабочая подготовка, а не замена профессиональной проверки.",
+      scenarioTitle: "Что подготовить для проекта", scenario: "Для договора соберите сведения о сторонах, предмете, оплате, сроках и приложениях. Для обращения — адресата, факты, цель и подтверждающие материалы. Вводите личные данные только в своём защищённом аккаунте.",
+      steps: [
+        { title: "Выберите документ", body: "Найдите доступный шаблон под задачу и проверьте, подходит ли его назначение вашей ситуации." },
+        { title: "Заполните и проверьте", body: "Уточните стороны, суммы, даты и условия. Просмотрите весь текст, включая незаполненные поля и приложения." },
+        { title: "Продолжите работу с проектом", body: "Сохраните документ в доступном формате. При изменении условий сравните версии или передайте проект специалисту." },
+      ],
+      boundariesTitle: "Перед подписанием документа", boundaries: ["Шаблон не учитывает автоматически все особенности вашей ситуации.", "Проверьте полномочия сторон, условия и актуальность применимых требований.", "Если необходимы нотариус, государственная процедура или представитель, подготовка проекта их не заменяет."],
+      cta: { label: "Открыть конструктор документов", href: platformPersonalHref("ru", "/document-builder") },
+      related: { label: "Подготовка договора к проверке", href: "/ru/knowledge/contract-review-preparation" },
+    },
+    "document-comparison": {
+      title: "Сравнение договоров и версий документов онлайн",
+      description: "Сравните версии договора в JURO: найдите добавления, удаления и изменения условий. Проверьте правки перед согласованием или подписанием документа.",
+      eyebrow: "JURO · СРАВНЕНИЕ ДОКУМЕНТОВ", heading: "Увидьте, что изменилось в договоре",
+      lead: "Сравнение документов помогает работать с новой редакцией договора, дополнительным соглашением или проектом с правками контрагента. В JURO можно сопоставить версии и перейти от различий в тексте к вопросам, которые нужно проверить перед согласованием.",
+      scenarioTitle: "Когда сравнение особенно полезно", scenario: "Контрагент прислал новый файл договора аренды, поставки или услуг. Внешне текст знакомый, но могли измениться цена, срок, ответственность или порядок расторжения. Сохраните обе версии и проверьте различия целиком.",
+      steps: [
+        { title: "Подготовьте две версии", body: "Убедитесь, что сравниваете нужные редакции. Сохраните исходные файлы и относящиеся к ним приложения." },
+        { title: "Просмотрите изменения", body: "Обратите внимание на добавленные и удалённые фрагменты, даты, суммы, обязанности и ссылки на приложения." },
+        { title: "Обсудите спорные правки", body: "Сформулируйте вопросы к изменённым условиям. При необходимости продолжите проверку договора или привлеките специалиста." },
+      ],
+      boundariesTitle: "Различия в тексте и юридический смысл", boundaries: ["Выделение правок не означает, что условие законно или выгодно.", "Результат зависит от качества текста и выбранных версий; исходные файлы остаются важными.", "Проверяйте приложения, структуру документа и контекст сделки отдельно от списка изменений."],
+      cta: { label: "Сравнить документы в JURO", href: platformPersonalHref("ru", "/documents/comparisons") },
+      related: { label: "Проверка договора и его условий", href: "/ru/contract-review" },
+    },
+    "legal-action-plan": {
+      title: "Юридический план действий по праву Узбекистана",
+      description: "Соберите факты, документы, вопросы и задачи в плане действий JURO. Организуйте юридическую ситуацию и подготовьте следующий шаг или консультацию юриста.",
+      eyebrow: "JURO · ПЛАН ДЕЙСТВИЙ", heading: "От юридического вопроса к понятным задачам",
+      lead: "Когда нужно разобраться с задержкой зарплаты, долгом, договором или деловой перепиской, важно сохранять связь между фактами, источниками и действиями. JURO помогает организовать этот контекст в рабочем пространстве и продолжить работу с делом.",
+      scenarioTitle: "Что входит в подготовленный контекст", scenario: "Начните с цели, хронологии, имеющихся документов и вопросов, на которые ещё нет ответа. Дата в плане — рабочая отметка; юридически значимый срок необходимо отдельно проверить по обстоятельствам и применимому праву.",
+      steps: [
+        { title: "Опишите ситуацию", body: "Разделите подтверждённые факты и предположения. Укажите цель и документы, на которые можете опереться." },
+        { title: "Сохраните рабочие шаги", body: "Свяжите вопросы, документы и задачи с делом. Проверяйте основание каждого важного действия и срока." },
+        { title: "Продолжите с нужного места", body: "Вернитесь к делу, уточните факты или подготовьте выбранный контекст для консультации независимого специалиста." },
+      ],
+      boundariesTitle: "План помогает организовать работу", boundaries: ["Рабочий план не гарантирует исход спора и не заменяет индивидуальный совет.", "Сроки, адресат и порядок обращения зависят от конкретных обстоятельств.", "Конфиденциальные материалы передаются специалисту только после вашего подтверждения."],
+      cta: { label: "Начать работу с делом", href: platformPersonalHref("ru", "/cases") },
+      related: { label: "Какие факты собрать для плана действий", href: "/ru/knowledge/facts-for-action-plan" },
+    },
+  },
+  uz: {
+    "document-builder": {
+      title: "O‘zbekistonda hujjat va shartnoma tayyorlash",
+      description: "JUROda hujjat loyihasini tayyorlang: mavjud shablonni tanlang, shartlarni to‘ldiring, matnni tekshiring va keyingi ish uchun hujjatni saqlang.",
+      eyebrow: "JURO · HUJJAT TAYYORLASH", heading: "Hujjatni bosqichma-bosqich tayyorlang",
+      lead: "JURO hujjat konstruktori vazifadan tahrirlanadigan loyihaga o‘tishga yordam beradi. Mavjud shablonni tanlang, ma’lumot va shartlarni kiriting, keyin butun hujjatni tekshiring. Bu ishga tayyorgarlik bo‘lib, professional tekshiruv o‘rnini bosmaydi.",
+      scenarioTitle: "Loyiha uchun nima tayyorlash kerak", scenario: "Shartnoma uchun tomonlar, predmet, to‘lov, muddat va ilovalar haqidagi ma’lumotlarni yig‘ing. Murojaat uchun adresat, faktlar, maqsad va tasdiqlovchi materiallarni belgilang. Shaxsiy ma’lumotlarni faqat himoyalangan akkauntingizda kiriting.",
+      steps: [
+        { title: "Hujjatni tanlang", body: "Vazifaga mos mavjud shablonni toping va uning maqsadi vaziyatingizga mos kelishini tekshiring." },
+        { title: "To‘ldiring va tekshiring", body: "Tomonlar, summalar, sanalar va shartlarni aniqlashtiring. Bo‘sh maydon va ilovalarni ham tekshiring." },
+        { title: "Loyiha bilan davom eting", body: "Hujjatni mavjud formatda saqlang. Shartlar o‘zgarsa, versiyalarni taqqoslang yoki loyihani mutaxassisga bering." },
+      ],
+      boundariesTitle: "Hujjatni imzolashdan oldin", boundaries: ["Shablon vaziyatingizning barcha xususiyatlarini avtomatik hisobga olmaydi.", "Tomonlar vakolati, shartlar va amaldagi talablarni tekshiring.", "Notarius, davlat tartib-taomili yoki vakil zarur bo‘lsa, loyiha tayyorlash ularning o‘rnini bosmaydi."],
+      cta: { label: "Hujjat konstruktorini ochish", href: platformPersonalHref("uz", "/document-builder") },
+      related: { label: "Shartnoma tekshiruviga tayyorgarlik", href: "/uz/knowledge/contract-review-preparation" },
+    },
+    "document-comparison": {
+      title: "Shartnoma va hujjat versiyalarini onlayn taqqoslash",
+      description: "JUROda shartnoma versiyalarini taqqoslang: qo‘shilgan, o‘chirilgan va o‘zgargan shartlarni toping. Kelishish yoki imzolashdan oldin tahrirlarni tekshiring.",
+      eyebrow: "JURO · HUJJATLARNI TAQQOSLASH", heading: "Shartnomada nima o‘zgarganini ko‘ring",
+      lead: "Hujjatlarni taqqoslash yangi tahrir, qo‘shimcha kelishuv yoki kontragent tuzatgan loyiha bilan ishlashga yordam beradi. JUROda versiyalarni solishtirib, matndagi farqlardan kelishishdan oldin tekshiriladigan savollarga o‘tishingiz mumkin.",
+      scenarioTitle: "Taqqoslash qachon foydali", scenario: "Kontragent ijara, yetkazib berish yoki xizmat shartnomasining yangi faylini yubordi. Tanish matnda narx, muddat, javobgarlik yoki bekor qilish tartibi o‘zgargan bo‘lishi mumkin. Ikkala versiyani saqlang va farqlarni to‘liq tekshiring.",
+      steps: [
+        { title: "Ikki versiyani tayyorlang", body: "Kerakli tahrirlarni taqqoslayotganingizga ishonch hosil qiling. Asl fayllar va ularga tegishli ilovalarni saqlang." },
+        { title: "O‘zgarishlarni ko‘ring", body: "Qo‘shilgan va o‘chirilgan parchalar, sana, summa, majburiyat va ilovalarga havolalarni tekshiring." },
+        { title: "Bahsli tahrirlarni muhokama qiling", body: "O‘zgargan shartlar bo‘yicha savollar tuzing. Zarur bo‘lsa, shartnoma tekshiruvi yoki mutaxassis bilan davom eting." },
+      ],
+      boundariesTitle: "Matndagi farq va yuridik ma’no", boundaries: ["Tahrir ajratib ko‘rsatilishi shart qonuniy yoki foydali ekanini anglatmaydi.", "Natija matn sifati va tanlangan versiyalarga bog‘liq; asl fayllar muhimligicha qoladi.", "Ilovalar, tuzilma va bitim kontekstini o‘zgarishlar ro‘yxatidan alohida tekshiring."],
+      cta: { label: "JUROda hujjatlarni taqqoslash", href: platformPersonalHref("uz", "/documents/comparisons") },
+      related: { label: "Shartnoma va uning shartlarini tekshirish", href: "/uz/contract-review" },
+    },
+    "legal-action-plan": {
+      title: "O‘zbekiston huquqi bo‘yicha yuridik harakat rejasi",
+      description: "Faktlar, hujjatlar, savollar va vazifalarni JURO harakat rejasida yig‘ing. Yuridik vaziyat va keyingi qadamni yoki yurist maslahatini tayyorlang.",
+      eyebrow: "JURO · HARAKAT REJASI", heading: "Yuridik savoldan tushunarli vazifalarga",
+      lead: "Ish haqi kechikishi, qarz, shartnoma yoki ish yozishmalari bilan ishlashda faktlar, manbalar va harakatlar o‘rtasidagi bog‘liqlikni saqlash muhim. JURO bu kontekstni ish muhitida tartibga solish va ish bilan davom etishga yordam beradi.",
+      scenarioTitle: "Tayyorlangan kontekst nimalardan iborat", scenario: "Maqsad, voqealar ketma-ketligi, mavjud hujjat va ochiq savollardan boshlang. Rejadagi sana ishchi belgi; yuridik ahamiyatli muddatni holatlar va qo‘llaniladigan huquq asosida alohida tekshirish kerak.",
+      steps: [
+        { title: "Vaziyatni yozing", body: "Tasdiqlangan faktlarni taxminlardan ajrating. Maqsad va tayanish mumkin bo‘lgan hujjatlarni belgilang." },
+        { title: "Ishchi qadamlarni saqlang", body: "Savol, hujjat va vazifalarni ish bilan bog‘lang. Muhim harakat va muddatning asosini tekshiring." },
+        { title: "Kerakli joydan davom eting", body: "Ishga qayting, faktlarni aniqlashtiring yoki tanlangan kontekstni mustaqil mutaxassis maslahati uchun tayyorlang." },
+      ],
+      boundariesTitle: "Reja ishni tashkil etishga yordam beradi", boundaries: ["Ishchi reja nizo natijasini kafolatlamaydi va individual maslahat o‘rnini bosmaydi.", "Muddat, adresat va murojaat tartibi aniq holatlarga bog‘liq.", "Maxfiy materiallar mutaxassisga faqat tasdiqlashingizdan so‘ng beriladi."],
+      cta: { label: "Ish bilan ishlashni boshlash", href: platformPersonalHref("uz", "/cases") },
+      related: { label: "Harakat rejasi uchun qanday faktlar kerak", href: "/uz/knowledge/facts-for-action-plan" },
+    },
+  },
+  en: {
+    "document-builder": {
+      title: "Document & Contract Builder for Uzbekistan",
+      description: "Prepare a document draft in JURO. Choose an available template, fill in the terms, review the wording and save your document for the next stage of work.",
+      eyebrow: "JURO · DOCUMENT PREPARATION", heading: "Prepare your document step by step",
+      lead: "JURO’s document builder helps turn a task into an editable draft. Choose an available template, enter the information and terms, then review the complete document before using it. Draft preparation supports your work and does not replace professional review.",
+      scenarioTitle: "What to prepare for a draft", scenario: "For a contract, gather the parties’ details, subject matter, payment terms, dates and attachments. For a letter or request, identify the recipient, facts, purpose and supporting material. Enter personal information only in your protected account.",
+      steps: [
+        { title: "Choose a document", body: "Find an available template for your task and check that its intended use matches your circumstances." },
+        { title: "Complete and review it", body: "Check parties, amounts, dates and terms. Read the whole draft, including empty fields and attachments." },
+        { title: "Continue working with the draft", body: "Save the document in an available format. Compare versions when terms change or arrange a professional review." },
+      ],
+      boundariesTitle: "Before signing a document", boundaries: ["A template does not automatically account for every detail of your situation.", "Check the parties’ authority, the terms and the applicable requirements.", "Preparing a draft does not replace a notary, official procedure or representative where one is required."],
+      cta: { label: "Open the document builder", href: platformPersonalHref("en", "/document-builder") },
+      related: { label: "Prepare for a contract review", href: "/en/knowledge/contract-review-preparation" },
+    },
+    "document-comparison": {
+      title: "Compare Contracts & Document Versions Online",
+      description: "Compare contract versions in JURO. Find additions, deletions and changes to terms, then review the edits before agreeing to or signing the document.",
+      eyebrow: "JURO · DOCUMENT COMPARISON", heading: "See what changed in your contract",
+      lead: "Document comparison helps when you receive a new contract version, an amendment or a draft edited by another party. In JURO, compare versions and turn textual differences into questions to examine before agreement.",
+      scenarioTitle: "When comparison helps", scenario: "Another party sends a new lease, supply or services agreement. Familiar wording can conceal a changed price, deadline, liability clause or exit procedure. Keep both versions and check the differences in context.",
+      steps: [
+        { title: "Prepare two versions", body: "Make sure you have the intended versions. Keep the original files and their attachments." },
+        { title: "Review the changes", body: "Examine additions and deletions, dates, amounts, obligations and references to attachments." },
+        { title: "Discuss disputed edits", body: "List questions about the changed terms. Continue with contract review or a legal professional where needed." },
+      ],
+      boundariesTitle: "Text changes and legal meaning", boundaries: ["Highlighting an edit does not establish that a term is lawful or beneficial.", "Results depend on text quality and the versions selected; keep the source files.", "Check attachments, document structure and the transaction context separately from the change list."],
+      cta: { label: "Compare documents in JURO", href: platformPersonalHref("en", "/documents/comparisons") },
+      related: { label: "Review a contract and its terms", href: "/en/contract-review" },
+    },
+    "legal-action-plan": {
+      title: "Legal Action Plans for Uzbekistan",
+      description: "Organise facts, documents, questions and tasks in a JURO action plan. Prepare the next step in a legal situation or a consultation with a legal professional.",
+      eyebrow: "JURO · ACTION PLANS", heading: "Turn a legal question into workable tasks",
+      lead: "For a delayed salary, unpaid debt, contract or business correspondence, keep facts, sources and actions connected. JURO helps organise that context in a workspace so you can return to the case and continue from the right place.",
+      scenarioTitle: "What a prepared case contains", scenario: "Start with your objective, timeline, available documents and unanswered questions. A date in a working plan is an organisational marker; a legally significant deadline needs a separate check against the facts and applicable law.",
+      steps: [
+        { title: "Describe the situation", body: "Separate confirmed facts from assumptions. Identify your objective and the documents you can rely on." },
+        { title: "Keep the working steps together", body: "Connect questions, documents and tasks to the case. Check the basis for important actions and deadlines." },
+        { title: "Continue from the right place", body: "Return to the case, clarify facts or prepare selected context for an independent professional’s review." },
+      ],
+      boundariesTitle: "A plan helps organise your work", boundaries: ["A working plan does not guarantee a dispute outcome or replace individual advice.", "Deadlines, recipients and procedures depend on the circumstances.", "Confidential case materials are shared with a professional only after your confirmation."],
+      cta: { label: "Start working with a case", href: platformPersonalHref("en", "/cases") },
+      related: { label: "Gather facts for an action plan", href: "/en/knowledge/facts-for-action-plan" },
+    },
+  },
+};

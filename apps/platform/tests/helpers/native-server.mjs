@@ -3,7 +3,7 @@ import {once} from "node:events";
 import {setTimeout as pause} from "node:timers/promises";
 import {fileURLToPath} from "node:url";
 
-export async function startNativePlatform(port=3099, application="platform") {
+export async function startNativePlatform(port=3099, application="platform", options={}) {
   const offset=Number(process.env.JURO_TEST_PORT_OFFSET??0);
   if(!Number.isInteger(offset)||offset<0||!Number.isInteger(port)||port+offset<1||port+offset>65535)throw Error("Invalid native test port");
   port+=offset;
@@ -11,7 +11,7 @@ export async function startNativePlatform(port=3099, application="platform") {
   const loader=new URL("../../node_modules/tsx/dist/loader.mjs",import.meta.url).href;
   let output="";
   const child=spawn(process.execPath,["--import",loader,"server/index.ts"],{cwd,windowsHide:true,
-    env:{...process.env,NODE_ENV:"production",PRIVATE_DEVELOPMENT:"true",PORT:String(port),WEBSITE_PORT:String(port)},stdio:["ignore","pipe","pipe"]});
+    env:{...process.env,NODE_ENV:"production",PRIVATE_DEVELOPMENT:"true",PORT:String(options.platformPort??port),WEBSITE_PORT:String(port)},stdio:["ignore","pipe","pipe"]});
   for(const stream of [child.stdout,child.stderr])stream.on("data",chunk=>{output=(output+String(chunk)).slice(-8000)});
   const origin=`http://localhost:${port}`;
   const stop=async()=>{if(child.exitCode!==null)return;child.kill("SIGTERM");await Promise.race([once(child,"exit"),pause(5000)]);if(child.exitCode===null)child.kill("SIGKILL")};

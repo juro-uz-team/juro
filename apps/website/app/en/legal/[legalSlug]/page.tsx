@@ -1,3 +1,4 @@
+import { publicMetadata } from "../../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,10 +11,10 @@ type Props = { params: Promise<{ legalSlug: string }> };
 export function generateStaticParams() { return legalSlugs.map((legalSlug) => ({ legalSlug })); }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { legalSlug } = await params;
-  const document = getLegalDocument("ru", legalSlug);
-  if (!document) return {};
-  return { title: `${document.title} — English guide`, description: "English orientation for a JURO legal document, with the published Russian and Uzbek originals.", robots: { index: false, follow: true, nocache: true }, alternates: { canonical: `https://juro.uz/en/legal/${legalSlug}` } };
+ const { legalSlug } = await params;
+ const document = getLegalDocument("ru", legalSlug);
+ if (!document) return {};
+ return publicMetadata({ locale: "en", title: document.title + " — English guide", description: "English orientation for a JURO legal document, with the Russian and Uzbek originals.", path: "/legal/" + legalSlug, image: "legal", noindex: true, languages: ["en"] });
 }
 
 export default async function EnglishLegalDocumentGuide({ params }: Props) {

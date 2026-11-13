@@ -10,8 +10,8 @@ import type { LandingContent } from "./types";
 export const en: LandingContent = {
   ...ru,
   meta: {
-    title: "JURO — legal clarity, from question to next step",
-    description: "JURO — AI assistance, documents and legal professionals in one service.",
+    title: "JURO — AI Legal Assistant & Documents in Uzbekistan",
+    description: "AI legal help for Uzbekistan: ask legal questions, review contracts, prepare documents and find a lawyer. Use JURO in English, Russian or Uzbek.",
   },
   hero: {
     ...ru.hero,

@@ -6,6 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "assets:brand": "node --import ../platform/node_modules/tsx/dist/loader.mjs scripts/generate-brand-assets.mjs",
     "install:ci": "npm ci",
     "dev": "node ../../scripts/with-private-env.mjs --import ./../platform/node_modules/tsx/dist/loader.mjs server/index.ts",
     "build": "node ../../scripts/with-private-env.mjs node_modules/next/dist/bin/next build --webpack",
