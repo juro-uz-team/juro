@@ -2,9 +2,18 @@
 
 Status: **living changelog; the full execution goal remains active**
 
-Evidence cutoff: **2026-09-02 UZT**
+Evidence cutoff: **2026-09-02 12:45 UZT**
 
 This file records verified production increments. It must not be read as a claim that every item in the execution brief is complete.
+
+## DNS retirement and authenticated Lawyer evidence receipt (2026-09-02)
+
+- Deleted only Cloudflare record `4435f48bc863cc0ccaddd74a21791e5d`, `A ftp.juro.uz → 95.46.96.77`, DNS-only, dashboard TTL Auto/public TTL 300, after exact action-time confirmation.
+- Verified the record disappeared in Cloudflare and `ftp.juro.uz` returned NXDOMAIN through `1.1.1.1`, `8.8.8.8`, `tadeo.ns.cloudflare.com`, and `tess.ns.cloudflare.com`.
+- Verified the pre/post apex MX, `mail` CNAME, and `send` MX/TXT contract was unchanged. Public, app, lawyer, admin, and status endpoints returned final HTTP `200`. No other DNS record changed.
+- Completed read-only Chrome QA with a real Lawyer session across 16 discovered protected routes on the dedicated host; 15 role routes also passed at 390 × 844. There was no login fallback, 404, horizontal overflow, visible alert, or console error, and protected settings loaders settled to a visible H1.
+- Read no private client, matter, message, document, or session content and used no state-changing control. Business, Pending Lawyer, Staff/Admin, Lawyer/client mutations, and broader Definition-of-Done gates remain open.
+- This receipt changes documentation only. It performs no runtime deployment, migration, database write, secret, binding, payment, auth-policy, legal-corpus, vector, embedding, or staging-capacity operation.
 
 ## v101 mobile interaction-target production release (2026-09-02)
 
