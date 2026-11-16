@@ -421,3 +421,11 @@ html[data-theme="dark"] .deadline-calculator-error {
 .platform-shell .plan-step > .plan-step-date { grid-column:2; }
 .platform-shell .plan-step.done .deadline-result strong { text-decoration:none; }
 .platform-shell .deadline-calculator-grid { align-items:start; }
+.platform-shell .plan-section-title .plan-refresh { display:inline-flex; align-items:center; justify-content:center; gap:8px; width:auto; height:auto; min-height:44px; padding:10px 14px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-raised); color:var(--text-secondary); font:inherit; font-size:14px; cursor:pointer; }
+.platform-shell .plan-section-title .plan-refresh svg { width:18px; height:18px; flex:none; }
+.platform-shell .plan-section-title .plan-refresh:hover:not(:disabled) { border-color:var(--border-accent); color:var(--text-primary); }
+.platform-shell .plan-section-title .plan-refresh:disabled { opacity:.5; cursor:default; }
+.platform-shell .deadline-calculator-grid .juro-duration .juro-duration-input input { border:0; box-shadow:none; background:transparent; border-radius:10px; min-height:46px; }
+.platform-shell .deadline-calculator-grid .juro-duration .juro-duration-input input:focus-visible { outline:0; }
+.platform-shell .deadline-calculator-grid .juro-duration { min-width:0; }
+.platform-shell .plan-step-tools > .juro-disclosure-summary { margin-bottom:8px; }

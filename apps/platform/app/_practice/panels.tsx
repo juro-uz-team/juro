@@ -947,7 +947,7 @@ export function SettingsPanel({
           <h2>{t(locale, "filter")}</h2>
           {boot.pipelines.map((pipeline: Row) => (
             <details key={pipeline.id}>
-              <summary>{pipeline.name}</summary>
+              <summary className="juro-disclosure-summary">{pipeline.name}</summary>
               <ActionForm
                 locale={locale}
                 fields={[

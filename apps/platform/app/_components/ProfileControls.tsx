@@ -92,16 +92,18 @@ type NumberPresetProps = {
   step: number;
   presets: number[];
   unit: (value: number) => string;
+  disabled?: boolean;
+  required?: boolean;
 };
 
-function NumberPresetInput({ label, value, onChange, min, max, step, presets, unit }: NumberPresetProps) {
+export function NumberPresetInput({ label, value, onChange, min, max, step, presets, unit, disabled = false, required = true }: NumberPresetProps) {
   return <div className="juro-duration">
     <label>{label}<span className="juro-duration-input">
-      <input type="number" inputMode="numeric" required min={min} max={max} step={step} value={value} onChange={event => onChange(event.target.value)}/>
+      <input type="number" inputMode="numeric" required={required} disabled={disabled} min={min} max={max} step={step} value={value} onChange={event => onChange(event.target.value)}/>
       <span aria-hidden="true">{unit(Number(value))}</span>
     </span></label>
     <div className="juro-duration-presets" aria-label={label}>
-      {presets.map(preset => <button type="button" key={preset} aria-pressed={value !== "" && Number(value) === preset} onClick={() => onChange(String(preset))}>{preset} {unit(preset)}</button>)}
+      {presets.map(preset => <button type="button" key={preset} disabled={disabled} aria-pressed={value !== "" && Number(value) === preset} onClick={() => onChange(String(preset))}>{preset} {unit(preset)}</button>)}
     </div>
   </div>;
 }
@@ -118,3 +120,11 @@ export const ExperienceInput = memo(function ExperienceInput({ locale, ...props 
   }
   return <NumberPresetInput {...props} min={0} max={99} step={1} presets={[1,3,5,10]} unit={unit}/>;
 });
+
+export function DayCountInput({ locale, safetyMargin = false, ...props }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; disabled?: boolean; safetyMargin?: boolean }) {
+  const unit = (value: number) => {
+    const category = new Intl.PluralRules(locale).select(value);
+    return locale === "uz" ? "kun" : locale === "en" ? value === 1 ? "day" : "days" : category === "one" ? "день" : category === "few" ? "дня" : "дней";
+  };
+  return <NumberPresetInput {...props} min={0} max={safetyMargin ? 30 : 3650} step={1} presets={safetyMargin ? [0,1,3] : [3,7,14,30]} unit={unit}/>;
+}

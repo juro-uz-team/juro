@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "@fontsource-variable/manrope/wght.css";
 import "./globals.css";
+import "./disclosure-controls.css";
 import { BrandLoading } from "./components/public/BrandLoading";
 import { googleTagBootstrap, googleTagSource } from "../../../scripts/google-tag.mjs";
 import { publicMetadata } from "../lib/public-seo";

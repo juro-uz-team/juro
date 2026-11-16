@@ -486,7 +486,7 @@ export function LegalSourceReviewInbox({ locale, reviewerName }: { locale: Local
           <h1 id="review-document-title">{claimed.source.documentTitle}</h1>
           <p>{claimed.source.canonicalId}</p>
         </header>
-        <details className="staff-evidence"><summary>{l.evidence}</summary><dl>
+        <details className="staff-evidence"><summary className="juro-disclosure-summary">{l.evidence}</summary><dl>
           <div><dt>Raw SHA-256</dt><dd>{claimed.source.rawContentSha256}</dd></div>
           <div><dt>Parsed SHA-256</dt><dd>{claimed.source.parsedContentSha256}</dd></div>
           <div><dt>Selector</dt><dd>{claimed.source.primarySelector}</dd></div>

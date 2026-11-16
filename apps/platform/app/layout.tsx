@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
+import "./disclosure-controls.css";
 import "./_components/select.css";
 import "./invite/invite.css";
 import "./legal/legal.css";

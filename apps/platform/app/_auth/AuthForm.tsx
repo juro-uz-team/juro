@@ -828,7 +828,7 @@ export function AuthForm({
             </div>
             {turnstileSiteKey && <TurnstileWidget siteKey={turnstileSiteKey} locale={locale} resetSignal={turnstileReset} onToken={setTurnstileToken} action="auth_password_login" />}
             <SubmitButton pending={pending} disabled={!turnstileToken || !passwordValid} label={tr({ ru: "Войти", uz: "Kirish", en: "Sign in" })} />
-            <details className="auth-migration-note"><summary>{tr({ ru: "Раньше входили по коду?", uz: "Avval kod bilan kirganmisiz?", en: "Previously signed in by code?" })}</summary><p>{tr({ ru: "Раньше входили по коду? Установите пароль через восстановление — аккаунт и данные сохранятся.", uz: "Avval kod bilan kirganmisiz? Tiklash orqali parol o‘rnating — hisob va ma’lumotlar saqlanadi.", en: "Previously signed in by code? Set a password through recovery—your account and data stay intact." })}</p></details>
+            <details className="auth-migration-note"><summary className="juro-disclosure-summary">{tr({ ru: "Раньше входили по коду?", uz: "Avval kod bilan kirganmisiz?", en: "Previously signed in by code?" })}</summary><p>{tr({ ru: "Раньше входили по коду? Установите пароль через восстановление — аккаунт и данные сохранятся.", uz: "Avval kod bilan kirganmisiz? Tiklash orqali parol o‘rnating — hisob va ma’lumotlar saqlanadi.", en: "Previously signed in by code? Set a password through recovery—your account and data stay intact." })}</p></details>
           </form>
         )}
 

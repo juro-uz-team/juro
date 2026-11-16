@@ -305,7 +305,7 @@ export function DocumentEditor({
               {review.anchor && <blockquote>{review.anchor}</blockquote>}
               {review.proposal && (
                 <details>
-                  <summary>{t(locale, "proposal")}</summary>
+                  <summary className="juro-disclosure-summary">{t(locale, "proposal")}</summary>
                   <div
                     className="practice-editor"
                     dangerouslySetInnerHTML={{ __html: review.proposal.html }}
@@ -378,7 +378,7 @@ export function DocumentEditor({
           {actor.writable &&
             ["review", "changes_requested"].includes(doc.state) && (
               <details>
-                <summary>{t(locale, "proposal")}</summary>
+                <summary className="juro-disclosure-summary">{t(locale, "proposal")}</summary>
                 <RichEditor
                   html={proposal}
                   locale={locale}

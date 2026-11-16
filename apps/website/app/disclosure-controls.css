@@ -1,0 +1,26 @@
+/* Content disclosures retain native details semantics with a consistent toggle. */
+:root body details > summary.juro-disclosure-summary {
+  position:relative; display:flex; align-items:center; gap:10px; min-height:48px;
+  padding:12px 48px 12px 12px; border-radius:10px; list-style:none;
+  cursor:pointer; line-height:1.5; color:var(--text-primary); overflow-wrap:anywhere;
+}
+:root body details > summary.juro-disclosure-summary::-webkit-details-marker { display:none; }
+:root body details > summary.juro-disclosure-summary::marker { content:""; }
+:root body details > summary.juro-disclosure-summary::after {
+  content:""; position:absolute; inset-inline-end:10px; top:50%; margin-top:-14px;
+  width:28px; height:28px; border:1px solid var(--border-subtle); border-radius:8px;
+  background:linear-gradient(currentColor,currentColor) center / 10px 1.5px no-repeat,
+    linear-gradient(currentColor,currentColor) center / 1.5px 10px no-repeat,var(--surface-raised);
+  color:var(--brand-gold-text); pointer-events:none; transform:none;
+}
+:root body details[open] > summary.juro-disclosure-summary::after { background-size:10px 1.5px,1.5px 0; }
+:root body details > summary.juro-disclosure-summary:hover { background-color:var(--surface-subtle); }
+:root body details > summary.juro-disclosure-summary:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+:root body details > summary.juro-disclosure-summary > svg { flex-shrink:0; width:18px; height:18px; }
+@media(prefers-reduced-motion:no-preference) {
+  :root body details > summary.juro-disclosure-summary { transition:background-color 150ms ease,color 150ms ease; }
+  :root body details > summary.juro-disclosure-summary::after { transition:background-size 150ms ease,border-color 150ms ease; }
+}
+/* Keep keyboard stepping and numeric validation; remove browser-only spinner chrome. */
+input[type=number] { appearance:textfield; -moz-appearance:textfield; }
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }

@@ -1266,7 +1266,7 @@ export function ProfileSettingsClient({ locale, accountType, view }: { locale: P
         </>}
       </fieldset>
       {view === "profile" && <details className="account-document-details">
-        <summary><span>{personal.documents}</span><small>{ui.optional}</small></summary>
+        <summary className="juro-disclosure-summary"><span>{personal.documents}</span><small>{ui.optional}</small></summary>
         <p>{personal.documentHint}</p>
         <div className="account-fields">
           <div className="account-birth-date"><DateTimePicker dateOnly locale={locale} label={personal.birthDate} value={form.birthDate} onChange={birthDate => setForm({ ...form, birthDate })} disabled={saving} /></div>

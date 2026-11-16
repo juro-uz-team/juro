@@ -53,7 +53,7 @@ export default async function LegalDocumentPage({ params }: Props) {
           <div className={styles.metadata}><span>{ru ? "Версия" : "Versiya"}: {document.version}</span><span>{copy.label}</span><LegalPrintButton label={ru ? "Печать / PDF" : "Chop etish / PDF"} /></div>
           <aside className={styles.previewNotice}><strong>{copy.label}</strong><span>{copy.notice}</span></aside>
         </header>
-        <details className={styles.mobileToc}><summary>{ru ? "Содержание документа" : "Hujjat mazmuni"}</summary><ol>{sections.map((section) => <li key={section.id}><a href={`#${section.id}`}>{section.heading}</a></li>)}</ol></details>
+        <details className={styles.mobileToc}><summary className="juro-disclosure-summary">{ru ? "Содержание документа" : "Hujjat mazmuni"}</summary><ol>{sections.map((section) => <li key={section.id}><a href={`#${section.id}`}>{section.heading}</a></li>)}</ol></details>
         <div className={styles.documentLayout}>
           <aside className={styles.toc} aria-label={ru ? "Содержание документа" : "Hujjat mazmuni"}><p>{ru ? "Содержание" : "Mundarija"}</p><ol>{sections.map((section) => <li key={section.id}><a href={`#${section.id}`}>{section.heading}</a></li>)}</ol></aside>
           <div className={styles.documentContent}>{sections.map((section) => <section id={section.id} key={section.id}><h2>{section.heading}</h2>{section.blocks.map((block, index) => <LegalBlockView block={block} key={`${block.type}-${index}`} />)}</section>)}</div>

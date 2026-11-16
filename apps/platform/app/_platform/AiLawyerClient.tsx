@@ -519,7 +519,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
         <form className="ai-composer" onSubmit={submit}>
 
           <details className="ai-composer-options">
-            <summary><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Простой", "Oddiy", "Simple") : text("Глубокий", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
+            <summary className="juro-disclosure-summary"><Settings2 aria-hidden="true" /><span>{text("Настройки ответа", "Javob sozlamalari", "Answer settings")}</span><small>{answerMode === "short" ? text("Кратко", "Qisqa", "Concise") : text("Подробно", "Batafsil", "Detailed")} · {reasoningMode === "fast" ? text("Простой", "Oddiy", "Simple") : text("Глубокий", "Chuqur", "Deep")}{legalContextDate ? ` · ${formatDate(legalContextDate, locale)}` : ""}</small></summary>
             <div className="ai-modes">
               <div className="ai-mode-field"><span id="ai-answer-mode-label">{text("Формат ответа", "Javob formati", "Answer format")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-answer-mode-label"><button type="button" aria-pressed={answerMode === "short"} onClick={() => setAnswerMode("short")}>{text("Кратко", "Qisqa", "Concise")}</button><button type="button" aria-pressed={answerMode === "detailed"} onClick={() => setAnswerMode("detailed")}>{text("Подробно", "Batafsil", "Detailed")}</button></div></div>
               <div className="ai-mode-field"><span id="ai-reasoning-mode-label">{text("Режим ответа", "Javob rejimi", "Response mode")}</span><div className="ai-segmented" role="group" aria-labelledby="ai-reasoning-mode-label"><button type="button" aria-pressed={reasoningMode === "fast"} onClick={() => setReasoningMode("fast")}>{text("Простой", "Oddiy", "Simple")}</button><button type="button" aria-pressed={reasoningMode === "deep"} onClick={() => setReasoningMode("deep")}>{text("Глубокий", "Chuqur", "Deep")}</button></div></div>
@@ -847,7 +847,7 @@ function LegalSourceCard({
             <div>{display.availableLanguages.map((variant) => <a key={`${variant.language}:${variant.officialUrl}`} href={variant.officialUrl} target="_blank" rel="noreferrer">{languageLabel(variant.language, locale)}{variant.official ? ` · ${aiText(locale, "официальный", "rasmiy", "official")}` : ""}</a>)}</div>
           </section>}
           {display.versionHistory.length > 0 && <details className="ai-source-modal-history">
-            <summary>{aiText(locale, `История редакций (${display.versionHistory.length})`, `Tahrirlar tarixi (${display.versionHistory.length})`, `Version history (${display.versionHistory.length})`)}</summary>
+            <summary className="juro-disclosure-summary">{aiText(locale, `История редакций (${display.versionHistory.length})`, `Tahrirlar tarixi (${display.versionHistory.length})`, `Version history (${display.versionHistory.length})`)}</summary>
             <ol>{display.versionHistory.map((version) => <li key={`${version.versionNumber}:${version.fetchedAt}`}><strong>#{version.versionNumber}</strong><span>{version.versionDate ? formatDate(version.versionDate, locale) : formatDate(version.fetchedAt, locale)} · {sourceStatusLabel(version.status, locale)}{version.validFrom ? ` · ${formatDate(version.validFrom, locale)}` : ""}{version.validTo ? ` — ${formatDate(version.validTo, locale)}` : ""}</span></li>)}</ol>
           </details>}
           <div className="ai-source-modal-text">{display.text || aiText(locale, "Текст статьи не сохранён.", "Modda matni saqlanmagan.", "The article text was not saved.")}</div>
@@ -896,7 +896,7 @@ function SourceBookmarkControl({ source, cases, locale }: { source: Source; case
   }
 
   return <details className="ai-source-bookmark">
-    <summary><BookmarkPlus aria-hidden="true" />{saved ? aiText(locale, "Сохранено", "Saqlandi", "Saved") : aiText(locale, "Сохранить норму", "Normani saqlash", "Save provision")}</summary>
+    <summary className="juro-disclosure-summary"><BookmarkPlus aria-hidden="true" />{saved ? aiText(locale, "Сохранено", "Saqlandi", "Saved") : aiText(locale, "Сохранить норму", "Normani saqlash", "Save provision")}</summary>
     <form onSubmit={(event) => void save(event)}>
       <label>{aiText(locale, "Добавить в дело — необязательно", "Ishga qo‘shish — ixtiyoriy", "Add to a matter — optional")}<Select value={caseId} disabled={saving || saved} onChange={(event) => setCaseId(event.target.value)}><option value="">{aiText(locale, "Личные закладки", "Shaxsiy xatcho‘plar", "Personal bookmarks")}</option>{cases.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
       <label>{aiText(locale, "Комментарий — необязательно", "Izoh — ixtiyoriy", "Comment — optional")}<textarea value={comment} disabled={saving || saved} maxLength={2_000} onChange={(event) => setComment(event.target.value)} placeholder={aiText(locale, "Почему эта норма важна для вашей ситуации", "Bu norma vaziyatingiz uchun nega muhim", "Why this provision matters to your situation")} /></label>

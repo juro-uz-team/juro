@@ -97,3 +97,11 @@ fieldset:disabled :is(.juro-choice,.juro-duration,.juro-date-picker) { opacity: 
 .juro-calendar-popover .react-aria-Calendar header { position:sticky; top:-12px; z-index:2; background:var(--surface-elevated); padding-top:4px; }
 .juro-calendar-actions { position:sticky; bottom:-12px; z-index:2; background:var(--surface-elevated); padding:8px 0 4px; }
 .juro-date-field { display:grid; gap:4px; min-width:0; align-content:start; }
+/* Number fields share the settings control: one border, unit, and quick values. */
+.juro-duration > label { display:grid; gap:8px; font-size:13px; line-height:1.5; font-weight:600; }
+.juro-duration .juro-duration-input { min-width:0; min-height:48px; }
+.juro-duration .juro-duration-input > input { width:100%; min-width:0; min-height:46px; padding:10px 12px; font:inherit; font-size:16px; font-weight:400; color:var(--text-primary); }
+.juro-duration .juro-duration-input > span { flex:none; font-size:13px; padding:0 12px; }
+.juro-duration-presets button { font-size:13px; cursor:pointer; }
+.juro-duration-presets button:hover:not(:disabled) { border-color:var(--border-accent); background:var(--surface-hover); }
+.juro-duration-presets button:disabled { opacity:.5; cursor:not-allowed; }

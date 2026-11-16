@@ -183,7 +183,7 @@ export function PublicStatusPage({
                 <b className={`status-${component.status}`}><StateMark state={component.status} />{statusLabel(component.status)}</b>
               </div>
               <details className="public-status-dependencies">
-                <summary>{t.dependencyDetails}</summary>
+                <summary className="juro-disclosure-summary">{t.dependencyDetails}</summary>
                 <ul>{component.dependencies.map((dependency) => (
                   <li key={dependency.key}>
                     <div><span>{dependency.label}</span><b className={`status-${dependency.status}`}>{statusLabel(dependency.status)}</b></div>

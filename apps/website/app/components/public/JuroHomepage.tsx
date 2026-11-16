@@ -488,7 +488,7 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
 
         <section className={styles.faqSection} id="faq">
           <header data-reveal><p className={styles.eyebrowDark}>FAQ</p><h2>{t.faqTitle}</h2></header>
-          <div>{content.faq.items.slice(0, 8).map((item, index) => <details key={item.question}><summary><span>0{index + 1}</span>{item.question}<i aria-hidden="true">+</i></summary><p>{item.answer}</p></details>)}</div>
+          <div>{content.faq.items.slice(0, 8).map((item, index) => <details key={item.question}><summary className="juro-disclosure-summary"><span>0{index + 1}</span>{item.question}</summary><p>{item.answer}</p></details>)}</div>
         </section>
 
         <section className={`${styles.finalSection} ${motionStyles.finalMotion}`} data-reveal="mask" id="start">
