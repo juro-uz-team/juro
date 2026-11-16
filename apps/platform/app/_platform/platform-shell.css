@@ -303,3 +303,11 @@ body:has(.platform-shell)::-webkit-scrollbar-track { margin-top:var(--platform-h
 @media(max-width:900px) { html:has(.platform-shell) { --platform-topbar-height:70px; } }
 
 html:has(.platform-shell .dbt-header) { --platform-scrollbar-bottom-border:var(--border-subtle); }
+
+/* Paint the separator with the same gradient as the native scrollbar gutter,
+   avoiding different border rounding at fractional display scales. */
+.platform-shell .platform-topbar,
+html[data-theme=dark] .platform-shell .platform-topbar {
+  border-bottom:0;
+  background:linear-gradient(to bottom,var(--platform-topbar-surface) 0 calc(100% - 1px),var(--platform-topbar-border) calc(100% - 1px) 100%);
+}

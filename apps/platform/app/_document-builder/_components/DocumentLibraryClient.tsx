@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentLanguageControl } from "./DocumentLanguageControl";
 import { Select } from "../../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- document-language preference follows the route and saved browser choice */
@@ -14,6 +15,7 @@ import {
   FilePenLine,
   Search,
   ShieldCheck,
+  Info,
   UsersRound,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -156,21 +158,6 @@ const libraryCopy = {
   },
 } as const;
 
-export function LanguageToggle({
-  language,
-  uiLocale,
-  onChange,
-}: {
-  language: BuilderLanguage;
-  uiLocale: PlatformLocale;
-  onChange: (language: BuilderLanguage) => void;
-}) {
-  const label = libraryCopy[uiLocale].documentLanguage;
-  return <div className="dbt-language-toggle" role="group" aria-label={label}>
-    <button type="button" className={language === "ru" ? "active" : ""} aria-pressed={language === "ru"} onClick={() => onChange("ru")}>RU</button>
-    <button type="button" className={language === "uz" ? "active" : ""} aria-pressed={language === "uz"} onClick={() => onChange("uz")}>UZ</button>
-  </div>;
-}
 
 function TemplateCard({
   document,
@@ -193,7 +180,7 @@ function TemplateCard({
     <h3 title={title}>{title}</h3>
     <p>{description}</p>
     <div className="dbt-template-meta"><span><Clock3 size={15}/>{document.estimatedMinutes ?? 10} {copy.minutes}</span><span><FileCheck2 size={15}/>DOCX · PDF</span></div>
-    {!verified && <p className="dbt-translation-note"><ShieldCheck size={15}/>{copy.reviewRequired}</p>}
+    {!verified && <p className="dbt-card-review-note"><Info size={16} aria-hidden="true"/><span>{copy.reviewRequired}</span></p>}
     {available ? <Link href={paths.template(document.categorySlug, document.code)}>{copy.create}<ArrowRight size={17}/></Link> : <span className="dbt-template-disabled"><ShieldCheck size={16}/>{copy.unavailable}</span>}
   </article>;
 }
@@ -248,9 +235,9 @@ export function DocumentLibraryClient({
 
   return <div className="dbt-library-page">
     <section className="dbt-library-hero">
-      <div><span className="dbt-eyebrow">JURO DOCUMENTS</span><h1>{activeCategory ? localize(activeCategory.title, language) : copy.library}</h1><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p><small className="dbt-translation-note">{copy.languageNote}</small></div>
-      <div className="dbt-library-summary"><strong>{documents.length}</strong><span>{copy.registryTemplates}</span><small>{publishedCount} {copy.available}</small></div>
-      <LanguageToggle language={language} uiLocale={uiLocale} onChange={changeLanguage}/>
+      <div><h1>{activeCategory ? localize(activeCategory.title, language) : copy.library}</h1><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p>{uiLocale === "en" && <small className="dbt-translation-note">{copy.languageNote}</small>}</div>
+      <div className="dbt-library-summary"><strong>{documents.length}</strong><span>{copy.registryTemplates}</span>{publishedCount !== documents.length && <small>{publishedCount} {copy.available}</small>}</div>
+      <DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/>
     </section>
     {!activeCategory && <section className="dbt-workspace-links" aria-label={copy.workspace}>
       <Link href={paths.template("debt", "0602001")}><FilePenLine size={21}/><span><strong>{copy.receipt}</strong><small>{copy.receiptDetail}</small></span><ArrowRight size={18}/></Link>
@@ -265,6 +252,6 @@ export function DocumentLibraryClient({
     {activeCategory && <div className="dbt-library-breadcrumb"><Link href={paths.library}>{copy.allCategories}</Link><span>/</span><b>{localize(activeCategory.title, language)}</b></div>}
     <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => { setSearch(event.target.value); setLimit(TEMPLATE_PAGE_SIZE); }} placeholder={copy.search} aria-label={copy.searchLabel}/></label><Select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setLimit(TEMPLATE_PAGE_SIZE); }} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></Select></div>
     {activeCategory && publishedCount > 0 && <section className="dbt-popular-section"><h2>{copy.popular}</h2><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></section>}
-    <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><span aria-live="polite">{visible.length} / {filtered.length}</span></div><div className="dbt-template-grid">{cards(visible)}</div>{visible.length < filtered.length && <button type="button" className="dbt-load-more" onClick={() => setLimit((current) => current + TEMPLATE_PAGE_SIZE)}>{copy.showMore(Math.min(TEMPLATE_PAGE_SIZE, filtered.length - visible.length))}</button>}{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
+    <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><p className="dbt-result-count" role="status">{uiLocale === "ru" ? `Показано ${visible.length} из ${filtered.length}` : uiLocale === "uz" ? `${filtered.length} tadan ${visible.length} ta ko‘rsatilgan` : `Showing ${visible.length} of ${filtered.length}`}</p></div><div className="dbt-template-grid">{cards(visible)}</div>{visible.length < filtered.length && <button type="button" className="dbt-load-more" onClick={() => setLimit((current) => current + TEMPLATE_PAGE_SIZE)}>{copy.showMore(Math.min(TEMPLATE_PAGE_SIZE, filtered.length - visible.length))}</button>}{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
   </div>;
 }
