@@ -894,15 +894,15 @@
 .ai-plan-card li::marker { color: var(--brand-gold-text); font-weight: 800; }
 .ai-plan-card li strong,.ai-plan-card li span { display: block; }
 .ai-plan-card li span { margin-top: .1rem; color: var(--text-secondary); line-height: 1.42; }
-.ai-plan-card footer { display: flex; flex-wrap: wrap; gap: .5rem; }
-.ai-plan-card footer button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .45rem; padding: 0 .8rem; border: 1px solid var(--border-accent); border-radius: .625rem; background: var(--interactive-primary); color: var(--text-on-action); font: inherit; font-size: .78rem; font-weight: 600; box-shadow: none; }
-.ai-plan-card footer button.secondary { border-color: var(--border-subtle); background: var(--surface-raised); color: var(--text-primary); }
-.ai-plan-card footer button.quiet { border-color: transparent; background: transparent; color: var(--text-secondary); }
-.ai-plan-card footer button:disabled { cursor: not-allowed; opacity: .55; }
+.ai-plan-card :is(footer, .ai-plan-confirmation-actions) { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ai-plan-card :is(footer, .ai-plan-confirmation-actions) button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .45rem; padding: 0 .8rem; border: 1px solid var(--border-accent); border-radius: .625rem; background: var(--interactive-primary); color: var(--text-on-action); font: inherit; font-size: .78rem; font-weight: 600; box-shadow: none; }
+.ai-plan-card :is(footer, .ai-plan-confirmation-actions) button.secondary { border-color: var(--border-subtle); background: var(--surface-raised); color: var(--text-primary); }
+.ai-plan-card :is(footer, .ai-plan-confirmation-actions) button.quiet { border-color: transparent; background: transparent; color: var(--text-secondary); }
+.ai-plan-card :is(footer, .ai-plan-confirmation-actions) button:disabled { cursor: not-allowed; opacity: .55; }
 .ai-plan-card :focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
-@media (hover: hover) and (pointer: fine) { .ai-plan-card footer button:not(:disabled) { transition: transform 140ms cubic-bezier(.23,1,.32,1), background-color 160ms ease, border-color 160ms ease; } .ai-plan-card footer button:not(:disabled):hover { background: var(--interactive-primary); box-shadow: none; border: 1px solid var(--border-accent); font-weight: 600; } .ai-plan-card footer button.secondary:not(:disabled):hover { background: var(--surface-hover); } .ai-plan-card footer button.quiet:not(:disabled):hover { background: transparent; color: var(--text-primary); } .ai-plan-card footer button:not(:disabled):active { transform: scale(.98); } }
-@media (max-width: 520px) { .ai-plan-card { padding: .875rem; } .ai-plan-card footer { display: grid; } .ai-plan-card footer button { width: 100%; } }
-@media (prefers-reduced-motion: reduce) { .ai-plan-card footer button { transition: none; } }
+@media (hover: hover) and (pointer: fine) { .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button:not(:disabled) { transition: transform 140ms cubic-bezier(.23,1,.32,1), background-color 160ms ease, border-color 160ms ease; } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button:not(:disabled):hover { background: var(--interactive-primary); box-shadow: none; border: 1px solid var(--border-accent); font-weight: 600; } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button.secondary:not(:disabled):hover { background: var(--surface-hover); } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button.quiet:not(:disabled):hover { background: transparent; color: var(--text-primary); } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button:not(:disabled):active { transform: scale(.98); } }
+@media (max-width: 520px) { .ai-plan-card { padding: .875rem; } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) { display: grid; } .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .ai-plan-card :is(footer, .ai-plan-confirmation-actions) button { transition: none; } }
 .ai-document-sensitive-consent{display:flex;align-items:flex-start;gap:.55rem;margin-top:.85rem;padding:.75rem;border:1px solid var(--border-accent);border-radius:.7rem;background:var(--surface-selected);color:var(--brand-gold-text);font-size:.78rem;line-height:1.45}.ai-document-sensitive-consent input{width:1rem;height:1rem;flex:none;margin-top:.1rem;accent-color:var(--text-primary)}.ai-document-sensitive-consent:focus-within{outline:3px solid var(--focus-ring);outline-offset:2px}
 
 .ai-preliminary {
@@ -1505,3 +1505,9 @@
 /* Color roles come from the global palette in both modes. */
 html[data-theme=dark] .ai-workspace { color-scheme: dark; }
 html[data-theme=dark] .ai-conversation-list a { box-shadow: none; }
+
+.ai-plan-card > p { margin: 0; color: var(--text-secondary); font-size: .875rem; line-height: 1.5; }
+.ai-plan-card .ai-plan-confirmation { background: var(--surface-raised); color: var(--text-primary); }
+.ai-plan-card button svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; }
+.ai-plan-card .ai-plan-error { color: var(--status-error); font-size: .875rem; line-height: 1.5; }
+.ai-plan-preview { max-height: 18rem; overflow-y: auto; }

@@ -43,7 +43,7 @@ async function planIdentity(parts: string[]) {
 
 async function savedConfirmation(input: PlanSaveScope, eventId: string): Promise<SavedPlan | null> {
   const row = await input.db.prepare(`SELECT c.id AS caseId,p.id AS planId,
-    COALESCE(json_extract(e.metadata_json,'$.taskCount'),(SELECT count(*) FROM tasks WHERE case_id=c.id)) AS taskCount
+    COALESCE(CAST(json_extract(e.metadata_json,'$.taskCount') AS integer),(SELECT count(*) FROM tasks WHERE case_id=c.id)) AS taskCount
     FROM case_events e JOIN cases c ON c.id=e.case_id JOIN action_plans p ON p.case_id=c.id
     WHERE c.workspace_id=? AND c.archived_at IS NULL AND e.actor_user_id=? AND (
       e.id=? OR (json_valid(e.metadata_json) AND json_extract(e.metadata_json,'$.assistantMessageId')=?
@@ -133,7 +133,7 @@ export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<Save
     progress_percent=(SELECT round(100.0*sum(CASE WHEN status='completed' THEN 1 ELSE 0 END)/count(*)) FROM action_plan_steps WHERE plan_id=?)
     WHERE id=?`).bind(revision,now,planId,planId));
   statements.push(db.prepare(`INSERT INTO action_plan_versions(id,plan_id,version,created_by_user_id,reason,snapshot_json,created_at)
-    SELECT ?,p.id,?,?,?,json_object('version',p.current_revision,'assistantMessageId',?,'title',p.title,'status',p.status,'progressPercent',p.progress_percent,
+    SELECT ?,p.id,?,?,?,json_object('version',p.current_revision,'assistantMessageId',CAST(? AS text),'title',p.title,'status',p.status,'progressPercent',p.progress_percent,
       'steps',(SELECT json_group_array(json_object('id',s.id,'ordinal',s.ordinal,'title',s.title,'description',s.description,'status',s.status,
       'dueAt',s.due_at,'safeDueAt',s.safe_due_at,'sourceDate',s.deadline_source_date,'deadlineType',s.deadline_type,'calculationMethod',s.calculation_method,
       'deadlineConfidence',s.deadline_confidence,'actionType',s.action_type,'templateCode',s.template_code,'revision',s.revision))

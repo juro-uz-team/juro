@@ -191,6 +191,8 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   useEffect(()=>{const media=window.matchMedia("(max-width: 1380px)");const update=()=>setCompactContext(media.matches);update();media.addEventListener("change",update);return()=>media.removeEventListener("change",update);},[]);
   const [deleteCandidateId,setDeleteCandidateId]=useState(""),[deletingConversationId,setDeletingConversationId]=useState(""),[conversationDeleteError,setConversationDeleteError]=useState("");
   const [dismissedPlanMessageId,setDismissedPlanMessageId]=useState(""),[planEditorOpen,setPlanEditorOpen]=useState(false);
+  const [planError,setPlanError]=useState("");
+  const planSavePending=useRef(false);
   const [targetCaseId,setTargetCaseId]=useState(""),[savingPlan,setSavingPlan]=useState(false),[planConfirmationOpen,setPlanConfirmationOpen]=useState(false);
   const [openingSuggestedDocument,setOpeningSuggestedDocument]=useState(false),[creatingSuggestedDocument,setCreatingSuggestedDocument]=useState(false);
   const [documentPrefill,setDocumentPrefill]=useState<DocumentPrefillPreview|null>(null),[documentPrefillMessageId,setDocumentPrefillMessageId]=useState("");
@@ -270,6 +272,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   useLayoutEffect(()=>{if(composerRef.current)resizeComposer(composerRef.current);},[question]);
   useEffect(()=>()=>{const running=streamAbortRef.current;streamAbortRef.current=null;running?.abort();},[]);
   useEffect(()=>{if(requestSending&&nearBottom.current)transcriptRef.current?.scrollTo({top:transcriptRef.current.scrollHeight,behavior:"auto"});},[requestSending,optimisticQuestion,streamStatus,writing]);
+  useEffect(()=>{setPlanError("");setPlanConfirmationOpen(false);setPlanEditorOpen(false);setTargetCaseId("");},[workspaceId,answer?.messageId]);
   useEffect(()=>{if(planConfirmationOpen)planConfirmationRef.current?.focus();},[planConfirmationOpen]);
   useEffect(()=>{
     const dialog=mobileContextRef.current;
@@ -369,7 +372,25 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
   async function deleteConversation(id:string){const scope=workspaceId;setDeletingConversationId(id);setConversationDeleteError("");try{await requestJson("/api/platform/ai",{method:"DELETE",body:JSON.stringify({conversationId:id})});if(activeScope.current!==scope)return;if(currentSelection.current===id)startNewQuestion();setDeleteCandidateId("");await refresh();}catch(cause){if(activeScope.current===scope)setConversationDeleteError(String(cause instanceof Error?cause.message:cause));}finally{if(activeScope.current===scope)setDeletingConversationId("");}}
   async function updateFact(factId:string,status:"confirmed"|"rejected"){try{await requestJson("/api/platform/ai/facts",{method:"POST",body:JSON.stringify({factId,status})});setAnswer(current=>current?{...current,facts:current.facts.map(fact=>fact.id===factId?{...fact,status}:fact)}:current);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}}
 
-  async function savePlanToCase(){if(!answer?.messageId||savingPlan)return;setSavingPlan(true);try{const saved=await requestJson<{caseId:string}>("/api/platform/ai/action-plan",{method:"POST",headers:{"idempotency-key":`plan-${answer.messageId}-${targetCaseId||"new"}`},body:JSON.stringify({assistantMessageId:answer.messageId,targetCaseId:targetCaseId||undefined,locale})});setPlanConfirmationOpen(false);router.push(`${basePath}/cases/${encodeURIComponent(saved.caseId)}`);}catch(cause){setError(String(cause instanceof Error?cause.message:cause));}finally{setSavingPlan(false);}}
+  async function savePlanToCase(){
+    if(!answer?.messageId||planSavePending.current||sending)return;
+    const scope=workspaceId,messageId=answer.messageId;
+    planSavePending.current=true;setSavingPlan(true);setPlanError("");
+    try{
+      const saved=await requestJson<{caseId:string}>("/api/platform/ai/action-plan",{
+        method:"POST",headers:{"idempotency-key":`plan-${messageId}-${targetCaseId||"new"}`},
+        body:JSON.stringify({assistantMessageId:messageId,targetCaseId:targetCaseId||undefined,locale}),
+        signal:AbortSignal.timeout(30_000),
+      });
+      if(activeScope.current!==scope||currentMessage.current!==messageId)return;
+      setPlanConfirmationOpen(false);router.push(`${basePath}/cases/${encodeURIComponent(saved.caseId)}`);
+    }catch{
+      if(activeScope.current===scope&&currentMessage.current===messageId)setPlanError(text(
+        "Не удалось сохранить план. Повторите попытку: уже сохранённые задачи не будут созданы повторно.",
+        "Rejani saqlab bo‘lmadi. Qayta urinib ko‘ring: saqlangan vazifalar takror yaratilmaydi.",
+        "The plan could not be saved. Try again; tasks already saved will not be duplicated."));
+    }finally{planSavePending.current=false;setSavingPlan(false);}
+  }
   function dismissDocumentPrefill(){handoffGeneration.current++;setOpeningSuggestedDocument(false);setCreatingSuggestedDocument(false);setDocumentPrefill(null);setDocumentPrefillMessageId("");setSensitivePrefillConsent(false);handoffKey.current=crypto.randomUUID();}
   async function openSuggestedDocument(){
     if(!answer?.messageId||openingSuggestedDocument)return;
@@ -460,12 +481,14 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
             {!optimisticQuestion && answer.result.responseKind === "answer" && answer.result.actionPlan.length > 0 && dismissedPlanMessageId !== answer.messageId && <section className="ai-plan-card" aria-labelledby="ai-plan-card-title">
               <header><small>{text("После ответа AI", "AI javobidan so‘ng", "After the AI answer")}</small><h2 id="ai-plan-card-title">{text("Создать план действий", "Harakatlar rejasini yaratish", "Create an action plan")}</h2></header>
               <p>{text("Сохраните следующие шаги из ответа как задачи в новом или существующем деле.", "Javobdagi keyingi qadamlarni yangi yoki mavjud ishda vazifalar sifatida saqlang.", "Save the next steps from this answer as tasks in a new or existing matter.")}</p>
-              {planEditorOpen && <div className="ai-plan-destination"><label htmlFor="ai-plan-case">{text("Куда добавить план", "Rejani qayerga qo‘shish", "Where to add the plan")}</label><AiSelect id="ai-plan-case" value={targetCaseId} disabled={savingPlan} onChange={setTargetCaseId} options={[{ value: "", label: text("Новое дело", "Yangi ish", "New matter") }, ...cases.map((item) => ({ value: item.id, label: item.title }))]} /></div>}
-              {!planConfirmationOpen ? <footer><button type="button" disabled={!answer.messageId || sending || savingPlan} onClick={() => setPlanConfirmationOpen(true)}><ListPlus />{targetCaseId ? text("Создать в выбранном деле", "Tanlangan ishda yaratish", "Create in selected matter") : text("Создать план", "Reja yaratish", "Create plan")}</button><button type="button" className="secondary" disabled={savingPlan} onClick={() => setPlanEditorOpen((current) => !current)}>{text("Изменить", "O‘zgartirish", "Change")}</button><button type="button" className="quiet" disabled={savingPlan} onClick={() => setDismissedPlanMessageId(answer.messageId || "")}>{text("Не предлагать", "Taklif qilmaslik", "Dismiss")}</button></footer> : <div className="ai-plan-confirmation" ref={planConfirmationRef} tabIndex={-1} role="group" aria-label={text("Подтверждение сохранения плана", "Rejani saqlashni tasdiqlash", "Confirm plan save")}>
+              <ol className="ai-plan-preview">{answer.result.actionPlan.map((step,index)=><li key={index}><strong>{step.title}</strong><span>{step.description}</span></li>)}</ol>
+              {planError && <p className="ai-plan-error" role="alert">{planError}</p>}
+              {planEditorOpen && <div className="ai-plan-destination"><label htmlFor="ai-plan-case">{text("Куда добавить план", "Rejani qayerga qo‘shish", "Where to add the plan")}</label><AiSelect id="ai-plan-case" value={targetCaseId} disabled={savingPlan} onChange={value=>{setTargetCaseId(value);setPlanError("");setPlanConfirmationOpen(false);}} options={[{ value: "", label: text("Новое дело", "Yangi ish", "New matter") }, ...cases.map((item) => ({ value: item.id, label: item.title }))]} /></div>}
+              {!planConfirmationOpen ? <footer><button type="button" disabled={!answer.messageId || sending || savingPlan} onClick={() => {setPlanError("");setPlanConfirmationOpen(true);}}><ListPlus />{targetCaseId ? text("Создать в выбранном деле", "Tanlangan ishda yaratish", "Create in selected matter") : text("Создать план", "Reja yaratish", "Create plan")}</button><button type="button" className="secondary" disabled={savingPlan} onClick={() => setPlanEditorOpen((current) => !current)}>{text("Изменить", "O‘zgartirish", "Change")}</button><button type="button" className="quiet" disabled={savingPlan} onClick={() => setDismissedPlanMessageId(answer.messageId || "")}>{text("Не предлагать", "Taklif qilmaslik", "Dismiss")}</button></footer> : <div className="ai-plan-confirmation" ref={planConfirmationRef} tabIndex={-1} role="group" aria-label={text("Подтверждение сохранения плана", "Rejani saqlashni tasdiqlash", "Confirm plan save")}>
                 <p>{targetCaseId
                   ? text(`Добавить задачи в дело «${cases.find((item) => item.id === targetCaseId)?.title ?? "Выбранное дело"}»?`, `Vazifalar “${cases.find((item) => item.id === targetCaseId)?.title ?? "Tanlangan ish"}” ishiga qo‘shilsinmi?`, `Add these tasks to “${cases.find((item) => item.id === targetCaseId)?.title ?? "Selected matter"}”?`)
                   : text("Создать новое дело и задачи по этому плану?", "Bu reja bo‘yicha yangi ish va vazifalar yaratiladimi?", "Create a new matter and tasks from this plan?")}</p>
-                <div><button type="button" className="secondary" disabled={savingPlan} onClick={() => setPlanConfirmationOpen(false)}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button type="button" disabled={savingPlan} aria-busy={savingPlan} onClick={() => void savePlanToCase()}>{savingPlan ? <LoaderCircle className="spin" /> : <ListPlus />}{savingPlan ? text("Сохраняем…", "Saqlanmoqda…", "Saving…") : text("Подтвердить и сохранить", "Tasdiqlash va saqlash", "Confirm and save")}</button></div>
+                <div className="ai-plan-confirmation-actions"><button type="button" className="secondary" disabled={savingPlan} onClick={() => {setPlanError("");setPlanConfirmationOpen(false);}}>{text("Отмена", "Bekor qilish", "Cancel")}</button><button type="button" disabled={savingPlan} aria-busy={savingPlan} onClick={() => void savePlanToCase()}>{savingPlan ? <LoaderCircle className="spin" aria-hidden="true" /> : <ListPlus aria-hidden="true" />}{savingPlan ? text("Сохраняем…", "Saqlanmoqda…", "Saving…") : text("Подтвердить и сохранить", "Tasdiqlash va saqlash", "Confirm and save")}</button></div>
               </div>}
             </section>}
             {!optimisticQuestion && answer.result.responseKind === "answer" && answer.result.suggestedDocument && <div className="ai-answer-actions">
