@@ -278,3 +278,13 @@ html[data-theme=dark] .platform-shell .platform-collapse { background: transpare
 .platform-shell .matter-full-title { margin:8px 0; color:var(--text-secondary); font-size:14px; line-height:1.6; }
 .platform-shell .matter-full-title > summary { cursor:pointer; min-height:44px; padding:10px 0; color:var(--brand-gold-text); }
 .platform-shell .matter-full-title > p { margin:0 0 12px; max-width:75ch; font-size:16px; overflow-wrap:anywhere; }
+/* The viewport scrollbar uses body styling in Chromium. Keep document scrolling
+   and reserve the same chrome height for both root scrollbar implementations. */
+html:has(.platform-shell) { --platform-topbar-height:76px; --platform-topbar-surface:#f1f0ec; }
+html[data-theme=dark]:has(.platform-shell) { --platform-topbar-surface:var(--surface-subtle); }
+html:has(.platform-shell) .platform-topbar { height:var(--platform-topbar-height); }
+html:has(.platform-shell)::-webkit-scrollbar,
+body:has(.platform-shell)::-webkit-scrollbar { background:linear-gradient(to bottom,var(--platform-topbar-surface) 0 var(--platform-topbar-height),transparent var(--platform-topbar-height)); }
+html:has(.platform-shell)::-webkit-scrollbar-track,
+body:has(.platform-shell)::-webkit-scrollbar-track { margin-top:var(--platform-topbar-height); }
+@media(max-width:900px) { html:has(.platform-shell) { --platform-topbar-height:70px; } }
