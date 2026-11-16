@@ -968,3 +968,6 @@
 .platform-shell .dbt-preview.mobile-open .dbt-preview-scroll { max-height:none; }
 
 .dbt-doc-filters { align-items:end; }
+@media(max-width:620px) {
+  .dbt-doc-filters > .juro-date-field { grid-column:1 / -1; }
+}
