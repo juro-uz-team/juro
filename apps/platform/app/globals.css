@@ -417,3 +417,10 @@ html[data-theme=dark] .ask-bar {
 *::-webkit-scrollbar-corner { background:transparent; }
 
 @supports selector(::-webkit-scrollbar) { * { scrollbar-width:auto !important; scrollbar-color:auto !important; } }
+/* Shared form states keep controls consistent across product pages. */
+.platform-shell :is(input,textarea,select,.juro-select) { font-family:inherit; }
+.platform-shell :is(input,textarea,select,.juro-select):focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+.platform-shell input:is([type=checkbox],[type=radio]) { accent-color:var(--interactive-primary); width:20px; height:20px; flex-shrink:0; cursor:pointer; }
+.platform-shell :is(input,textarea)::placeholder { color:var(--text-secondary); opacity:.8; }
+.platform-shell :is(input,textarea,select)[aria-invalid=true] { border-color:var(--status-danger); }
+@media(max-width:680px) { .platform-shell :is(input,textarea,select,.juro-select):not([type=checkbox]):not([type=radio]):not([type=hidden]) { font-size:16px; } }

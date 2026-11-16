@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTimePicker } from "../../_components/ProfileControls";
 import { Select } from "../../_components/Select";
 
 import { CircleHelp } from "lucide-react";
@@ -29,6 +30,11 @@ function FieldLabel({ label, help, example }: BaseProps) {
 
 export function InputField({ label, help, example, className = "", ...props }: BaseProps & React.InputHTMLAttributes<HTMLInputElement>) {
   return <label className={`dbt-field ${className}`}><FieldLabel label={label} help={help} example={example}/><input {...props}/></label>;
+}
+
+export function DateField({ label, help, className = "", value, onChange }: BaseProps & { value: string; onChange: (value: string) => void }) {
+  const locale = useContext(BuilderFormLocaleContext);
+  return <div className={`dbt-field ${className}`}><DateTimePicker locale={locale} label={label} dateOnly pastOnly={false} value={value} onChange={onChange}/>{help && <small className="juro-control-hint">{help}</small>}</div>;
 }
 
 export function SelectField({ label, help, example, className = "", children, ...props }: BaseProps & React.SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {

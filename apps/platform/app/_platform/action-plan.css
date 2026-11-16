@@ -380,3 +380,44 @@ html[data-theme="dark"] .deadline-calculator-error {
 .plan-step-tools > a { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; margin-bottom:12px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--brand-gold-text); }
 .plan-step-tools > a svg { width:18px; height:18px; }
 @media(max-width:680px) { .plan-step-tools { grid-column:1 / -1; } }
+/* Calm checklist hierarchy: one surface, with optional tools kept secondary. */
+.platform-shell .plan-workspace { max-width:1040px; }
+.platform-shell .plan-list { background:transparent; border:0; padding:0; }
+.platform-shell .plan-section-title { margin:0 0 12px; }
+.platform-shell .plan-card { border-radius:14px; overflow:visible; }
+.platform-shell .plan-card-head { background:transparent; }
+.platform-shell .plan-card-head > div > span { display:none; }
+.platform-shell .plan-steps { padding:0 20px 20px; }
+.platform-shell .plan-context-links { border-bottom:1px solid var(--border-subtle); gap:4px 16px; padding:8px 0; }
+.platform-shell .plan-context-links a { font-size:13px; text-decoration:none; }
+.platform-shell .plan-context-links a:hover { text-decoration:underline; }
+.platform-shell .plan-step { grid-template-columns:28px minmax(0,1fr) 180px; padding:20px 0; }
+.platform-shell .plan-step-date { max-width:280px; }
+.platform-shell .plan-step .juro-date-picker { grid-column:auto; }
+.platform-shell .plan-step .juro-date-picker .juro-date-input { grid-column:auto; }
+.platform-shell .plan-step-tools { padding:0; }
+.platform-shell .deadline-calculator { border:0; background:var(--surface-subtle); border-radius:12px; padding:12px 16px; }
+.platform-shell .deadline-calculator-grid { gap:16px; margin-top:16px; }
+.platform-shell .deadline-calculator-grid > label { gap:6px; font-size:13px; }
+.platform-shell .deadline-calculator-grid :is(input:not([type=checkbox]),textarea,.juro-select) { min-height:48px; font-size:16px; border-radius:10px; }
+.platform-shell .deadline-help { font-size:13px; line-height:1.6; color:var(--text-secondary); margin:12px 0; max-width:65ch; }
+.platform-shell .deadline-settings { border-top:1px solid var(--border-subtle); margin:12px 0; }
+.platform-shell .deadline-settings > summary,.platform-shell .plan-history-disclosure > summary { min-height:44px; padding:12px 0; cursor:pointer; font-size:14px; color:var(--text-secondary); }
+.platform-shell .deadline-calculate { min-height:44px; font-size:14px; padding:10px 16px; }
+.platform-shell .plan-history-disclosure { border-top:1px solid var(--border-subtle); margin-top:8px; }
+.platform-shell .plan-history { border:0; border-radius:0; background:transparent; margin:0; padding:0; }
+.platform-shell .deadline-result { border-radius:10px; }
+.platform-shell .deadline-result dl { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.platform-shell .deadline-result :is(p,li) { font-size:14px; line-height:1.6; }
+.platform-shell .plan-summary { display:flex; align-items:center; gap:16px; padding:20px; margin:0 0 12px; border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-raised); color:var(--text-primary); text-decoration:none; }
+.platform-shell .plan-summary > div { flex:1; min-width:0; }
+.platform-shell .plan-summary h3 { margin:0 0 8px; font-size:18px; line-height:1.5; overflow-wrap:anywhere; }
+.platform-shell .plan-summary p { margin:0; font-size:14px; color:var(--text-secondary); }
+.platform-shell .plan-summary > svg { width:18px; flex:none; transform:rotate(-90deg); }
+.platform-shell .plan-summary-progress { width:80px; font-size:13px; color:var(--text-secondary); display:grid; gap:8px; }
+.platform-shell .plan-summary .plan-progress { width:100%; display:block; }
+.platform-shell .plan-summary:hover { border-color:var(--border-accent); background:var(--surface-hover); }
+@media(max-width:680px) { .platform-shell .plan-steps { padding:0 12px 12px; } .platform-shell .plan-step { grid-template-columns:24px minmax(0,1fr); } .platform-shell .plan-step-date,.platform-shell .plan-step-status { grid-column:2; max-width:none; } .platform-shell .deadline-calculator-grid,.platform-shell .deadline-result dl { grid-template-columns:1fr; } .platform-shell .plan-summary { padding:16px; gap:12px; } .platform-shell .plan-summary-progress { width:48px; } .platform-shell .plan-summary h3 { font-size:16px; } }
+.platform-shell .plan-step > .plan-step-date { grid-column:2; }
+.platform-shell .plan-step.done .deadline-result strong { text-decoration:none; }
+.platform-shell .deadline-calculator-grid { align-items:start; }

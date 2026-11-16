@@ -1,9 +1,10 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { planAreaLabel, planStatusLabel, suggestedMatterTitle } from "../../lib/platform/plan-presentation";
 import {
   CalendarDays,
@@ -84,8 +85,6 @@ type DeadlineDraft = {
   dayType: "calendar_days" | "business_days";
   includeSourceDate: boolean;
   rollRule: "none" | "next_business_day" | "previous_business_day";
-  holidays: string;
-  holidayCalendarVersion: string;
   safeMarginBusinessDays: string;
   legalBasis: string;
   loading?: boolean;
@@ -115,8 +114,6 @@ function initialDeadlineDraft(step: Step): DeadlineDraft {
     dayType: step.deadlineType ?? "calendar_days",
     includeSourceDate: false,
     rollRule: "none",
-    holidays: "",
-    holidayCalendarVersion: "",
     safeMarginBusinessDays: "1",
     legalBasis: step.legalBasis ?? "",
   };
@@ -138,6 +135,7 @@ export function ActionPlanClient({
   const t = (ru: string, uz: string, en: string) => localizedText(locale, ru, uz, en);
   const base = usePlatformBasePath();
   const params = useSearchParams();
+  const router = useRouter();
   const [notice,setNotice] = useState(params.get("saved")==="1" ? t("План сохранён. Здесь можно менять статусы и назначать сроки.","Reja saqlandi. Bu yerda holat va muddatlarni o‘zgartirishingiz mumkin.","Plan saved. You can update statuses and set deadlines here.") : "");
   const directions = caseDirectionsForAccount(accountType);
   const [direction, setDirection] = useState<CaseDirectionId>(directions[0]?.id ?? "employment");
@@ -215,8 +213,8 @@ export function ActionPlanClient({
       if (!response.ok) throw new Error(platformApiError(locale, data.error, t("Не удалось создать дело и план.", "Ish va reja yaratilmadi.", "We could not create the matter and plan.")));
       setTitle("");
       setDescription("");
-      setOpenCase(data.caseId || null);
-      await load();
+      if (data.caseId) router.push(`${base}/action-plan/${data.caseId}?saved=1`);
+      else await load();
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -265,15 +263,15 @@ export function ActionPlanClient({
   async function previewDeadline(item: Case, step: Step) {
     const key = `${item.id}:${step.id}`;
     const draft = deadlineDrafts[key] ?? initialDeadlineDraft(step);
-    const holidays = draft.holidays.split(/[\s,;]+/).map((value) => value.trim()).filter(Boolean);
     const input: DeadlineCalculationInput = {
       sourceDate: draft.sourceDate,
       daysCount: Number(draft.daysCount),
       dayType: draft.dayType,
       includeSourceDate: draft.includeSourceDate,
       rollRule: draft.rollRule,
-      holidays,
-      holidayCalendarVersion: draft.holidayCalendarVersion.trim() || null,
+      holidays: [],
+      holidayCalendarVersion: null,
+      businessCalendar: "uz-five-day",
       safeMarginBusinessDays: Number(draft.safeMarginBusinessDays),
       legalBasis: draft.legalBasis.trim() || null,
     };
@@ -352,13 +350,13 @@ export function ActionPlanClient({
   return <div className="plan-workspace" onClickCapture={event=>{
     if(hasPendingChanges&&(event.target as HTMLElement).closest("a[href]")&&!window.confirm(t("Есть несохранённые изменения. Выйти без сохранения?","Saqlanmagan o‘zgarishlar bor. Saqlamasdan chiqilsinmi?","You have unsaved changes. Leave without saving?"))){event.preventDefault();event.stopPropagation();}
   }}>
-    <nav className="matter-breadcrumbs" aria-label={t("Навигация по плану","Reja navigatsiyasi","Plan navigation")}><Link href={`${base}/action-plan`}>{t("Все планы","Barcha rejalar","All plans")}</Link>{initialCaseId && <><span aria-hidden="true">/</span><Link href={`${base}/cases/${encodeURIComponent(initialCaseId)}`}>{t("Дело","Ish","Matter")}</Link></>}</nav>
+    {initialCaseId && <nav className="matter-breadcrumbs" aria-label={t("Навигация по плану","Reja navigatsiyasi","Plan navigation")}><Link href={`${base}/action-plan`}>{t("Все планы","Barcha rejalar","All plans")}</Link>{initialCaseId && <><span aria-hidden="true">/</span><Link href={`${base}/cases/${encodeURIComponent(initialCaseId)}`}>{t("Дело","Ish","Matter")}</Link></>}</nav>}
     {notice && <p className="plan-success" role="status"><Check aria-hidden="true" />{notice}</p>}
     <section className="plan-heading">
       <div>
         <small>JURO · {t("План действий", "Harakatlar rejasi", "Action plan")}</small>
         <h1>{initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")}</h1>
-        <p>{t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")}</p>
+        <p>{!initialCaseId ? t("Выберите план, чтобы посмотреть шаги и отметить выполненное.","Qadamlarni ko‘rish va bajarilganlarini belgilash uchun rejani tanlang.","Choose a plan to view its steps and mark your progress.") : t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")}</p>
       </div>
       <CalendarDays />
     </section>
@@ -415,6 +413,10 @@ export function ActionPlanClient({
             : cases.length === 0
               ? <div className="platform-empty"><CalendarDays /><p>{t("Создайте первый план из проверяемого сценария.", "Tekshiriladigan ssenariydan birinchi rejangizni yarating.", "Create your first plan from a verifiable scenario.")}</p></div>
               : cases.map((item) => {
+                if (!initialCaseId) return <Link className="plan-summary" href={`${base}/action-plan/${item.id}`} key={item.id}>
+                  <div><h3>{suggestedMatterTitle(item.title)}</h3><p>{item.steps.filter(step => step.status === "completed").length} / {item.steps.length} {t("шагов выполнено", "qadam bajarildi", "steps completed")}</p></div>
+                  <span className="plan-summary-progress">{item.progressPercent}%<span className="plan-progress" aria-hidden="true"><i style={{width:`${item.progressPercent}%`}} /></span></span><ChevronDown aria-hidden="true" />
+                </Link>;
                 const panelId = `plan-${item.id}`;
                 const expanded = openCase === item.id;
                 return <article className="plan-card" key={item.id}>
@@ -453,16 +455,11 @@ export function ActionPlanClient({
                           {step.description && <p className="plan-step-description">{step.description}</p>}
                           {step.dueAt && <small>{formatPlatformDate(step.dueAt, locale)}</small>}
                         </div>
-                        <label className="plan-step-date">
-                          <span>{t("Срок", "Muddat", "Deadline")}</span>
-                          <input
-                            type="date"
-                            aria-label={t(`Срок: ${step.title}`,`Muddat: ${step.title}`,`Deadline: ${step.title}`)}
+                        <div className="plan-step-date">
+                          <DateTimePicker locale={locale} dateOnly pastOnly={false} label={t("Срок", "Muddat", "Deadline")}
                             value={staged ? staged.dueAt ?? "" : step.dueAt?.slice(0, 10) ?? ""}
-                            disabled={saving}
-                            onChange={(event) => stageStepChange(item, step, { dueAt: event.target.value || null, deadlineCalculation: null })}
-                          />
-                        </label>
+                            disabled={saving} onChange={value => stageStepChange(item, step, { dueAt: value || null, deadlineCalculation: null })} />
+                        </div>
                         <label className="plan-step-status">
                           <span>{t("Статус шага", "Qadam holati", "Step status")}</span>
                           <Select
@@ -488,10 +485,7 @@ export function ActionPlanClient({
                         <details className="deadline-calculator">
                           <summary>{t("Рассчитать срок", "Muddatni hisoblash", "Calculate deadline")}</summary>
                           <div className="deadline-calculator-grid">
-                            <label>
-                              <span>{t("Исходная дата", "Boshlang‘ich sana", "Start date")}</span>
-                              <input type="date" required value={deadlineDraft.sourceDate} onChange={(event) => updateDeadlineDraft(item, step, { sourceDate: event.target.value, result: undefined })} />
-                            </label>
+                            <DateTimePicker locale={locale} dateOnly pastOnly={false} label={t("Начальная дата", "Boshlang‘ich sana", "Start date")} value={deadlineDraft.sourceDate} onChange={value => updateDeadlineDraft(item, step, { sourceDate: value, result: undefined })} />
                             <label>
                               <span>{t("Количество дней", "Kunlar soni", "Number of days")}</span>
                               <input type="number" required min="0" max="3650" inputMode="numeric" value={deadlineDraft.daysCount} onChange={(event) => updateDeadlineDraft(item, step, { daysCount: event.target.value, result: undefined })} />
@@ -503,6 +497,9 @@ export function ActionPlanClient({
                                 <option value="business_days">{t("Рабочие", "Ish kunlari", "Business days")}</option>
                               </Select>
                             </label>
+                          </div>
+                          <p className="deadline-help">{t("Пятидневная неделя · праздники Узбекистана учитываются автоматически. Отсчёт начинается со следующего дня.","Besh kunlik hafta · O‘zbekiston bayramlari avtomatik hisobga olinadi. Hisob keyingi kundan boshlanadi.","Five-day week · Uzbekistan holidays are included automatically. Counting starts the next day.")}</p>
+                          <details className="deadline-settings"><summary>{t("Настройки расчёта", "Hisob sozlamalari", "Calculation settings")}</summary><div className="deadline-calculator-grid">
                             <label>
                               <span>{t("Перенос", "Ko‘chirish", "Adjustment")}</span>
                               <Select value={deadlineDraft.rollRule} onChange={(event) => updateDeadlineDraft(item, step, { rollRule: event.target.value as DeadlineDraft["rollRule"], result: undefined })}>
@@ -515,42 +512,28 @@ export function ActionPlanClient({
                               <span>{t("Безопасный запас, раб. дней", "Xavfsiz zaxira, ish kuni", "Safety margin, business days")}</span>
                               <input type="number" min="0" max="30" inputMode="numeric" value={deadlineDraft.safeMarginBusinessDays} onChange={(event) => updateDeadlineDraft(item, step, { safeMarginBusinessDays: event.target.value, result: undefined })} />
                             </label>
-                            <label className="deadline-calculator-wide">
-                              <span>{t("Праздничные даты (ГГГГ-ММ-ДД)", "Bayram sanalari (YYYY-MM-DD)", "Public holidays (YYYY-MM-DD)")}</span>
-                              <input value={deadlineDraft.holidays} placeholder="2026-09-01, 2026-12-08" onChange={(event) => updateDeadlineDraft(item, step, { holidays: event.target.value, result: undefined })} />
-                            </label>
-                            <label className="deadline-calculator-wide">
-                              <span>{t("Версия календаря, если известна", "Kalendar versiyasi, ma’lum bo‘lsa", "Calendar version, if known")}</span>
-                              <input maxLength={120} value={deadlineDraft.holidayCalendarVersion} placeholder={t("Это значение не подтверждает календарь", "Bu qiymat kalendarni tasdiqlamaydi", "This value does not verify the calendar")} onChange={(event) => updateDeadlineDraft(item, step, { holidayCalendarVersion: event.target.value, result: undefined })} />
-                            </label>
-                            <label className="deadline-calculator-wide">
-                              <span>{t("Правовое основание", "Huquqiy asos", "Legal basis")}</span>
-                              <textarea rows={2} maxLength={500} value={deadlineDraft.legalBasis} placeholder={t("Укажите норму после проверки источника", "Manba tekshirilgandan keyin normani kiriting", "Add the legal rule after verifying its source")} onChange={(event) => updateDeadlineDraft(item, step, { legalBasis: event.target.value, result: undefined })} />
-                            </label>
                             <label className="deadline-calculator-check">
                               <input type="checkbox" checked={deadlineDraft.includeSourceDate} onChange={(event) => updateDeadlineDraft(item, step, { includeSourceDate: event.target.checked, result: undefined })} />
                               <span>{t("Включать исходную дату в отсчёт", "Boshlang‘ich sanani hisobga qo‘shish", "Include the start date in the calculation")}</span>
                             </label>
-                          </div>
+                          </div></details>
                           <button type="button" className="deadline-calculate" disabled={deadlineDraft.loading || !deadlineDraft.sourceDate || deadlineDraft.daysCount === ""} onClick={() => void previewDeadline(item, step)}>
                             {deadlineDraft.loading ? <LoaderCircle className="spin" /> : <CalendarDays />}
-                            {t("Показать проверяемый расчёт", "Tekshiriladigan hisobni ko‘rsatish", "Show verifiable calculation")}
+                            {t("Рассчитать дату", "Sanani hisoblash", "Calculate date")}
                           </button>
                           {deadlineDraft.error && <p className="deadline-calculator-error" role="alert">{deadlineDraft.error}</p>}
                           {deadlineDraft.result && <section className="deadline-result" aria-live="polite">
                             <strong>{t("Предварительный расчёт", "Dastlabki hisob", "Preliminary calculation")}</strong>
                             <dl>
-                              <div><dt>{t("Расчётная дата", "Hisoblangan sana", "Calculated date")}</dt><dd>{deadlineDraft.result.dueDate}</dd></div>
-                              <div><dt>{t("Безопасная дата", "Xavfsiz sana", "Safe date")}</dt><dd>{deadlineDraft.result.safeEarlierDate}</dd></div>
-                              <div><dt>{t("Выходных в периоде", "Davrdagi dam olish kunlari", "Weekend days in period")}</dt><dd>{deadlineDraft.result.weekendDates.length}</dd></div>
-                              <div><dt>{t("Указанных праздников", "Ko‘rsatilgan bayramlar", "Specified public holidays")}</dt><dd>{deadlineDraft.result.holidayDates.length}</dd></div>
+                              <div><dt>{t("Расчётная дата", "Hisoblangan sana", "Calculated date")}</dt><dd>{formatPlatformDate(deadlineDraft.result.dueDate, locale)}</dd></div>
+                              <div><dt>{t("Безопасная дата", "Xavfsiz sana", "Safe date")}</dt><dd>{formatPlatformDate(deadlineDraft.result.safeEarlierDate, locale)}</dd></div>
                             </dl>
                             <p>{t("Дата добавлена в предпросмотр плана. Она сохранится только после подтверждения изменений.", "Sana reja oldindan ko‘rishiga qo‘shildi. U faqat o‘zgarishlar tasdiqlangandan keyin saqlanadi.", "The date has been added to the plan preview. It will be saved only after you confirm the changes.")}</p>
                             {deadlineDraft.result.warnings.length > 0 && <ul>
                               {deadlineDraft.result.warnings.map((warning) => <li key={warning}>{warning === "HOLIDAY_CALENDAR_UNVERIFIED"
-                                ? t("Календарь праздников не подтверждён.", "Bayramlar kalendari tasdiqlanmagan.", "The public holiday calendar has not been verified.")
+                                ? t("Для части периода учтены только постоянные праздники. Дополнительные выходные ещё не подтверждены.", "Davrning bir qismi uchun faqat doimiy bayramlar hisobga olingan. Qo‘shimcha dam olish kunlari tasdiqlanmagan.", "Part of this period includes fixed holidays only. Additional days off are not yet confirmed.")
                                 : warning === "LEGAL_BASIS_UNCONFIRMED"
-                                  ? t("Правовое основание не подтверждено.", "Huquqiy asos tasdiqlanmagan.", "The legal basis has not been verified.")
+                                  ? t("Это дата для планирования. Срок по закону уточните в исходном ответе или у юриста.", "Bu rejalashtirish sanasi. Qonuniy muddatni asl javob yoki yurist bilan tekshiring.", "This is a planning date. Check the legal deadline in the original answer or with a lawyer.")
                                   : t("Дата приходится на нерабочий день без переноса.", "Sana ko‘chirilmasdan ish bo‘lmagan kunga to‘g‘ri keladi.", "The date falls on a non-working day without adjustment.")}</li>)}
                             </ul>}
                           </section>}
@@ -566,14 +549,14 @@ export function ActionPlanClient({
                         </details>
                       </div>;
                     })}
-                    <section className="plan-history" aria-label={t("История версий плана", "Reja versiyalari tarixi", "Plan version history")}>
+                    <details className="plan-history-disclosure"><summary onClick={() => { if (!versionsByCase[item.id]?.length) void loadVersionHistory(item); }}>{t("История изменений", "O‘zgarishlar tarixi", "Change history")}</summary><section className="plan-history" aria-label={t("История версий плана", "Reja versiyalari tarixi", "Plan version history")}>
                       <button
                         type="button"
                         onClick={() => void loadVersionHistory(item)}
                         disabled={loadingVersionsFor === item.id}
                       >
                         {loadingVersionsFor === item.id ? <LoaderCircle className="spin" /> : <RotateCcw />}
-                        {t("Показать историю версий", "Versiyalar tarixini ko‘rsatish", "Show version history")}
+                        {t("Обновить историю", "Tarixni yangilash", "Refresh history")}
                       </button>
                       {versionsByCase[item.id]?.length ? <ol>
                         {versionsByCase[item.id].map((entry) => <li key={entry.id}>
@@ -604,6 +587,7 @@ export function ActionPlanClient({
                         return <section className="plan-history-diff" aria-live="polite"><h4>{t(`Различия: версия ${selectedVersion.version} и ${previousVersion.version}`, `${selectedVersion.version}- va ${previousVersion.version}-versiyalar farqi`, `Differences between versions ${selectedVersion.version} and ${previousVersion.version}`)}</h4>{changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>{t("Содержимое шагов не изменилось.", "Qadamlar mazmuni o‘zgarmagan.", "The step content did not change.")}</p>}</section>;
                       })()}
                     </section>
+                    </details>
                     {Object.values(pendingChangesByCase[item.id] || {}).length > 0 && <section className="plan-change-preview" aria-labelledby={`plan-preview-${item.id}`}>
                       <div>
                         <small>{t("Сохранение", "Saqlash", "Save changes")}</small>

@@ -1,3 +1,4 @@
+import { uzWorkingCalendar } from "./working-calendar";
 import { z } from "zod";
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
@@ -11,6 +12,7 @@ export const deadlineCalculationInputSchema = z.object({
   dayType: z.enum(["calendar_days", "business_days"]),
   includeSourceDate: z.boolean(),
   rollRule: z.enum(["none", "next_business_day", "previous_business_day"]),
+  businessCalendar: z.literal("uz-five-day").optional(),
   holidays: z.array(isoDateSchema).max(400).default([]),
   holidayCalendarVersion: z.string().trim().min(1).max(120).nullable().default(null),
   safeMarginBusinessDays: z.number().int().min(0).max(30).default(1),
@@ -31,6 +33,7 @@ export type DeadlineCalculationResult = {
   weekendDates: string[];
   suppliedHolidayDates: string[];
   holidayDates: string[];
+  workingDayOverrides: string[];
   rolled: boolean;
   holidayCalendarVersion: string | null;
   legalBasis: string | null;
@@ -61,26 +64,27 @@ function isWeekend(value: Date): boolean {
   return value.getUTCDay() === 0 || value.getUTCDay() === 6;
 }
 
-function isBusinessDay(value: Date, holidays: Set<string>): boolean {
-  return !isWeekend(value) && !holidays.has(formatDate(value));
+function isBusinessDay(value: Date, holidays: Set<string>, workingDays = new Set<string>()): boolean {
+  return workingDays.has(formatDate(value)) || (!isWeekend(value) && !holidays.has(formatDate(value)));
 }
 
 function moveToBusinessDay(
   value: Date,
   direction: 1 | -1,
   holidays: Set<string>,
+  workingDays: Set<string>,
 ): Date {
   let cursor = new Date(value);
-  while (!isBusinessDay(cursor, holidays)) cursor = addDays(cursor, direction);
+  while (!isBusinessDay(cursor, holidays, workingDays)) cursor = addDays(cursor, direction);
   return cursor;
 }
 
-function subtractBusinessDays(value: Date, days: number, holidays: Set<string>): Date {
+function subtractBusinessDays(value: Date, days: number, holidays: Set<string>, workingDays: Set<string>): Date {
   let cursor = new Date(value);
   let remaining = days;
   while (remaining > 0) {
     cursor = addDays(cursor, -1);
-    if (isBusinessDay(cursor, holidays)) remaining -= 1;
+    if (isBusinessDay(cursor, holidays, workingDays)) remaining -= 1;
   }
   return cursor;
 }
@@ -98,7 +102,9 @@ function datesBetween(from: Date, to: Date): Date[] {
 
 export function calculateDeadline(rawInput: DeadlineCalculationInput): DeadlineCalculationResult {
   const input = deadlineCalculationInputSchema.parse(rawInput);
-  const holidays = new Set(input.holidays);
+  const calendar = input.businessCalendar ? uzWorkingCalendar(Number(input.sourceDate.slice(0, 4))) : null;
+  const holidays = calendar?.holidays ?? new Set(input.holidays);
+  const workingDays = calendar?.workingDays ?? new Set<string>();
   const source = parseDate(input.sourceDate);
   let rawDue: Date;
 
@@ -110,7 +116,7 @@ export function calculateDeadline(rawInput: DeadlineCalculationInput): DeadlineC
     let cursor = input.includeSourceDate ? source : addDays(source, 1);
     let remaining = input.daysCount;
     while (remaining > 0) {
-      if (isBusinessDay(cursor, holidays)) remaining -= 1;
+      if (isBusinessDay(cursor, holidays, workingDays)) remaining -= 1;
       if (remaining > 0) cursor = addDays(cursor, 1);
     }
     rawDue = cursor;
@@ -118,9 +124,9 @@ export function calculateDeadline(rawInput: DeadlineCalculationInput): DeadlineC
 
   let due = new Date(rawDue);
   if (input.rollRule === "next_business_day") {
-    due = moveToBusinessDay(due, 1, holidays);
+    due = moveToBusinessDay(due, 1, holidays, workingDays);
   } else if (input.rollRule === "previous_business_day") {
-    due = moveToBusinessDay(due, -1, holidays);
+    due = moveToBusinessDay(due, -1, holidays, workingDays);
   }
 
   const countedDates = datesBetween(source, due);
@@ -130,11 +136,14 @@ export function calculateDeadline(rawInput: DeadlineCalculationInput): DeadlineC
     .map(formatDate);
   const warnings: DeadlineCalculationResult["warnings"] = [];
   const reliesOnBusinessCalendar = input.dayType === "business_days" || input.rollRule !== "none";
-  if (reliesOnBusinessCalendar) {
+  const safeEarlierDate = formatDate(subtractBusinessDays(due, input.safeMarginBusinessDays, holidays, workingDays));
+  const rangeStart = [input.sourceDate, formatDate(due), safeEarlierDate].sort()[0];
+  const rangeEnd = [input.sourceDate, formatDate(due)].sort().at(-1)!;
+  if ((reliesOnBusinessCalendar || (calendar && input.safeMarginBusinessDays > 0)) && !calendar?.covers(rangeStart, rangeEnd)) {
     warnings.push("HOLIDAY_CALENDAR_UNVERIFIED");
   }
   if (!input.legalBasis) warnings.push("LEGAL_BASIS_UNCONFIRMED");
-  if (input.rollRule === "none" && !isBusinessDay(due, holidays)) {
+  if (input.rollRule === "none" && !isBusinessDay(due, holidays, workingDays)) {
     warnings.push("NON_WORKING_DUE_DATE");
   }
 
@@ -152,12 +161,13 @@ export function calculateDeadline(rawInput: DeadlineCalculationInput): DeadlineC
     rollRule: input.rollRule,
     rawDueDate: formatDate(rawDue),
     dueDate: formatDate(due),
-    safeEarlierDate: formatDate(subtractBusinessDays(due, input.safeMarginBusinessDays, holidays)),
+    safeEarlierDate,
     weekendDates,
-    suppliedHolidayDates: [...holidays].sort(),
+    suppliedHolidayDates: [...holidays].filter(date => !calendar || (date >= rangeStart && date <= rangeEnd)).sort(),
     holidayDates,
     rolled: rawDue.getTime() !== due.getTime(),
-    holidayCalendarVersion: input.holidayCalendarVersion,
+    holidayCalendarVersion: calendar?.version ?? input.holidayCalendarVersion,
+    workingDayOverrides: [...workingDays].filter(date => date >= rangeStart && date <= rangeEnd).sort(),
     legalBasis: input.legalBasis,
     confidence: "preliminary",
     warnings,

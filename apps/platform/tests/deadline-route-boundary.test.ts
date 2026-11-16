@@ -40,5 +40,5 @@ test("plan UI separates preview from confirmation and clears evidence on manual 
   assert.match(client, /deadlineCalculation: null/);
   assert.match(client, /Предварительный расчёт/);
   assert.match(client, /сохранится только после подтверждения/);
-  assert.match(client, /Календарь праздников не подтверждён/);
+  assert.match(client, /Дополнительные выходные ещё не подтверждены/);
 });
