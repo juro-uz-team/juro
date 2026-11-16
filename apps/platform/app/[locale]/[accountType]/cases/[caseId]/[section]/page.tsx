@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { CaseWorkspaceClient } from "../../../../../_platform/CaseWorkspaceClient";
 import { requireChatGPTUser } from "../../../../../chatgpt-auth";
@@ -14,5 +14,6 @@ export default async function CaseSectionPage({
   const { locale, accountType, caseId, section } = await params;
   if (!isLocale(locale) || !isAccountType(accountType) || !isCaseSection(section)) notFound();
   await requireChatGPTUser(`/${locale}/${accountType}/cases/${encodeURIComponent(caseId)}/${section}`);
+  if (section === "plan") redirect(`${`/${locale}/${accountType}`}/action-plan/${encodeURIComponent(caseId)}`);
   return <CaseWorkspaceClient locale={locale} caseId={caseId} section={section} />;
 }

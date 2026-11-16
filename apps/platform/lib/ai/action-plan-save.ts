@@ -1,3 +1,4 @@
+import { suggestedMatterTitle } from "../platform/plan-presentation";
 import { z } from "zod";
 import { parseLegalChatResponse } from "./legal-chat-schema";
 import { aiText } from "./localization";
@@ -5,6 +6,7 @@ import { aiText } from "./localization";
 export const saveAiActionPlanInputSchema = z.object({
   assistantMessageId: z.string().uuid(),
   targetCaseId: z.string().uuid().optional(),
+  caseTitle: z.string().trim().min(1).max(120).optional(),
   locale: z.enum(["ru", "uz", "en"]).default("uz"),
 }).strict();
 
@@ -30,6 +32,7 @@ type PlanSaveScope = {
   userId: string;
   assistantMessageId: string;
   targetCaseId?: string;
+  caseTitle?: string;
   locale?: "ru" | "uz" | "en";
   now?: string;
 };
@@ -58,14 +61,14 @@ async function savedConfirmation(input: PlanSaveScope, eventId: string): Promise
  * templates require their own confirmed workflow and are never inferred here. */
 export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<SavedPlan> {
   const {db,workspaceId,userId,assistantMessageId} = input;
-  const message = await db.prepare(`SELECT m.structured_json AS structuredJson,CASE WHEN w.type='business' THEN 'business' WHEN u.account_type='business' THEN 'individual' ELSE u.account_type END AS accountType
+  const message = await db.prepare(`SELECT m.structured_json AS structuredJson,conversation.title AS conversationTitle,CASE WHEN w.type='business' THEN 'business' WHEN u.account_type='business' THEN 'individual' ELSE u.account_type END AS accountType
     FROM conversation_messages m JOIN conversations conversation ON conversation.id=m.conversation_id
     JOIN user_profiles u ON u.id=conversation.owner_user_id
     JOIN workspaces w ON w.id=conversation.workspace_id
     JOIN workspace_members member ON member.workspace_id=conversation.workspace_id AND member.user_id=?
     WHERE m.id=? AND m.author_type='assistant' AND conversation.workspace_id=? AND conversation.owner_user_id=?
       AND member.status='active' AND member.role IN ('owner','admin','lawyer','employee')`)
-    .bind(userId,assistantMessageId,workspaceId,userId).first<{structuredJson:string|null;accountType:string}>();
+    .bind(userId,assistantMessageId,workspaceId,userId).first<{structuredJson:string|null;conversationTitle:string;accountType:string}>();
   if(!message) throw new AiActionPlanSaveError("AI_ACTION_PLAN_NOT_FOUND");
   const eventId = await planIdentity(["legal-plan-confirmation",workspaceId,userId,assistantMessageId,input.targetCaseId ?? "new"]);
   const replay = await savedConfirmation(input,eventId);
@@ -93,7 +96,7 @@ export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<Save
   const revision = (target?.revision ?? 0)+1;
   const now = input.now ?? new Date().toISOString();
   const locale = input.locale ?? answer.language;
-  const title = answer.summary.slice(0,240);
+  const title = input.caseTitle ?? suggestedMatterTitle(message.conversationTitle || answer.summary);
   const planTitle = aiText(locale,"План действий","Harakatlar rejasi","Action plan");
   const ordinal = target?.planId ? (await db.prepare("SELECT COALESCE(max(ordinal),0) AS value FROM action_plan_steps WHERE plan_id=?")
     .bind(planId).first<{value:number}>())!.value : 0;

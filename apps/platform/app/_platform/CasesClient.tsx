@@ -7,7 +7,7 @@ import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, CircleAlert, LoaderCircle, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { platformApiError } from "../../content/platform-ui";
-import { CASE_SCENARIOS, isCaseScenarioId } from "../../lib/platform/case-create";
+import { planAreaLabel, suggestedMatterTitle } from "../../lib/platform/plan-presentation";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
 
 type CaseItem = {
@@ -77,14 +77,12 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
           {filtered.map((item) => {
             const complete = item.steps?.filter((step) => step.status === "completed").length ?? 0;
             const total = item.steps?.length ?? 0;
-            const legalArea = isCaseScenarioId(item.legalArea)
-              ? CASE_SCENARIOS[item.legalArea].label[locale]
-              : item.legalArea;
+            const legalArea = planAreaLabel(item.legalArea,locale);
             const caseStatus = copy.statuses[item.status as keyof typeof copy.statuses] ?? item.status;
             return (
               <article key={item.id}>
                 <div className="cases-live-icon"><BriefcaseBusiness /></div>
-                <div className="cases-live-body"><span>{legalArea} · {caseStatus}</span><h2>{item.title}</h2><p>{item.description || copy.noDescription}</p></div>
+                <div className="cases-live-body"><span>{legalArea} · {caseStatus}</span><h2>{suggestedMatterTitle(item.title)}</h2><p>{item.description || copy.noDescription}</p></div>
                 <div className="cases-live-progress"><strong>{item.progressPercent ?? 0}%</strong><span>{complete}/{total} {copy.steps}</span></div>
                 <div className="cases-live-meta"><CalendarClock /><span>{item.nextDeadlineAt ? formatDate(item.nextDeadlineAt, locale) : copy.noDeadline}</span></div>
                 <Link href={`${base}/cases/${item.id}`}>{copy.openMatter} →</Link>

@@ -1511,3 +1511,5 @@ html[data-theme=dark] .ai-conversation-list a { box-shadow: none; }
 .ai-plan-card button svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; }
 .ai-plan-card .ai-plan-error { color: var(--status-error); font-size: .875rem; line-height: 1.5; }
 .ai-plan-preview { max-height: 18rem; overflow-y: auto; }
+.platform-shell .ai-plan-name { display:grid; gap:8px; font-size:14px; font-weight:600; color:var(--text-primary); }
+.platform-shell .ai-plan-name input { width:100%; min-height:44px; padding:10px 12px; border:1px solid var(--control-border); border-radius:8px; background:var(--control-background); color:var(--text-primary); font:inherit; font-size:16px; }

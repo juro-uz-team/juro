@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
   ChevronLeft,
@@ -139,7 +140,8 @@ function monthLabel(value: string, locale: PlatformLocale) {
 export function CalendarClient({ locale }: { locale: PlatformLocale }) {
   const t = labels[locale];
   const base = usePlatformBasePath();
-  const [view, setView] = useState<View>("month");
+  const caseId=useSearchParams().get("caseId");
+  const [view, setView] = useState<View>(caseId ? "list" : "month");
   const [anchor, setAnchor] = useState(() => monthStart(tashkentToday()));
   const [data, setData] = useState<CalendarResponse | null>(null);
   const [error, setError] = useState("");
@@ -181,7 +183,7 @@ export function CalendarClient({ locale }: { locale: PlatformLocale }) {
   }, [locale, range.from, range.to, t.unavailable]);
   const currentData =
     data?.from === range.from && data.to === range.to ? data : null;
-  const items =
+  const visibleItems =
     view === "overdue" && currentData
       ? currentData.items.filter(
           (item) =>
@@ -189,6 +191,7 @@ export function CalendarClient({ locale }: { locale: PlatformLocale }) {
             item.dueAt < currentData.serverToday,
         )
       : (currentData?.items ?? []);
+  const items=caseId ? visibleItems.filter(item=>item.caseId===caseId) : visibleItems;
   const shift = (direction: -1 | 1) =>
     setAnchor((current) => {
       if (view === "week") return addCalendarDays(current, direction * 7);
@@ -217,11 +220,12 @@ export function CalendarClient({ locale }: { locale: PlatformLocale }) {
   );
   return (
     <section className="calendar-page" aria-labelledby="calendar-title">
+      {caseId && <nav className="matter-breadcrumbs" aria-label={t.title}><Link href={`${base}/action-plan/${encodeURIComponent(caseId)}`}>{ {ru:"Вернуться к плану",uz:"Rejaga qaytish",en:"Back to plan"}[locale]}</Link><Link href={`${base}/calendar`}>{ {ru:"Все сроки",uz:"Barcha muddatlar",en:"All deadlines"}[locale]}</Link></nav>}
       <header className="calendar-header">
         <div>
           <p className="calendar-eyebrow">JURO · {t.title}</p>
           <h1 id="calendar-title">{t.title}</h1>
-          <p>{t.subtitle}</p>
+          <p>{caseId ? {ru:"Сроки выбранного дела. Нажмите на событие, чтобы открыть план.",uz:"Tanlangan ish muddatlari. Rejani ochish uchun hodisani bosing.",en:"Deadlines for this matter. Select an event to open the plan."}[locale] : t.subtitle}</p>
         </div>
         <div className="calendar-range">
           <button

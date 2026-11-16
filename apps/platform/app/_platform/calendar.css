@@ -339,3 +339,10 @@
     height: 44px;
   }
 }
+.platform-shell .calendar-page { width:100%; max-width:1160px; margin:auto; padding:24px; gap:16px; }
+.platform-shell .calendar-header { padding:20px; border-radius:12px; box-shadow:none; }
+.platform-shell .calendar-header h1 { font-size:28px; line-height:1.35; letter-spacing:-.02em; }
+.platform-shell .calendar-header p { font-size:16px; line-height:1.5; max-width:65ch; }
+.platform-shell .calendar-tabs { flex-wrap:wrap; }
+.platform-shell .calendar-tabs button { min-height:44px; font-size:14px; }
+@media(max-width:680px) { .platform-shell .calendar-page { padding:16px 12px 88px; } .platform-shell .calendar-header { padding:16px; } .platform-shell .calendar-header h1 { font-size:24px; } }

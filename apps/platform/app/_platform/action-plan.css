@@ -315,3 +315,68 @@ html[data-theme="dark"] :is(
 html[data-theme="dark"] .deadline-calculator-error {
   color: #f0aaa7;
 }
+/* A plan is a working checklist, with secondary tools disclosed on demand. */
+.platform-shell .plan-workspace { width:100%; min-width:0; max-width:1120px; padding:24px; gap:16px; }
+.platform-shell .plan-heading { padding:0; background:transparent; border-radius:0; }
+.platform-shell .plan-heading h1 { font-size:28px; line-height:1.3; letter-spacing:-.02em; margin:4px 0 8px; }
+.platform-shell .plan-heading small { display:none; }
+.platform-shell .plan-heading p { margin:0; font-size:16px; line-height:1.6; max-width:70ch; }
+.platform-shell .plan-heading > svg { display:none; }
+.platform-shell .plan-layout { grid-template-columns:minmax(0,1fr); gap:16px; margin:0; }
+.platform-shell :is(.plan-main,.plan-list,.plan-card,.plan-steps) { min-width:0; }
+.platform-shell :is(.plan-create,.plan-list,.plan-calendar) { border-radius:12px; padding:20px; box-shadow:none; }
+.platform-shell :is(.plan-list,.plan-calendar,.plan-create) h2 { font-size:18px; line-height:1.4; margin:0; }
+.platform-shell .plan-card-head { padding:16px 0; gap:12px; grid-template-columns:minmax(0,1fr) 100px 24px; }
+.platform-shell .plan-card-head h3 { font-size:20px; line-height:1.4; margin:4px 0; letter-spacing:normal; overflow-wrap:anywhere; }
+.platform-shell .plan-card-head :is(span,p) { font-size:14px; line-height:1.5; }
+.platform-shell .plan-step { grid-template-columns:32px minmax(0,1fr) minmax(150px,180px); gap:12px; padding:20px 0; align-items:start; }
+.platform-shell .plan-step > div { grid-column:2 / -1; min-width:0; }
+.platform-shell .plan-step strong { font-size:16px; line-height:1.5; }
+.platform-shell .plan-step-description { margin:6px 0 0; font-size:16px; line-height:1.65; max-width:75ch; color:var(--text-secondary); overflow-wrap:anywhere; }
+.platform-shell .plan-step-date { grid-column:2; grid-row:auto; max-width:240px; }
+.platform-shell .plan-step-status { grid-column:3; grid-row:auto; align-self:start; }
+.platform-shell .plan-step :is(input,.juro-select) { min-height:44px; font-size:16px; }
+.platform-shell .plan-step .deadline-calculator { grid-column:2 / -1; margin:0; }
+.platform-shell .deadline-calculator > summary { font-size:14px; }
+.platform-shell .deadline-calculator-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.platform-shell .plan-history { margin:16px 0; padding:12px 0; border-top:1px solid var(--border-subtle); }
+.platform-shell .plan-history > button { display:inline-flex; align-items:center; gap:8px; min-height:44px; font:inherit; font-size:14px; color:var(--text-secondary); }
+.platform-shell .plan-history > button svg { width:18px; height:18px; }
+.platform-shell .plan-change-preview { padding:16px; margin:8px 0 0; border-radius:10px; }
+.platform-shell .plan-change-preview h3 { font-size:18px; line-height:1.4; }
+.platform-shell .plan-change-preview p { font-size:14px; line-height:1.5; }
+.platform-shell .plan-change-preview ul { max-height:180px; overflow:auto; }
+.platform-shell .plan-primary { font-size:14px; min-height:44px; }
+.platform-shell .plan-calendar { position:static; }
+.plan-context-links { display:flex; flex-wrap:wrap; gap:8px 16px; padding-bottom:8px; }
+.plan-context-links a { display:inline-flex; align-items:center; min-height:44px; color:var(--brand-gold-text); font-size:14px; text-decoration:underline; text-underline-offset:3px; }
+.plan-success { display:flex; gap:10px; align-items:center; padding:12px 16px; margin:0; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-raised); color:var(--text-primary); font-size:14px; line-height:1.5; }
+.plan-success svg { width:20px; height:20px; flex-shrink:0; color:var(--status-success); }
+.plan-create-disclosure { border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-raised); }
+.plan-create-disclosure > summary { display:flex; align-items:center; gap:8px; cursor:pointer; min-height:48px; padding:12px 16px; font-size:16px; }
+.plan-create-disclosure > summary svg { width:18px; height:18px; }
+.platform-shell .plan-create-disclosure form { border:0; box-shadow:none; }
+.platform-shell .plan-workspace :is(button,a,summary):focus-visible { outline:3px solid var(--focus-ring); outline-offset:3px; }
+@media(max-width:680px) {
+ .platform-shell .plan-workspace { padding:16px 12px 88px; }
+ .platform-shell .plan-heading h1 { font-size:24px; }
+ .platform-shell :is(.plan-create,.plan-list,.plan-calendar) { padding:16px; }
+ .platform-shell .plan-card-head { grid-template-columns:minmax(0,1fr) 24px; }
+ .platform-shell .plan-card-head h3 { font-size:18px; }
+ .platform-shell .plan-card-head .plan-progress { grid-column:1 / -1; grid-row:2; }
+ .platform-shell .plan-step { grid-template-columns:28px minmax(0,1fr); gap:10px; }
+ .platform-shell .plan-step-date,.platform-shell .plan-step-status { grid-column:2; grid-row:auto; max-width:none; }
+ .platform-shell .plan-step .deadline-calculator { grid-column:1 / -1; }
+ .platform-shell .deadline-calculator-grid { grid-template-columns:minmax(0,1fr); }
+ .platform-shell .deadline-calculator-wide { grid-column:auto; }
+ .platform-shell .plan-change-actions { display:grid; grid-template-columns:1fr; }
+ .platform-shell .scenario-pills { flex-wrap:wrap; overflow:visible; }
+ .platform-shell .scenario-pills button { white-space:normal; text-align:left; }
+}
+.platform-shell .plan-card-head { padding:16px; }
+.platform-shell .plan-step-status > span { font-size:12px; font-weight:600; color:var(--text-secondary); }
+.plan-step-tools { grid-column:2 / -1; min-width:0; color:var(--text-secondary); font-size:14px; }
+.plan-step-tools > summary { min-height:44px; cursor:pointer; padding:12px 0; }
+.plan-step-tools > a { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; margin-bottom:12px; border:1px solid var(--border-subtle); border-radius:8px; color:var(--brand-gold-text); }
+.plan-step-tools > a svg { width:18px; height:18px; }
+@media(max-width:680px) { .plan-step-tools { grid-column:1 / -1; } }

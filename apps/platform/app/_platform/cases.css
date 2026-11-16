@@ -11,3 +11,15 @@
 
 .cases-live-tools label:focus-within{outline:3px solid var(--focus-ring,#87631f);outline-offset:2px}
 html[data-theme=dark] :is(.cases-live-error,.case-create .case-create-error){color:color-mix(in srgb,var(--danger) 48%,white)}
+.platform-shell :is(.cases-live,.case-create) { max-width:1160px; padding:24px; }
+.platform-shell :is(.cases-live,.case-create) > header h1 { font-size:28px; line-height:1.35; letter-spacing:-.02em; }
+.platform-shell .cases-live-body h2 { font-size:18px; line-height:1.45; overflow-wrap:anywhere; }
+.platform-shell .cases-live-body > span { font-size:13px; text-transform:none; }
+.platform-shell .cases-live-body p { font-size:14px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; white-space:normal; }
+.platform-shell :is(.cases-live-progress span,.cases-live-meta,.cases-live-list article > a) { font-size:14px; line-height:1.5; }
+.platform-shell .cases-live-list article { grid-template-columns:44px minmax(0,1fr) 80px 140px 100px; }
+@media(max-width:800px) {
+ .platform-shell :is(.cases-live,.case-create) { padding:16px 12px 88px; }
+ .platform-shell .cases-live-list article { grid-template-columns:32px minmax(0,1fr); padding:16px; gap:12px; }
+ .platform-shell .cases-live-list article > a,.platform-shell .cases-live-progress { grid-column:2; }
+}

@@ -14,9 +14,11 @@ export const GET = withApiErrors(async function GET(request:Request){
   const caseScope=caseId ? " AND c.id=?" : "";
   const query=`SELECT c.id,c.title,c.description,c.legal_area AS legalArea,c.status,c.next_deadline_at AS nextDeadlineAt,c.archived_at AS archivedAt,c.completed_at AS completedAt,c.lifecycle_revision AS lifecycleRevision,c.created_at AS createdAt,c.updated_at AS updatedAt,
     p.id AS planId,p.title AS planTitle,p.status AS planStatus,p.progress_percent AS progressPercent,p.current_revision AS planRevision,
+    (SELECT count(*) FROM action_plan_steps step WHERE step.plan_id=p.id AND NOT EXISTS(SELECT 1 FROM tasks task WHERE task.plan_step_id=step.id AND task.case_id=c.id AND task.workspace_id=c.workspace_id)) AS unlinkedStepCount,
+    (SELECT m.conversation_id FROM case_events e JOIN conversation_messages m ON m.id=json_extract(e.metadata_json,'$.assistantMessageId') JOIN conversations origin ON origin.id=m.conversation_id WHERE e.case_id=c.id AND e.event_type IN ('ai_action_plan_confirmed','ai_action_plan_appended') AND origin.workspace_id=c.workspace_id AND origin.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 1) AS sourceConversationId,
     (SELECT json_group_array(json_object('id',s.id,'ordinal',s.ordinal,'title',s.title,'description',s.description,'status',s.status,'sourceDate',s.deadline_source_date,'dueAt',s.due_at,'safeDueAt',s.safe_due_at,'deadlineType',s.deadline_type,'calculationMethod',s.calculation_method,'legalBasis',s.deadline_legal_basis,'deadlineConfidence',s.deadline_confidence,'actionType',s.action_type,'templateCode',s.template_code,'revision',s.revision)) FROM (SELECT * FROM action_plan_steps WHERE plan_id=p.id ORDER BY ordinal) s) AS stepsJson
     FROM cases c LEFT JOIN action_plans p ON p.case_id=c.id WHERE c.workspace_id=?${caseScope} AND c.archived_at IS NULL ORDER BY c.updated_at DESC`;
-  const rows=caseId ? await db.prepare(query).bind(workspace.id,caseId).all() : await db.prepare(query).bind(workspace.id).all();
+  const rows=caseId ? await db.prepare(query).bind(user.id,workspace.id,caseId).all() : await db.prepare(query).bind(user.id,workspace.id).all();
   return response({cases:(rows.results as Array<Record<string,unknown>>).map(row=>({...row,steps:parseJson(String(row.stepsJson||"[]"),[])}))});
 });
 

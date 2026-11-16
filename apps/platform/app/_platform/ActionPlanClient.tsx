@@ -3,6 +3,8 @@
 import { Select } from "../_components/Select";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { planAreaLabel, planStatusLabel, suggestedMatterTitle } from "../../lib/platform/plan-presentation";
 import {
   CalendarDays,
   Check,
@@ -52,6 +54,8 @@ type Step = {
 };
 
 type Case = {
+  sourceConversationId?: string | null;
+  unlinkedStepCount?: number;
   id: string;
   title: string;
   description?: string;
@@ -133,6 +137,8 @@ export function ActionPlanClient({
 }) {
   const t = (ru: string, uz: string, en: string) => localizedText(locale, ru, uz, en);
   const base = usePlatformBasePath();
+  const params = useSearchParams();
+  const [notice,setNotice] = useState(params.get("saved")==="1" ? t("План сохранён. Здесь можно менять статусы и назначать сроки.","Reja saqlandi. Bu yerda holat va muddatlarni o‘zgartirishingiz mumkin.","Plan saved. You can update statuses and set deadlines here.") : "");
   const directions = caseDirectionsForAccount(accountType);
   const [direction, setDirection] = useState<CaseDirectionId>(directions[0]?.id ?? "employment");
   const scenarioCatalog = useMemo(() => caseScenariosForAccount(accountType, direction), [accountType, direction]);
@@ -153,6 +159,14 @@ export function ActionPlanClient({
   const [loadingVersionsFor, setLoadingVersionsFor] = useState<string | null>(null);
   const [creatingTasksFor, setCreatingTasksFor] = useState<string | null>(null);
   const [deadlineDrafts, setDeadlineDrafts] = useState<Record<string, DeadlineDraft>>({});
+
+  const hasPendingChanges=Object.values(pendingChangesByCase).some(changes=>Object.keys(changes).length>0);
+  useEffect(()=>{
+    if(!hasPendingChanges)return;
+    const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();};
+    window.addEventListener("beforeunload",warn);
+    return()=>window.removeEventListener("beforeunload",warn);
+  },[hasPendingChanges]);
 
   const load = useCallback(async () => {
     setError("");
@@ -211,11 +225,12 @@ export function ActionPlanClient({
   }
 
   function stageStepChange(item: Case, step: Step, patch: Partial<Pick<PendingPlanChange, "status" | "dueAt" | "deadlineCalculation">>) {
+    setNotice("");
     const current = pendingChangesByCase[item.id]?.[step.id];
     const next: PendingPlanChange = {
       id: step.id,
       status: patch.status ?? current?.status ?? step.status,
-      dueAt: "dueAt" in patch ? patch.dueAt ?? null : current?.dueAt ?? step.dueAt?.slice(0, 10) ?? null,
+      dueAt: "dueAt" in patch ? patch.dueAt ?? null : current ? current.dueAt : step.dueAt?.slice(0, 10) ?? null,
       revision: step.revision,
       deadlineCalculation: "deadlineCalculation" in patch
         ? patch.deadlineCalculation
@@ -296,8 +311,8 @@ export function ActionPlanClient({
       if (response.status === 409) {
         setPendingChangesByCase((all) => ({ ...all, [item.id]: {} }));
         clearDeadlineResultsForCase(item.id);
-        setError(t("План изменён в другой вкладке. Показаны актуальные данные.", "Reja boshqa oynada o‘zgartirilgan. Amaldagi ma’lumotlar ko‘rsatildi.", "The plan changed in another tab. The latest data is now shown."));
         await load();
+        setError(t("План изменён в другой вкладке. Показаны актуальные данные.", "Reja boshqa oynada o‘zgartirilgan. Amaldagi ma’lumotlar ko‘rsatildi.", "The plan changed in another tab. The latest data is now shown."));
         return;
       }
       if (!response.ok) throw new Error(platformApiError(locale, data.error, t("Не удалось применить изменения плана.", "Reja o‘zgarishlarini qo‘llab bo‘lmadi.", "We could not apply the plan changes.")));
@@ -305,6 +320,7 @@ export function ActionPlanClient({
       clearDeadlineResultsForCase(item.id);
       setVersionsByCase((all) => ({ ...all, [item.id]: [] }));
       await load();
+      setNotice(t("Изменения сохранены. Задачи и сроки обновлены.","O‘zgarishlar saqlandi. Vazifa va muddatlar yangilandi.","Changes saved. Tasks and deadlines are up to date."));
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -320,6 +336,7 @@ export function ActionPlanClient({
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(platformApiError(locale, data.error, t("Не удалось создать задачи.", "Vazifalarni yaratib bo‘lmadi.", "We could not create the tasks.")));
       await load();
+      setNotice(t("Задачи добавлены в дело.","Vazifalar ishga qo‘shildi.","Tasks added to the matter."));
     } catch (value) { setError(value instanceof Error ? value.message : String(value)); }
     finally { setCreatingTasksFor(null); }
   }
@@ -332,18 +349,22 @@ export function ActionPlanClient({
     [cases],
   );
 
-  return <div className="plan-workspace">
+  return <div className="plan-workspace" onClickCapture={event=>{
+    if(hasPendingChanges&&(event.target as HTMLElement).closest("a[href]")&&!window.confirm(t("Есть несохранённые изменения. Выйти без сохранения?","Saqlanmagan o‘zgarishlar bor. Saqlamasdan chiqilsinmi?","You have unsaved changes. Leave without saving?"))){event.preventDefault();event.stopPropagation();}
+  }}>
+    <nav className="matter-breadcrumbs" aria-label={t("Навигация по плану","Reja navigatsiyasi","Plan navigation")}><Link href={`${base}/action-plan`}>{t("Все планы","Barcha rejalar","All plans")}</Link>{initialCaseId && <><span aria-hidden="true">/</span><Link href={`${base}/cases/${encodeURIComponent(initialCaseId)}`}>{t("Дело","Ish","Matter")}</Link></>}</nav>
+    {notice && <p className="plan-success" role="status"><Check aria-hidden="true" />{notice}</p>}
     <section className="plan-heading">
       <div>
         <small>JURO · {t("План действий", "Harakatlar rejasi", "Action plan")}</small>
-        <h1>{t("Свяжите шаги, сроки и документы в одном деле", "Qadamlar, muddatlar va hujjatlarni bitta ishda bog‘lang", "Connect steps, deadlines and documents in one matter")}</h1>
-        <p>{t("Прогресс рассчитывается только по реально завершённым шагам.", "Jarayon faqat haqiqatan bajarilgan qadamlar asosida hisoblanadi.", "Progress reflects only steps that have actually been completed.")}</p>
+        <h1>{initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")}</h1>
+        <p>{t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")}</p>
       </div>
       <CalendarDays />
     </section>
     <div className="plan-layout">
       <section className="plan-main">
-        {!initialCaseId && <form className="plan-create" onSubmit={create}>
+        {!initialCaseId && <details className="plan-create-disclosure"><summary><Plus aria-hidden="true" />{t("Создать новый план","Yangi reja yaratish","Create a new plan")}</summary><form className="plan-create" onSubmit={create}>
           <h2>{t("Создать план из сценария", "Ssenariydan reja yaratish", "Create a plan from a scenario")}</h2>
           <p className="plan-create-step">{t("1. Направление", "1. Yo‘nalish", "1. Area")}</p>
           <div className="scenario-pills scenario-directions">
@@ -382,12 +403,12 @@ export function ActionPlanClient({
             {creating ? <LoaderCircle className="spin" /> : <Plus />}
             {t("Создать дело и план", "Ish va reja yaratish", "Create matter and plan")}
           </button>
-        </form>}
+        </form></details>}
         {error && <p className="plan-error" role="alert"><CircleAlert />{error}</p>}
         <section className="plan-list">
           <div className="plan-section-title">
-            <h2>{t("Мои активные планы", "Faol rejalarim", "My active plans")}</h2>
-            <button onClick={() => void load()} aria-label={t("Обновить", "Yangilash", "Refresh")}><RotateCcw /></button>
+            <h2>{initialCaseId ? t("Шаги плана","Reja qadamlari","Plan steps") : t("Сохранённые планы","Saqlangan rejalar","Saved plans")}</h2>
+            <button disabled={hasPendingChanges} onClick={() => void load()} aria-label={t("Обновить", "Yangilash", "Refresh")}><RotateCcw /></button>
           </div>
           {loading
             ? <div className="plan-loading"><LoaderCircle className="spin" /></div>
@@ -404,81 +425,20 @@ export function ActionPlanClient({
                     aria-controls={panelId}
                   >
                     <div>
-                      <span>{item.legalArea}</span>
-                      <h3>{item.title}</h3>
+                      <span>{planAreaLabel(item.legalArea,locale)}</span>
+                      <h3>{suggestedMatterTitle(item.title)}</h3>
                       <p>{item.progressPercent}% · {item.steps.filter((step) => step.status === "completed").length}/{item.steps.length} {t("шагов", "qadam", "steps")}</p>
                     </div>
                     <div className="plan-progress" aria-label={`${item.progressPercent}%`}><i style={{ width: `${item.progressPercent}%` }} /></div>
                     <ChevronDown className={expanded ? "rotated" : ""} />
                   </button>
                   {expanded && <div className="plan-steps" id={panelId}>
-                    <button type="button" className="plan-primary" disabled={creatingTasksFor === item.id} onClick={() => void createTasks(item)}>
+                    {item.title.length>100 && <details className="matter-full-title"><summary>{t("Полное название дела","Ishning to‘liq nomi","Full matter title")}</summary><p>{item.title}</p></details>}
+                    <nav className="plan-context-links" aria-label={t("Связанные страницы","Bog‘liq sahifalar","Related pages")}><Link href={`${base}/cases/${encodeURIComponent(item.id)}`}>{t("Открыть дело","Ishni ochish","Open matter")}</Link><Link href={`${base}/calendar?caseId=${encodeURIComponent(item.id)}`}>{t("Сроки в календаре","Kalendardagi muddatlar","Calendar deadlines")}</Link>{item.sourceConversationId && <Link href={`${base}/ai-chat?conversationId=${encodeURIComponent(item.sourceConversationId)}`}>{t("Исходный ответ JURO","JURO asl javobi","Original JURO answer")}</Link>}</nav>
+                    {(item.unlinkedStepCount ?? item.steps.length)>0 && <button type="button" className="plan-primary" disabled={creatingTasksFor === item.id} onClick={() => void createTasks(item)}>
                       {creatingTasksFor === item.id ? <LoaderCircle className="spin" /> : <Plus />}
                       {t("Подтвердить и добавить шаги в задачи", "Tasdiqlash va qadamlarni vazifalarga qo‘shish", "Confirm and add steps as tasks")}
-                    </button>
-                    <section className="plan-history" aria-label={t("История версий плана", "Reja versiyalari tarixi", "Plan version history")}>
-                      <button
-                        type="button"
-                        onClick={() => void loadVersionHistory(item)}
-                        disabled={loadingVersionsFor === item.id}
-                      >
-                        {loadingVersionsFor === item.id ? <LoaderCircle className="spin" /> : <RotateCcw />}
-                        {t("Показать историю версий", "Versiyalar tarixini ko‘rsatish", "Show version history")}
-                      </button>
-                      {versionsByCase[item.id]?.length ? <ol>
-                        {versionsByCase[item.id].map((entry) => <li key={entry.id}>
-                          <button type="button" aria-pressed={selectedHistoryVersionByCase[item.id] === entry.id} onClick={() => setSelectedHistoryVersionByCase((all) => ({ ...all, [item.id]: entry.id }))}>
-                            <strong>{t("Версия " + entry.version, entry.version + "-versiya", "Version " + entry.version)}</strong>
-                            <span>{formatPlatformDateTime(entry.createdAt, locale)}</span>
-                            <small>{entry.snapshot ? entry.snapshot.progressPercent + "% · " + entry.snapshot.steps.filter((step) => step.status === "completed").length + "/" + entry.snapshot.steps.length : t("Снимок недоступен", "Snapshot mavjud emas", "Snapshot unavailable")}</small>
-                          </button>
-                        </li>)}
-                      </ol> : null}
-                      {(() => {
-                        const versions = versionsByCase[item.id] || [];
-                        const selectedId = selectedHistoryVersionByCase[item.id];
-                        const index = versions.findIndex((entry) => entry.id === selectedId);
-                        const selectedVersion = index >= 0 ? versions[index] : null;
-                        const previousVersion = index >= 0 ? versions[index + 1] : null;
-                        if (!selectedVersion?.snapshot || !previousVersion?.snapshot) return selectedVersion ? <p className="plan-history-empty">{t("Для первой версии нет предыдущего снимка для сравнения.", "Birinchi versiyani solishtirish uchun oldingi snapshot yo‘q.", "The first version has no earlier snapshot to compare.")}</p> : null;
-                        const previousSteps = new Map(previousVersion.snapshot.steps.map((step) => [step.id, step]));
-                        const selectedSteps = new Map(selectedVersion.snapshot.steps.map((step) => [step.id, step]));
-                        const changes = selectedVersion.snapshot.steps.flatMap((step) => {
-                          const before = previousSteps.get(step.id);
-                          if (!before) return [`${step.title}: ${t("добавлен", "qo‘shildi", "added")}`];
-                          const noDeadline = t("без срока", "muddat yo‘q", "no deadline");
-                          const detail = [before.status !== step.status ? `${before.status} → ${step.status}` : "", before.dueAt !== step.dueAt ? `${before.dueAt || noDeadline} → ${step.dueAt || noDeadline}` : ""].filter(Boolean).join(" · ");
-                          return detail ? [`${step.title}: ${detail}`] : [];
-                        });
-                        previousVersion.snapshot.steps.forEach((step) => { if (!selectedSteps.has(step.id)) changes.push(`${step.title}: ${t("удалён", "olib tashlandi", "removed")}`); });
-                        return <section className="plan-history-diff" aria-live="polite"><h4>{t(`Различия: версия ${selectedVersion.version} и ${previousVersion.version}`, `${selectedVersion.version}- va ${previousVersion.version}-versiyalar farqi`, `Differences between versions ${selectedVersion.version} and ${previousVersion.version}`)}</h4>{changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>{t("Содержимое шагов не изменилось.", "Qadamlar mazmuni o‘zgarmagan.", "The step content did not change.")}</p>}</section>;
-                      })()}
-                    </section>
-                    {Object.values(pendingChangesByCase[item.id] || {}).length > 0 && <section className="plan-change-preview" aria-labelledby={`plan-preview-${item.id}`}>
-                      <div>
-                        <small>{t("Предпросмотр версии", "Versiyani oldindan ko‘rish", "Version preview")}</small>
-                        <h3 id={`plan-preview-${item.id}`}>{t("Изменения ещё не применены", "O‘zgarishlar hali qo‘llanmagan", "Changes have not been applied")}</h3>
-                        <p>{t("Проверьте изменения: они будут сохранены одной новой версией плана только после подтверждения.", "O‘zgarishlarni tekshiring: ular faqat tasdiqlangandan keyin rejaning bitta yangi versiyasi sifatida saqlanadi.", "Review the changes. They will be saved as one new plan version only after confirmation.")}</p>
-                      </div>
-                      <ul>
-                        {item.steps.filter((step) => pendingChangesByCase[item.id]?.[step.id]).map((step) => {
-                          const change = pendingChangesByCase[item.id][step.id];
-                          const beforeDate = step.dueAt?.slice(0, 10) || t("не задан", "belgilanmagan", "not set");
-                          const afterDate = change.dueAt || t("не задан", "belgilanmagan", "not set");
-                          return <li key={step.id}><strong>{step.title}</strong><span>{step.status} → {change.status}{beforeDate !== afterDate ? ` · ${beforeDate} → ${afterDate}` : ""}</span></li>;
-                        })}
-                      </ul>
-                      <div className="plan-change-actions">
-                        <button type="button" onClick={() => {
-                          setPendingChangesByCase((all) => ({ ...all, [item.id]: {} }));
-                          clearDeadlineResultsForCase(item.id);
-                        }}>{t("Отменить", "Bekor qilish", "Cancel")}</button>
-                        <button type="button" className="plan-primary" disabled={applyingChangesFor === item.id} onClick={() => void applyStagedChanges(item)}>
-                          {applyingChangesFor === item.id ? <LoaderCircle className="spin" /> : <Check />}
-                          {t("Подтвердить и применить", "Tasdiqlash va qo‘llash", "Confirm and apply")}
-                        </button>
-                      </div>
-                    </section>}
+                    </button>}
                     {item.steps.map((step) => {
                       const staged = pendingChangesByCase[item.id]?.[step.id];
                       const saving = applyingChangesFor === item.id;
@@ -490,20 +450,23 @@ export function ActionPlanClient({
                         <span>{step.status === "completed" ? <Check /> : step.ordinal}</span>
                         <div>
                           <strong>{step.title}</strong>
+                          {step.description && <p className="plan-step-description">{step.description}</p>}
                           {step.dueAt && <small>{formatPlatformDate(step.dueAt, locale)}</small>}
                         </div>
                         <label className="plan-step-date">
                           <span>{t("Срок", "Muddat", "Deadline")}</span>
                           <input
                             type="date"
-                            value={staged?.dueAt ?? step.dueAt?.slice(0, 10) ?? ""}
+                            aria-label={t(`Срок: ${step.title}`,`Muddat: ${step.title}`,`Deadline: ${step.title}`)}
+                            value={staged ? staged.dueAt ?? "" : step.dueAt?.slice(0, 10) ?? ""}
                             disabled={saving}
                             onChange={(event) => stageStepChange(item, step, { dueAt: event.target.value || null, deadlineCalculation: null })}
                           />
                         </label>
                         <label className="plan-step-status">
-                          <span className="sr-only">{t("Статус шага", "Qadam holati", "Step status")}</span>
+                          <span>{t("Статус шага", "Qadam holati", "Step status")}</span>
                           <Select
+                            aria-label={t(`Статус: ${step.title}`,`Holat: ${step.title}`,`Status: ${step.title}`)}
                             value={staged?.status ?? step.status}
                             disabled={saving}
                             onChange={(event) => stageStepChange(item, step, { status: event.target.value as StepStatus })}
@@ -517,10 +480,11 @@ export function ActionPlanClient({
                             <option value="cancelled">{t("Отменено", "Bekor qilingan", "Cancelled")}</option>
                           </Select>
                         </label>
+                        <details className="plan-step-tools"><summary>{t("Документ и расчёт срока","Hujjat va muddat hisobi","Document and deadline calculation")}</summary>
                         <Link
                           href={`${base}/document-builder?${builderQuery}`}
                           aria-label={t(`Создать документ для шага «${step.title}»`, `«${step.title}» qadami uchun hujjat yaratish`, `Create a document for “${step.title}”`)}
-                        ><FilePenLine /></Link>
+                        ><FilePenLine aria-hidden="true" />{t("Создать документ","Hujjat yaratish","Create document")}</Link>
                         <details className="deadline-calculator">
                           <summary>{t("Рассчитать срок", "Muddatni hisoblash", "Calculate deadline")}</summary>
                           <div className="deadline-calculator-grid">
@@ -599,14 +563,78 @@ export function ActionPlanClient({
                             {step.safeDueAt ? ` ${t("Безопасная дата", "Xavfsiz sana", "Safe date")}: ${step.safeDueAt.slice(0, 10)}.` : ""}
                           </p>}
                         </details>
+                        </details>
                       </div>;
                     })}
+                    <section className="plan-history" aria-label={t("История версий плана", "Reja versiyalari tarixi", "Plan version history")}>
+                      <button
+                        type="button"
+                        onClick={() => void loadVersionHistory(item)}
+                        disabled={loadingVersionsFor === item.id}
+                      >
+                        {loadingVersionsFor === item.id ? <LoaderCircle className="spin" /> : <RotateCcw />}
+                        {t("Показать историю версий", "Versiyalar tarixini ko‘rsatish", "Show version history")}
+                      </button>
+                      {versionsByCase[item.id]?.length ? <ol>
+                        {versionsByCase[item.id].map((entry) => <li key={entry.id}>
+                          <button type="button" aria-pressed={selectedHistoryVersionByCase[item.id] === entry.id} onClick={() => setSelectedHistoryVersionByCase((all) => ({ ...all, [item.id]: entry.id }))}>
+                            <strong>{t("Версия " + entry.version, entry.version + "-versiya", "Version " + entry.version)}</strong>
+                            <span>{formatPlatformDateTime(entry.createdAt, locale)}</span>
+                            <small>{entry.snapshot ? entry.snapshot.progressPercent + "% · " + entry.snapshot.steps.filter((step) => step.status === "completed").length + "/" + entry.snapshot.steps.length : t("Снимок недоступен", "Snapshot mavjud emas", "Snapshot unavailable")}</small>
+                          </button>
+                        </li>)}
+                      </ol> : null}
+                      {(() => {
+                        const versions = versionsByCase[item.id] || [];
+                        const selectedId = selectedHistoryVersionByCase[item.id];
+                        const index = versions.findIndex((entry) => entry.id === selectedId);
+                        const selectedVersion = index >= 0 ? versions[index] : null;
+                        const previousVersion = index >= 0 ? versions[index + 1] : null;
+                        if (!selectedVersion?.snapshot || !previousVersion?.snapshot) return selectedVersion ? <p className="plan-history-empty">{t("Для первой версии нет предыдущего снимка для сравнения.", "Birinchi versiyani solishtirish uchun oldingi snapshot yo‘q.", "The first version has no earlier snapshot to compare.")}</p> : null;
+                        const previousSteps = new Map(previousVersion.snapshot.steps.map((step) => [step.id, step]));
+                        const selectedSteps = new Map(selectedVersion.snapshot.steps.map((step) => [step.id, step]));
+                        const changes = selectedVersion.snapshot.steps.flatMap((step) => {
+                          const before = previousSteps.get(step.id);
+                          if (!before) return [`${step.title}: ${t("добавлен", "qo‘shildi", "added")}`];
+                          const noDeadline = t("без срока", "muddat yo‘q", "no deadline");
+                          const detail = [before.status !== step.status ? `${planStatusLabel(before.status,locale)} → ${planStatusLabel(step.status,locale)}` : "", before.dueAt !== step.dueAt ? `${before.dueAt || noDeadline} → ${step.dueAt || noDeadline}` : ""].filter(Boolean).join(" · ");
+                          return detail ? [`${step.title}: ${detail}`] : [];
+                        });
+                        previousVersion.snapshot.steps.forEach((step) => { if (!selectedSteps.has(step.id)) changes.push(`${step.title}: ${t("удалён", "olib tashlandi", "removed")}`); });
+                        return <section className="plan-history-diff" aria-live="polite"><h4>{t(`Различия: версия ${selectedVersion.version} и ${previousVersion.version}`, `${selectedVersion.version}- va ${previousVersion.version}-versiyalar farqi`, `Differences between versions ${selectedVersion.version} and ${previousVersion.version}`)}</h4>{changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>{t("Содержимое шагов не изменилось.", "Qadamlar mazmuni o‘zgarmagan.", "The step content did not change.")}</p>}</section>;
+                      })()}
+                    </section>
+                    {Object.values(pendingChangesByCase[item.id] || {}).length > 0 && <section className="plan-change-preview" aria-labelledby={`plan-preview-${item.id}`}>
+                      <div>
+                        <small>{t("Сохранение", "Saqlash", "Save changes")}</small>
+                        <h3 id={`plan-preview-${item.id}`}>{t("Изменения ещё не применены", "O‘zgarishlar hali qo‘llanmagan", "Changes have not been applied")}</h3>
+                        <p>{t("Проверьте изменения: они будут сохранены одной новой версией плана только после подтверждения.", "O‘zgarishlarni tekshiring: ular faqat tasdiqlangandan keyin rejaning bitta yangi versiyasi sifatida saqlanadi.", "Review the changes. They will be saved as one new plan version only after confirmation.")}</p>
+                      </div>
+                      <ul>
+                        {item.steps.filter((step) => pendingChangesByCase[item.id]?.[step.id]).map((step) => {
+                          const change = pendingChangesByCase[item.id][step.id];
+                          const beforeDate = step.dueAt?.slice(0, 10) || t("не задан", "belgilanmagan", "not set");
+                          const afterDate = change.dueAt || t("не задан", "belgilanmagan", "not set");
+                          return <li key={step.id}><strong>{step.title}</strong><span>{planStatusLabel(step.status,locale)} → {planStatusLabel(change.status,locale)}{beforeDate !== afterDate ? ` · ${beforeDate} → ${afterDate}` : ""}</span></li>;
+                        })}
+                      </ul>
+                      <div className="plan-change-actions">
+                        <button type="button" disabled={applyingChangesFor === item.id} onClick={() => {
+                          setPendingChangesByCase((all) => ({ ...all, [item.id]: {} }));
+                          clearDeadlineResultsForCase(item.id);
+                        }}>{t("Отменить", "Bekor qilish", "Cancel")}</button>
+                        <button type="button" className="plan-primary" disabled={applyingChangesFor === item.id} onClick={() => void applyStagedChanges(item)}>
+                          {applyingChangesFor === item.id ? <LoaderCircle className="spin" /> : <Check />}
+                          {t("Сохранить изменения", "O‘zgarishlarni saqlash", "Save changes")}
+                        </button>
+                      </div>
+                    </section>}
                   </div>}
                 </article>;
               })}
         </section>
       </section>
-      <aside className="plan-calendar">
+      {!initialCaseId && <aside className="plan-calendar">
         <h2>{t("Ближайшие сроки", "Yaqin muddatlar", "Upcoming deadlines")}</h2>
         <div className="today"><CalendarDays /><div><small>{t("Сегодня", "Bugun", "Today")}</small><strong>{formatPlatformDate(new Date(), locale, { dateStyle: "long" })}</strong></div></div>
         {deadlines.length
@@ -616,7 +644,7 @@ export function ActionPlanClient({
           </div>)
           : <p>{t("Сроки появятся после назначения дат конкретным шагам.", "Aniq qadamlar uchun sana belgilangandan keyin muddatlar ko‘rinadi.", "Deadlines will appear after dates are assigned to specific steps.")}</p>}
         <Link className="plan-consult" href={`${base}/consultations`}>{t("Записаться на консультацию", "Maslahatga yozilish", "Request a consultation")}<span>→</span></Link>
-      </aside>
+      </aside>}
     </div>
   </div>;
 }

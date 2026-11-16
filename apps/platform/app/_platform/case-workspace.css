@@ -512,3 +512,47 @@
 .case-workspace-tabs > a {
   scroll-snap-align: start;
 }
+/* Keep long, saved legal content readable in both themes. */
+.platform-shell .case-workspace { width:100%; min-width:0; max-width:1160px; min-height:0; padding:24px; gap:16px; background:var(--surface-canvas); color:var(--text-primary); }
+.platform-shell .case-workspace > header { padding:20px; gap:20px; align-items:flex-start; border-radius:14px; background:var(--surface-raised); }
+.platform-shell .case-workspace-heading { flex:1; min-width:0; }
+.platform-shell .case-workspace > header h1 { font-size:24px; font-weight:650; line-height:1.4; letter-spacing:-.02em; overflow-wrap:anywhere; margin:8px 0; }
+.platform-shell .case-workspace-actions { flex:0 0 180px; display:grid; gap:8px; }
+.platform-shell .case-workspace-actions :is(a,button) { width:100%; min-height:44px; height:auto; justify-content:center; padding:10px 12px; font-size:14px; line-height:1.4; }
+.platform-shell .case-workspace-actions svg { flex:0 0 18px; height:18px; }
+.platform-shell .case-workspace-summary article { padding:16px; gap:6px; background:var(--surface-raised); }
+.platform-shell .case-workspace-summary strong { font-size:22px; line-height:1.4; }
+.platform-shell .case-workspace-summary :is(small,span) { font-size:14px; line-height:1.5; }
+.platform-shell .case-workspace-tabs { overflow:visible; flex-wrap:wrap; gap:8px; }
+.platform-shell .case-workspace-tabs > a, .case-more-sections > summary { min-height:44px; padding:10px 14px; border-radius:8px; font-size:14px; }
+.case-more-sections { min-width:0; }
+.case-more-sections > summary { cursor:pointer; border:1px solid var(--border-subtle); background:var(--surface-raised); color:var(--text-primary); }
+.case-more-sections > div { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
+.case-more-sections a { display:inline-flex; align-items:center; min-height:44px; padding:8px 12px; color:var(--text-secondary); border-radius:8px; background:var(--surface-raised); }
+.case-more-sections a[aria-current=page] { color:var(--text-on-action); background:var(--interactive-primary); }
+.case-context { border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-raised); padding:0 16px; }
+.case-context > summary { cursor:pointer; padding:14px 0; min-height:48px; font-size:14px; font-weight:600; }
+.case-context > p { max-width:75ch; white-space:pre-wrap; overflow-wrap:anywhere; font-size:16px; line-height:1.65; margin:0 0 16px; color:var(--text-secondary); }
+.case-context > a { display:inline-flex; min-height:44px; align-items:center; color:var(--brand-gold-text); text-decoration:underline; margin-bottom:8px; }
+.platform-shell .case-workspace-overview { grid-template-columns:minmax(0,1fr); }
+.platform-shell .case-workspace-section-head { flex-wrap:wrap; gap:8px; padding:16px 20px; }
+.platform-shell .case-workspace-section-head a { min-height:44px; display:inline-flex; align-items:center; font-size:14px; }
+.platform-shell .case-workspace-tasks li { padding:16px 20px; align-items:flex-start; }
+.platform-shell .case-workspace-tasks li > div { min-width:0; max-width:75ch; }
+.platform-shell .case-workspace-tasks p { font-size:16px; line-height:1.6; margin:4px 0; overflow-wrap:anywhere; }
+.platform-shell .case-workspace-tasks strong { font-size:16px; line-height:1.5; }
+.platform-shell .case-workspace-tasks :is(span,b) { font-size:14px; line-height:1.5; }
+.platform-shell .case-workspace-tasks b { flex-shrink:0; white-space:normal; max-width:160px; }
+.platform-shell .case-workspace :is(summary,a,button):focus-visible { outline:3px solid var(--focus-ring); outline-offset:3px; }
+@media(max-width:680px) {
+ .platform-shell .case-workspace { padding:16px 12px 88px; }
+ .platform-shell .case-workspace > header { flex-direction:column; padding:16px; }
+ .platform-shell .case-workspace > header h1 { font-size:22px; }
+ .platform-shell .case-workspace-actions { flex:auto; width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .platform-shell .case-workspace-summary { grid-template-columns:1fr; gap:8px; }
+ .platform-shell .case-workspace-summary article { grid-template-columns:1fr auto; align-items:center; }
+ .platform-shell .case-workspace-summary article span { grid-column:1 / -1; }
+ .platform-shell .case-workspace-tasks li { flex-direction:column; padding:16px; }
+}
+.platform-shell .case-workspace-grid { display:grid; height:auto; min-height:0; align-items:start; }
+.platform-shell .case-workspace-grid > section { height:auto; min-height:0; }

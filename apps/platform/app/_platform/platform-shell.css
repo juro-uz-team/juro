@@ -271,3 +271,10 @@ html[data-theme=dark] .platform-shell .platform-collapse { background: transpare
 .platform-language-value{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 :root body .platform-topbar .juro-select.platform-language-switcher:hover,:root body .platform-topbar .juro-select.platform-language-switcher[data-state=open]{background:var(--p-navigation-hover)}
 :root body .platform-topbar .juro-select.platform-language-switcher[data-state=open]:not(:focus-visible){outline:none;border-color:var(--border-accent)}
+/* Matter navigation is shared by the plan editor and matter workspace. */
+.platform-shell .matter-breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:14px; color:var(--text-secondary); }
+.platform-shell .matter-breadcrumbs a { display:inline-flex; align-items:center; min-height:44px; color:var(--brand-gold-text); text-decoration:underline; text-underline-offset:3px; }
+.platform-shell .matter-breadcrumbs a:focus-visible { outline:3px solid var(--focus-ring); outline-offset:3px; }
+.platform-shell .matter-full-title { margin:8px 0; color:var(--text-secondary); font-size:14px; line-height:1.6; }
+.platform-shell .matter-full-title > summary { cursor:pointer; min-height:44px; padding:10px 0; color:var(--brand-gold-text); }
+.platform-shell .matter-full-title > p { margin:0 0 12px; max-width:75ch; font-size:16px; overflow-wrap:anywhere; }

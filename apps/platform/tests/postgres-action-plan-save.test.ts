@@ -40,9 +40,10 @@ test("PostgreSQL saves, replays and appends confirmed practical steps and tasks"
     "INSERT INTO conversation_messages (id,conversation_id,author_type,content,structured_json,created_at) VALUES (?,?,?,?,?,?)",
   ).bind(ASSISTANT_MESSAGE_ID, CONVERSATION_ID, "assistant", structuredAnswer.answer, JSON.stringify(structuredAnswer), NOW).run();
 
- const input={db:db as unknown as D1Database,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,now:NOW};
+ const input={db:db as unknown as D1Database,workspaceId:WORKSPACE_ID,userId:USER_ID,assistantMessageId:ASSISTANT_MESSAGE_ID,caseTitle:"Confirmed matter name",now:NOW};
  const first=await saveAiActionPlanToCase(input);
  assert.equal(first.taskCount,2);
+ assert.equal(await db.prepare("SELECT title FROM cases WHERE id=?").bind(first.caseId).first("title"),"Confirmed matter name");
  assert.deepEqual(await saveAiActionPlanToCase(input),{...first,replay:true});
  const message=crypto.randomUUID();
  await db.prepare("INSERT INTO conversation_messages(id,conversation_id,author_type,content,structured_json,created_at) VALUES (?,?,'assistant',?,?,?)").bind(message,CONVERSATION_ID,structuredAnswer.answer,JSON.stringify(structuredAnswer),NOW).run();
