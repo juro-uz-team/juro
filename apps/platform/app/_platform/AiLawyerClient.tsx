@@ -26,7 +26,7 @@ import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-strea
 import {activateDialogFocus} from "../../lib/platform/dialog-focus";
 import { AiSelect } from "./AiSelect";
 import { AnswerActivity } from "./AnswerActivity";
-import { LegalAnswerView } from "./LegalAnswerView";
+import { LegalAnswerView, type LegalAnswerViewResult } from "./LegalAnswerView";
 import { ChatNotifications } from "./ChatNotifications";
 import { AnswerActions, CopyMessageButton } from "./AnswerActions";
 import { VoiceConversation } from "./VoiceConversation";
@@ -109,7 +109,7 @@ type AiPreliminary = {
 type LegalResult = {
   failureReason?: LegalAnswerFailureReason;
   responseKind: "answer" | "clarification_required";
-  presentationKind?: "conversation" | "legal_answer";
+  presentationKind?: LegalAnswerViewResult["presentationKind"];
   summary: string;
   answer: string;
   clarificationQuestions: string[];

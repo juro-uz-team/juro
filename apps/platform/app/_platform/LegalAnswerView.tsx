@@ -125,7 +125,7 @@ export function LegalAnswerView({
   </section>;
 
   if (result.responseKind === "clarification_required") {
-    if (questions && !incomplete && !result.failureReason && !result.sources.length && !result.confirmedFindings.length) {
+    if (result.presentationKind === "factual_clarification") {
       return <article className={rootClass} data-answer-kind="clarification">{toolbar}{questions}</article>;
     }
     const interpretationFailed = result.failureReason === "question_interpretation_unavailable";

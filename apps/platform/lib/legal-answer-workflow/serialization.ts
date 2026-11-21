@@ -43,6 +43,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
       uz: "Javob berish uchun qo‘llaniladigan huquqni yetarlicha tekshirib bo‘lmadi.",
     }[request.language];
     return { responseKind: "clarification_required", summary, answer: summary,
+      ...(clarification ? { presentationKind: "factual_clarification" as const } : {}),
       confirmedFindings: [], actionPlan: [], conditionalBranches: [],
       language: request.language, jurisdiction: "UZ", answerMode: request.format, reasoningMode: request.mode,
       clarificationQuestions: outcome.clarificationQuestions,

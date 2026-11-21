@@ -27,6 +27,7 @@ test("facts-only clarification publishes focused questions without claiming a fa
     assert.equal(calls, 1);
     const response = serializeLegalOutcome(result.outcome, request, { sources: [], legalDatabaseAsOf: "2026-10-29" });
     assert.equal(response.responseKind, "clarification_required");
+    assert.equal(response.presentationKind, "factual_clarification");
     assert.deepEqual(response.clarificationQuestions, ["What happened, and what outcome do you want?"]);
     assert.deepEqual(response.coverageGaps, []);
     assert.equal(response.failureReason, undefined);
