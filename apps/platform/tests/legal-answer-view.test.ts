@@ -315,6 +315,16 @@ test("incomplete evidence displays found provisions and focused questions withou
   assert.doesNotMatch(html, />Подтверждено официальными источниками</u);
 });
 
+test("a facts-only clarification displays the question without a source failure heading", () => {
+  const html = renderToStaticMarkup(createElement(LegalAnswerView, { locale: "en", result: result({
+    responseKind: "clarification_required", sources: [], confirmedFindings: [], coverageGaps: [],
+    clarificationQuestions: ["What happened?"],
+  }) }));
+  assert.match(html, /data-answer-kind="clarification"/u);
+  assert.match(html, /What happened\?/u);
+  assert.doesNotMatch(html, /insufficient-evidence|legal-answer__checked/u);
+});
+
 test("internet provenance is visibly marked with answer sources using live or secondary sources", () => {
   for (const sourceOrigin of ["live", "web"] as const) {
     const html = renderToStaticMarkup(createElement(LegalAnswerView, {

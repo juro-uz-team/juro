@@ -20,10 +20,10 @@ const complexity = z.enum(["simple", "difficult", "very_difficult"]);
 const listResultsAction = z.object({ requirementId: id, resultSetId: z.string().min(1).max(32), page: z.number().int().min(0) }).strict();
 export const interpretationSchema = z.object({
   complexity,
-  needsClarification: z.boolean(),
+  needsClarification: z.boolean().describe("True only when no identifiable legal topic or decision can be researched before the user replies."),
   requirements: z.array(z.object({ id, question: statement }).strict()).min(1).max(40)
     .describe("The smallest set of material legal questions necessary to answer the actual request. Use concise phrases without repeating the complete user question. Keep a rule's necessary conditions and safeguards together; separate only distinct rules whose support cannot substitute for each other. Do not add optional background or adjacent financial consequences unless needed for the requested decision. Questions remain provisional as research clarifies relevance."),
-  queries: z.array(z.string().min(1).max(2000)).min(1).max(8),
+  queries: z.array(z.string().trim().min(1).max(2000)).max(8),
   // Distinct kind literals keep these branches disjoint; ordinary union emits provider-supported anyOf.
   scopes: z.array(z.union([
     z.object({ kind: z.literal("current") }).strict(),
@@ -31,8 +31,8 @@ export const interpretationSchema = z.object({
   ])).min(1).max(2),
   facts: z.array(statement).max(40),
   clarificationQuestions: z.array(statement).max(8),
-}).strict().refine(value => !value.needsClarification || value.clarificationQuestions.length > 0,
-  "A clarification outcome requires a focused question.");
+}).strict().refine(value => value.needsClarification ? value.clarificationQuestions.length > 0 : value.queries.length > 0,
+  "An interpretation requires a search query or a focused factual question when the legal matter cannot be researched.");
 export const assessmentSchema = z.object({
   support: z.array(z.object({ requirementId: id, sourceIds: z.array(id).min(1).max(24) }).strict()).max(40)
     .describe("Requirements whose material legal rules and qualifications are established by these complete sources, including rules answerable conditionally when case facts are unknown."),
@@ -122,7 +122,7 @@ export const researchTurnSchema = z.object({
   coverageUpdates: z.array(coverageRecordSchema).max(40).optional(),
   toolErrors: z.array(researchToolErrorSchema).max(56).optional(),
 }).strict().superRefine((value, context) => {
-  if (value.decision === "answer" ? !value.content || value.gaps.length > 0 || value.actions.length > 0
+    if (value.decision === "answer" ? !value.content || value.actions.length > 0
     : value.content !== null
       || (value.decision === "research" ? (value.actions.length === 0 && !value.toolErrors?.length) : value.actions.length > 0 || value.gaps.length === 0)) {
     context.addIssue({ code: "custom", message: "Research decision and content disagree." });
@@ -162,7 +162,7 @@ export function researchResponseSchema(allowAnswer: boolean, hasRead: boolean, l
       gaps: assessmentSchema.shape.gaps.min(1), actions: assessmentSchema.shape.recovery.max(0) }).strict(),
   ] as const;
   const answer = z.object({ decision: z.literal("answer"), content: writtenAnswerForLanguage(language, sourceIds),
-    gaps: assessmentSchema.shape.gaps.max(0), actions: assessmentSchema.shape.recovery.max(0) }).strict();
+    gaps: assessmentSchema.shape.gaps, actions: assessmentSchema.shape.recovery.max(0) }).strict();
   // Structured Outputs requires an object at the root; alternatives belong beneath it.
   return z.object({ turn: allowAnswer ? z.union([...pending, answer]) : z.union(pending) }).strict();
 }
@@ -215,7 +215,7 @@ export type LegalOutcome = {
   gaps: Assessment["gaps"];
   checkedEvidence: OfficialProvision[];
   clarificationQuestions: string[];
-} | { kind: "answer"; content: WrittenAnswer; evidence: OfficialProvision[] };
+} | { kind: "answer"; content: WrittenAnswer; evidence: OfficialProvision[]; gaps?: Assessment["gaps"] };
 export type PublishedAnswer = { answerId: string; outcome: LegalOutcome };
 export type CandidateRanking = { vectorRank: number; vectorScore: number; keywordRank: number; keywordScore: number; fusionScore: number };
 export type WorkflowPorts = {

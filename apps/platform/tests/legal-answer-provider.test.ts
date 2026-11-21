@@ -177,7 +177,7 @@ test("native search rejects malformed or duplicate supplied research questions i
 test("native factual clarification retains validation and the complete long user question", async () => {
   for (const questions of [[], ["Which requested date applies?"]]) {
     const question = "Artificial question. ".repeat(250);
-    const interpretation = { complexity: "difficult", needsClarification: true, queries: multilingualQueries,
+    const interpretation = { complexity: "difficult", needsClarification: true, queries: { en: null, ru: null, "uz-Latn": null },
       scopes: [{ kind: "historical", at: "2020-01-01" }], facts: [], clarificationQuestions: questions };
     const fixture = setup(async (_url, init) => {
       assert.equal(JSON.parse(JSON.parse(String(init?.body)).input[0].content).question, question);
@@ -187,7 +187,7 @@ test("native factual clarification retains validation and the complete long user
       longContext: { input: 200_000, cachedInput: 20_000, output: 750_000 } });
     const result = fixture.model.complete({ ...operation(), input: { question }, researchSession: true, schema: z.toJSONSchema(entrySchema) });
     if (!questions.length) await assert.rejects(result, /PROVIDER_OUTPUT_INVALID/);
-    else assert.deepEqual(await result, { conversationReply: null, interpretation: { ...interpretation, queries: [...Object.values(multilingualQueries), "қоида"],
+    else assert.deepEqual(await result, { conversationReply: null, interpretation: { ...interpretation, queries: [],
       requirements: [{ id: "question", question: "The complete user question supplied with this request." }] } });
   }
 });

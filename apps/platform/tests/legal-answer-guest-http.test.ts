@@ -40,7 +40,7 @@ test("guest HTTP preserves the UI payload, session cookie and persisted streamin
           return { model: legalEntryFixture({ complete: async ({ stage }) => {
             calls++;
             return stage === "interpret" ? { needsClarification: true, complexity: "simple", requirements: [{ id: "r", question: "Artificial rule?" }],
-              queries: ["artificial rule"], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: ["What happened in your case?"] }
+              queries: [], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: ["What happened in your case?"] }
               : { decision: "insufficient_evidence", content: null, gaps: [{ requirementId: "r", description: "Unavailable" }], actions: [] };
           } }), corpus: { search: async () => ({ candidates: [], sparseAvailable: true, denseAvailable: true }),
             resolve: async () => null, get: async () => null }, citations: async () => [], usage: () => fixture.input.usage };

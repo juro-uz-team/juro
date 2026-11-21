@@ -46,10 +46,10 @@ export function prepareIssueWriting(operation: ModelOperation, input: Record<str
   const projections = new Map<number, ReturnType<typeof createIssueWritingProjection>>();
   return {
     enabled,
-    needsIssueWork: enabled && (!active.length || unresolved.length > 0),
+    needsIssueWork: enabled && !active.length,
     tool: { type: "function", name: "write_issues", strict: true, parameters,
       description: "Write complete supported issues as public answer prose while other material research continues. Later corrections or retractions require the exact published baseVersion and an explicit explanation in the user's language. Header sourceIds are the issue’s sole citation set and must establish every statement and its material qualifications; content inherits them. Each action declares its own subset of these sources. These are public claims, never private planning or progress." },
-    instruction: enabled ? `\nUse write_issues to deliver each sufficiently researched material issue promptly, then research any remaining dependencies. Do not wait to write an established issue merely because another issue remains under research. Include all necessary conditions and exceptions in each public claim; never stream a known unresolved conclusion. Begin with the rule that answers the supplied facts; a route excluded by those facts is not the opening proposition. Use stable issue IDs and publishedIssues versions (0 for a new issue). Later contradictory law requires an explicit correction or retraction with a meaningful reason in the user's language. Never silently replace a published issue. The main summary is derived only when research is complete.${published.length ? " When implementing or judicial guidance describes a narrower practice, also check the governing statute’s current rights, definitions and safeguards. A procedural discretion or exception does not by itself define the full scope of the underlying right. Reconcile later amendments and the relationship between governing and implementing rules where they materially affect the answer." : ""} Before finalizing, reconcile each published rule against all applicable complete law: check omitted qualifications, exceptions, safeguards and later contradictory evidence. Correct or extend the issue explicitly when needed; a summary or separate note must not quietly repair an overbroad earlier issue. Final content omits issues: their latest exact versions are inserted automatically; use write_issues for every additional issue or change before finalizing. Each material requirement must be addressed in a published issue, combining related requirements when useful. If research shows a provisional requirement is irrelevant to the actual question, explicitly revise its coverage record with status dropped and explain why in relevance. Do not drop a relevant requirement merely to finish. coverageUpdates may be empty; use updates: [] only to revise relevance. Requirements not yet explained or explicitly dropped: ${JSON.stringify(unresolved)}. Reserve referenceNotes capacity for issueCorrections. All complete law and earlier conversation remain available.` : "",
+    instruction: enabled ? `\nUse write_issues to deliver each sufficiently researched material issue promptly, then research any remaining dependencies. Do not wait to write an established issue merely because another issue remains under research. Include all necessary conditions and exceptions in each public claim; never stream a known unresolved conclusion. Begin with the rule that answers the supplied facts; a route excluded by those facts is not the opening proposition. Use stable issue IDs and publishedIssues versions (0 for a new issue). Later contradictory law requires an explicit correction or retraction with a meaningful reason in the user's language. Never silently replace a published issue. The main summary reflects the reconciled issues and their scope.${published.length ? " When implementing or judicial guidance describes a narrower practice, also check the governing statute’s current rights, definitions and safeguards. A procedural discretion or exception does not by itself define the full scope of the underlying right. Reconcile later amendments and the relationship between governing and implementing rules where they materially affect the answer." : ""} Before finalizing, reconcile each published rule against all applicable complete law: check omitted qualifications, exceptions, safeguards and later contradictory evidence. Correct or extend the issue explicitly when needed; a summary or separate note must not quietly repair an overbroad earlier issue. Final content omits issues: their latest exact versions are inserted automatically; use write_issues for every additional issue or change before finalizing. Address each material requirement in a published issue where complete applicable law supports it. If no useful targeted research remains, save the reconciled issues and identify each unresolved material requirement in gaps using its requirementId. Keep missing case facts in clarificationQuestions. If research shows a provisional requirement is irrelevant to the actual question, explicitly revise its coverage record with status dropped and explain why in relevance. Do not drop a relevant requirement merely to finish. coverageUpdates may be empty; use updates: [] only to revise relevance. Requirements not yet explained or explicitly dropped: ${JSON.stringify(unresolved)}. Reserve referenceNotes capacity for issueCorrections. All complete law and earlier conversation remain available.` : "",
     project(name: string, delta: string, index: number) {
       if (!enabled || name !== "write_issues" || !operation.onWriting) return;
       if (!projections.has(index)) projections.set(index, createIssueWritingProjection(draft => {
@@ -92,7 +92,8 @@ export function prepareIssueWriting(operation: ModelOperation, input: Record<str
       turn.anyOf = z.array(object).parse(turn.anyOf).filter(branch => {
         const fields = object.parse(branch.properties);
         if (object.parse(fields.decision).const !== "answer") return true;
-        if (!active.length || unresolved.length) return false;
+        if (!active.length) return false;
+        if (unresolved.length) fields.gaps = { ...object.parse(fields.gaps), minItems: unresolved.length };
         const content = object.parse(fields.content), properties = object.parse(content.properties);
         if (published.length) {
           delete properties.issues;
@@ -105,10 +106,13 @@ export function prepareIssueWriting(operation: ModelOperation, input: Record<str
       schema.properties = { ...fields, turn };
     },
     restore(value: unknown) {
-      if (enabled && (!active.length || unresolved.length) && object.parse(object.parse(value).turn).decision === "answer")
-        throw new Error("ISSUE_REQUIREMENT_UNRESOLVED");
-      if (!enabled || !published.length) return restoreStatementCitations(value, prose);
       const raw = object.parse(value), turn = object.parse(raw.turn);
+      if (enabled && turn.decision === "answer") {
+        const gaps = z.array(z.object({ requirementId: z.string() })).parse(turn.gaps);
+        if (!active.length || unresolved.some(id => !gaps.some(gap => gap.requirementId === id)))
+          throw new Error("ISSUE_REQUIREMENT_UNRESOLVED");
+      }
+      if (!enabled || !published.length) return restoreStatementCitations(value, prose);
       if (turn.content == null) return value;
       const content = object.parse(turn.content);
       if ("issues" in content) throw new Error("ISSUE_FINAL_RECONCILIATION");

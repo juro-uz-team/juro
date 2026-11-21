@@ -121,7 +121,7 @@ test("the issue tool enforces Uzbek Latin prose before streaming or accepting it
   assert.equal(shown, false);
 });
 
-test("published issues cannot silently erase an unresolved requirement, but an explicit relevance revision can remove it", async () => {
+test("reviewed issues can be saved with an explicit evidence gap or a relevance revision", async () => {
   const op = operation({ interpretation: { requirements: [{ id: "r" }, { id: "other" }] }, coverageRecords: [],
     publishedIssues: [{ id: "permit", version: "1", content: issue }] });
   const firstSession = new ProviderResearchSession();
@@ -136,6 +136,16 @@ test("published issues cannot silently erase an unresolved requirement, but an e
     status: "dropped", sourceIds: ["s1"], dependency: "", nextAction: "" };
   await first.accept([reviewCall("1")]);
   const writer = firstSession.prepare(op, "{}");
+  const turn = { decision: "answer", content: { summary: "A qualified permit rule.", summarySourceIds: ["s1"],
+    assumptions: [], conditionalBranches: [], risks: [], deadlines: [], requiredDocuments: [], referenceNotes: [],
+    clarificationQuestions: [], urgency: "normal" }, gaps: [], actions: [] };
+  const finalized = z.fromJSONSchema(writer.schema);
+  assert.equal(finalized.safeParse({ turn }).success, false);
+  await assert.rejects(() => writer.restore({ turn }), /ISSUE_REQUIREMENT_UNRESOLVED/);
+  await assert.rejects(() => writer.restore({ turn: { ...turn, gaps: [{ requirementId: "r", description: "Different gap." }] } }), /ISSUE_REQUIREMENT_UNRESOLVED/);
+  const partial = { turn: { ...turn, gaps: [{ requirementId: "other", description: "No applicable exception rule was established." }] } };
+  assert.equal(finalized.safeParse(partial).success, true);
+  assert.deepEqual(await writer.restore(partial), { turn: { ...partial.turn, content: { ...turn.content, issues: [issue] } } });
   await assert.rejects(() => writer.accept([{ type: "function_call", name: "write_issues", call_id: "blank",
     arguments: JSON.stringify({ updates: [], coverageUpdates: [{ ...dropped, relevance: "  " }] }) }]));
   await writer.accept([{ type: "function_call", name: "write_issues", call_id: "scope", arguments: JSON.stringify({ updates: [], coverageUpdates: [dropped] }) }]);

@@ -117,8 +117,17 @@ export function LegalAnswerView({
     title={locale === "ru" ? "Что ещё не подтверждено" : locale === "uz" ? "Hali tasdiqlanmagan jihatlar" : "What remains unverified"}>
     <ul>{result.coverageGaps!.map((gap, index) => <li key={index}>{gap}</li>)}</ul>
   </Section>;
+  const questions = result.clarificationQuestions.length > 0 && <section className="legal-answer__questions" aria-labelledby={`${id}-clarify`}>
+    <h2 id={`${id}-clarify`}>{copy.clarify}</h2>
+    <div>{result.clarificationQuestions.map((question) => onQuestionSelect
+      ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
+      : <p key={question}>{question}</p>)}</div>
+  </section>;
 
   if (result.responseKind === "clarification_required") {
+    if (questions && !incomplete && !result.failureReason && !result.sources.length && !result.confirmedFindings.length) {
+      return <article className={rootClass} data-answer-kind="clarification">{toolbar}{questions}</article>;
+    }
     const interpretationFailed = result.failureReason === "question_interpretation_unavailable";
     const researchFailed = result.failureReason === "official_research_unavailable";
     const verificationFailed = result.failureReason === "answer_verification_unavailable";
@@ -153,12 +162,7 @@ export function LegalAnswerView({
           <CitationList sourceIds={note.sourceIds} result={result} locale={locale} onCitationSelect={onCitationSelect} />
         </article>)}
       </Section>}
-      {result.clarificationQuestions.length > 0 && <section className="legal-answer__questions" aria-labelledby={`${id}-clarify`}>
-        <h3 id={`${id}-clarify`}>{copy.clarify}</h3>
-        <div>{result.clarificationQuestions.map((question) => onQuestionSelect
-          ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
-          : <p key={question}>{question}</p>)}</div>
-      </section>}
+      {questions}
     </article>;
   }
 
@@ -236,12 +240,7 @@ export function LegalAnswerView({
       </article>)}
     </Section>}
     {coverageGaps}
-    {result.clarificationQuestions.length > 0 && <section className="legal-answer__questions" aria-labelledby={`${id}-clarify`}>
-      <h2 id={`${id}-clarify`}>{copy.clarify}</h2>
-      <div>{result.clarificationQuestions.map((question) => onQuestionSelect
-        ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
-        : <p key={question}>{question}</p>)}</div>
-    </section>}
+    {questions}
     {!streaming && (internetNotice || incomplete) && <footer className="legal-answer__sources">
     {internetNotice}
     {incomplete && <p className={`legal-answer__authority legal-answer__authority--${mode}`}>{copy.partial}</p>}

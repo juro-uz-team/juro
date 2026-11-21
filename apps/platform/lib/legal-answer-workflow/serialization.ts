@@ -78,6 +78,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     sources: structuredClone(presentation.sources), legalDatabaseAsOf: presentation.legalDatabaseAsOf,
     successOutlook: null, suggestedDocument: null, suggestLawyer: false,
     sourceAccessMode: "direct", evidenceMode: "official", validationMethod: "programmatic",
-    sourceValidationStatus: "validated", coverageGaps: [],
+    sourceValidationStatus: "validated", coverageGaps: outcome.gaps?.map(gap => gap.description) ?? [],
+    ...(outcome.gaps?.length ? { coverageStatus: "partial_coverage" as const } : {}),
   };
 }

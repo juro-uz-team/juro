@@ -79,8 +79,9 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
     request.onBudgetSelected?.(Math.min(request.deadlineMs, interpretation.complexity === "simple" ? 15_000 : 30_000));
     if (request.legalContextDate && !interpretation.scopes.some(scope => scope.kind === "historical" && scope.at === request.legalContextDate))
       throw new Error("INTERPRETATION_DATE_MISMATCH");
-    if (interpretation.needsClarification) return await publish({ kind: "clarification_required", checkedEvidence: [],
+    if (!interpretation.queries.length) return await publish({ kind: "clarification_required", checkedEvidence: [],
       clarificationQuestions: interpretation.clarificationQuestions });
+    interpretation.needsClarification = false;
     const unfinished = async (reason: StopReason, gaps?: ResearchTurn["gaps"]) => {
       controller.stop(reason);
       const withdrawal = issueWriting.withdrawIncomplete();
@@ -172,7 +173,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
           if (!evidence.length) throw new Error("WRITING_EVIDENCE_EMPTY");
           const content = issueWriting.finalize(turn.content!);
           checkWrittenAnswer(content, interpretation, null, evidence);
-          return await publish({ kind: "answer", content, evidence });
+          return await publish({ kind: "answer", content, evidence, ...(turn.gaps.length ? { gaps: turn.gaps } : {}) });
         }
         if (turn.decision !== "research") return await unfinished("research_unfinished", turn.gaps);
         if (!canResearch) return await unfinished("repeated_work");

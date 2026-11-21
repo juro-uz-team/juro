@@ -18,7 +18,7 @@ test("signed factual clarification persists questions and accounts once across s
         model: { complete: async ({ stage }: { stage: string }) => {
           assert.equal(stage, "interpret"); calls++;
           return { conversationReply: null, interpretation: { needsClarification: true, complexity: "simple", requirements: [{ id: "r", question: "Identify the legal matter" }],
-            queries: ["artificial rule"], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: questions } };
+            queries: [], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: questions } };
         } },
         corpus: { search: async () => { throw new Error("Clarification must not research an unidentified matter"); },
           resolve: async () => null, get: async () => null },
