@@ -103,7 +103,6 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
       const evidence = workspace.active();
       const canResearch = controller.canAcquire(researchSignal, ports.model.capacity?.());
       const canSelectEvidence = false;
-      if (researchSignal.aborted && !evidence.length) return await unfinished("research_unfinished");
       controller.transition(canResearch ? "research" : "composing");
       request.onProgress?.(canResearch ? "researching" : "writing");
       try {
@@ -172,8 +171,13 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         if (turn.decision === "answer") {
           if (!evidence.length) throw new Error("WRITING_EVIDENCE_EMPTY");
           const content = issueWriting.finalize(turn.content!);
-          checkWrittenAnswer(content, interpretation, null, evidence);
-          return await publish({ kind: "answer", content, evidence, ...(turn.gaps.length ? { gaps: turn.gaps } : {}) });
+          const cited = checkWrittenAnswer(content, interpretation, null, evidence);
+          return await publish({ kind: "answer", content, evidence: evidence.filter(item => cited.has(item.identity)),
+            ...(turn.gaps.length ? { gaps: turn.gaps } : {}) });
+        }
+        if (turn.decision === "clarification_required") {
+          if (issueWriting.published().some(item => item.content)) throw new Error("ISSUE_FINAL_RECONCILIATION");
+          return await publish({ kind: "clarification_required", checkedEvidence: [], clarificationQuestions: turn.clarificationQuestions! });
         }
         if (turn.decision !== "research") return await unfinished("research_unfinished", turn.gaps);
         if (!canResearch) return await unfinished("repeated_work");
@@ -182,7 +186,6 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         const acquisitions = turn.actions.filter(action => !("selectSourceIds" in action) && !("resultSetId" in action));
         if (selections.length) throw new Error("EVIDENCE_REMOVAL_DISABLED");
         if (acquisitions.length) controller.acquired();
-        const previousOutcomes = workspace.outcomes();
         const execute = async (action: ResearchTurn["actions"][number]) => {
           const started = performance.now();
           const allowed = "resultSetId" in action ? canResearch : canResearch && !researchSignal.aborted;
@@ -202,9 +205,6 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         }))).flat();
         if (!researchSignal.aborted) await corpus.reconcile(interpretation);
         const repeated = results.length > 0 && results.every(item => item.kind === "duplicate");
-        if (repeated && (!workspace.active().length || results.every(item => previousOutcomes.some(previous =>
-          JSON.stringify(previous.action) === JSON.stringify(item.action) && ["invalid", "unavailable"].includes(previous.kind)))))
-          return await unfinished("repeated_work");
         if (researchSignal.aborted || !canResearch || repeated) controller.finishResearch();
       } catch (error) {
         signal.throwIfAborted();

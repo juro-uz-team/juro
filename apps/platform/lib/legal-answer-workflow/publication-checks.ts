@@ -36,4 +36,5 @@ export function checkWrittenAnswer(content: WrittenAnswer, interpretation: Inter
   // Direct research plans are provisional. Citation/label identity is an application
   // invariant; semantic coverage of the actual question is the agent's responsibility.
   if (assessment !== null && [...required].some(id => !covered.has(id))) throw new Error("ANSWER_REQUIREMENT_MISSING");
+  return new Set(cited.flat());
 }

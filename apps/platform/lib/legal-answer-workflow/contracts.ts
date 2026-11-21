@@ -16,6 +16,7 @@ export const maximumCandidateDescriptionBatch = 48;
 
 const id = z.string().min(1).max(240);
 const statement = z.string().min(1).max(4000);
+const clarificationQuestion = z.string().trim().min(1).max(500);
 const complexity = z.enum(["simple", "difficult", "very_difficult"]);
 const listResultsAction = z.object({ requirementId: id, resultSetId: z.string().min(1).max(32), page: z.number().int().min(0) }).strict();
 export const interpretationSchema = z.object({
@@ -30,7 +31,7 @@ export const interpretationSchema = z.object({
     z.object({ kind: z.literal("historical"), at: z.iso.date() }).strict(),
   ])).min(1).max(2),
   facts: z.array(statement).max(40),
-  clarificationQuestions: z.array(statement).max(8),
+  clarificationQuestions: z.array(clarificationQuestion).max(8),
 }).strict().refine(value => value.needsClarification ? value.clarificationQuestions.length > 0 : value.queries.length > 0,
   "An interpretation requires a search query or a focused factual question when the legal matter cannot be researched.");
 export const assessmentSchema = z.object({
@@ -106,7 +107,7 @@ export function writtenAnswerForLanguage(language?: unknown, sourceIds?: readonl
     .describe("Distinct source-supported deadlines with their own actors, claim or procedural stage, triggering event and material exceptions. Do not apply one route's deadline to another or repeat an issue's qualified deadline without its qualifications."),
   requiredDocuments: z.array(z.object({ name: title, reason: statement, required: z.boolean() }).strict()).max(16),
   referenceNotes: z.array(z.object({ title, note: statement, sourceIds: boundCitations }).strict()).max(12),
-  clarificationQuestions: z.array(statement).max(8),
+  clarificationQuestions: z.array(language === "uz" ? clarificationQuestion.regex(uzbekLatinProse) : clarificationQuestion).max(8),
   urgency: z.enum(["normal", "high", "critical"]),
 }).strict();
 }
@@ -115,27 +116,34 @@ export type WrittenAnswer = z.infer<typeof writtenAnswerSchema>;
 
 /** One agent turn either delivers its answer or requests bounded corpus work. */
 export const researchTurnSchema = z.object({
-  decision: z.enum(["answer", "research", "insufficient_evidence"]),
+  decision: z.enum(["answer", "research", "insufficient_evidence", "clarification_required"]),
   content: writtenAnswerSchema.nullable(),
   gaps: assessmentSchema.shape.gaps,
   actions: assessmentSchema.shape.recovery,
+  clarificationQuestions: z.array(clarificationQuestion).min(1).max(8).optional(),
   coverageUpdates: z.array(coverageRecordSchema).max(40).optional(),
   toolErrors: z.array(researchToolErrorSchema).max(56).optional(),
 }).strict().superRefine((value, context) => {
+    const clarification = value.decision === "clarification_required";
     if (value.decision === "answer" ? !value.content || value.actions.length > 0
     : value.content !== null
-      || (value.decision === "research" ? (value.actions.length === 0 && !value.toolErrors?.length) : value.actions.length > 0 || value.gaps.length === 0)) {
+      || (value.decision === "research" ? (value.actions.length === 0 && !value.toolErrors?.length)
+        : value.actions.length > 0 || (clarification ? value.gaps.length > 0 : !value.gaps.length))) {
     context.addIssue({ code: "custom", message: "Research decision and content disagree." });
+  }
+  if (clarification !== Boolean(value.clarificationQuestions)) {
+    context.addIssue({ code: "custom", message: "Clarification requires focused questions." });
   }
 });
 export type ResearchTurn = z.infer<typeof researchTurnSchema>;
 
 /** Without complete evidence, legal drafting is not an available operation. */
 export const unreadResearchTurnSchema = z.object({
-  decision: z.enum(["research", "insufficient_evidence"]),
+  decision: z.enum(["research", "insufficient_evidence", "clarification_required"]),
   content: z.null(),
   gaps: assessmentSchema.shape.gaps,
   actions: assessmentSchema.shape.recovery,
+  clarificationQuestions: researchTurnSchema.shape.clarificationQuestions,
 }).strict();
 
 // Before the first complete read, no evidence identity exists to reopen or follow.
@@ -155,13 +163,17 @@ export function researchResponseSchema(allowAnswer: boolean, hasRead: boolean, l
       if (items.length - searches + Math.ceil(searches / 4) > actionLimit)
         context.addIssue({ code: "custom", message: "Too many research actions." });
     });
+  const writing = writtenAnswerForLanguage(language, sourceIds);
   const pending = [
     z.object({ decision: z.literal("research"), content: z.null(), gaps: assessmentSchema.shape.gaps,
       actions: actions.min(1) }).strict(),
     z.object({ decision: z.literal("insufficient_evidence"), content: z.null(),
       gaps: assessmentSchema.shape.gaps.min(1), actions: assessmentSchema.shape.recovery.max(0) }).strict(),
+    z.object({ decision: z.literal("clarification_required"), content: z.null(),
+      gaps: assessmentSchema.shape.gaps.max(0), actions: assessmentSchema.shape.recovery.max(0),
+      clarificationQuestions: writing.shape.clarificationQuestions.min(1) }).strict(),
   ] as const;
-  const answer = z.object({ decision: z.literal("answer"), content: writtenAnswerForLanguage(language, sourceIds),
+  const answer = z.object({ decision: z.literal("answer"), content: writing,
     gaps: assessmentSchema.shape.gaps, actions: assessmentSchema.shape.recovery.max(0) }).strict();
   // Structured Outputs requires an object at the root; alternatives belong beneath it.
   return z.object({ turn: allowAnswer ? z.union([...pending, answer]) : z.union(pending) }).strict();

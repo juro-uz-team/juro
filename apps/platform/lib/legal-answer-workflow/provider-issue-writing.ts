@@ -91,7 +91,9 @@ export function prepareIssueWriting(operation: ModelOperation, input: Record<str
       const fields = object.parse(schema.properties), turn = object.parse(fields.turn);
       turn.anyOf = z.array(object).parse(turn.anyOf).filter(branch => {
         const fields = object.parse(branch.properties);
-        if (object.parse(fields.decision).const !== "answer") return true;
+        const decision = object.parse(fields.decision).const;
+        if (decision === "clarification_required") return !active.length;
+        if (decision !== "answer") return true;
         if (!active.length) return false;
         if (unresolved.length) fields.gaps = { ...object.parse(fields.gaps), minItems: unresolved.length };
         const content = object.parse(fields.content), properties = object.parse(content.properties);
