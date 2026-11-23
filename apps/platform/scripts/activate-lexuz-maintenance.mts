@@ -24,6 +24,7 @@ const schema = z.object({
   qualificationRequired: z.literal(true),
   replacements: z.array(z.tuple([z.string(), z.string().nullable()])),
   publicationWorks: z.array(hash),
+  partialPublicationWorks: z.array(hash).default([]),
   probe: z.object({ embedding: z.array(z.number().finite()).length(3072), termHashes: z.array(hash).min(1).max(64) }),
 });
 
@@ -76,8 +77,9 @@ const { artifacts } = preparedCandidateConfigurationSchema.parse(current.configu
 const sources = createCorpusTransport({ ...binding.sources, token });
 const browseSchema = z.object({ entries: z.array(z.object({ work: hash, edition: z.iso.date().nullable(), language: z.string() })) });
 const documentSchema = z.object({ entry: z.object({ work: hash }),
-  units: z.array(z.object({ text: z.string(), locator: z.string() })).min(1) });
+  units: z.array(z.object({ text: z.string(), locator: z.string() })).min(1), extractionGaps: z.boolean() });
 const sampled: Array<{ work: string; scope: EvidenceScope["kind"]; language: string; sha256: string }> = [];
+const partial: Array<{ work: string; language: string; sha256: string }> = [];
 for (const language of ["ru", "uz", "uzc", "en"]) {
   const browse = browseSchema.parse(await sources.browseSources({ artifacts, page: 0, query: "", language, category: "" }, signal));
   const entry = browse.entries.find(item => Boolean(item.edition) !== sampled.some(result => result.scope === "historical"))
@@ -85,6 +87,11 @@ for (const language of ["ru", "uz", "uzc", "en"]) {
   if (!entry) continue;
   const stored = documentSchema.parse(await sources.browseSources({ artifacts, work: entry.work, offset: 0 }, signal));
   if (stored.entry.work !== entry.work) throw new Error("MAINTENANCE_BROWSE_SMOKE");
+  if (stored.extractionGaps) {
+    if (!stored.units.some(unit => unit.text.trim())) throw new Error("MAINTENANCE_BROWSE_SMOKE");
+    partial.push({ work: entry.work, language, sha256: digest(stableSourceSnapshotJson(stored.units)) });
+    continue;
+  }
   const scope: EvidenceScope = entry.edition ? { kind: "historical", at: entry.edition } : { kind: "current" };
   const release = scope.kind === "current" ? current : history;
   const readerInput = { release, worker: { ...binding.sources, token } };
@@ -97,8 +104,8 @@ for (const language of ["ru", "uz", "uzc", "en"]) {
   const reopened = await readOfficialProvision(citation.locator, createPreparedStoredReader(readerInput), scope, signal);
   sampled.push({ work: entry.work, scope: scope.kind, language, sha256: reopened.sha256 });
 }
-if (!sampled.length) throw new Error("MAINTENANCE_CITATION_SMOKE");
-const qualification = stableSourceSnapshotJson({ candidatePin, verification, sampled }) + "\n";
+if (!sampled.length && !partial.length) throw new Error("MAINTENANCE_CITATION_SMOKE");
+const qualification = stableSourceSnapshotJson({ candidatePin, verification, sampled, partial }) + "\n";
 const qualificationSha256 = digest(qualification);
 const qualificationPath = join(dirname(candidatePath), `qualification-${qualificationSha256}.json`);
 await writeFile(qualificationPath, qualification, { flag: "wx" }).catch(async error => {
@@ -131,8 +138,11 @@ try {
     VALUES($1,$2,$3) ON CONFLICT (generation_sha256) DO NOTHING`,
   [generationSha256, `legal-prepared-${generationSha256}`, manifest]);
   await client.query(`INSERT INTO storage.corpus_publication_sources (work,package_sha256,generation_sha256)
-    SELECT work,$2,$3 FROM unnest($1::text[]) AS work ON CONFLICT(work) DO NOTHING`,
-  [candidate.publicationWorks, artifacts.packageSha256, generationSha256]);
+    SELECT work,$2,$3 FROM unnest($1::text[]) AS work ON CONFLICT(work) DO UPDATE
+      SET package_sha256=excluded.package_sha256,generation_sha256=excluded.generation_sha256
+      WHERE excluded.work <> ALL($4::text[])
+        AND corpus_publication_sources.package_sha256 <> excluded.package_sha256`,
+  [candidate.publicationWorks, artifacts.packageSha256, generationSha256, candidate.partialPublicationWorks]);
   await client.query("COMMIT");
   const existing = await stat(runtimePath);
   await writeFile(previousPath, rawConfig, { flag: "wx", mode: 0o600 }).catch(async error => {

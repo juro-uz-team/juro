@@ -36,7 +36,7 @@ def bind_attachments(work, subtree):
     next_ordinal = max((unit['ordinal'] for unit in units if type(unit['ordinal']) is int), default=-1) + 1
     origins = []
     for number, (attachment, (source, prepared)) in enumerate(subtree.items(), 1):
-        if source['kind'] not in ('asset', 'member') or not prepared.get('chunks'):
+        if source['kind'] not in ('asset', 'member') or not prepared.get('units'):
             continue
         transforms = {}
         for unit in prepared.get('units', []):
@@ -44,7 +44,7 @@ def bind_attachments(work, subtree):
             transforms[str(unit['ordinal'])] = {**unit, 'ordinal': next_ordinal, 'locator': position,
                 'attachmentOrigin': {'work': attachment, 'sha256': source['raw_hash'], 'locator': unit['locator']}}
             next_ordinal += 1
-        for entry in prepared['chunks']:
+        for entry in prepared.get('chunks', []):
             chunk = entry['chunk']
             suffix = chunk['snapshotProvisionId'].removeprefix(attachment + ':')
             ordinal, segment, index = suffix.partition(':segment:')
@@ -71,23 +71,40 @@ def select_rows(store, works):
     selected = {}
     waiting = []
     for work in works:
-        subtree = {}
+        subtree, gaps = {}, []
         queue = [work]
         while queue:
             key = queue.pop()
             if key in subtree:
                 continue
             row = store.get(key)
-            if row is None or row['state'] != 'done' or not row['prepared_key']:
-                break
+            if key != work and row is not None and row['state'] == 'excluded':
+                continue
+            if row is None or row['state'] not in ('done', 'blocked') or not row['prepared_key']:
+                if key == work:
+                    break
+                gaps.append(f'attachment:{key}:preparation_unavailable')
+                continue
             prepared = json.loads(store.read_object(row['prepared_key']))
-            if prepared.get('gaps') or prepared.get('publisher_alias'):
+            if prepared.get('publisher_alias'):
+                if key == work:
+                    break
+                gaps.append(f'attachment:{key}:publisher_alias')
+                continue
+            if key == work and row['state'] != 'done':
                 break
+            if key != work and row['state'] == 'blocked':
+                gaps.extend(f'attachment:{key}:{gap}' for gap in
+                            prepared.get('gaps') or ['preparation_unavailable'])
             subtree[key] = (row, prepared)
             queue.extend(item[0] for item in store.db.execute("""SELECT w.id FROM edges e
                 JOIN work w ON w.id=e.child WHERE e.parent=? AND w.kind IN ('asset','member')""", (key,)))
         else:
             if any(prepared.get('chunks') for _, prepared in subtree.values()):
+                if gaps:
+                    row, prepared = subtree[work]
+                    subtree[work] = row, {**prepared, 'gaps': [*prepared.get('gaps', []), *gaps]}
+                    waiting.append(work)
                 bind_attachments(work, subtree)
                 for related in store.db.execute("""SELECT w.* FROM work w JOIN edges e ON w.id=e.child
                     WHERE e.parent=? AND w.kind IN ('card','surface','detail') AND w.state='done'
@@ -239,8 +256,8 @@ def cumulative_works(root, journal, unresolved):
                 if source is None or source['url'] in seen_urls:
                     continue
                 selected, waiting = select_rows(store, [work])
-                if waiting:
-                    unresolved.extend(waiting)
+                unresolved.extend(waiting)
+                if not selected:
                     continue
                 seen_urls.add(source['url'])
                 for key, item in selected.items():

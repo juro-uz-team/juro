@@ -117,6 +117,7 @@ def build_release(root, package, vectors, templates, connection, reader_role):
         catalog_pin = file_hash(root/'catalog.sqlite')
         with SourceBrowser(root/'catalog.sqlite', catalog_pin, package.sha256).open() as catalog:
             publication_works = [row[0] for row in catalog.db.execute('SELECT work FROM documents ORDER BY work')]
+        unresolved = set(package.handoff['unresolved_works'])
         navigation, nav_pin, lists = publish_navigation(connection, vectors, root, reader_role)
         artifacts = {
             'packageSha256': package.sha256, 'workIndexSha256': work_pin, 'vectorIdentitySha256': identity_pin,
@@ -163,6 +164,7 @@ def build_release(root, package, vectors, templates, connection, reader_role):
         write_json(root/'release-candidate.json', {'format': 'prepared-corpus-release-candidate-v1', **receipts,
                    'sources': {'path': str(source), 'sha256': source_worker_pin}, 'qualificationRequired': True,
                    'replacements': replacements, 'publicationWorks': publication_works,
+                   'partialPublicationWorks': [work for work in publication_works if work in unresolved],
                    'probe': {'embedding': vectors.read([0])[0].tolist(), 'termHashes': terms}})
 
 

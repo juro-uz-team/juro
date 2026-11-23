@@ -128,7 +128,7 @@ def run(config):
                 return
             days = sorted({day for day, _ in added})
             receipts = [(day, (root/day/'manifest.sqlite').stat().st_mtime_ns) for day in days]
-            identity = digest(encoded([baseline['sha256'], added, receipts]))[:32]
+            identity = digest(encoded(['partial-ocr-v1', baseline['sha256'], added, receipts]))[:32]
             target = root/'releases'/identity
             target.mkdir(parents=True, exist_ok=True)
             ready = target/'ready-for-qualification.json'

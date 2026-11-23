@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from .maintenance import DAY, SourceObservations, edition_on_or_after
-from .maintenance_package import checked_input, select_rows, write_package
+from .maintenance_package import checked_input, cumulative_works, select_rows, write_package
 from .maintenance_vectors import EmbeddingCache, fill
 from .store import Store, digest
 
@@ -53,7 +53,8 @@ class MaintenanceTests(unittest.TestCase):
     def test_selected_edition_round_trips_through_the_production_package_reader(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            with Store(root / 'acquired') as store:
+            day = '2026-11-24'
+            with Store(root / day) as store:
                 url = 'https://lex.uz/docs/123'
                 work = store.enqueue('document', url, {'source': '123'})
                 raw = b'<html>test legal text</html>'
@@ -84,16 +85,43 @@ class MaintenanceTests(unittest.TestCase):
             self.assertEqual(chunk.hex(), entry['chunk']['id'].split(':')[1])
             self.assertEqual(original.hex(), entry['inputHash'])
             self.assertEqual(member, work)
-            with Store(root / 'acquired') as store:
+            with Store(root / day) as store:
                 attachment = store.enqueue('asset', 'https://lex.uz/pdffile/123', {'source': '123'}, parent=work)
                 raw = b'test scanned annex'
                 store.commit_raw(attachment, raw, {'status': 200, 'sha256': digest(raw), 'observed': 1795449601})
                 store.fail(attachment, 'ocr_runtime_unavailable')
-                self.assertEqual(select_rows(store, [work]), ({}, [work]))
+                corpus, waiting = select_rows(store, [work])
+                self.assertEqual(waiting, [work])
+                self.assertEqual(corpus[work][1]['units'], [unit])
+                self.assertEqual(corpus[work][1]['gaps'], [f'attachment:{attachment}:preparation_unavailable'])
                 store.retry([attachment], 'OCR runtime restored')
-                store.prepared(attachment, {'units': [unit], 'chunks': [
-                    {**entry, 'locator': unit['locator'], 'chunk': {**entry['chunk'], 'snapshotProvisionId': attachment + ':0'}},
-                ]}, 'config', 0)
+                ocr = {'units': [dict(unit, method='ocr')], 'chunks': [
+                    {**entry, 'method': 'ocr', 'locator': unit['locator'],
+                     'chunk': {**entry['chunk'], 'snapshotProvisionId': attachment + ':0'}},
+                ]}
+                store.prepared(attachment, {**ocr, 'gaps': ['page:2:ocr_unavailable']}, 'config', 0)
+                self.assertEqual(store.get(attachment)['state'], 'blocked')
+                partial, waiting = select_rows(store, [work])
+                self.assertEqual(waiting, [work])
+                self.assertEqual(partial[work][1]['units'][1]['text'], unit['text'])
+                self.assertEqual(partial[work][1]['gaps'], [f'attachment:{attachment}:page:2:ocr_unavailable'])
+            journal = sqlite3.connect(':memory:')
+            self.addCleanup(journal.close)
+            SourceObservations(journal)
+            journal.execute('INSERT INTO runs(day,started,catchup,completed) VALUES (?,?,?,?)', (day, 1, 1, 2))
+            journal.execute('INSERT INTO changed_works VALUES (?,?)', (day, work))
+            unresolved = []
+            candidate = dict(cumulative_works(root, journal, unresolved))
+            partial_pin = write_package(None, candidate, unresolved, root / 'partial', {'build_id': 'partial'})
+            partial_package = PreparedPackage(root / 'partial', partial_pin)
+            self.assertEqual(partial_package.handoff['unresolved_works'], [work])
+            documents = [record for _, record in partial_package.records('prepared', 0) if record['work'] == work]
+            self.assertEqual(documents[0]['units'][1]['text'], unit['text'])
+            self.assertEqual(documents[0]['gaps'], partial[work][1]['gaps'])
+            self.assertEqual(len(list(partial_package.membership_rows(0))), 2)
+            with Store(root / day) as store:
+                store.retry([attachment], 'OCR coverage restored')
+                store.prepared(attachment, ocr, 'config', 0)
                 corpus, waiting = select_rows(store, [work])
                 self.assertFalse(waiting)
                 projected = corpus[work][1]

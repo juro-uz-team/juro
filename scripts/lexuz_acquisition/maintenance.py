@@ -230,7 +230,9 @@ class MaintenanceCoordinator(Coordinator):
         with db:
             changed_attachments = set()
             corrected_records = set()
-            for row in self.store.db.execute("SELECT * FROM work WHERE kind IN ('asset','member','card') AND state='done' AND raw_hash IS NOT NULL"):
+            for row in self.store.db.execute("""SELECT * FROM work WHERE kind IN ('asset','member','card')
+                    AND raw_hash IS NOT NULL AND (state='done' OR
+                    (kind IN ('asset','member') AND state='blocked' AND prepared_key IS NOT NULL))"""):
                 context = json.loads(row['context'])
                 identity = asset_identity({**dict(row), 'context': context})
                 stored = db.execute('SELECT digest FROM attachments WHERE id=?', (identity,)).fetchone()
