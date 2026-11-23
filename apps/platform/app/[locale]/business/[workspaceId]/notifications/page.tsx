@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import NotificationsPage from "../../../../_document-builder/notifications/page";
+import { NotificationsClient } from "../../../../_document-builder/notifications/NotificationsClient";
 import { requireChatGPTUser } from "../../../../chatgpt-auth";
 import { isLocale, isWorkspaceId, platformPath } from "../../../../../lib/platform/routing";
 
@@ -10,5 +10,5 @@ export default async function BusinessNotifications({ params }: { params: Promis
   const { locale, workspaceId } = await params;
   if (!isLocale(locale) || !isWorkspaceId(workspaceId)) notFound();
   await requireChatGPTUser(platformPath(locale, "business", "notifications", workspaceId));
-  return <NotificationsPage />;
+  return <NotificationsClient />;
 }

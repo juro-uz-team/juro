@@ -192,10 +192,9 @@
   .account-layout { grid-template-columns: 184px minmax(0,1fr); gap: 24px; }
   .account-rail nav a { padding: 12px 8px; gap: 8px; }
   .account-rail nav .account-nav-arrow { display: none; }
-  .account-fields { grid-template-columns: 1fr; gap: 16px; }
 }
 @media (max-width: 800px) {
-  .profile-workspace.account-area { padding: 24px 20px 48px; gap: 24px; }
+  .profile-workspace.account-area { padding: 20px 16px; gap: 24px; }
   .account-layout { grid-template-columns: minmax(0,1fr); gap: 24px; }
   .account-rail { position: static; }
   .account-identity { display: none; }
@@ -207,7 +206,7 @@
   .account-content .profile-message { flex-wrap: wrap; }
 }
 @media (max-width: 480px) {
-  .profile-workspace.account-area { padding: 24px 14px 48px; }
+  .profile-workspace.account-area { padding: 16px 12px; }
   .account-rail nav strong { font-size: 11px; }
   .account-content :is(.email-change-panel,.notification-preferences-panel,.memory-panel,.profile-panels>section,.account-edit-form) { padding: 20px; }
   .account-content h2 { font-size: 16px; }
@@ -225,10 +224,10 @@
 }
 /* Use the document scrollbar while account navigation remains in view. */
 .profile-workspace.account-area {
-  --account-toolbar-height: 76px;
+  --account-toolbar-height: var(--platform-topbar-height, 76px);
   --account-heading-height: 128px;
   --account-nav-height: 0px;
-  --account-page-bottom-space: 64px;
+  --account-page-bottom-space: 16px;
   gap: 0;
   padding-bottom: var(--account-page-bottom-space);
 }
@@ -244,15 +243,14 @@
   top: calc(var(--account-toolbar-height) + var(--account-heading-height) + 8px);
   background: var(--surface-canvas);
 }
-.account-content { position: relative; }
+.account-content { position: relative; container-type: inline-size; }
+@container (max-width: 460px) {
+  .account-fields { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}
 .account-content :is([id], input, button, textarea, summary, select) {
   scroll-margin-top: calc(var(--account-toolbar-height) + var(--account-heading-height) + var(--account-nav-height) + 16px);
 }
-@media (max-width: 900px) {
-  .profile-workspace.account-area { --account-toolbar-height: 70px; }
-}
 @media (max-width: 800px) {
-  .profile-workspace.account-area { --account-page-bottom-space: 48px; }
   .account-layout { gap: 0; }
   .account-rail { z-index: 21; padding-bottom: 16px; }
   .account-rail nav a { min-height: 56px; padding-block: 8px; gap: 4px; }

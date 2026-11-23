@@ -212,7 +212,11 @@ html[data-theme=dark] .platform-shell {
 .platform-topbar > div:first-of-type small { font-size: 11px; }
 .platform-topbar > div:first-of-type strong { font-size: 13px; font-weight: 600; }
 .platform-shell .platform-topbar :is(button, a) { border-color: transparent; background: transparent; min-width: 44px; height: 44px; font-weight: 500; }
-.platform-shell .platform-content { min-height: calc(100dvh - 76px); }
+.platform-shell { min-height: 100dvh; }
+.platform-shell .platform-content {
+  min-height: calc(100dvh - var(--platform-topbar-height, 76px));
+  padding-bottom: var(--platform-mobile-nav-space, 0px);
+}
 html[data-theme=dark] .platform-shell .platform-sidebar { background: var(--p-navigation-surface); border-right-color: var(--p-chrome-border); }
 html[data-theme=dark] .platform-shell .platform-topbar { background: var(--p-toolbar-surface); }
 html[data-theme=dark] .platform-shell .platform-mobile-nav { background: var(--p-navigation-surface); }
@@ -259,7 +263,6 @@ html[data-theme=dark] .platform-shell .platform-collapse { background: transpare
   .platform-shell .platform-topbar { height: 70px; padding-inline: 16px; }
   .platform-mobile-nav span { font-size: 10px; text-align: center; }
   .platform-mobile-nav { box-shadow: none; height: calc(68px + env(safe-area-inset-bottom)); }
-  .platform-shell .platform-content { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 520px) {
   .workspace-tools { padding: 20px; }
@@ -300,7 +303,12 @@ body:has(.platform-shell)::-webkit-scrollbar {
 }
 html:has(.platform-shell)::-webkit-scrollbar-track,
 body:has(.platform-shell)::-webkit-scrollbar-track { margin-top:var(--platform-header-stack); }
-@media(max-width:900px) { html:has(.platform-shell) { --platform-topbar-height:70px; } }
+@media(max-width:900px) {
+  html:has(.platform-shell) {
+    --platform-topbar-height: 70px;
+    --platform-mobile-nav-space: calc(76px + env(safe-area-inset-bottom));
+  }
+}
 
 html:has(.platform-shell .dbt-header) { --platform-scrollbar-bottom-border:var(--border-subtle); }
 

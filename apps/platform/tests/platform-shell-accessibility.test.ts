@@ -15,8 +15,8 @@ const aiStylesheet = new URL("../app/_platform/ai-lawyer.css", import.meta.url);
 const documentBuilderStylesheet = new URL("../app/_document-builder/document-builder.css", import.meta.url);
 const accountDocumentsLayout = new URL("../app/[locale]/[accountType]/documents/layout.tsx", import.meta.url);
 const businessDocumentsLayout = new URL("../app/[locale]/business/[workspaceId]/documents/layout.tsx", import.meta.url);
-const accountNotificationsLayout = new URL("../app/[locale]/[accountType]/notifications/layout.tsx", import.meta.url);
-const businessNotificationsLayout = new URL("../app/[locale]/business/[workspaceId]/notifications/layout.tsx", import.meta.url);
+const notificationsSource = new URL("../app/_document-builder/notifications/NotificationsClient.tsx", import.meta.url);
+const notificationsStylesheet = new URL("../app/_document-builder/notifications/notifications.css", import.meta.url);
 
 test("skip link moves focus to the platform main landmark", async () => {
   const shell = await readFile(shellSource, "utf8");
@@ -138,21 +138,21 @@ test("canonical document routes load the builder styles and keep folder controls
 });
 
 test("mobile AI, notification, and privacy actions retain 44px touch targets", async () => {
-  const [ai, documents, profile, accountNotifications, businessNotifications] = await Promise.all([
+  const [ai, documents, profile, notifications, notificationCss] = await Promise.all([
     readFile(aiStylesheet, "utf8"),
     readFile(documentBuilderStylesheet, "utf8"),
     readFile(profileStylesheet, "utf8"),
-    readFile(accountNotificationsLayout, "utf8"),
-    readFile(businessNotificationsLayout, "utf8"),
+    readFile(notificationsSource, "utf8"),
+    readFile(notificationsStylesheet, "utf8"),
   ]);
 
   assert.match(ai, /\.ai-composer-options > summary \{[\s\S]*?min-height: 44px;/);
   assert.match(ai, /@media \(max-width: 520px\) \{[\s\S]*?\.ai-composer-mode button \{ width: 44px; min-width: 44px;/);
   assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a, :is\(select, \.juro-select\), textarea,[^}]+\) \{ min-height: 44px; \}/);
   assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a\) \{ min-width: 44px; \}/);
-  assert.match(documents, /\.dbt-notification-list article > a, \.dbt-notification-list article > button \{/);
-  assert.match(documents, /\.dbt-notification-list article > a, \.dbt-notification-list article > button \{ grid-column: 2; justify-self: start; \}/);
-  assert.match(accountNotifications, /import "\.\.\/\.\.\/\.\.\/_document-builder\/document-builder\.css";/);
-  assert.match(businessNotifications, /import "\.\.\/\.\.\/\.\.\/\.\.\/_document-builder\/document-builder\.css";/);
+  assert.match(notifications, /import "\.\/notifications\.css";/);
+  assert.doesNotMatch(notifications, /<BuilderHeader/);
+  assert.match(notificationCss, /\.notifications-workspace :is\(button, \.notifications-entry-actions a, \.notifications-links a\) \{[^}]*min-block-size: 44px;[^}]*min-inline-size: 44px;/);
+  assert.match(notificationCss, /\.notifications-entry-actions \{ grid-column: 2; \}/);
   assert.match(profile, /\.delete-request button \{ min-height: 44px; \}/);
 });

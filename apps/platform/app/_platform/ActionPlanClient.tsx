@@ -361,8 +361,8 @@ export function ActionPlanClient({
   }}>
     {initialCaseId && <nav className="matter-breadcrumbs" aria-label={t("Навигация по плану","Reja navigatsiyasi","Plan navigation")}><Link href={`${base}/action-plan`}>{t("Все планы","Barcha rejalar","All plans")}</Link>{initialCaseId && <><span aria-hidden="true">/</span><Link href={`${base}/cases/${encodeURIComponent(initialCaseId)}`}>{t("Дело","Ish","Matter")}</Link></>}</nav>}
     {notice && <p className="plan-success" role="status"><Check aria-hidden="true" />{notice}</p>}
-    <WorkspaceTitle icon={<CalendarDays />} title={initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")} description={!initialCaseId ? t("Выберите план, чтобы посмотреть шаги и отметить выполненное.","Qadamlarni ko‘rish va bajarilganlarini belgilash uchun rejani tanlang.","Choose a plan to view its steps and mark your progress.") : t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")} />
-    <div className="plan-layout">
+    <WorkspaceTitle icon={<CalendarDays />} title={initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")} description={initialCaseId ? t("Измените статус или срок шага и сохраните изменения.", "Qadam holati yoki muddatini o‘zgartirib, saqlang.", "Update a step’s status or deadline, then save your changes.") : undefined} />
+    <div className={initialCaseId ? "plan-layout" : "plan-layout plan-overview-layout"}>
       <section className="plan-main">
         {!initialCaseId && <details className="plan-create-disclosure"><summary className="juro-disclosure-summary">{t("Создать новый план","Yangi reja yaratish","Create a new plan")}</summary><form className="plan-create" onSubmit={create}>
           <h2>{t("Создать план из сценария", "Ssenariydan reja yaratish", "Create a plan from a scenario")}</h2>
@@ -413,7 +413,10 @@ export function ActionPlanClient({
           {loading
             ? <div className="plan-loading"><LoaderCircle className="spin" /></div>
             : cases.length === 0
-              ? <div className="platform-empty"><CalendarDays /><p>{t("Создайте первый план из проверяемого сценария.", "Tekshiriladigan ssenariydan birinchi rejangizni yarating.", "Create your first plan from a verifiable scenario.")}</p></div>
+              ? <div className="plan-list-empty"><CalendarDays aria-hidden="true" /><div>
+                <h3>{t("Планов пока нет", "Hozircha rejalar yo‘q", "No plans yet")}</h3>
+                <p>{t("Выберите ситуацию, чтобы создать план действий.", "Harakatlar rejasini yaratish uchun vaziyatni tanlang.", "Choose a situation to create an action plan.")}</p>
+              </div></div>
               : displayedCases.map((item) => {
                 if (!initialCaseId) return <Link className="plan-summary" href={`${base}/action-plan/${item.id}`} key={item.id}>
                   <div><h3>{suggestedMatterTitle(item.title)}</h3><p>{item.steps.filter(step => step.status === "completed").length} / {item.steps.length} {t("шагов выполнено", "qadam bajarildi", "steps completed")}</p></div>
@@ -616,8 +619,10 @@ export function ActionPlanClient({
         </section>
       </section>
       {!initialCaseId && <aside className="plan-calendar">
-        <h2>{t("Ближайшие сроки", "Yaqin muddatlar", "Upcoming deadlines")}</h2>
-        <div className="today"><CalendarDays /><div><small>{t("Сегодня", "Bugun", "Today")}</small><strong>{formatPlatformDate(new Date(), locale, { dateStyle: "long" })}</strong></div></div>
+        <header className="plan-deadline-heading"><CalendarDays aria-hidden="true" /><div>
+          <h2>{t("Ближайшие сроки", "Yaqin muddatlar", "Upcoming deadlines")}</h2>
+          <p>{formatPlatformDate(new Date(), locale, { dateStyle: "long" })}</p>
+        </div></header>
         {deadlines.length
           ? deadlines.slice(0, 8).map((item) => <div className="deadline" key={`${item.date}-${item.title}`}>
             <time dateTime={item.date}>{formatPlatformDayMonth(item.date, locale)}</time>

@@ -358,7 +358,7 @@ html[data-theme="dark"] .deadline-calculator-error {
 .platform-shell .plan-create-disclosure form { border:0; box-shadow:none; }
 .platform-shell .plan-workspace :is(button,a,summary):focus-visible { outline:3px solid var(--focus-ring); outline-offset:3px; }
 @media(max-width:680px) {
- .platform-shell .plan-workspace { padding:16px 12px 88px; }
+ .platform-shell .plan-workspace { padding:16px 12px; }
  .platform-shell .plan-heading h1 { font-size:24px; }
  .platform-shell :is(.plan-create,.plan-list,.plan-calendar) { padding:16px; }
  .platform-shell .plan-card-head { grid-template-columns:minmax(0,1fr) 24px; }
@@ -429,3 +429,29 @@ html[data-theme="dark"] .deadline-calculator-error {
 .platform-shell .deadline-calculator-grid .juro-duration .juro-duration-input input:focus-visible { outline:0; }
 .platform-shell .deadline-calculator-grid .juro-duration { min-width:0; }
 .platform-shell .plan-step-tools > .juro-disclosure-summary { margin-bottom:8px; }
+
+.platform-shell .plan-overview-layout .plan-list {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  gap: 8px;
+}
+.plan-overview-layout .plan-list .plan-section-title { margin: 0; }
+.plan-list-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding-block: 10px 8px;
+}
+.plan-list-empty svg, .plan-deadline-heading svg { width: 20px; height: 20px; color: var(--brand-gold-text); flex: none; margin-block-start: 2px; }
+.plan-list-empty h3 { font-size: 15px; font-weight: 650; margin: 0; }
+.plan-list-empty p, .plan-deadline-heading p { margin: 3px 0 0; color: var(--text-secondary); font-size: 13px; }
+.plan-deadline-heading { display: flex; align-items: start; gap: 10px; margin-block-end: 12px; }
+.plan-overview-layout > .plan-calendar { padding: 14px; }
+.plan-overview-layout .plan-calendar > p { margin-block: 0; color: var(--text-secondary); }
+.plan-overview-layout .plan-consult { margin-block-start: 12px; }
+@media (min-width: 1100px) {
+  .platform-shell .plan-overview-layout { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+}

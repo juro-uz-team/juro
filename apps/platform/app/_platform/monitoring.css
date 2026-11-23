@@ -189,7 +189,11 @@ html[data-theme="dark"] .monitoring-message.success { color: color-mix(in srgb, 
   .monitoring-split[data-reading="true"] .monitoring-result > span { display: grid; gap: 1px; }
 }
 @media (min-width: 881px) and (min-height: 660px) {
-  .monitoring-workspace { display: flex; flex-direction: column; block-size: calc(100dvh - 76px); }
+  .monitoring-workspace {
+    display: flex;
+    flex-direction: column;
+    block-size: calc(100dvh - var(--platform-topbar-height, 76px) - var(--platform-mobile-nav-space, 0px));
+  }
   .monitoring-shell, .monitoring-pane:not([hidden]) { display: flex; flex: 1; flex-direction: column; min-block-size: 0; }
   .monitoring-split { flex: 1; min-block-size: 0; grid-template-rows: minmax(0, 1fr); }
   .monitoring-list { display: flex; flex-direction: column; min-block-size: 0; }

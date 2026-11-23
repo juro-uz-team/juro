@@ -1,0 +1,82 @@
+.notifications-workspace { display: grid; gap: 14px; }
+.notifications-inbox, .notifications-links {
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+.notifications-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.notifications-filters, .notifications-entry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.notifications-workspace :is(button, .notifications-entry-actions a, .notifications-links a) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-decoration: none;
+}
+.notifications-workspace :is(button:not(:disabled), .notifications-entry-actions a, .notifications-links a):hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.notifications-filters button[aria-pressed=true] {
+  border-color: var(--border-accent);
+  background: var(--surface-selected);
+  color: var(--brand-gold-text);
+  font-weight: 650;
+}
+.notifications-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.notifications-workspace button:disabled { cursor: wait; opacity: .55; }
+.notifications-workspace :is(button, a):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.notifications-workspace :is(button, a) svg { inline-size: 16px; block-size: 16px; flex: none; }
+.notifications-list { margin: 0; padding: 0; list-style: none; }
+.notifications-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border-inline-start: 2px solid transparent;
+}
+.notifications-list li + li { border-top: 1px solid var(--line); }
+.notifications-list li[data-unread=true] { border-inline-start-color: var(--border-accent); background: var(--surface-subtle); }
+.notifications-icon { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 9px; background: var(--amber-bg); color: var(--brand-gold-text); }
+.notifications-icon svg { inline-size: 19px; block-size: 19px; }
+.notifications-entry, .notifications-empty { overflow-wrap: anywhere; }
+.notifications-entry h2, .notifications-empty h2 { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.4; }
+.notifications-entry p, .notifications-empty p { margin: 4px 0; color: var(--text-secondary); }
+.notifications-entry time { color: var(--text-secondary); font-size: 12px; }
+.notifications-entry-actions button { min-inline-size: 44px; border-color: var(--line); }
+.notifications-pagination { padding: 0 12px 10px; border-top: 1px solid var(--line); }
+.notifications-pagination .workspace-pagination button { border-color: var(--line); }
+.notifications-empty { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; padding: clamp(16px, 2vw, 24px); }
+.notifications-empty p { max-inline-size: 62ch; }
+.notifications-empty button { margin-block-start: 4px; padding-inline: 0; color: var(--brand-gold-text); text-decoration: underline; text-underline-offset: 3px; }
+.notifications-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; color: var(--text-secondary); }
+.notifications-feedback[role=alert] { background: var(--red-bg); color: var(--text-primary); }
+.notifications-feedback svg { inline-size: 18px; block-size: 18px; }
+.notifications-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 6px; gap: 4px; }
+.notifications-links a { justify-content: flex-start; min-inline-size: 0; text-align: start; overflow-wrap: anywhere; }
+.notifications-links a > svg:first-child { color: var(--brand-gold-text); }
+.notifications-links a > svg:last-child { margin-inline-start: auto; }
+@media (max-width: 620px) {
+  .notifications-links { grid-template-columns: minmax(0, 1fr); }
+  .notifications-list li { grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; }
+  .notifications-entry-actions { grid-column: 2; }
+  .notifications-entry-actions:empty { display: none; }
+}

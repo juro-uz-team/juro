@@ -1334,7 +1334,7 @@ test("notification reads use strict bounded input and expose resilient UI states
     readFile(new URL("../app/_document-builder/notifications/NotificationsClient.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(route, /notificationReadSchema/);
-  assert.match(route, /z\.string\(\)\.uuid\(\)/);
+  assert.match(route, /z\.string\(\)\.min\(1\)\.max\(128\)/);
   assert.match(route, /parseJsonRequest\(request, notificationReadSchema, 1_024\)/);
   assert.match(route, /Boolean\(value\.id\) !== Boolean\(value\.all\)/);
   assert.match(client, /aria-busy=\{loading \|\| marking !== null\}/);
@@ -1423,7 +1423,7 @@ test("notification reads and read acknowledgements remain workspace-scoped", asy
     readFile(new URL("../app/api/document-builder/notifications/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/platform/dashboard/route.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(notificationRoute, /workspaceForUser\(user\)/);
+  assert.match(notificationRoute, /requireSelectedWorkspace\(user, request\.headers\.get\("x-juro-workspace-id"\)\)/);
   assert.match(notificationRoute, /WHERE user_id = \? AND workspace_id = \?/);
   assert.match(notificationRoute, /id = \? AND user_id = \? AND workspace_id = \?/);
   assert.match(dashboardRoute, /notifications WHERE user_id = \? AND workspace_id = \? AND read_at IS NULL/);
