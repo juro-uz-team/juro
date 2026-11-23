@@ -18,7 +18,7 @@ test("RU, UZ and English dictionaries expose the public content contract", () =>
 });
 
 test("public copy avoids unresolved commercial and legal claims", () => {
-  const homepage = fs.readFileSync("app/components/public/JuroHomepage.tsx", "utf8");
+  const homepage = fs.readFileSync("content/homepage.ts", "utf8");
   const experience = fs.readFileSync("content/experience.ts", "utf8");
   const localizedCopy = fs.readFileSync("content/ru.ts", "utf8") + fs.readFileSync("content/uz.ts", "utf8");
   assert.doesNotMatch(homepage + experience + localizedCopy, /\{PRICE_|\{OFFICIAL_EMAIL\}|\{COMPLAINT_URL\}|lorem ipsum/i);

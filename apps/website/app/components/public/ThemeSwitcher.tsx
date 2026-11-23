@@ -46,7 +46,7 @@ function persistThemeCookie(mode: ThemeMode) {
 }
 
 export function PublicThemeSwitcher({ locale }: { locale: PublicLanguage }) {
-  const mode = useSyncExternalStore(subscribeThemeMode, readThemeMode, () => "light");
+  const mode = useSyncExternalStore<ThemeMode | null>(subscribeThemeMode, readThemeMode, () => null);
 
   function select(next: ThemeMode) {
     apply(next);
@@ -60,5 +60,21 @@ export function PublicThemeSwitcher({ locale }: { locale: PublicLanguage }) {
     announceThemeMode();
   }
 
-  return <div className="public-theme-switcher" role="group" aria-label={labels[locale].group}>{modes.map(([value, Icon]) => <button aria-label={labels[locale][value]} aria-pressed={mode === value} title={labels[locale][value]} key={value} onClick={() => select(value)} type="button"><Icon aria-hidden="true" /></button>)}</div>;
+  return (
+    <div className="public-theme-switcher" role="group" aria-label={labels[locale].group}>
+      {modes.map(([value, Icon]) => (
+        <button
+          aria-label={labels[locale][value]}
+          aria-pressed={mode === null ? undefined : mode === value}
+          data-theme-option={value}
+          title={labels[locale][value]}
+          key={value}
+          onClick={() => select(value)}
+          type="button"
+        >
+          <Icon aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  );
 }

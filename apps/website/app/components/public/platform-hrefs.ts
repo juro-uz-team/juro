@@ -17,6 +17,14 @@ export function platformPersonalHref(
   locale: PublicLanguage,
   path: string,
 ): string {
+  return platformAccountHref(locale, "individual", path);
+}
+
+export function platformAccountHref(
+  locale: PublicLanguage,
+  account: "individual" | "business" | "lawyer",
+  path: string,
+): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${PLATFORM_ORIGIN}/${locale}/individual${normalizedPath}`;
+  return `${PLATFORM_ORIGIN}/${locale}/${account}${normalizedPath}`;
 }

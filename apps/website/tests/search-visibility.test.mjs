@@ -81,9 +81,10 @@ test("every discoverable public page has consistent metadata, language links and
     assert.ok(snippetExclusions.length >= 3, path);
     for (const node of snippetExclusions) assert.ok(["span", "div", "section"].includes(node.tagName), "Google-supported snippet exclusion: " + path);
     if (/^\/(ru|uz|en)$/.test(path)) {
-      const heading = text(find(page.root, node => node.tagName === "h1")[0]);
-      assert.match(heading, /AI/);
-      assert.match(heading, /Uzbekistan|Узбекистан|O‘zbekiston/i);
+      const hero = find(page.root, node => attributes(node)["aria-labelledby"] === "homepage-title")[0];
+      assert.ok(hero, path);
+      assert.match(text(hero), /AI/);
+      assert.match(text(hero), /Uzbekistan|Узбекистан|O‘zbekiston/i);
     }
     assert.doesNotMatch(page.meta.robots, /noindex/, path);
     assert.doesNotMatch(page.meta.googlebot, /noindex/, path);

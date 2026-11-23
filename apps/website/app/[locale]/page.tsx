@@ -1,7 +1,7 @@
 import { publicMetadata } from "../../lib/public-seo";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CinematicLandingPage } from "../components/cinematic/CinematicLandingPage";
+import { JuroHomepage } from "../components/public/JuroHomepage";
 import { ru } from "../../content/ru";
 import { uz } from "../../content/uz";
 import { en } from "../../content/en";
@@ -28,5 +28,5 @@ export default async function LocalizedHome({ params }: Props) {
   const { locale: rawLocale } = await params;
   const locale = parseLocale(rawLocale);
   if (!locale) notFound();
-  return <CinematicLandingPage language={locale} />;
+  return <JuroHomepage language={locale} />;
 }

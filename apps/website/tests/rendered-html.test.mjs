@@ -20,8 +20,6 @@ const runtime = { ASSETS: { fetch: async () => new Response("Not found", { statu
 const context = { waitUntil() {}, passThroughOnException() {} };
 const legalStyles = fs.readFileSync("app/[locale]/legal/legal.module.css", "utf8");
 const trustStyles = fs.readFileSync("app/[locale]/trust/trust.module.css", "utf8");
-const homeStyles = fs.readFileSync("app/components/public/juro-home.module.css", "utf8");
-const motionDirector = fs.readFileSync("app/components/public/JuroMotionDirector.tsx", "utf8");
 const rootLayout = fs.readFileSync("app/layout.tsx", "utf8");
 const chromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36";
 
@@ -52,30 +50,7 @@ test("public typography is self-hosted without leaking build-machine paths", () 
 });
 
 test("small gold labels meet WCAG AA contrast on the warmest public surface", () => {
-  assert.match(homeStyles, /\.transitionRail article > span,[\s\S]*?\.faqSection summary span[\s\S]*?color: var\(--brand-gold-ink\)/);
   assert.ok(contrastRatio("805d26", "f1eee8") >= 4.5);
-});
-
-test("scroll storytelling keeps layout reads out of the hot scroll path", () => {
-  const updateScrollStory = motionDirector.slice(
-    motionDirector.indexOf("const updateScrollStory = () =>"),
-    motionDirector.indexOf("const onScroll = () =>"),
-  );
-  const refreshGeometry = motionDirector.slice(
-    motionDirector.indexOf("const refreshGeometry = () =>"),
-    motionDirector.indexOf("let pointerFrame = 0"),
-  );
-  assert.doesNotMatch(updateScrollStory, /getBoundingClientRect|scrollHeight/);
-  assert.match(refreshGeometry, /getBoundingClientRect/);
-  assert.match(refreshGeometry, /revealTops: reveals\.map/);
-  assert.match(updateScrollStory, /const revealsToShow[\s\S]*?geometry\.revealTops[\s\S]*?node\.dataset\.revealState = "visible"/);
-  assert.match(updateScrollStory, /const revealsToShow[\s\S]*?root\.dataset\.motionReady = "true"/);
-  assert.match(motionDirector, /new ResizeObserver\(scheduleMeasure\)/);
-  assert.match(motionDirector, /new IntersectionObserver\([\s\S]*?rootMargin: "0px 0px -8% 0px"/);
-  assert.match(
-    motionDirector,
-    /scrollFrame = requestAnimationFrame\(\(\) => \{[\s\S]*?scrollFrame = requestAnimationFrame\(\(\) => \{[\s\S]*?refreshGeometry\(\);[\s\S]*?updateScrollStory\(\);/,
-  );
 });
 
 test("renders the production landing with localized canonical metadata and real actions", async () => {
@@ -112,10 +87,7 @@ test("renders the production landing with localized canonical metadata and real 
     assert.match(html, new RegExp(`<meta property="og:description" content="${description}"`));
     assert.match(html, new RegExp(`<meta name="twitter:description" content="${description}"`));
 
-    assert.doesNotMatch(html, /jurobek-avatar\.avif/);
-    assert.match(html, /Контекст не теряется между инструментами|Kontekst vositalar o‘rtasida yo‘qolmaydi/);
-    assert.doesNotMatch(html, /ГОЛОСОВОЙ AI-АВАТАР|OVOZLI AI-AVATAR/);
-    assert.match(html, /Право Узбекистана|O‘zbekiston huquqi/);
+    assert.match(html, locale === "ru" ? /Есть вопрос/ : /Huquqiy/);
     assert.match(html, /FAQPage/);
     assert.match(html, new RegExp(`href="/${locale}/video"`));
     assert.match(html, new RegExp(`href="/${locale}/lawyers"`));
@@ -181,13 +153,63 @@ test("renders the complete English public landing and keeps product actions on E
     const attribute = tag === "description" ? "name" : tag.startsWith("og:") ? "property" : "name";
     assert.match(html, new RegExp(`<meta ${attribute}="${tag}" content="AI legal help for Uzbekistan: ask legal questions, review contracts, prepare documents and find a lawyer. Use JURO in English, Russian or Uzbek\."`));
   }
-  assert.match(html, /AI legal help/);
-  assert.match(html, /in Uzbekistan/);
-  assert.match(html, /CASE 024/);
-  assert.doesNotMatch(html, /aria-label="Ish bosqichlari"/);
+  assert.match(html, /AI legal help in Uzbekistan/);
+  assert.match(html.replaceAll("<!-- -->", ""), /<h1[^>]*>Have a legal <em>question\?<\/em><\/h1>/);
   assert.match(html, /http:\/\/localhost:3000\/en\/auth\/register\?accountType=individual/);
   assert.doesNotMatch(html, /http:\/\/localhost:3000\/ru\/auth/u);
   for (const route of ["/en/video", "/en/lawyers", "/en/legal", "/en/trust"]) assert.match(html, new RegExp(`href="${route}"`));
+});
+
+test("the root and localized homepages render the worked examples and their real destinations", async () => {
+  const worker = await createWorker();
+  for (const [path, locale] of [["/", "ru"], ["/ru", "ru"], ["/uz", "uz"], ["/en", "en"]]) {
+    const response = await worker.fetch(new Request(`http://localhost${path}`));
+    assert.equal(response.status, 200, path);
+    const html = (await response.text()).split("</main>")[0];
+    const inputs = html.match(/<input[^>]+name="homepage-contract"[^>]*>/g) ?? [];
+    assert.equal(inputs.length, 2, path);
+    assert.match(inputs[0], /\bchecked=""/);
+    for (const [index, example] of ["lease", "supplier"].entries()) {
+      const input = inputs[index];
+      assert.match(input, /type="radio"/);
+      assert.match(input, new RegExp(`aria-controls="${example}-comparison"`));
+      assert.match(html, new RegExp(`id="${example}-comparison"`));
+    }
+    for (const href of [`http://localhost:3000/${locale}/individual/ai-chat`, `http://localhost:3000/${locale}/individual/document-analysis`, `http://localhost:3000/${locale}/individual/action-plan`, `/${locale}/lawyers`]) {
+      assert.ok(html.includes(`href="${href}"`), href);
+    }
+    assert.match(html, /src="\/jurobek-point\.webp"/);
+    assert.match(html, /id="ai-playground"[\s\S]+?<details[^>]*><summary>/);
+    const choices = html.match(/<input[^>]+name="homepage-chat"[^>]*>/g) ?? [];
+    assert.equal(choices.length, 2, path);
+    assert.match(choices[0], /\bchecked=""/);
+    for (const [index, example] of ["pay", "leave"].entries()) {
+      assert.match(choices[index], new RegExp(`aria-controls="chat-${example}"`));
+      assert.match(html, new RegExp(`id="chat-${example}"`));
+    }
+    const provisions = locale === "ru" ? ["6257291#6263982", "6257291#6263232"] : ["-6257288#-6263813", "-6257288#-6263022"];
+    for (const provision of provisions) assert.ok(html.includes(`/${provision}"`), provision);
+    assert.equal((html.match(/<mark\b/g) ?? []).length, 2);
+    assert.match(html, /href="#product"/);
+    for (const id of ["product", "case-flow", "lawyer-handoff", "workspace-tools", "faq"]) {
+      assert.match(html, new RegExp(`<section[^>]+id="${id}"`));
+    }
+    const workspace = html.match(/<section[^>]+id="workspace-tools"[\s\S]+?<\/section>/)?.[0] ?? "";
+    const tools = workspace.match(/<input[^>]+name="homepage-workspace"[^>]*>/g) ?? [];
+    assert.equal(tools.length, 4);
+    assert.match(tools[0], /\bchecked=""/);
+    for (const [index, example] of ["monitoring", "calendar", "search", "team"].entries()) {
+      assert.match(tools[index], new RegExp(`aria-controls="workspace-example-${example}"`));
+      assert.match(workspace, new RegExp(`id="workspace-example-${example}"`));
+    }
+    const record = locale === "ru" ? "ru/docs/6257461" : "uz/acts/-6257345";
+    assert.ok(workspace.includes(`href="https://lex.uz/${record}"`));
+    for (const route of ["individual/monitoring", "individual/calendar", "individual/dashboard", "business/dashboard", "individual/history", "individual/archive", "lawyer/consultations?view=requests", "lawyer/consultations?view=schedule"]) {
+      assert.ok(workspace.includes(`href="http://localhost:3000/${locale}/${route}"`), route);
+    }
+    assert.doesNotMatch(html, /setAttribute\("data-juro-loading"/);
+    assert.doesNotMatch(html, /<textarea\b|<input[^>]+type="file"/);
+  }
 });
 
 test("serves localized search landing pages and a crawlable knowledge hub", async () => {

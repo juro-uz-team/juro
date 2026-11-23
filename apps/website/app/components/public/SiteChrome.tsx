@@ -4,7 +4,7 @@ import { OfficialLogo } from "./OfficialLogo";
 import Link from "next/link";
 import { platformAuthHref, platformRegistrationHref } from "./platform-hrefs";
 import { ArrowRight, Mail, MapPin, Menu, Phone, X } from "lucide-react";
-import { type MouseEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { PublicLanguage } from "../../../content/types";
 import brandStyles from "./brand-lockup.module.css";
 import footerContactStyles from "./footer-contact.module.css";
@@ -86,7 +86,7 @@ const copy = {
 const languageLabels: Record<Locale, string> = { ru: "RU", uz: "UZ", en: "EN" };
 const languages: Locale[] = ["ru", "uz", "en"];
 
-export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavigation }: { locale: Locale; tone?: "light" | "dark"; languageHref?: string; onSectionNavigation?: (event: MouseEvent<HTMLAnchorElement>) => void }) {
+export function SiteHeader({ locale, tone = "light", languageHref, home = false }: { locale: Locale; tone?: "light" | "dark"; languageHref?: string; home?: boolean }) {
   const t = copy[locale];
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -96,6 +96,7 @@ export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavi
   const panelRef = useRef<HTMLDivElement>(null);
   const localizedSuffix = languageHref?.replace(/^\/(?:ru|uz|en)(?=\/|$)/, "") ?? "";
   const localeHref = (target: Locale) => `/${target}${localizedSuffix}`;
+  const LanguageLink = home ? "a" : Link;
 
   useEffect(() => {
     const sentinel = scrollSentinelRef.current;
@@ -140,28 +141,32 @@ export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavi
     };
   }, [open]);
 
-  const nav = [
-    [t.product, onSectionNavigation ? "#product" : `/${locale}#product`],
-    [t.people, onSectionNavigation ? "#audiences" : `/${locale}#audiences`],
+  const nav = home ? [
+    [t.product, "#product"],
+    [t.lawyers, `/${locale}/lawyers`],
+    [{ ru: "Вопросы", uz: "Savollar", en: "FAQ" }[locale], "#faq"],
+  ] : [
+    [t.product, `/${locale}#product`],
+    [t.people, `/${locale}#audiences`],
     [t.trust, `/${locale}/trust`],
-    [t.resources, onSectionNavigation ? "#resources" : `/${locale}#resources`],
+    [t.resources, `/${locale}#resources`],
   ] as const;
 
   return (
     <>
     <span ref={scrollSentinelRef} aria-hidden="true" style={{ position: "absolute", top: 0, width: 1, height: 1, pointerEvents: "none" }} />
-    <header className={styles.header} data-scrolled={scrolled || undefined} data-tone={tone}>
+    <header className={styles.header} data-scrolled={scrolled || undefined} data-tone={tone} data-home={home || undefined}>
       <a className={styles.skipLink} href="#main-content">{t.skip}</a>
       <div className={styles.headerInner}>
         <Link aria-label="JURO" className={`${styles.logo} ${brandStyles.logo}`} href={`/${locale}`}>
           <OfficialLogo inverse={tone === "dark" && !scrolled} priority />
         </Link>
         <nav aria-label={t.nav} className={styles.desktopNav}>
-          {nav.map(([label, href]) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={onSectionNavigation}>{label}</a> : <Link href={href} key={href}>{label}</Link>)}
+          {nav.map(([label, href]) => <Link href={href} key={href}>{label}</Link>)}
         </nav>
         <div className={styles.actions}>
           <PublicThemeSwitcher locale={locale} />
-          <div aria-label="Language" className={`${styles.languageSet} ${headerTouchStyles.languageSet}`}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</Link>)}</div>
+          <div aria-label="Language" className={`${styles.languageSet} ${headerTouchStyles.languageSet}`}>{languages.map((target) => <LanguageLink aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</LanguageLink>)}</div>
           <a className={`${styles.login} ${headerTouchStyles.login}`} href={platformAuthHref(locale, "login")}>{t.signIn}</a>
           <a className={styles.primary} href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
           <button aria-controls={panelId} aria-expanded={open} aria-label={t.open} className={styles.menuButton} onClick={() => setOpen(true)} ref={triggerRef} type="button"><Menu aria-hidden="true" size={22} /></button>
@@ -178,14 +183,17 @@ export function SiteHeader({ locale, tone = "light", languageHref, onSectionNavi
               <button aria-label={t.close} className={styles.closeButton} onClick={() => setOpen(false)} type="button"><X aria-hidden="true" size={22} /></button>
             </div>
             <nav>
-              {nav.map(([label, href], index) => onSectionNavigation && href.startsWith("#") ? <a href={href} key={href} onClick={(event) => { onSectionNavigation(event); setOpen(false); }}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></a> : <Link href={href} key={href} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}<ArrowRight aria-hidden="true" size={18} /></Link>)}
-              <Link href={`/${locale}/lawyers`} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
-              <Link href={`/${locale}/video`} onClick={() => setOpen(false)}><span>06</span>{t.video}<ArrowRight aria-hidden="true" size={18} /></Link>
-              <Link href={`/${locale}/legal`} onClick={() => setOpen(false)}><span>07</span>{t.legal}<ArrowRight aria-hidden="true" size={18} /></Link>
+              {nav.map(([label, href], index) => <Link href={href} key={href} onClick={() => setOpen(false)}>{!home && <span>0{index + 1}</span>}{label}<ArrowRight aria-hidden="true" size={18} /></Link>)}
+              {!home && <>
+                <Link href={`/${locale}/lawyers`} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
+                <Link href={`/${locale}/video`} onClick={() => setOpen(false)}><span>06</span>{t.video}<ArrowRight aria-hidden="true" size={18} /></Link>
+                <Link href={`/${locale}/legal`} onClick={() => setOpen(false)}><span>07</span>{t.legal}<ArrowRight aria-hidden="true" size={18} /></Link>
+              </>}
             </nav>
             <div className={styles.mobileActions}>
               <PublicThemeSwitcher locale={locale} />
-              <div aria-label="Language" className={styles.mobileLanguageSet}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={localeHref(target)} key={target} onClick={() => setOpen(false)}>{languageLabels[target]}</Link>)}</div>
+              <div aria-label="Language" className={styles.mobileLanguageSet}>{languages.map((target) => <LanguageLink aria-current={target === locale ? "page" : undefined} href={localeHref(target)} key={target} onClick={() => setOpen(false)}>{languageLabels[target]}</LanguageLink>)}</div>
+              {home && <a href={platformAuthHref(locale, "login")}>{t.signIn}</a>}
               <a href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={17} /></a>
             </div>
           </div>

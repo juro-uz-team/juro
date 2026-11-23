@@ -86,6 +86,11 @@ _Avoid_: equivalent law, controlling variant, localized original
 A user-supplied or case-specific circumstance that may be confirmed or rejected and can change the Legal Answer.
 _Avoid_: legal proposition, Citation, source-freshness state
 
+### Public product guidance
+
+**Jurobek**:
+JURO’s guide character for showing people how to examine a legal question or document and choose their next action.
+
 ### Official corpus
 
 **Publisher Classification**:
@@ -235,6 +240,9 @@ A temporary operational condition that prevents JURO from completing authenticat
 _Avoid_: no coverage, no relevant law, insufficient evidence
 
 ### Workspace discovery
+
+**Legislation Monitoring**:
+The workspace feature for discovering new publications and changes to publication records in the official Lex.uz feed. Each update points to the official act so the reader can check its legal substance.
 
 **Global Search**:
 The tenant-scoped discovery surface for finding existing workspace items and available sources. It is distinct from the Source Ladder used to produce a Legal Answer.

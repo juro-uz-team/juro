@@ -9,7 +9,7 @@ import { googleTagBootstrap, googleTagSource } from "../../../scripts/google-tag
 import { publicMetadata } from "../lib/public-seo";
 import { ru } from "../content/ru";
 
-const themeBootstrap = `(function(){try{var c=document.cookie.match(/(?:^|; )juro_theme=(system|light|dark)(?:;|$)/);var l=localStorage.getItem("juro-theme");var r=c?c[1]:(l==="light"||l==="dark"||l==="system"?l:"light");var m=r==="dark"?"dark":"light";document.documentElement.dataset.theme=m;document.documentElement.dataset.themeMode=m;document.documentElement.style.colorScheme=m;}catch(e){document.documentElement.dataset.theme="light";document.documentElement.dataset.themeMode="light";document.documentElement.style.colorScheme="light";}})();`;
+const themeBootstrap = `(function(){try{var c=document.cookie.match(/(?:^|; )juro_theme=(system|light|dark)(?:;|$)/);var r=c?c[1]:localStorage.getItem("juro-theme");var m=r==="dark"?"dark":"light";document.documentElement.dataset.theme=m;document.documentElement.dataset.themeMode=m;document.documentElement.style.colorScheme=m;}catch(e){document.documentElement.dataset.theme="light";document.documentElement.dataset.themeMode="light";document.documentElement.style.colorScheme="light";}})();`;
 
 export const viewport: Viewport = {
   themeColor: "#062844",
@@ -37,6 +37,7 @@ export default async function RootLayout({
 }>) {
   const requestPath = (await headers()).get("x-juro-request-path") ?? "";
   const locale = /^\/uz(?:\/|$)/.test(requestPath) ? "uz" : /^\/en(?:\/|$)/.test(requestPath) ? "en" : "ru";
+  const homepage = /^\/(?:(?:ru|uz|en)\/?)?$/.test(requestPath || "/");
   const structuredData = JSON.stringify({
     "@context": "https://schema.org",
     "@graph": [
@@ -58,8 +59,10 @@ export default async function RootLayout({
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />
-        <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.setAttribute("data-juro-loading", "true");' }} />
-        <BrandLoading language={locale} />
+        {!homepage && <>
+          <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.setAttribute("data-juro-loading", "true");' }} />
+          <BrandLoading language={locale} />
+        </>}
         {children}
         <ProductAnalytics />
       </body>
