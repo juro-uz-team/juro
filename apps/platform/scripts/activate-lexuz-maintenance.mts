@@ -77,7 +77,7 @@ const sources = createCorpusTransport({ ...binding.sources, token });
 const browseSchema = z.object({ entries: z.array(z.object({ work: hash, edition: z.iso.date().nullable(), language: z.string() })) });
 const documentSchema = z.object({ entry: z.object({ work: hash }),
   units: z.array(z.object({ text: z.string(), locator: z.string() })).min(1) });
-const sampled = [];
+const sampled: Array<{ work: string; scope: EvidenceScope["kind"]; language: string; sha256: string }> = [];
 for (const language of ["ru", "uz", "uzc", "en"]) {
   const browse = browseSchema.parse(await sources.browseSources({ artifacts, page: 0, query: "", language, category: "" }, signal));
   const entry = browse.entries.find(item => Boolean(item.edition) !== sampled.some(result => result.scope === "historical"))
