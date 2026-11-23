@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+
 import { Select } from "../_components/Select";
 import { DateTimePicker } from "../_components/ProfileControls";
 
@@ -87,6 +89,7 @@ export function LawyerHandoffClient({
   const selectedLawyerId = useSearchParams().get("lawyer") || "";
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [requests, setRequests] = useState<HandoffRequest[]>([]);
+  const requestPages = useWorkspacePagination(requests.length, 1);
   const [lawyers, setLawyers] = useState<PublicLawyer[]>([]);
   const [lawyerProfileId, setLawyerProfileId] = useState("");
   const [specialtyFilter, setSpecialtyFilter] = useState("");
@@ -342,10 +345,11 @@ export function LawyerHandoffClient({
             )}
           </Select>
         </label>
-        <fieldset className="lawyer-directory-filters">
-          <legend>
+        <details className="lawyer-handoff-filters">
+          <summary className="juro-disclosure-summary">
             {text("Фильтры каталога юристов", "Yuristlar katalogi filtrlari", "Lawyer directory filters")}
-          </legend>
+          </summary>
+          <fieldset className="lawyer-directory-filters">
           <label>
             {text("Специализация", "Mutaxassislik", "Practice area")}
             <Select
@@ -435,7 +439,8 @@ export function LawyerHandoffClient({
               onChange={(event) => setFirmFilter(event.target.value)}
             />
           </label>
-        </fieldset>
+          </fieldset>
+        </details>
         <label>
           {text("Юрист", "Yurist", "Lawyer")}
           <Select
@@ -537,7 +542,8 @@ export function LawyerHandoffClient({
           <h3>
             {text("Мои заявки к юристу", "Yuristga yuborgan so‘rovlarim", "My lawyer requests")}
           </h3>
-          {requests.map((item) => (
+          <WorkspacePagination locale={locale} {...requestPages} />
+          {requests.slice(requestPages.from, requestPages.to).map((item) => (
             <div key={item.id}>
               <strong>{handoffStatus(item.status, locale)}</strong>
               <span>

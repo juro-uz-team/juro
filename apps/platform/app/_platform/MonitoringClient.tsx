@@ -32,6 +32,8 @@ import {
 } from "../../lib/platform/monitoring-preferences";
 import { CorpusBrowser, CorpusText, monitoringLabels } from "./MonitoringCorpus";
 import { Select } from "../_components/Select";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+import { useMonitoringPageSize } from "./useMonitoringPageSize";
 
 const topicKeys = [
   "civil",
@@ -232,11 +234,14 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
   const settings = useRef<HTMLDialogElement>(null);
   const updateReader = useRef<HTMLHeadingElement>(null);
   const activeRow = useRef<HTMLButtonElement>(null);
+  const updateSearch = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"updates" | "corpus">("updates");
   const [selected, setSelected] = useState<LegislationUpdate | null>(null);
   const [query, setQuery] = useState("");
   const [changeType, setChangeType] = useState("");
-  const [page, setPage] = useState(0);
+  const pageSize = useMonitoringPageSize();
+  const [firstResult, setFirstResult] = useState(0);
+  const page = Math.floor(firstResult / pageSize);
   const [hasMore, setHasMore] = useState(false);
   const [preference, setPreference] = useState<Preference>({
     audience: normalizeMonitoringAudience(accountType),
@@ -260,7 +265,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     setLoadFailed(false);
     setError("");
     try {
-      const params = new URLSearchParams({ locale, q: query, changeType, page: String(page) });
+      const params = new URLSearchParams({ locale, q: query, changeType, page: String(page), limit: String(pageSize) });
       const response = await fetch(`/api/platform/monitoring?${params}`, {
         cache: "no-store", signal, headers: { "x-juro-workspace-id": workspaceId },
       });
@@ -289,7 +294,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [changeType, locale, page, query, t.loadError, workspaceId]);
+  }, [changeType, locale, page, pageSize, query, t.loadError, workspaceId]);
 
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -341,14 +346,12 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
   }
 
   return (
-    <section className="monitoring-workspace">
-      <header className="monitoring-masthead">
-        <div className="monitoring-mark"><Scale aria-hidden="true" /></div>
-        <h1>{t.title}</h1>
+    <section className="monitoring-workspace workspace-page">
+      <WorkspaceTitle icon={<Scale />} title={t.title} actions={
         <button className="monitoring-button monitoring-preferences-trigger" type="button" onClick={() => settings.current?.showModal()}>
           <BellRing aria-hidden="true" /><span>{labels.settings}</span>
         </button>
-      </header>
+      } />
 
       {error && loadFailed && <p className="monitoring-message error" role="alert"><CircleAlert aria-hidden="true" />{error}<button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw aria-hidden="true" />{t.retry}</button></p>}
       {notice && <p className="monitoring-message success" role="status"><CheckCircle2 />{notice}</p>}
@@ -392,23 +395,24 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
           <button className="monitoring-save" disabled={saving || loading || loadFailed}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{t.save}</button>
         </form>
         </dialog>
-        <div hidden={mode !== "updates"}>
+        <div className="monitoring-pane" hidden={mode !== "updates"}>
           <div className="monitoring-split" data-reading={Boolean(selected)}>
             <section className="monitoring-list" aria-label={labels.updates}>
               <form className="monitoring-filter" onSubmit={event => {
                 event.preventDefault();
                 setQuery(String(new FormData(event.currentTarget).get("search") ?? ""));
                 setSelected(null);
-                setPage(0);
+                setFirstResult(0);
               }}>
-                <label><span>{labels.search}</span><input name="search" type="search" maxLength={120} placeholder={labels.updatePlaceholder} /></label>
+                <label><span>{labels.search}</span><input ref={updateSearch} name="search" type="search" maxLength={120} placeholder={labels.updatePlaceholder} /></label>
                 <div className="monitoring-field"><span>{labels.change}</span><Select aria-label={labels.change} value={changeType} onChange={event => {
                   setChangeType(event.target.value);
                   setSelected(null);
-                  setPage(0);
+                  setFirstResult(0);
                 }}><option value="">{labels.all}</option><option value="new_act">{labels.newAct}</option><option value="edition">{labels.edition}</option><option value="metadata_changed">{labels.correction}</option></Select></div>
                 <button className="monitoring-button monitoring-search" type="submit">{labels.search}</button>
               </form>
+              <div className="monitoring-results" key={JSON.stringify([query, changeType, page])}>
               {!loading && !loadFailed && !status.lastCorpusCheckedAt && status.integration !== "active" && <p className="monitoring-feed-note">
                 {status.integration === "disabled" ? t.integrationOff : status.lastRun?.status === "failed" ? t.runFailed : t.integrationPending}
               </p>}
@@ -428,22 +432,23 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
                   </div>;
                 })}</div>
                   : <p className="monitoring-empty">{query || changeType ? labels.noResults : t.empty}</p>}
+              </div>
               {(page > 0 || hasMore) && <nav className="monitoring-pagination" aria-label={labels.updates}>
-                <button type="button" className="monitoring-button" disabled={page === 0} onClick={() => { setSelected(null); setPage(page - 1); }}><ArrowLeft aria-hidden="true" />{labels.previous}</button>
+                <button type="button" className="monitoring-button" disabled={page === 0} onClick={() => { setSelected(null); setFirstResult((page - 1) * pageSize); }}><ArrowLeft aria-hidden="true" />{labels.previous}</button>
                 <span role="status">{labels.page} {page + 1}</span>
-                <button type="button" className="monitoring-button" disabled={!hasMore || loading} onClick={() => { setSelected(null); setPage(page + 1); }}>{labels.next}<ArrowRight aria-hidden="true" /></button>
+                <button type="button" className="monitoring-button" disabled={!hasMore || loading} onClick={() => { setSelected(null); setFirstResult((page + 1) * pageSize); }}>{labels.next}<ArrowRight aria-hidden="true" /></button>
               </nav>}
             </section>
             {selected ? <section key={selected.id} className="monitoring-reader" aria-label={selected.title}>
               <button type="button" className="monitoring-button" onClick={() => {
                 setSelected(null);
-                requestAnimationFrame(() => activeRow.current?.focus());
+                requestAnimationFrame(() => (activeRow.current?.isConnected ? activeRow.current : updateSearch.current)?.focus());
               }}>{labels.back}</button>
               <UpdateCard update={selected} locale={locale} workspaceId={workspaceId} headingRef={updateReader} />
             </section> : null}
           </div>
         </div>
-        {mode === "corpus" && <CorpusBrowser locale={locale} workspaceId={workspaceId} />}
+        {mode === "corpus" && <div className="monitoring-pane"><CorpusBrowser locale={locale} workspaceId={workspaceId} /></div>}
       </div>
     </section>
   );

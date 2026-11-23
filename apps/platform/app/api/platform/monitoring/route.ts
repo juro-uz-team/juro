@@ -80,10 +80,12 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const search = (params.get("q") ?? "").trim().slice(0, 120);
   const changeType = params.get("changeType") ?? "";
   const requestedPage = params.get("page") ?? "0";
-  const pageSize = 4;
-  if (!/^\d{1,5}$/u.test(requestedPage) || !["", "new_act", "metadata_changed", "edition"].includes(changeType)) {
+  const requestedLimit = params.get("limit") ?? "4";
+  if (!/^\d{1,5}$/u.test(requestedPage) || !/^(?:[4-9]|1[0-2])$/u.test(requestedLimit)
+    || !["", "new_act", "metadata_changed", "edition"].includes(changeType)) {
     return response({ code: "MONITORING_FILTER_INVALID" }, 400);
   }
+  const pageSize = Number(requestedLimit);
   const pattern = `%${search.replace(/[!_%]/gu, character => `!${character}`)}%`;
   const t = monitoringCopy[locale];
   const db = requireD1();

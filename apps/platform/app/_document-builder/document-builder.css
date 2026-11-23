@@ -919,21 +919,6 @@
   .dbt-folders::-webkit-scrollbar { display: none; }
 }
 
-/* Canonical platform routes already have product identity, account context and
-   global navigation. This is a compact document-workspace toolbar, not a
-   second application header. */
-.platform-shell .dbt-header-embedded{
-  height:58px;
-  grid-template-columns:minmax(9rem,1fr) auto;
-  background:var(--dbt-paper);
-}
-.platform-shell .dbt-embedded-title{display:flex;min-width:0;align-items:center;gap:.65rem;color:var(--dbt-ink)}
-.platform-shell .dbt-embedded-title>svg{width:1.25rem;height:1.25rem;color:var(--brand-gold-text);flex:none}
-.platform-shell .dbt-embedded-title>span{display:grid;min-width:0;gap:.05rem}
-.platform-shell .dbt-embedded-title small{color:var(--dbt-muted);font-size:.6rem;font-weight:800;letter-spacing:.1em;line-height:1;text-transform:uppercase}
-.platform-shell .dbt-embedded-title strong{font-size:.88rem;line-height:1.2}
-@media(max-width:820px){.platform-shell .dbt-header-embedded{height:56px}.platform-shell .dbt-embedded-title small{display:none}}
-
 /* Tool navigation shares the document scroll and sits below platform chrome. */
 .platform-shell .dbt-header { position:sticky; top:var(--platform-topbar-height); height:auto; min-height:64px; background:var(--dbt-paper); padding-block:8px; }
 .dbt-section-title { display:flex; align-items:center; gap:10px; color:var(--dbt-text); text-decoration:none; font-size:17px; min-width:0; }
@@ -1051,3 +1036,28 @@
 @media screen and (min-width:1181px) {
   .platform-shell .dbt-intro > .dbt-preview .dbt-preview-scroll { max-height:calc(100dvh - var(--platform-header-stack) - 118px); }
 }
+
+:is(.dbt-intro, .dbt-config-intro) > .workspace-title { grid-column: 1 / -1; }
+.dbt-intro.workspace-page, .dbt-config-intro.workspace-page { gap: clamp(14px, 2vw, 28px); }
+.dbt-intro.workspace-page .dbt-intro-meta { margin: 0 0 14px; }
+.dbt-intro.workspace-page .dbt-intro-copy, .dbt-config-intro.workspace-page > section { padding-block: 0; }
+.dbt-config-builder.workspace-page > .workspace-title, .dbt-builder.workspace-page > .workspace-title { margin-block-end: 14px; }
+
+.dbt-documents-page > .workspace-title, .dbt-simple-page > .workspace-title { margin-block-end: 16px; }
+.dbt-documents-page .dbt-document-main :is(p, small) { line-height: 1.4; }
+.dbt-documents-page .dbt-document-case { min-width: 0; margin-top: 0; }
+.dbt-documents-page .dbt-document-case .juro-select { padding: 8px 10px; }
+
+@media (min-width: 1151px) {
+  .dbt-document-card:has(> .dbt-document-case) { grid-template-columns: 42px minmax(0, 1fr) minmax(136px, 20%) auto; }
+  .dbt-document-card:has(> .dbt-document-case) > .dbt-document-actions { grid-column: auto; justify-content: flex-end; }
+}
+@media (max-width: 1150px) {
+  .dbt-document-card > .dbt-document-case { grid-column: 2 / -1; }
+  .dbt-document-card:has(> .dbt-document-case) > .dbt-document-actions { grid-column: 2 / -1; }
+}
+
+.dbt-library-disclosure { margin-block: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised); }
+.dbt-library-disclosure > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 13px; color: var(--text-primary); font-weight: 650; cursor: pointer; }
+.dbt-library-disclosure > :is(nav, div) { margin: 0; padding: 0 12px 12px; }
+.dbt-all-templates > .workspace-pagination { margin-block-start: 10px; }

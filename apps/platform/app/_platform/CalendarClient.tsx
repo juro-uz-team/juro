@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -219,15 +221,9 @@ export function CalendarClient({ locale }: { locale: PlatformLocale }) {
     addCalendarDays(monthStart(anchor), index),
   );
   return (
-    <section className="calendar-page" aria-labelledby="calendar-title">
+    <section className="calendar-page workspace-page" aria-labelledby="calendar-title">
       {caseId && <nav className="matter-breadcrumbs" aria-label={t.title}><Link href={`${base}/action-plan/${encodeURIComponent(caseId)}`}>{ {ru:"Вернуться к плану",uz:"Rejaga qaytish",en:"Back to plan"}[locale]}</Link><Link href={`${base}/calendar`}>{ {ru:"Все сроки",uz:"Barcha muddatlar",en:"All deadlines"}[locale]}</Link></nav>}
-      <header className="calendar-header">
-        <div>
-          <p className="calendar-eyebrow">JURO · {t.title}</p>
-          <h1 id="calendar-title">{t.title}</h1>
-          <p>{caseId ? {ru:"Сроки выбранного дела. Нажмите на событие, чтобы открыть план.",uz:"Tanlangan ish muddatlari. Rejani ochish uchun hodisani bosing.",en:"Deadlines for this matter. Select an event to open the plan."}[locale] : t.subtitle}</p>
-        </div>
-        <div className="calendar-range">
+      <WorkspaceTitle icon={<CalendarDays />} title={t.title} id="calendar-title" description={caseId ? {ru:"Сроки выбранного дела. Нажмите на событие, чтобы открыть план.",uz:"Tanlangan ish muddatlari. Rejani ochish uchun hodisani bosing.",en:"Deadlines for this matter. Select an event to open the plan."}[locale] : t.subtitle} actions={ <><div className="calendar-range">
           <button
             type="button"
             onClick={() => shift(-1)}
@@ -245,8 +241,7 @@ export function CalendarClient({ locale }: { locale: PlatformLocale }) {
           <button type="button" onClick={() => shift(1)} aria-label={t.next}>
             <ChevronRight />
           </button>
-        </div>
-      </header>
+        </div></> } />
       <div className="calendar-tabs" role="tablist" aria-label={t.title}>
         {(["month", "week", "day", "list", "cases", "overdue"] as View[]).map(
           (name) => (

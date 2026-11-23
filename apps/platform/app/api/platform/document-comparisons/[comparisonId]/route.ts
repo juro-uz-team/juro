@@ -15,7 +15,7 @@ import {
   comparisonProcessingErrorMessage,
   comparisonRouteErrorMessage,
 } from "../../../../../lib/document-comparison/localization";
-import { workspaceForContentEditor, workspaceForUser } from "../../../../../lib/platform/workspace";
+import { requireSelectedWorkspace, workspaceForContentEditor } from "../../../../../lib/platform/workspace";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -30,7 +30,7 @@ export const GET = withApiErrors(async function GET(
 ) {
   const locale = authLocaleFromRequest(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const { comparisonId } = await context.params;
   const db = requireD1();
   const comparison = await comparisonForUser(db, comparisonId, workspace.id, user.id);

@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, ChevronRight, ExternalLink, LoaderCircle } from 
 import { useEffect, useRef, useState } from "react";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { Select } from "../_components/Select";
+import { useMonitoringPageSize } from "./useMonitoringPageSize";
 
 export const monitoringLabels = {
   ru: {
@@ -46,7 +47,6 @@ type Catalogue = { entries: Entry[]; categories: { id: string; label: string }[]
 type Act = { entry: Entry; units: { text: string; locator: string }[]; nextOffset: number | null; extractionGaps: boolean;
   pdfUrl?: string; pdfLinks?: string[] };
 const languages = { ru: "Русский", uz: "O‘zbekcha", uzc: "Ўзбекча", en: "English" };
-const rowsPerPage = 4;
 
 async function requestCorpus<T>(workspaceId: string, params: URLSearchParams, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/platform/monitoring/corpus?${params}`, {
@@ -58,19 +58,20 @@ async function requestCorpus<T>(workspaceId: string, params: URLSearchParams, si
 
 export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale; workspaceId: string }) {
   const t = monitoringLabels[locale];
+  const rowsPerPage = useMonitoringPageSize();
   const [filters, setFilters] = useState({ q: "", language: "", category: "", cursor: "" });
   const [previous, setPrevious] = useState<{ cursor: string; offset: number }[]>([]);
   const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Entry | null>(null);
   const [result, setResult] = useState<{ filters: typeof filters; data?: Catalogue }>();
   const [retry, setRetry] = useState(0);
   const activeRow = useRef<HTMLButtonElement>(null);
+  const corpusSearch = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const current = result?.filters === filters ? result : undefined;
   const entries = current?.data?.entries ?? [];
   const showNext = offset + rowsPerPage < entries.length || Boolean(current?.data?.nextPage);
-  const showPrevious = offset > 0 || previous.length > 0;
+  const showPrevious = previous.length > 0;
   useEffect(() => {
     const controller = new AbortController();
     requestCorpus<Catalogue>(workspaceId, new URLSearchParams(filters), controller.signal)
@@ -84,7 +85,6 @@ export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale;
     setSelected(null);
     setPrevious([]);
     setOffset(0);
-    setPage(1);
     setFilters({ ...filters, ...changes, cursor: "" });
   }
 
@@ -94,13 +94,14 @@ export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale;
         event.preventDefault();
         applyFilters({ q: String(new FormData(event.currentTarget).get("search") ?? "") });
       }}>
-        <label><span>{t.search}</span><input type="search" name="search" maxLength={120} placeholder={t.updatePlaceholder} /></label>
+        <label><span>{t.search}</span><input ref={corpusSearch} type="search" name="search" maxLength={120} placeholder={t.updatePlaceholder} /></label>
         <div className="monitoring-field"><span>{t.language}</span><Select aria-label={t.language} value={filters.language} onChange={event => applyFilters({ language: event.target.value })}>
           <option value="">{t.all}</option>{Object.entries(languages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</Select></div>
         <div className="monitoring-field"><span>{t.category}</span><Select aria-label={t.category} value={filters.category} onChange={event => applyFilters({ category: event.target.value })}>
           <option value="">{t.all}</option>{result?.data?.categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</Select></div>
         <button className="monitoring-button monitoring-search" type="submit">{t.search}</button>
       </form>
+      <div className="monitoring-results" key={JSON.stringify([filters, offset])}>
       {!current ? <p className="monitoring-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" />{t.loading}</p>
         : !current.data ? <p className="monitoring-message error" role="alert">{t.unavailable}<button type="button" onClick={() => {
           setResult(undefined);
@@ -113,26 +114,23 @@ export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale;
             }}><span><small>{languages[item.language as keyof typeof languages] ?? item.language}{item.edition && ` · ${t.edition} ${item.edition}`}</small>
               <strong title={item.title}>{item.title}</strong></span><ChevronRight aria-hidden="true" /></button>)
             : <p className="monitoring-empty">{t.noResults}</p>}
+      </div>
       {(showPrevious || showNext) && <nav className="monitoring-pagination" aria-label={t.corpus}>
         <button className="monitoring-button" type="button" disabled={!showPrevious} onClick={() => {
+          const last = previous.at(-1);
+          if (!last) return;
           setSelected(null);
-          setPage(page - 1);
-          if (offset > 0) setOffset(offset - rowsPerPage);
-          else if (previous.length) {
-            const last = previous[previous.length - 1];
-            setOffset(last.offset);
-            setFilters({ ...filters, cursor: last.cursor });
-            setPrevious(previous.slice(0, -1));
-          }
+          setOffset(last.offset);
+          if (last.cursor !== filters.cursor) setFilters({ ...filters, cursor: last.cursor });
+          setPrevious(previous.slice(0, -1));
         }}><ArrowLeft aria-hidden="true" />{t.previous}</button>
-        <span role="status">{t.page} {page}</span>
+        <span role="status">{t.page} {previous.length + 1}</span>
         <button className="monitoring-button" type="button" disabled={!showNext} onClick={() => {
           setSelected(null);
-          setPage(page + 1);
+          setPrevious([...previous, { cursor: filters.cursor, offset }]);
           if (offset + rowsPerPage < entries.length) setOffset(offset + rowsPerPage);
           else if (current?.data?.nextPage) {
             setOffset(0);
-            setPrevious([...previous, { cursor: filters.cursor, offset }]);
             setFilters({ ...filters, cursor: current.data.nextPage });
           }
         }}>{t.next}<ArrowRight aria-hidden="true" /></button>
@@ -141,7 +139,7 @@ export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale;
     {selected ? <section key={selected.work} className="monitoring-reader" aria-label={selected.title}>
       <button className="monitoring-button" type="button" onClick={() => {
         setSelected(null);
-        requestAnimationFrame(() => activeRow.current?.focus());
+        requestAnimationFrame(() => (activeRow.current?.isConnected ? activeRow.current : corpusSearch.current)?.focus());
       }}>{t.back}</button>
       <h2 ref={heading} tabIndex={-1}>{selected.title}</h2>
       <CorpusText key={selected.work} entry={selected} locale={locale} workspaceId={workspaceId} />

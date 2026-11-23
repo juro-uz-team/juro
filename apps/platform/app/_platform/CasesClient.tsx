@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+
 import { Select } from "../_components/Select";
 
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -55,13 +58,11 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
     const matchesStatus = status === "all" || (status === "active" ? !["completed", "cancelled", "archived"].includes(item.status) : item.status === status);
     return matchesSearch && matchesStatus;
   }), [items, query, status]);
+  const pagination = useWorkspacePagination(filtered.length, 6, JSON.stringify([query, status]));
 
   return (
-    <section className="cases-live">
-      <header>
-        <div><small>JURO · {copy.section}</small><h1>{copy.title}</h1><p>{copy.description}</p></div>
-        <Link href={`${base}/cases/new`}><Plus />{copy.create}</Link>
-      </header>
+    <section className="cases-live workspace-page">
+      <WorkspaceTitle icon={<BriefcaseBusiness />} title={copy.section} actions={ <><Link href={`${base}/cases/new`}><Plus />{copy.create}</Link></> } />
       <div className="cases-live-tools">
         <label><Search /><span className="sr-only">{copy.searchLabel}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} /></label>
         <Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label={copy.filter}>
@@ -74,7 +75,7 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
       {error && <p className="cases-live-error" role="alert"><CircleAlert />{error}</p>}
       {loading ? <div className="cases-live-loading"><LoaderCircle className="spin" /></div> : filtered.length ? (
         <div className="cases-live-list">
-          {filtered.map((item) => {
+          {filtered.slice(pagination.from, pagination.to).map((item) => {
             const complete = item.steps?.filter((step) => step.status === "completed").length ?? 0;
             const total = item.steps?.length ?? 0;
             const legalArea = planAreaLabel(item.legalArea,locale);
@@ -93,6 +94,7 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
       ) : (
         <div className="cases-live-empty"><BriefcaseBusiness /><h2>{query ? copy.noResults : copy.noMatters}</h2><p>{copy.empty}</p>{!query && <Link href={`${base}/cases/new`}>{copy.createFirst}</Link>}</div>
       )}
+      {!loading && <WorkspacePagination locale={locale} {...pagination} />}
     </section>
   );
 }

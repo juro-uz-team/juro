@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 import Link from "next/link";
@@ -82,6 +85,9 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
   }, [availabilityFilter, lawyers, minimumRating, query, specialty]);
   const approved = results.filter((lawyer) => lawyer.canReceiveRequests);
   const pendingReview = results.filter((lawyer) => !lawyer.canReceiveRequests);
+  const activeFilter = JSON.stringify([query, specialty, availabilityFilter, minimumRating]);
+  const approvedPages = useWorkspacePagination(approved.length, 3, activeFilter);
+  const pendingPages = useWorkspacePagination(pendingReview.length, 3, activeFilter);
 
   function card(lawyer: Lawyer) {
     const underReview = !lawyer.canReceiveRequests;
@@ -101,11 +107,8 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
     </article>;
   }
 
-  return <section className="lawyer-directory" aria-labelledby="lawyer-directory-heading">
-    <header className="lawyer-directory-hero">
-      <Scale aria-hidden="true" />
-      <div><span>JURO · MARKETPLACE</span><h1 id="lawyer-directory-heading">{text("Юристы и адвокаты", "Yuristlar va advokatlar", "Lawyers and advocates")}</h1><p>{text("Одобренные профили доступны для заявки. Полные профили на проверке показаны отдельно и не принимают записи. Передача материалов дела всегда требует вашего подтверждения.", "Tasdiqlangan profillarga so‘rov yuborish mumkin. To‘liq tekshiruvdagi profillar alohida ko‘rsatiladi va so‘rov qabul qilmaydi. Ish materiallarini topshirish doimo sizning tasdig‘ingizni talab qiladi.", "Approved professionals can receive requests. Complete profiles still under review are shown separately and cannot accept bookings. Sharing case materials always requires your explicit approval.")}</p></div>
-    </header>
+  return <section className="lawyer-directory workspace-page" aria-labelledby="lawyer-directory-heading">
+    <WorkspaceTitle icon={<Scale />} title={text("Юристы и адвокаты", "Yuristlar va advokatlar", "Lawyers and advocates")} id="lawyer-directory-heading" description={text("Одобренные профили доступны для заявки. Полные профили на проверке показаны отдельно и не принимают записи. Передача материалов дела всегда требует вашего подтверждения.", "Tasdiqlangan profillarga so‘rov yuborish mumkin. To‘liq tekshiruvdagi profillar alohida ko‘rsatiladi va so‘rov qabul qilmaydi. Ish materiallarini topshirish doimo sizning tasdig‘ingizni talab qiladi.", "Approved professionals can receive requests. Complete profiles still under review are shown separately and cannot accept bookings. Sharing case materials always requires your explicit approval.")} />
 
     <form className="lawyer-directory-controls" onSubmit={(event) => event.preventDefault()} aria-label={text("Фильтры каталога", "Katalog filtrlari", "Directory filters")}>
       <label><span>{text("Поиск", "Qidiruv", "Search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} maxLength={160} placeholder={text("Имя, специализация, фирма", "Ism, mutaxassislik, firma", "Name, practice area, or firm")} /></label>
@@ -118,7 +121,8 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
     {error && <p className="lawyer-directory-state error" role="alert"><CircleAlert aria-hidden="true" />{text("Каталог временно недоступен. Попробуйте обновить страницу.", "Katalog vaqtincha mavjud emas. Sahifani yangilang.", "The directory is temporarily unavailable. Please refresh the page.")}</p>}
     {!loading && !error && <p className="lawyer-directory-count" role="status">{text(`Найдено специалистов: ${results.length}`, `Topilgan mutaxassislar: ${results.length}`, `Professionals found: ${results.length}`)}</p>}
     {!loading && !error && results.length === 0 && <section className="lawyer-directory-empty"><UserRoundCheck aria-hidden="true" /><h2>{text("Пока нет подходящих профилей", "Hozircha mos profillar yo‘q", "No matching profiles yet")}</h2><p>{text("Измените фильтры или создайте заявку — JURO сможет подобрать специалиста после проверки конфликта интересов.", "Filtrlarni o‘zgartiring yoki so‘rov yarating — JURO manfaatlar to‘qnashuvini tekshirgandan keyin mutaxassis tanlay oladi.", "Adjust the filters or create a request. JURO can match you with a professional after a conflict-of-interest check.")}</p><Link href={`${base}/consultations`} className="lawyer-directory-link">{text("Создать заявку", "So‘rov yaratish", "Create request")}</Link></section>}
-    <div className="lawyer-directory-grid">{approved.map(card)}</div>
-    {pendingReview.length > 0 && <section className="lawyer-directory-pending" aria-labelledby="lawyer-directory-pending-heading"><h2 id="lawyer-directory-pending-heading">{text("Профили на проверке JURO", "JURO tekshiruvidagi profillar", "Profiles under JURO review")}</h2><p>{text("Эти специалисты завершили профиль, но ещё не одобрены для приёма заявок.", "Bu mutaxassislar profilini to‘ldirgan, biroq so‘rov qabul qilish uchun hali tasdiqlanmagan.", "These professionals have completed their profiles but are not yet approved to receive requests.")}</p><div className="lawyer-directory-grid">{pendingReview.map(card)}</div></section>}
+    <div className="lawyer-directory-grid">{approved.slice(approvedPages.from, approvedPages.to).map(card)}</div>
+    <WorkspacePagination locale={locale} {...approvedPages} />
+    {pendingReview.length > 0 && <section className="lawyer-directory-pending" aria-labelledby="lawyer-directory-pending-heading"><h2 id="lawyer-directory-pending-heading">{text("Профили на проверке JURO", "JURO tekshiruvidagi profillar", "Profiles under JURO review")}</h2><p>{text("Эти специалисты завершили профиль, но ещё не одобрены для приёма заявок.", "Bu mutaxassislar profilini to‘ldirgan, biroq so‘rov qabul qilish uchun hali tasdiqlanmagan.", "These professionals have completed their profiles but are not yet approved to receive requests.")}</p><div className="lawyer-directory-grid">{pendingReview.slice(pendingPages.from, pendingPages.to).map(card)}</div><WorkspacePagination locale={locale} {...pendingPages} /></section>}
   </section>;
 }

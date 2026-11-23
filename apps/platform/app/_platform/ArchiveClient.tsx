@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { usePlatformBasePath } from "./PlatformRouteContext";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated archive data is hydrated after the first browser render */
@@ -23,6 +26,8 @@ export function ArchiveClient({ locale }: { locale: PlatformLocale; accountType:
   const base = usePlatformBasePath();
   const [documents, setDocuments] = useState<Item[]>([]);
   const [cases, setCases] = useState<Item[]>([]);
+  const documentPages = useWorkspacePagination(documents.length, 5);
+  const casePages = useWorkspacePagination(cases.length, 5);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const restoreKeys = useRef(new Map<string, string>());
@@ -47,6 +52,6 @@ export function ArchiveClient({ locale }: { locale: PlatformLocale; accountType:
     restoreKeys.current.delete(operation);
     await load();
   }
-  return <section className="archive-workspace"><header><Archive /><div><small>JURO</small><h1>{copy.title}</h1><p>{copy.description}</p></div></header>{error && <p className="archive-error"><CircleAlert />{error}</p>}{loading ? <div className="archive-loading"><LoaderCircle className="spin" /></div> : <div className="archive-grid"><section><h2>{copy.documents}</h2>{documents.length ? documents.map(item => <article key={item.id}><FileCheck2 /><div><strong>{item.title}</strong><small>{item.category} · {formatDate(item.archivedAt, locale)}</small></div><Link href={`${base}/documents/${item.id}`}>{copy.open}</Link>{Boolean(item.canRestore) && <button onClick={() => void restore("document", item.id)}><RotateCcw />{copy.restore}</button>}</article>) : <p>{copy.noDocuments}</p>}</section><section><h2>{copy.cases}</h2>{cases.length ? cases.map(item => <article key={item.id}><Archive /><div><strong>{item.title}</strong><small>{item.legalArea} · {formatDate(item.archivedAt, locale)}</small></div><button onClick={() => void restore("case", item.id)}><RotateCcw />{copy.restore}</button></article>) : <p>{copy.noCases}</p>}</section></div>}</section>;
+  return <section className="archive-workspace workspace-page"><WorkspaceTitle icon={<Archive />} title={copy.title} description={copy.description} />{error && <p className="archive-error"><CircleAlert />{error}</p>}{loading ? <div className="archive-loading"><LoaderCircle className="spin" /></div> : <div className="archive-grid"><section><h2>{copy.documents}</h2>{documents.length ? documents.slice(documentPages.from, documentPages.to).map(item => <article key={item.id}><FileCheck2 /><div><strong>{item.title}</strong><small>{item.category} · {formatDate(item.archivedAt, locale)}</small></div><Link href={`${base}/documents/${item.id}`}>{copy.open}</Link>{Boolean(item.canRestore) && <button onClick={() => void restore("document", item.id)}><RotateCcw />{copy.restore}</button>}</article>) : <p>{copy.noDocuments}</p>}<WorkspacePagination locale={locale} {...documentPages} /></section><section><h2>{copy.cases}</h2>{cases.length ? cases.slice(casePages.from, casePages.to).map(item => <article key={item.id}><Archive /><div><strong>{item.title}</strong><small>{item.legalArea} · {formatDate(item.archivedAt, locale)}</small></div><button onClick={() => void restore("case", item.id)}><RotateCcw />{copy.restore}</button></article>) : <p>{copy.noCases}</p>}<WorkspacePagination locale={locale} {...casePages} /></section></div>}</section>;
 }
 function formatDate(value: string, locale: PlatformLocale) { return new Intl.DateTimeFormat({ ru: "ru-RU", uz: "uz-UZ", en: "en-GB" }[locale], { dateStyle: "medium", timeZone: "Asia/Tashkent" }).format(new Date(value)); }

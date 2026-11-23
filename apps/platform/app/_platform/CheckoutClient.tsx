@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 /* eslint-disable react-hooks/set-state-in-effect -- the order is intentionally read from the authenticated API */
 
 import { ArrowLeft, Check, CircleAlert, FileCheck2, LoaderCircle, LockKeyhole } from "lucide-react";
@@ -82,9 +84,9 @@ export function CheckoutClient({ locale, accountType, orderId, workspaceId }: { 
   }
   const item = view.items[0];
   const snapshot = view.pricingSnapshot;
-  return <section className="checkout-workspace">
+  return <section className="checkout-workspace workspace-page">
     <Link className="checkout-back" href={`${basePath}/billing`}><ArrowLeft aria-hidden="true"/>{copy.back}</Link>
-    <header><div><small>JURO · CHECKOUT</small><h1>{copy.title}</h1><p>{copy.description}</p></div><LockKeyhole aria-hidden="true"/></header>
+    <WorkspaceTitle icon={<LockKeyhole />} title={copy.title} description={copy.description} />
     {error && <p className="billing-error" role="alert"><CircleAlert/>{error}</p>}
     <div className="checkout-grid">
       <article className="checkout-summary"><div className="checkout-title"><FileCheck2/><div><small>{copy.order}</small><h2>{item ? (locale === "ru" ? item.titleRu : locale === "uz" ? item.titleUz : item.titleEn || copy.subscription) : copy.subscription}</h2></div></div><dl><div><dt>{copy.cost}</dt><dd>{money(snapshot?.juroBaseAmountMinor ?? 0, locale)}</dd></div><div><dt>{copy.tax}</dt><dd>{money(snapshot?.juroVatAmountMinor ?? 0, locale)}</dd></div><div className="checkout-total"><dt>{copy.total}</dt><dd>{money(snapshot?.clientTotalMinor ?? view.order.totalAmountMinor, locale)}</dd></div></dl><p className="checkout-invoice">{copy.invoice}: <strong>{view.invoice?.invoiceNumber ?? "—"}</strong></p></article>

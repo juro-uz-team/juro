@@ -23,3 +23,15 @@ html[data-theme=dark] :is(.cases-live-error,.case-create .case-create-error){col
  .platform-shell .cases-live-list article { grid-template-columns:32px minmax(0,1fr); padding:16px; gap:12px; }
  .platform-shell .cases-live-list article > a,.platform-shell .cases-live-progress { grid-column:2; }
 }
+
+.platform-shell .cases-live.workspace-page { gap: 14px; }
+.platform-shell .cases-live-list article { min-height: 92px; padding: 12px; }
+.platform-shell .cases-live-body h2 { margin: 2px 0; }
+@media (max-width: 800px) {
+  .platform-shell .cases-live-list article { grid-template-columns: 36px minmax(0,1fr) auto; align-items: start; gap: 6px 10px; }
+  .cases-live-icon { width: 36px; height: 36px; }
+  .platform-shell .cases-live-list article > a { grid-column: 3; grid-row: 2; }
+  .platform-shell .cases-live-progress { grid-column: 2; align-self: center; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+  .platform-shell .cases-live-progress strong { font-size: 17px; }
+  .platform-shell .cases-live-body { grid-column: 2 / -1; }
+}

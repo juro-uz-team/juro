@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { CircleAlert, LoaderCircle, Plus, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
@@ -58,15 +60,8 @@ export function CaseCreateClient({ locale, accountType }: { locale: PlatformLoca
   }
 
   return (
-    <section className="case-create">
-      <header>
-        <div>
-          <small>JURO · {copy.section}</small>
-          <h1>{copy.title}</h1>
-          <p>{copy.description}</p>
-        </div>
-        <ShieldCheck aria-hidden="true" />
-      </header>
+    <section className="case-create workspace-page">
+      <WorkspaceTitle icon={<ShieldCheck />} title={copy.title} description={copy.description} />
 
       <form onSubmit={submit} aria-describedby="case-create-note">
         <fieldset>

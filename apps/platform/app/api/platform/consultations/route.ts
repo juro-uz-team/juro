@@ -10,7 +10,7 @@ import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { comparisonForUser } from "../../../../lib/document-comparison/storage";
 import { consultationBookingSchema } from "../../../../lib/platform/consultation";
-import { workspaceForContentEditor, workspaceForUser } from "../../../../lib/platform/workspace";
+import { requireSelectedWorkspace, workspaceForContentEditor } from "../../../../lib/platform/workspace";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -19,9 +19,9 @@ function response(body: unknown, status = 200) {
   });
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const [slots, bookings, entitlements] = await Promise.all([
     db.prepare(
@@ -42,7 +42,7 @@ export const GET = withApiErrors(async function GET() {
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const parsed = await parseJsonRequest(request, consultationBookingSchema, 4_096);
   if (!parsed.ok) {
     return response({

@@ -1,0 +1,77 @@
+.consultation-workspace { display: grid; gap: 14px; color: var(--text-primary); }
+.consultation-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.consultation-workspace :is(.consultation-nav, .consultation-empty, .consultation-dialog, .consultation-feedback) button,
+.consultation-guide > a {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px;
+  padding: 8px 13px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-raised); color: var(--text-primary); font-weight: 650; text-decoration: none;
+}
+.consultation-nav button svg, .consultation-guide > a svg { width: 17px; height: 17px; flex: none; }
+.consultation-nav button[aria-pressed=true], .consultation-days button[aria-pressed=true] {
+  background: var(--amber-bg); color: var(--brand-gold-text); border-color: var(--border-accent);
+}
+.consultation-nav button > span { font-size: 12px; font-variant-numeric: tabular-nums; }
+.consultation-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(250px, 1fr); gap: 14px; align-items: start; }
+.consultation-panel, .consultation-guide {
+  min-inline-size: 0; padding: clamp(14px, 2vw, 24px);
+  border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised);
+}
+.consultation-panel > header { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-block-end: 14px; }
+.consultation-panel h2, .consultation-guide h2, .consultation-dialog h2 { font-size: 19px; line-height: 1.3; font-weight: 750; }
+.consultation-panel h3 { margin: 18px 0 10px; font-size: 15px; }
+.consultation-panel > header span { color: var(--text-secondary); font-size: 13px; }
+.consultation-days, .consultation-times { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.consultation-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.consultation-days button, .consultation-times button {
+  min-inline-size: 0; min-height: 44px; padding: 9px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-subtle); color: var(--text-primary); text-align: center; font-weight: 650; overflow-wrap: anywhere;
+}
+.consultation-days button { display: grid; justify-items: center; align-content: center; gap: 3px; padding: 7px 4px; }
+.consultation-days button strong { font: 500 23px / 1 Georgia, serif; font-variant-numeric: lining-nums tabular-nums; }
+.consultation-days button small { font-size: 12px; color: var(--text-secondary); }
+.consultation-times button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 58px; text-align: start; }
+.consultation-times button > svg { height: 16px; width: 16px; color: var(--brand-gold-text); }
+.consultation-times button > svg:last-child { color: var(--text-secondary); }
+.consultation-times button span { display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+.consultation-times button small, .consultation-requests time { color: var(--text-secondary); font-size: 13px; }
+.consultation-workspace button:hover:not(:disabled), .consultation-guide a:hover { border-color: var(--border-accent); }
+.consultation-guide { display: grid; gap: 10px; justify-items: start; background: linear-gradient(140deg, var(--surface-brand), var(--surface-raised) 55%); }
+.consultation-guide-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--amber-bg); color: var(--brand-gold-text); }
+.consultation-guide-icon svg { width: 20px; height: 20px; }
+.consultation-guide p, .consultation-empty p, .consultation-dialog p { color: var(--text-secondary); line-height: 1.55; }
+.consultation-context { display: grid; min-width: 0; padding: 10px 12px; gap: 4px; border-inline-start: 2px solid var(--border-accent); overflow-wrap: anywhere; }
+.consultation-context span { color: var(--text-secondary); font-size: 13px; }
+.consultation-empty { min-height: 215px; display: grid; align-content: center; justify-items: center; gap: 8px; text-align: center; }
+.consultation-empty > svg { width: 32px; height: 32px; color: var(--brand-gold-text); }
+.consultation-empty > button { margin-top: 6px; }
+.consultation-requests article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.consultation-requests article > div { display: grid; gap: 3px; }
+.consultation-status { padding: 5px 9px; border-radius: 8px; background: var(--amber-bg); color: var(--brand-gold-text); font-size: 12px; font-weight: 650; }
+.consultation-status:is([data-status=confirmed], [data-status=completed]) { background: var(--green-bg); color: var(--text-primary); }
+.consultation-status[data-status=cancelled] { background: var(--surface-subtle); color: var(--text-secondary); }
+.consultation-feedback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface-brand); }
+.consultation-feedback svg { width: 17px; height: 17px; }
+.consultation-feedback.error { border: 1px solid var(--status-danger); background: var(--red-bg); color: var(--text-primary); }
+.consultation-dialog { width: min(470px, calc(100% - 24px)); max-height: calc(100dvh - 24px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); color: var(--text-primary); }
+.consultation-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.consultation-dialog form { display: grid; gap: 14px; padding: clamp(14px, 4vw, 24px); }
+.consultation-dialog header, .consultation-confirm-time { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.consultation-confirm-time { justify-content: flex-start; padding: 12px; border-radius: 10px; background: var(--surface-brand); }
+.consultation-confirm-time > svg { flex: none; color: var(--brand-gold-text); }
+.consultation-confirm-time > div { display: grid; gap: 3px; }
+.consultation-confirm-time span { color: var(--text-secondary); font-size: 13px; }
+.consultation-workspace .consultation-dialog form > .consultation-primary { background: var(--interactive-primary); color: var(--text-on-action); border-color: var(--border-accent); }
+.consultation-workspace .lawyer-handoff { margin: 0; max-width: none; }
+
+@media (max-width: 800px) { .consultation-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) {
+  .consultation-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .consultation-nav button { flex-direction: column; min-height: 56px; gap: 4px; padding: 6px; font-size: 12px; }
+  .consultation-guide:not(:has(.consultation-context, a)) { display: none; }
+  .consultation-requests article { grid-template-columns: auto minmax(0, 1fr); }
+  .consultation-status { grid-column: 2; justify-self: start; }
+}
+@media (max-width: 360px) {
+  .consultation-times button { grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
+  .consultation-times button > svg:last-child { display: none; }
+}

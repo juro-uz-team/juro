@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Fingerprint, Settings2, ShieldCheck, UserRound, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -19,7 +21,7 @@ export function AccountArea({ locale, view, name, email, children }: {
   locale: PlatformLocale; view: AccountView; name?: string | null; email?: string; children: ReactNode;
 }) {
   const areaRef = useRef<HTMLElement>(null);
-  const headingRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLElement>(null);
   const railRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const area = areaRef.current;
@@ -38,10 +40,11 @@ export function AccountArea({ locale, view, name, email, children }: {
   }, []);
   const copy = accountSettingsCopy[locale];
   const base = usePlatformBasePath();
+  const Icon = sections.find(section => section.view === view)?.icon ?? UserRound;
   const initials = Array.from(name?.trim() ?? "")[0]?.toUpperCase();
   return (
-    <section ref={areaRef} className="profile-workspace account-area">
-      <div ref={headingRef} className="account-heading"><p>{copy.account}</p><h1 id="account-page-title">{copy[view].title}</h1><span>{copy[view].description}</span></div>
+    <section ref={areaRef} className="profile-workspace account-area workspace-page">
+      <WorkspaceTitle icon={<Icon />} title={copy[view].title} id="account-page-title" headerRef={headingRef} description={copy[view].description} />
       <div className="account-layout">
         <aside ref={railRef} className="account-rail">
           <div className="account-identity"><span className="account-avatar" aria-hidden="true">{initials || <UserRound />}</span><div><strong>{name || copy.account}</strong><span title={email}>{email || copy.personal}</span></div></div>

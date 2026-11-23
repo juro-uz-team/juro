@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -466,17 +468,12 @@ export function ComparisonResultClient({
   for (const item of detail.exports) if (!latestExports.has(item.format)) latestExports.set(item.format, item);
   const safeSources = detail.sources.filter((source) => safeOfficialUrl(source.officialUrl));
   return (
-    <div className="comparison-result-shell">
-      <header className="comparison-result-hero">
-        <Link className="comparison-result-back" href={`${base}/document-review?mode=compare`}><ArrowLeft />{copy.back}</Link>
-        <div className="comparison-result-title">
-          <span><FileDiff /></span>
-          <div>
-            <small>{copy.generated} · {formatDate(summary.generatedAt, locale)}</small>
-            <h1>{detail.versionOneName} <i>→</i> {detail.versionTwoName}</h1>
-            <p>{detail.status === "completed_partial" ? copy.partial : `${summary.totalChanges} ${copy.metrics.changes}`}</p>
-          </div>
-        </div>
+    <div className="comparison-result-shell workspace-page">
+      <WorkspaceTitle icon={<FileDiff />}
+        title={<>{detail.versionOneName} <span aria-hidden="true">→</span> {detail.versionTwoName}</>}
+        description={<>{copy.generated} · {formatDate(summary.generatedAt, locale)} · {detail.status === "completed_partial" ? copy.partial : `${summary.totalChanges} ${copy.metrics.changes}`}</>}
+        actions={<Link className="comparison-result-back" href={`${base}/document-review?mode=compare`}><ArrowLeft aria-hidden="true" />{copy.back}</Link>} />
+      <div className="comparison-result-hero">
         <div className="comparison-result-actions">
           {(["pdf", "docx"] as const).map((format) => {
             const item = latestExports.get(format);
@@ -512,7 +509,9 @@ export function ComparisonResultClient({
           <Link href={`${base}/document-builder`}><FileText />{copy.edit}</Link>
           <button type="button" className="danger" onClick={() => void removeComparison()}><Trash2 /><span>{copy.delete}</span></button>
         </div>
-        <section className="comparison-version-metadata" aria-label={copy.versionMetadataAria}>
+        <details className="comparison-version-disclosure">
+          <summary className="juro-disclosure-summary">{copy.versionMetadataAria}</summary>
+          <section className="comparison-version-metadata" aria-label={copy.versionMetadataAria}>
           {([detail.versionOne, detail.versionTwo] as const).map((version, index) => (
             <article key={index}>
               <FileText />
@@ -536,8 +535,9 @@ export function ComparisonResultClient({
               </a>
             </article>
           ))}
-        </section>
-      </header>
+          </section>
+        </details>
+      </div>
 
       {error && <div className="comparison-message error" role="alert"><AlertTriangle /><span>{error}</span></div>}
       {summary.likelyDifferentDocuments && <div className="comparison-message warning" role="status"><AlertTriangle /><span>{copy.likelyDifferent}</span></div>}

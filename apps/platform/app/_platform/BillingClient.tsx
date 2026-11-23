@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated billing data is hydrated after the first browser render */
 
 import { Check, CircleAlert, CreditCard, LoaderCircle, ReceiptText, ShieldCheck } from "lucide-react";
@@ -117,8 +119,8 @@ export function BillingClient({ locale, accountType, workspaceId }: { locale: Pl
   }
 
   if (loading) return <div className="billing-loading" role="status"><LoaderCircle className="spin" /><span className="sr-only">{copy.loading}</span></div>;
-  return <section className="billing-workspace">
-    <header><CreditCard aria-hidden="true"/><div><small>JURO · BILLING</small><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
+  return <section className="billing-workspace workspace-page">
+    <WorkspaceTitle icon={<CreditCard />} title={copy.title} description={copy.description} />
     {error && <p className="billing-error" role="alert"><CircleAlert aria-hidden="true"/>{error}<button type="button" onClick={() => void load()}>{copy.retry}</button></p>}
     {data && <>
       <div className={`billing-provider ${data.provider.enabled ? "ready" : ""}`}><ShieldCheck aria-hidden="true"/><div><strong>{data.provider.enabled ? copy.ready : copy.unavailable}</strong><p>{data.provider.sandboxEnabled ? copy.staging : copy.providerReview}</p></div></div>

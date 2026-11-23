@@ -1,3 +1,5 @@
+
+import { WorkspaceTitle } from "./WorkspaceTitle";
 import { UserRound } from "lucide-react";
 import type {
   AccountType,
@@ -6,7 +8,6 @@ import type {
 } from "../../lib/platform/routing";
 import { ActionPlanClient } from "./ActionPlanClient";
 import { ConsultationsClient } from "./ConsultationsClient";
-import { LawyerHandoffClient } from "./LawyerHandoffClient";
 import { DashboardClient } from "./DashboardClient";
 import { CasesClient } from "./CasesClient";
 import { TeamClient } from "./TeamClient";
@@ -159,16 +160,7 @@ export function ModuleContent({
     return <ActionPlanClient locale={locale} accountType={accountType} />;
   if (module === "calendar") return <CalendarClient locale={locale} />;
   if (module === "consultations")
-    return (
-      <>
-        <ConsultationsClient locale={locale} />
-        <LawyerHandoffClient
-          locale={locale}
-          accountType={accountType}
-          workspaceId={workspaceId}
-        />
-      </>
-    );
+    return <ConsultationsClient locale={locale} accountType={accountType} workspaceId={workspaceId} />;
   if (module === "dashboard")
     return (
       <DashboardClient
@@ -222,17 +214,8 @@ export function ModuleContent({
     return <MonitoringClient locale={locale} accountType={accountType} />;
   const Icon = UserRound;
   return (
-    <section className="platform-module">
-      <header>
-        <span>
-          <Icon />
-        </span>
-        <div>
-          <small>JURO</small>
-          <h1>{titles[module][locale]}</h1>
-          <p>{descriptions[module][locale]}</p>
-        </div>
-      </header>
+    <section className="platform-module workspace-page">
+      <WorkspaceTitle icon={<Icon />} title={titles[module][locale]} description={descriptions[module][locale]} />
       <div className="platform-empty platform-module-empty">
         <Icon />
         <h2>

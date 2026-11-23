@@ -84,17 +84,8 @@
 .comparison-result-shell{display:grid;max-width:1600px;margin:0 auto;padding:clamp(22px,3vw,44px);gap:18px}
 .comparison-result-back{display:inline-flex;width:max-content;min-height:44px;align-items:center;gap:8px;color:var(--d3);font-size:14px;font-weight:780}
 .comparison-result-back svg{width:18px}
-.comparison-result-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:clamp(20px,3vw,32px);border:1px solid var(--d4);border-radius:22px;background:var(--d0);box-shadow:0 16px 45px var(--shadow-color)}
-.comparison-result-hero>.comparison-result-back{grid-column:1/-1}
-.comparison-result-title{display:flex;min-width:0;align-items:flex-start;gap:15px}
-.comparison-result-title>span{display:grid;width:50px;height:50px;place-items:center;flex:none;border-radius:14px;background:var(--surface-selected);color:var(--d5)}
-.comparison-result-title>span svg{width:25px}
-.comparison-result-title>div{min-width:0}
-.comparison-result-title small{color:var(--d3);font-size:13px;font-weight:700}
-.comparison-result-title h1{overflow-wrap:anywhere;margin:7px 0 8px;color:var(--d2);font-size:clamp(24px,2.5vw,38px);letter-spacing:-.035em;line-height:1.12}
-.comparison-result-title h1 i{color:var(--d5);font-style:normal}
-.comparison-result-title p{margin:0;color:var(--d3);font-size:14px}
-.comparison-result-actions{display:flex;max-width:470px;flex-wrap:wrap;align-content:flex-start;justify-content:flex-end;gap:8px}
+.comparison-result-hero{display:grid;gap:14px;padding:clamp(14px,2vw,22px);border:1px solid var(--d4);border-radius:22px;background:var(--d0);box-shadow:0 16px 45px var(--shadow-color)}
+.comparison-result-actions{display:flex;flex-wrap:wrap;gap:8px}
 .comparison-export-action{display:inline-flex;align-items:stretch;gap:4px}
 .comparison-result-actions .comparison-export-delete{width:44px;padding:0;color:var(--d-err)}
 .comparison-result-actions button:disabled{cursor:wait;opacity:.7}
@@ -102,6 +93,8 @@
 .comparison-result-actions svg{width:17px}
 .comparison-result-actions .danger{width:44px;padding:0;color:var(--d-err)}
 .comparison-result-actions .danger span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.comparison-version-disclosure{min-width:0;border-top:1px solid var(--d4)}
+.comparison-version-disclosure>summary{display:flex;align-items:center;min-height:44px;gap:8px;color:var(--d2);font-size:13px;font-weight:650;cursor:pointer}
 .comparison-version-metadata{display:grid;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:10px;padding-top:18px;border-top:1px solid var(--d4)}
 .comparison-version-metadata article{display:grid;min-width:0;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px;padding:13px;border:1px solid var(--d4);border-radius:11px;background:var(--d1)}
 .comparison-version-metadata article>svg{width:20px;color:var(--d5)}

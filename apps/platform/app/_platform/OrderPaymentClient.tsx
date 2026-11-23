@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 /* eslint-disable react-hooks/set-state-in-effect -- provider-confirmed order state is read after every action */
 
 import { ArrowLeft, CheckCircle2, CircleAlert, CreditCard, LoaderCircle, RotateCcw, ShieldCheck } from "lucide-react";
@@ -67,9 +69,9 @@ export function OrderPaymentClient({ locale, accountType, orderId, workspaceId }
   const failed = view.paymentAttempt?.internalStatus === "failed";
   const basePath = platformBasePath(locale, accountType, workspaceId);
   const service = view.order.orderType === "LEGAL_SERVICE";
-  return <section className="checkout-workspace payment-status-workspace">
+  return <section className="checkout-workspace payment-status-workspace workspace-page">
     <Link className="checkout-back" href={`${basePath}/billing`}><ArrowLeft/>{copy.back}</Link>
-  <header className={active ? "payment-success" : ""}><div><small>JURO · PAYMENT</small><h1>{active ? copy.confirmed : failed ? copy.declined : copy.confirmation}</h1><p>{active ? (service ? copy.serviceActive : copy.subscriptionActive) : copy.stagingDescription}</p></div>{active ? <CheckCircle2/> : <ShieldCheck/>}</header>
+  <WorkspaceTitle icon={active ? <CheckCircle2 /> : <ShieldCheck />} title={active ? copy.confirmed : failed ? copy.declined : copy.confirmation} description={active ? (service ? copy.serviceActive : copy.subscriptionActive) : copy.stagingDescription} />
     {error && <p className="billing-error" role="alert"><CircleAlert/>{error}</p>}
     <article className="payment-card"><div><span>{copy.amount}</span><strong>{money(view.order.totalAmountMinor, locale)}</strong></div><div><span>{copy.invoice}</span><strong>{view.invoice?.invoiceNumber ?? "—"}</strong></div><div><span>{copy.status}</span><strong>{active ? copy.paid : failed ? copy.rejected : copy.pending}</strong></div></article>
     {active ? <div className="payment-actions"><Link className="payment-primary" href={`${basePath}/billing`}><CheckCircle2/>{copy.returnToBilling}</Link></div> : view.availability?.sandboxEnabled ? <div className="sandbox-panel"><div><small>STAGING SANDBOX</small><h2>{failed ? copy.repeatTest : copy.chooseProvider}</h2><p>{copy.sandboxDescription}</p></div><div className="sandbox-actions"><button type="button" disabled={Boolean(processing)} onClick={() => void authorize("FUNDED")}>{processing === "FUNDED" ? <LoaderCircle className="spin"/> : <CreditCard/>}{copy.testPay}</button><button type="button" className="secondary" disabled={Boolean(processing)} onClick={() => void authorize("DECLINED")}>{processing === "DECLINED" ? <LoaderCircle className="spin"/> : <CircleAlert/>}{copy.testDecline}</button></div></div> : <div className="billing-empty"><ShieldCheck/><div><h2>{copy.awaitingProvider}</h2><p>{copy.awaitingDescription}</p><button type="button" onClick={() => { setLoading(true); void load(); }}><RotateCcw/>{copy.checkAgain}</button></div></div>}

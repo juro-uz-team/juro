@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -68,15 +70,8 @@ export function HelpClient({ locale }: { locale: PlatformLocale; accountType: Ac
   async function submitSupport(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSending(true); setSupportStatus(""); try { const response = await fetch("/api/platform/support-tickets", { method: "POST", headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale }, body: JSON.stringify({ category, severity, subject, message, locale }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.requestFailed)); setSubject(""); setMessage(""); setSupportStatus(copy.sent); await loadTickets(); } catch (value) { setSupportStatus(value instanceof Error ? value.message : copy.requestFailed); } finally { setSending(false); } }
   async function submitReply(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!selectedTicket || !reply.trim()) return; setReplying(true); try { const response = await fetch(`/api/platform/support-tickets/${encodeURIComponent(selectedTicket.id)}`, { method: "POST", headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale }, body: JSON.stringify({ message: reply.trim() }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.requestFailed)); setReply(""); await openTicket(selectedTicket.id); await loadTickets(); setSupportStatus(copy.replySent); } catch (value) { setSupportStatus(value instanceof Error ? value.message : copy.requestFailed); } finally { setReplying(false); } }
   return (
-    <section className="help-workspace">
-      <header>
-        <HelpCircle />
-        <div>
-          <small>JURO · HELP</small>
-          <h1>{copy.title}</h1>
-          <p>{copy.description}</p>
-        </div>
-      </header>
+    <section className="help-workspace workspace-page">
+      <WorkspaceTitle icon={<HelpCircle />} title={copy.title} description={copy.description} />
       <section className="help-knowledge" aria-labelledby="knowledge-title">
         <div className="help-knowledge-heading">
           <div>

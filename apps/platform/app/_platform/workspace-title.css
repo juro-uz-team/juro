@@ -1,0 +1,99 @@
+.workspace-page.workspace-page {
+  inline-size: 100%;
+  max-inline-size: 1440px;
+  margin-inline: auto;
+  padding: clamp(12px, 2.3vw, 30px);
+  min-inline-size: 0;
+}
+
+header.workspace-title.workspace-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-inline-size: 0;
+  min-block-size: 70px;
+  padding: 12px clamp(12px, 2vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--text-primary);
+  background: linear-gradient(105deg, var(--surface-brand), var(--surface-raised) 72%);
+  box-shadow: none;
+}
+
+.workspace-title.workspace-title .workspace-title-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border: 1px solid var(--border-accent);
+  border-radius: 12px;
+  background: var(--amber-bg);
+  color: var(--brand-gold-text);
+  padding: 0;
+  margin: 0;
+}
+
+.workspace-title .workspace-title-mark svg { width: 21px; height: 21px; color: inherit; }
+.workspace-title .workspace-title-copy { min-inline-size: 0; }
+.workspace-title.workspace-title h1 {
+  color: var(--text-primary);
+  margin: 0;
+  font: 500 clamp(23px, 2.6vw, 36px) / 1.12 Georgia, serif;
+  letter-spacing: -.03em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.workspace-title.workspace-title .workspace-title-description {
+  color: var(--text-secondary);
+  max-inline-size: 72ch;
+  margin-block-start: 5px;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.workspace-title-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.workspace-title.workspace-title .workspace-title-actions > :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: 650 14px / 1.35 var(--sans);
+  text-decoration: none;
+}
+.workspace-title.workspace-title .workspace-title-actions > :is(a, button):hover { border-color: var(--border-accent); }
+.workspace-title .workspace-title-actions > :is(a, button) svg { width: 17px; height: 17px; flex: none; color: inherit; }
+.workspace-title-actions:empty { display: none; }
+.workspace-pagination {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-inline-size: 0; padding: 8px 0 0; color: var(--text-secondary); font-size: 13px;
+}
+.workspace-pagination button {
+  display: inline-flex; align-items: center; gap: 6px; min-block-size: 44px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface-raised);
+  color: var(--text-primary); font: inherit; font-weight: 650;
+}
+.workspace-pagination button:hover:not(:disabled) { border-color: var(--border-accent); }
+.workspace-pagination button:disabled { opacity: .55; }
+.workspace-pagination button svg { width: 16px; height: 16px; flex: none; }
+.workspace-pagination > span { font-variant-numeric: tabular-nums; }
+.workspace-pagination button:focus-visible,
+.workspace-title-actions > :is(a, button):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+@media (max-width: 580px) {
+  header.workspace-title.workspace-title { grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; }
+  header.workspace-title.workspace-title:has(.workspace-title-actions) { grid-template-columns: minmax(0, 1fr) auto; }
+  .workspace-title:has(.workspace-title-actions) .workspace-title-mark { display: none; }
+  .workspace-title .workspace-title-actions { max-inline-size: min(38vw, 11rem); }
+  header.workspace-title.workspace-title:has(.workspace-title-actions > :is(div, nav), .workspace-title-actions > :nth-child(2)) {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .workspace-title:has(.workspace-title-actions > :is(div, nav), .workspace-title-actions > :nth-child(2)) .workspace-title-mark { display: grid; }
+  .workspace-title-actions:has(> :is(div, nav), > :nth-child(2)) { grid-column: 1 / -1; max-inline-size: none; justify-content: flex-start; }
+}

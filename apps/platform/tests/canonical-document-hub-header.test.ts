@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("canonical document hubs use the embedded toolbar without resolving auth twice", async () => {
+test("canonical document hubs use a single workspace title without resolving auth twice", async () => {
   const [documentsPage, client, accountRoute, businessRoute] = await Promise.all([
     readFile(new URL("app/_document-builder/documents/page.tsx", root), "utf8"),
     readFile(new URL("app/_document-builder/documents/DocumentsClient.tsx", root), "utf8"),
@@ -16,10 +16,11 @@ test("canonical document hubs use the embedded toolbar without resolving auth tw
   assert.match(documentsPage, /suppliedUser \?\? await requireChatGPTUser\(returnTo\)/);
   assert.match(documentsPage, /<DocumentsClient[\s\S]*embedded=\{embedded\}/);
   assert.match(client, /variant=\{embedded \? "embedded" : "standalone"\}/);
+  assert.match(client, /<WorkspaceTitle[\s\S]*title=\{copy\.title\}/);
 
   const header = await readFile(new URL("app/_document-builder/_components/BuilderHeader.tsx", root), "utf8");
-  assert.match(header, /\{!embedded && <nav aria-label=/);
-  assert.match(header, /\{embedded \? <div className="dbt-embedded-title">/);
+  assert.match(header, /if \(embedded\) return null;/);
+  assert.match(header, /<nav aria-label=/);
 
   for (const route of [accountRoute, businessRoute]) {
     assert.match(route, /const user = await requireChatGPTUser\(returnTo\)/);

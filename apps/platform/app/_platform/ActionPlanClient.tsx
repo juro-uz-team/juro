@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { DateTimePicker, DayCountInput } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
@@ -350,19 +353,15 @@ export function ActionPlanClient({
     [cases],
   );
 
-  return <div className="plan-workspace" onClickCapture={event=>{
+  const pagination = useWorkspacePagination(cases.length, 5);
+  const displayedCases = initialCaseId ? cases : cases.slice(pagination.from, pagination.to);
+
+  return <div className="plan-workspace workspace-page" onClickCapture={event=>{
     if(hasPendingChanges&&(event.target as HTMLElement).closest("a[href]")&&!window.confirm(t("Есть несохранённые изменения. Выйти без сохранения?","Saqlanmagan o‘zgarishlar bor. Saqlamasdan chiqilsinmi?","You have unsaved changes. Leave without saving?"))){event.preventDefault();event.stopPropagation();}
   }}>
     {initialCaseId && <nav className="matter-breadcrumbs" aria-label={t("Навигация по плану","Reja navigatsiyasi","Plan navigation")}><Link href={`${base}/action-plan`}>{t("Все планы","Barcha rejalar","All plans")}</Link>{initialCaseId && <><span aria-hidden="true">/</span><Link href={`${base}/cases/${encodeURIComponent(initialCaseId)}`}>{t("Дело","Ish","Matter")}</Link></>}</nav>}
     {notice && <p className="plan-success" role="status"><Check aria-hidden="true" />{notice}</p>}
-    <section className="plan-heading">
-      <div>
-        <small>JURO · {t("План действий", "Harakatlar rejasi", "Action plan")}</small>
-        <h1>{initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")}</h1>
-        <p>{!initialCaseId ? t("Выберите план, чтобы посмотреть шаги и отметить выполненное.","Qadamlarni ko‘rish va bajarilganlarini belgilash uchun rejani tanlang.","Choose a plan to view its steps and mark your progress.") : t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")}</p>
-      </div>
-      <CalendarDays />
-    </section>
+    <WorkspaceTitle icon={<CalendarDays />} title={initialCaseId ? t("План действий","Harakatlar rejasi","Action plan") : t("Мои планы","Rejalarim","My plans")} description={!initialCaseId ? t("Выберите план, чтобы посмотреть шаги и отметить выполненное.","Qadamlarni ko‘rish va bajarilganlarini belgilash uchun rejani tanlang.","Choose a plan to view its steps and mark your progress.") : t("Выполняйте шаги по порядку. Измените статус или срок и сохраните изменения.","Qadamlarni tartib bilan bajaring. Holat yoki muddatni o‘zgartirib, saqlang.","Work through the steps. Update a status or deadline, then save your changes.")} />
     <div className="plan-layout">
       <section className="plan-main">
         {!initialCaseId && <details className="plan-create-disclosure"><summary className="juro-disclosure-summary">{t("Создать новый план","Yangi reja yaratish","Create a new plan")}</summary><form className="plan-create" onSubmit={create}>
@@ -415,7 +414,7 @@ export function ActionPlanClient({
             ? <div className="plan-loading"><LoaderCircle className="spin" /></div>
             : cases.length === 0
               ? <div className="platform-empty"><CalendarDays /><p>{t("Создайте первый план из проверяемого сценария.", "Tekshiriladigan ssenariydan birinchi rejangizni yarating.", "Create your first plan from a verifiable scenario.")}</p></div>
-              : cases.map((item) => {
+              : displayedCases.map((item) => {
                 if (!initialCaseId) return <Link className="plan-summary" href={`${base}/action-plan/${item.id}`} key={item.id}>
                   <div><h3>{suggestedMatterTitle(item.title)}</h3><p>{item.steps.filter(step => step.status === "completed").length} / {item.steps.length} {t("шагов выполнено", "qadam bajarildi", "steps completed")}</p></div>
                   <span className="plan-summary-progress">{item.progressPercent}%<span className="plan-progress" aria-hidden="true"><i style={{width:`${item.progressPercent}%`}} /></span></span><ChevronDown aria-hidden="true" />
@@ -613,6 +612,7 @@ export function ActionPlanClient({
                   </div>}
                 </article>;
               })}
+          {!loading && !initialCaseId && <WorkspacePagination locale={locale} {...pagination} />}
         </section>
       </section>
       {!initialCaseId && <aside className="plan-calendar">

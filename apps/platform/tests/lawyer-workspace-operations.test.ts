@@ -208,7 +208,7 @@ test("lawyer workspace UI exposes real task actions, document requests and docum
   assert.match(documentRequests, /action: "cancel"/u);
   assert.match(assigned, /role="lawyer"/u);
   assert.match(client, /role="client"/u);
-  assert.match(workspace, /type="datetime-local"/u);
+  assert.match(workspace, /<DateTimePicker\b/u);
   assert.match(clientCase, /case-workspace-task-comments/u);
   assert.match(clientCase, /comment\.authorName/u);
   assert.match(messages, /action: "mark_read"/u);
@@ -216,7 +216,7 @@ test("lawyer workspace UI exposes real task actions, document requests and docum
   assert.match(messages, /message\.readAt/u);
   assert.match(consultation, /action: "start"/u);
   assert.match(workspace, /document-builder/u);
-  assert.match(workspace, /data\?\.ownDocuments\.map/u);
+  assert.match(workspace, /data\?\.ownDocuments\.slice\([^)]*\)\.map/u);
   assert.doesNotMatch(workspace, /demo(?:Client|Task|Matter)|fake(?:Client|Task|Matter)/iu);
 });
 

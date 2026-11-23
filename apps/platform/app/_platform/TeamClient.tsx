@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated team data is hydrated after the first browser render */
@@ -104,10 +107,12 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
     await load();
   }
 
+  const memberPages = useWorkspacePagination(data?.members.length ?? 0, 6);
+  const invitationPages = useWorkspacePagination(data?.invitations.length ?? 0, 6);
   if (loading && !data) return <div className="team-loading"><LoaderCircle className="spin" /></div>;
   return (
-    <section className="team-workspace">
-      <header><UsersRound /><div><small>JURO · {copy.section}</small><h1>{data?.workspace?.name || copy.workspace}</h1><p>{copy.description}</p></div></header>
+    <section className="team-workspace workspace-page">
+      <WorkspaceTitle icon={<UsersRound />} title={data?.workspace?.name || copy.workspace} description={copy.description} />
       {error && <p className="team-message error" role="alert"><CircleAlert />{error}</p>}
       {notice && <p className="team-message success" role="status"><ShieldCheck />{notice}</p>}
       {canManage && (
@@ -119,8 +124,8 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
         </form>
       )}
       <div className="team-grid">
-        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{data?.members.map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canManage && member.role !== "owner" ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canManage && member.role !== "owner" && <button className="team-remove" onClick={() => void removeMember(member.id)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div></article>
-        <article><div className="team-title"><h2>{copy.pending}</h2><span>{data?.invitations.length ?? 0}</span></div>{data?.invitations.length ? <div className="team-list">{data.invitations.map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}</article>
+        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{data?.members.slice(memberPages.from, memberPages.to).map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canManage && member.role !== "owner" ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canManage && member.role !== "owner" && <button className="team-remove" onClick={() => void removeMember(member.id)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div><WorkspacePagination locale={locale} {...memberPages} /></article>
+        <article><div className="team-title"><h2>{copy.pending}</h2><span>{data?.invitations.length ?? 0}</span></div>{data?.invitations.length ? <div className="team-list">{data.invitations.slice(invitationPages.from, invitationPages.to).map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}<WorkspacePagination locale={locale} {...invitationPages} /></article>
       </div>
     </section>
   );

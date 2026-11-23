@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- tenant-scoped demo history is loaded after hydration */
@@ -119,8 +121,8 @@ export function DemoPaymentsClient({ locale, accountType, workspaceId }: { local
   }
 
   const basePath = platformBasePath(locale, accountType, workspaceId);
-  return <section className="demo-payments-workspace">
-    <header><WalletCards aria-hidden="true"/><div><small>JURO · PAYMENT DEMO</small><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
+  return <section className="demo-payments-workspace workspace-page">
+    <WorkspaceTitle icon={<WalletCards />} title={copy.title} description={copy.description} />
     <div className="demo-payment-warning" role="note"><ShieldCheck aria-hidden="true"/><div><strong>{copy.simulation}</strong><p><code>provider=demo</code> · <code>isSimulation=true</code>. {copy.simulationDescription}</p></div></div>
     {error && <p className="billing-error" role="alert"><CircleAlert aria-hidden="true"/>{error}<button type="button" onClick={() => void load()}>{copy.retry}</button></p>}
     {!data ? <div className="billing-loading" role="status"><LoaderCircle className="spin"/><span>{copy.loading}</span></div> : !data.availability.enabled ? <div className="billing-empty"><Ban aria-hidden="true"/><div><h2>{copy.disabled}</h2><p>{data.availability.reason}</p></div></div> : <>

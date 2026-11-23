@@ -1,5 +1,9 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "../../_platform/WorkspacePagination";
+import { WorkspaceTitle } from "../../_platform/WorkspaceTitle";
+import { Library } from "lucide-react";
+
 import { DocumentLanguageControl } from "./DocumentLanguageControl";
 import { Select } from "../../_components/Select";
 
@@ -39,7 +43,7 @@ import {
 } from "../builder-localization";
 
 const LANGUAGE_KEY = "juro-builder-language";
-const TEMPLATE_PAGE_SIZE = 12;
+const TEMPLATE_PAGE_SIZE = 6;
 
 const libraryCopy = {
   ru: {
@@ -71,7 +75,6 @@ const libraryCopy = {
     popular: "Популярные документы",
     allDocuments: "Все документы",
     registry: "Реестр",
-    showMore: (count: number) => `Показать ещё ${count}`,
     empty: "По вашему запросу документы не найдены.",
     verifiedCard: "Проверен",
     betaCard: "Бета · на проверке",
@@ -109,7 +112,6 @@ const libraryCopy = {
     popular: "Mashhur hujjatlar",
     allDocuments: "Barcha hujjatlar",
     registry: "Reyestr",
-    showMore: (count: number) => `Yana ${count} ta ko‘rsatish`,
     empty: "So‘rov bo‘yicha hujjatlar topilmadi.",
     verifiedCard: "Tekshirilgan",
     betaCard: "Beta · tekshiruvda",
@@ -147,7 +149,6 @@ const libraryCopy = {
     popular: "Popular documents",
     allDocuments: "All documents",
     registry: "Registry",
-    showMore: (count: number) => `Show ${count} more`,
     empty: "No documents match your search.",
     verifiedCard: "Verified",
     betaCard: "Beta · under review",
@@ -207,7 +208,6 @@ export function DocumentLibraryClient({
   const [language, setLanguage] = useState<BuilderLanguage>(() => defaultBuilderDocumentLanguage(paths.locale));
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "verified" | "beta">("all");
-  const [limit, setLimit] = useState(TEMPLATE_PAGE_SIZE);
 
   useEffect(() => {
     if (paths.locale === "ru" || paths.locale === "uz") {
@@ -227,31 +227,28 @@ export function DocumentLibraryClient({
     const statusMatches = status === "all" || (status === "verified" ? document.editorialStatus === "Published" : document.editorialStatus !== "Published");
     return value.includes(search.trim().toLocaleLowerCase()) && statusMatches;
   }), [documents, search, status]);
-  const visible = filtered.slice(0, limit);
+  const pagination = useWorkspacePagination(filtered.length, TEMPLATE_PAGE_SIZE, JSON.stringify([activeCategory?.slug, search, status]));
+  const visible = filtered.slice(pagination.from, pagination.to);
   const publishedCount = documents.filter((document) => document.status === "published").length;
   const cards = (items: readonly DocumentLibraryItem[]) => items.map((document) => (
     <TemplateCard document={document} language={language} uiLocale={uiLocale} paths={paths} key={document.code}/>
   ));
 
-  return <div className="dbt-library-page">
-    <section className="dbt-library-hero">
-      <div><h1>{activeCategory ? localize(activeCategory.title, language) : copy.library}</h1><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p>{uiLocale === "en" && <small className="dbt-translation-note">{copy.languageNote}</small>}</div>
-      <div className="dbt-library-summary"><strong>{documents.length}</strong><span>{copy.registryTemplates}</span>{publishedCount !== documents.length && <small>{publishedCount} {copy.available}</small>}</div>
-      <DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/>
-    </section>
+  return <div className="dbt-library-page workspace-page">
+    <WorkspaceTitle icon={<Library />} title={activeCategory ? localize(activeCategory.title, language) : copy.library} description={<><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p>{uiLocale === "en" && <small className="dbt-translation-note">{copy.languageNote}</small>}</>} actions={ <><div className="dbt-library-summary"><strong>{documents.length}</strong><span>{copy.registryTemplates}</span>{publishedCount !== documents.length && <small>{publishedCount} {copy.available}</small>}</div><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/></> } />
     {!activeCategory && <section className="dbt-workspace-links" aria-label={copy.workspace}>
       <Link href={paths.template("debt", "0602001")}><FilePenLine size={21}/><span><strong>{copy.receipt}</strong><small>{copy.receiptDetail}</small></span><ArrowRight size={18}/></Link>
       <Link href={paths.documents}><FileCheck2 size={21}/><span><strong>{copy.myDocuments}</strong><small>{signedIn ? copy.signedInDocuments : copy.signInRequired}</small></span><ArrowRight size={18}/></Link>
       <Link href={paths.notifications}><Bell size={21}/><span><strong>{copy.invitations}</strong><small>{copy.invitationsDetail}</small></span><ArrowRight size={18}/></Link>
       <Link href={paths.contacts}><UsersRound size={21}/><span><strong>{copy.contacts}</strong><small>{copy.contactsDetail}</small></span><ArrowRight size={18}/></Link>
     </section>}
-    {!activeCategory && <nav className="dbt-category-grid" aria-label={copy.categories}>{categories.map((category) => {
+    {!activeCategory && <details className="dbt-library-disclosure"><summary className="juro-disclosure-summary">{copy.categories}</summary><nav className="dbt-category-grid" aria-label={copy.categories}>{categories.map((category) => {
       const count = documents.filter((document) => document.categorySlug === category.slug).length;
       return <Link href={paths.category(category.slug)} key={category.slug}><span>{category.code}</span><div><h2>{localize(category.title, language)}</h2><p>{localize(category.description, language)}</p><small>{count} {copy.templateCount}</small></div><ArrowRight size={20}/></Link>;
-    })}</nav>}
+    })}</nav></details>}
     {activeCategory && <div className="dbt-library-breadcrumb"><Link href={paths.library}>{copy.allCategories}</Link><span>/</span><b>{localize(activeCategory.title, language)}</b></div>}
-    <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => { setSearch(event.target.value); setLimit(TEMPLATE_PAGE_SIZE); }} placeholder={copy.search} aria-label={copy.searchLabel}/></label><Select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setLimit(TEMPLATE_PAGE_SIZE); }} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></Select></div>
-    {activeCategory && publishedCount > 0 && <section className="dbt-popular-section"><h2>{copy.popular}</h2><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></section>}
-    <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><p className="dbt-result-count" role="status">{uiLocale === "ru" ? `Показано ${visible.length} из ${filtered.length}` : uiLocale === "uz" ? `${filtered.length} tadan ${visible.length} ta ko‘rsatilgan` : `Showing ${visible.length} of ${filtered.length}`}</p></div><div className="dbt-template-grid">{cards(visible)}</div>{visible.length < filtered.length && <button type="button" className="dbt-load-more" onClick={() => setLimit((current) => current + TEMPLATE_PAGE_SIZE)}>{copy.showMore(Math.min(TEMPLATE_PAGE_SIZE, filtered.length - visible.length))}</button>}{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
+    <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.search} aria-label={copy.searchLabel}/></label><Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></Select></div>
+    {activeCategory && publishedCount > 0 && <details className="dbt-library-disclosure"><summary className="juro-disclosure-summary">{copy.popular}</summary><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></details>}
+    <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><p className="dbt-result-count" role="status">{uiLocale === "ru" ? `Всего шаблонов · ${filtered.length}` : uiLocale === "uz" ? `Jami shablonlar · ${filtered.length}` : `Templates · ${filtered.length}`}</p></div><div className="dbt-template-grid">{cards(visible)}</div><WorkspacePagination locale={uiLocale} {...pagination} />{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
   </div>;
 }

@@ -10,12 +10,12 @@ test("document review keeps a single main landmark", async () => {
   assert.doesNotMatch(client, /<main(?:\s|>)/);
 });
 
-test("document library reveals templates in scannable batches", async () => {
+test("document library keeps templates in scannable pages", async () => {
   const library = await source("../app/_document-builder/_components/DocumentLibraryClient.tsx");
-  assert.match(library, /const TEMPLATE_PAGE_SIZE = 12;/);
-  assert.match(library, /useState\(TEMPLATE_PAGE_SIZE\)/);
-  assert.match(library, /setLimit\(\(current\) => current \+ TEMPLATE_PAGE_SIZE\)/);
-  assert.match(library, /aria-live="polite"/);
+  assert.match(library, /const TEMPLATE_PAGE_SIZE = 6;/);
+  assert.match(library, /filtered\.slice\(pagination\.from, pagination\.to\)/);
+  assert.match(library, /<WorkspacePagination locale=\{uiLocale\}/);
+  assert.match(library, /role="status"/);
 });
 
 test("tablet shell uses the off-canvas navigation before content becomes cramped", async () => {

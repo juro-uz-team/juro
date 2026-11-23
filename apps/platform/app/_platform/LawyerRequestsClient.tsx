@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated assigned requests are loaded after the first browser render */
 
 import {
@@ -61,6 +64,15 @@ export function LawyerRequestsClient({ locale }: { locale: PlatformLocale }) {
     [locale],
   );
   const [requests, setRequests] = useState<AssignedRequest[]>([]);
+  const [linkedRequest, setLinkedRequest] = useState("");
+  useEffect(() => {
+    const readLink = () => setLinkedRequest(location.hash.slice(1));
+    readLink();
+    addEventListener("hashchange", readLink);
+    return () => removeEventListener("hashchange", readLink);
+  }, []);
+  const linkedIndex = Math.max(0, requests.findIndex(item => `request-${item.id}` === linkedRequest));
+  const pagination = useWorkspacePagination(requests.length, 1, linkedRequest, linkedIndex);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
@@ -178,21 +190,10 @@ export function LawyerRequestsClient({ locale }: { locale: PlatformLocale }) {
 
   return (
     <section
-      className="lawyer-requests"
+      className="lawyer-requests workspace-page"
       aria-labelledby="lawyer-requests-heading"
     >
-      <header>
-        <UserRoundCheck aria-hidden="true" />
-        <div>
-          <small>JURO</small>
-          <h1 id="lawyer-requests-heading">
-            {text("Заявки по вашим делам", "Sizga yuborilgan so‘rovlar", "Client requests")}
-          </h1>
-          <p>
-            {text("До вашего положительного conflict check видна только анонимизированная информация. Полные материалы открываются лишь после отдельного согласия владельца дела.", "Sizning ijobiy manfaatlar to‘qnashuvi tekshiruvingizgacha faqat anonimlashtirilgan ma’lumot ko‘rinadi. To‘liq materiallar faqat ish egasining alohida roziligidan keyin ochiladi.", "Only anonymised information is visible until you clear the conflict-of-interest check. Full case materials become available only after the case owner gives separate consent.")}
-          </p>
-        </div>
-      </header>
+      <WorkspaceTitle icon={<UserRoundCheck />} title={text("Заявки по вашим делам", "Sizga yuborilgan so‘rovlar", "Client requests")} id="lawyer-requests-heading" description={text("До вашего положительного conflict check видна только анонимизированная информация. Полные материалы открываются лишь после отдельного согласия владельца дела.", "Sizning ijobiy manfaatlar to‘qnashuvi tekshiruvingizgacha faqat anonimlashtirilgan ma’lumot ko‘rinadi. To‘liq materiallar faqat ish egasining alohida roziligidan keyin ochiladi.", "Only anonymised information is visible until you clear the conflict-of-interest check. Full case materials become available only after the case owner gives separate consent.")} />
       {error && (
         <p className="plan-error" role="alert">
           {error}
@@ -208,7 +209,8 @@ export function LawyerRequestsClient({ locale }: { locale: PlatformLocale }) {
         <LoaderCircle className="spin" />
       ) : requests.length ? (
         <div className="lawyer-request-list">
-          {requests.map((item) => (
+          <WorkspacePagination locale={locale} {...pagination} />
+          {requests.slice(pagination.from, pagination.to).map((item) => (
             <article id={`request-${item.id}`} key={item.id}>
               <div className="lawyer-request-summary">
                 <strong>{lawyerRequestStatus(item.status, locale)}</strong>

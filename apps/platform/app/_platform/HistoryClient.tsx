@@ -1,5 +1,8 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated audit data is hydrated after the first browser render */
@@ -34,7 +37,8 @@ export function HistoryClient({ locale }: { locale: PlatformLocale }) {
   }, [copy.loadError, locale]);
   useEffect(() => { void load(); }, [load]);
   const visible = useMemo(() => filter === "all" ? events : events.filter(event => event.source === filter), [events, filter]);
-  return <section className="history-workspace"><header><History /><div><small>{copy.eyebrow}</small><h1>{copy.title}</h1><p>{copy.description}</p></div></header>{error && <p className="history-error"><CircleAlert />{error}</p>}<div className="history-filter"><Filter /><label><span className="sr-only">{copy.filter}</span><Select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">{copy.all}</option><option value="workspace">{copy.workspace}</option><option value="document">{copy.documents}</option><option value="case">{copy.cases}</option></Select></label></div>{loading ? <div className="history-loading"><LoaderCircle className="spin" /></div> : visible.length ? <ol className="history-list">{visible.map(event => <li key={`${event.source}-${event.id}`}><span>{sourceLabel(event.source, locale)}</span><div><strong>{actionLabel(event.action, locale)}</strong><small>{entityLabel(event.entityType, locale)}</small></div><time>{formatDateTime(event.createdAt, locale)}</time></li>)}</ol> : <div className="history-empty"><History /><h2>{copy.empty}</h2></div>}</section>;
+  const pagination = useWorkspacePagination(visible.length, 8, filter);
+  return <section className="history-workspace workspace-page"><WorkspaceTitle icon={<History />} title={copy.title} description={copy.description} />{error && <p className="history-error"><CircleAlert />{error}</p>}<div className="history-filter"><Filter /><label><span className="sr-only">{copy.filter}</span><Select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">{copy.all}</option><option value="workspace">{copy.workspace}</option><option value="document">{copy.documents}</option><option value="case">{copy.cases}</option></Select></label></div>{loading ? <div className="history-loading"><LoaderCircle className="spin" /></div> : visible.length ? <><ol className="history-list">{visible.slice(pagination.from, pagination.to).map(event => <li key={`${event.source}-${event.id}`}><span>{sourceLabel(event.source, locale)}</span><div><strong>{actionLabel(event.action, locale)}</strong><small>{entityLabel(event.entityType, locale)}</small></div><time>{formatDateTime(event.createdAt, locale)}</time></li>)}</ol><WorkspacePagination locale={locale} {...pagination} /></> : <div className="history-empty"><History /><h2>{copy.empty}</h2></div>}</section>;
 }
 
 function sourceLabel(source: string, locale: PlatformLocale) {

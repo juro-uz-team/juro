@@ -1,4 +1,6 @@
 "use client";
+
+import { WorkspaceTitle } from "../_platform/WorkspaceTitle";
 import { FilePicker } from "../_components/ProfileControls";
 import {
   useCallback,
@@ -936,22 +938,12 @@ export function PracticeApp({
           <span>{boot?.workspace?.name ?? "JURO Practice"}</span>
           <span>{todayLabel}</span>
         </header>
-        <div className="practice-content">
-          <div className="practice-page-heading">
-            <div>
-              <p className="practice-eyebrow">JURO PRACTICE</p>
-              <h1>
-                {caseId && tab === "cases"
+        <div className="practice-content workspace-page">
+          <WorkspaceTitle icon={<BriefcaseBusiness />} title={caseId && tab === "cases"
                   ? (caseRow?.title ?? t(locale, "cases"))
                   : tab === "overview"
                     ? t(locale, "homeTitle")
-                    : t(locale, tab)}
-              </h1>
-              {tab === "overview" && (
-                <p>{t(locale, "today")} · Asia/Tashkent</p>
-              )}
-            </div>
-            <div className="practice-actions">
+                    : t(locale, tab)} actions={ <><div className="practice-actions">
               {createAllowed && (
                 <button
                   className="practice-primary"
@@ -1008,8 +1000,7 @@ export function PracticeApp({
                     {t(locale, "import")}
                   </button>
                 )}
-            </div>
-          </div>
+            </div></> } />
           {actor && !writable && (
             <p className="practice-banner">{t(locale, "readonly")}</p>
           )}
@@ -1247,7 +1238,7 @@ export function PracticeApp({
                     )}
                   </div>
                 ) : (
-                  <div className="practice-table-wrap">
+                  <div className="practice-table-wrap practice-table-results" tabIndex={0} role="region" aria-label={t(locale, current)}>
                     <table className="practice-table">
                       <thead>
                         <tr>

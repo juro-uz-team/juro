@@ -6,9 +6,6 @@
   gap: 32px;
   color: var(--text-primary);
 }
-.account-heading > p { margin: 0 0 8px; color: var(--brand-gold-text); font-size: 12px; font-weight: 650; letter-spacing: .04em; }
-.account-heading h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -.035em; }
-.account-heading > span { display: block; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
 .account-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); align-items: start; gap: 36px; }
 .account-rail { position: sticky; top: 24px; min-width: 0; }
 .account-identity { display: flex; align-items: center; gap: 12px; padding: 0 0 24px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
@@ -199,7 +196,6 @@
 }
 @media (max-width: 800px) {
   .profile-workspace.account-area { padding: 24px 20px 48px; gap: 24px; }
-  .account-heading h1 { font-size: 26px; }
   .account-layout { grid-template-columns: minmax(0,1fr); gap: 24px; }
   .account-rail { position: static; }
   .account-identity { display: none; }
@@ -234,20 +230,18 @@
   --account-nav-height: 0px;
   --account-page-bottom-space: 64px;
   gap: 0;
-  padding-top: 0;
   padding-bottom: var(--account-page-bottom-space);
 }
-.account-heading {
+.account-area > .workspace-title {
   position: sticky;
   top: var(--account-toolbar-height);
   z-index: 22;
-  padding-block: 32px 24px;
-  background: var(--surface-canvas);
+  margin-block-end: 16px;
 }
 .account-layout { align-items: start; }
 .account-rail {
   position: sticky;
-  top: calc(var(--account-toolbar-height) + var(--account-heading-height));
+  top: calc(var(--account-toolbar-height) + var(--account-heading-height) + 8px);
   background: var(--surface-canvas);
 }
 .account-content { position: relative; }
@@ -258,17 +252,13 @@
   .profile-workspace.account-area { --account-toolbar-height: 70px; }
 }
 @media (max-width: 800px) {
-  .profile-workspace.account-area { padding-top: 0; --account-page-bottom-space: 48px; }
-  .account-heading > p { display: none; }
-  .account-heading h1 { margin-bottom: 4px; }
-  .account-heading { padding-block: 16px; }
+  .profile-workspace.account-area { --account-page-bottom-space: 48px; }
   .account-layout { gap: 0; }
   .account-rail { z-index: 21; padding-bottom: 16px; }
   .account-rail nav a { min-height: 56px; padding-block: 8px; gap: 4px; }
 }
 @media (max-height: 600px) {
-  .account-heading > :is(p, span) { display: none; }
-  .account-heading { padding-block: 12px; }
+  .account-area > .workspace-title .workspace-title-description { display: none; }
 }
 /* Keep the sticky rail inside the visible area, including at the page end. */
 @media (min-width: 801px) {

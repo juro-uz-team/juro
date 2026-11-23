@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceTitle } from "./WorkspaceTitle";
+
 import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated analysis data is hydrated after the first browser render */
@@ -82,11 +84,8 @@ export function DocumentReviewClient({ locale, accountType, publicUrlImportEnabl
     document.getElementById(`review-mode-${next}`)?.focus();
   }
   return (
-    <section className="review-workspace">
-      <header>
-        {mode === "compare" ? <FileDiff /> : <FileCheck2 />}
-        <div><small>JURO · {copy.tool}</small><h1>{copy.title}</h1><p>{copy.description}</p></div>
-      </header>
+    <section className="review-workspace workspace-page">
+      <WorkspaceTitle icon={mode === "compare" ? <FileDiff /> : <FileCheck2 />} title={copy.title} description={copy.description} />
       <div className="review-mode-tabs" role="tablist" aria-label={reviewCopy.modeAria}>
         <button id="review-mode-review" role="tab" aria-controls="review-mode-panel" aria-selected={mode === "review"} tabIndex={mode === "review" ? 0 : -1} className={mode === "review" ? "active" : ""} onKeyDown={moveModeFocus} onClick={() => selectMode("review")}><FileCheck2 />{copy.singleMode}</button>
         <button id="review-mode-compare" role="tab" aria-controls="review-mode-panel" aria-selected={mode === "compare"} tabIndex={mode === "compare" ? 0 : -1} className={mode === "compare" ? "active" : ""} onKeyDown={moveModeFocus} onClick={() => selectMode("compare")}><FileDiff />{copy.compareMode}</button>

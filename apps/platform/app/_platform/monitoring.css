@@ -1,37 +1,11 @@
 .monitoring-workspace {
   --monitoring-accent: var(--brand-gold-text);
   display: grid;
-  max-width: 1440px;
-  margin-inline: auto;
-  padding: clamp(12px, 2.3vw, 30px);
   gap: 14px;
   color: var(--ink);
 }
 
-.monitoring-masthead {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 12px clamp(12px, 2vw, 22px);
-  background: linear-gradient(105deg, var(--surface-brand), var(--white) 72%);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-}
-
-.monitoring-mark {
-  display: grid;
-  width: 44px;
-  aspect-ratio: 1;
-  place-items: center;
-  color: var(--monitoring-accent);
-  border: 1px solid var(--border-accent);
-  border-radius: 12px;
-  background: var(--amber-bg);
-}
-
-.monitoring-mark svg { width: 21px; height: 21px; }
-.monitoring-masthead h1, .monitoring-reader h2 {
+.monitoring-reader h2 {
   margin: 0;
   font-family: Georgia, serif;
   font-weight: 500;
@@ -39,7 +13,6 @@
   line-height: 1.12;
   letter-spacing: -.03em;
 }
-.monitoring-masthead h1 { text-wrap: balance; }
 
 .monitoring-shell {
   overflow: hidden;
@@ -213,8 +186,17 @@ html[data-theme="dark"] .monitoring-message.success { color: color-mix(in srgb, 
   .monitoring-button:hover { border-color: var(--border-accent); }
 }
 @media (min-width: 881px) {
-  .monitoring-reader { max-height: max(280px, calc(100dvh - 235px)); overflow: auto; overscroll-behavior: contain; }
   .monitoring-split[data-reading="true"] .monitoring-result > span { display: grid; gap: 1px; }
+}
+@media (min-width: 881px) and (min-height: 660px) {
+  .monitoring-workspace { display: flex; flex-direction: column; block-size: calc(100dvh - 76px); }
+  .monitoring-shell, .monitoring-pane:not([hidden]) { display: flex; flex: 1; flex-direction: column; min-block-size: 0; }
+  .monitoring-split { flex: 1; min-block-size: 0; grid-template-rows: minmax(0, 1fr); }
+  .monitoring-list { display: flex; flex-direction: column; min-block-size: 0; }
+  .monitoring-list > :is(form, nav) { flex: none; }
+  .monitoring-results, .monitoring-reader { min-block-size: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .monitoring-results { flex: 1; }
+  .monitoring-reader { align-self: stretch; }
 }
 @media (max-width: 880px) {
   .monitoring-split[data-reading="true"] { grid-template-columns: minmax(0, 1fr); }
@@ -223,8 +205,6 @@ html[data-theme="dark"] .monitoring-message.success { color: color-mix(in srgb, 
 }
 @media (max-width: 580px) {
   .monitoring-workspace { gap: 10px; }
-  .monitoring-mark { display: none; }
-  .monitoring-masthead { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .monitoring-preferences-trigger span { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
   .monitoring-nav small { margin-left: 0; flex-basis: 100%; }
   .monitoring-filter > label:first-child { flex-basis: 100%; }

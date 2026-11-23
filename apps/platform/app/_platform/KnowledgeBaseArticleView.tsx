@@ -1,3 +1,5 @@
+
+import { WorkspaceTitle } from "./WorkspaceTitle";
 import { ArrowLeft, ArrowRight, BookOpenCheck } from "lucide-react";
 import Link from "next/link";
 
@@ -42,17 +44,10 @@ export function KnowledgeBaseArticleView({ article, locale, backHref, articleBas
       <Link href={backHref}><ArrowLeft aria-hidden="true" />{copy.allArticles}</Link>
     </nav>
     <article>
-      <header>
-        <BookOpenCheck aria-hidden="true" />
-        <div>
-          <h1>{article.title}</h1>
-          <p>{article.summary}</p>
-          <dl>
+      <WorkspaceTitle icon={<BookOpenCheck />} title={article.title} description={<><p>{article.summary}</p><dl>
             <div><dt>{copy.version}</dt><dd>{article.versionNumber}</dd></div>
             <div><dt>{copy.updated}</dt><dd>{formatDate(article.updatedAt, locale)}</dd></div>
-          </dl>
-        </div>
-      </header>
+          </dl></>} />
       <div className="knowledge-article-body">
         {article.sections.map((section) => <section key={section.heading}>
           <h2>{section.heading}</h2>
