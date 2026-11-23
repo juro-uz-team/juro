@@ -89,8 +89,9 @@ function renderDocument(document: NormalizedDocument) {
 }
 
 /** Optional additive metadata binds visual evidence without changing legacy receipt formats. */
-export function readNormalizedSourceFile(serialized: string, expectedUrl: string) {
-  return parseDocument(serialized, expectedUrl).sourceFile;
+export function readNormalizedPresentation(serialized: string, expectedUrl: string) {
+  const document = parseDocument(serialized, expectedUrl);
+  return { sourceFile: document.sourceFile, pdfBacked: document.primarySelector === "lex-pdf" };
 }
 
 /** Select only explicit article headings; mentions and search-unit ordinals are not boundaries. */

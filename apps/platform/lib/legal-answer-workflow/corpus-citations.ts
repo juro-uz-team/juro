@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { OfficialProvision } from "./contracts";
 import type { CitationRecord } from "./citation-storage";
 import type { ProvisionLocator } from "./evidence";
+import { officialReferenceUrl } from "../ai/legal-inline-references";
 
 export type CorpusCitationReceipt = {
   locator: ProvisionLocator; title: string; articleTitle: string | null; sectionTitle?: string | null; language: string; textSha256: string;
@@ -23,10 +24,12 @@ export function buildCorpusCitations(evidence: readonly OfficialProvision[], cor
     const verifiedAt = locator.editionObservation?.observedAt;
     if (!verifiedAt) throw new Error("CITATION_OBSERVATION_MISSING");
     if (!["en", "ru", "uz-Latn", "uz-Cyrl"].includes(retained.language)) throw new Error("CITATION_LANGUAGE_INVALID");
+    const officialPdfUrl = item.officialPdfUrl && officialReferenceUrl(item.officialPdfUrl);
     return {
       evidence: structuredClone(item), accessMode: "direct",
       source: { sourceId: item.identity, actTitle: retained.title, actIdentifier: null,
         article: retained.sectionTitle ?? retained.articleTitle, excerpt: null, originalUrl: item.sourceUrl,
+        ...(officialPdfUrl ? { officialPdfUrl } : {}),
         status: "unconfirmed", effectiveDate: null, verifiedAt },
       receipt: { version: 2, capability: item.temporalState === "current_supported" ? "current" : "history",
         kind: retained.selected.kind, r2Key: item.objectKey, byteCount: item.byteCount, sha256: item.sha256,

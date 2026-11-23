@@ -64,6 +64,13 @@ test("citation dialog uses verified saved evidence and rejects mismatched select
     const http = await handleSavedCitationHttp(request, saved.responseMessageId, configuration);
     assert.equal(http.headers.get("cache-control"), "no-store");
     assert.deepEqual(await http.json(), details);
+    const pdfUrl = "https://lex.uz/pdffile/789";
+    const pdfHttp = await handleSavedCitationHttp(request, saved.responseMessageId, {
+      ...configuration, objects: { ...input.objects, officialPdfUrl: async () => pdfUrl },
+    });
+    const pdf = await pdfHttp.json();
+    assert.equal(pdf.officialPdfUrl, pdfUrl);
+    assert.equal(pdf.text, null);
     assert.equal((await handleSavedCitationHttp(request, saved.responseMessageId,
       { ...configuration, authenticate: async () => ({ db: fixture.d1, workspaceId: "w", userId: "foreign" }) })).status, 404);
     await assert.rejects(() => savedCitationDetails({ ...input, sourceUrl: "https://lex.uz/docs/999" }), /CITATION_SELECTION_MISMATCH/);

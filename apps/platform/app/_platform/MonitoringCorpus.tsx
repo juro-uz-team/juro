@@ -13,7 +13,7 @@ export const monitoringLabels = {
     previous: "Назад", next: "Далее", back: "К списку", pickUpdate: "Выберите обновление, чтобы открыть его.",
     pickAct: "Выберите акт для чтения.", language: "Язык", category: "Классификатор Lex.uz", edition: "Редакция",
     loading: "Загрузка…", unavailable: "Не удалось загрузить законодательство.", retry: "Повторить",
-    source: "Открыть на Lex.uz", more: "Продолжить чтение", gaps: "Некоторые части доступны на Lex.uz.",
+    source: "Открыть на Lex.uz", pdf: "Открыть оригинал на Lex.uz", more: "Продолжить чтение", gaps: "Некоторые части доступны на Lex.uz.",
     preparing: "Полный текст готовится", observed: "Обнаружено", catalogueCheck: "Сверка каталога",
   },
   uz: {
@@ -24,7 +24,7 @@ export const monitoringLabels = {
     previous: "Oldingi", next: "Keyingi", back: "Ro‘yxatga qaytish", pickUpdate: "Ochish uchun yangilanishni tanlang.",
     pickAct: "O‘qish uchun hujjatni tanlang.", language: "Til", category: "Lex.uz tasnifi", edition: "Tahrir",
     loading: "Yuklanmoqda…", unavailable: "Qonunchilikni yuklab bo‘lmadi.", retry: "Qayta urinish",
-    source: "Lex.uz’da ochish", more: "O‘qishda davom etish", gaps: "Ayrim qismlar faqat Lex.uz’da mavjud.",
+    source: "Lex.uz’da ochish", pdf: "Asl hujjatni Lex.uz’da ochish", more: "O‘qishda davom etish", gaps: "Ayrim qismlar faqat Lex.uz’da mavjud.",
     preparing: "To‘liq matn tayyorlanmoqda", observed: "Aniqlangan sana", catalogueCheck: "Katalog tekshiruvi",
   },
   en: {
@@ -35,14 +35,15 @@ export const monitoringLabels = {
     previous: "Previous", next: "Next", back: "Back to results", pickUpdate: "Select an update to read it.",
     pickAct: "Select an act to read it.", language: "Language", category: "Lex.uz category", edition: "Edition",
     loading: "Loading…", unavailable: "The corpus could not be loaded.", retry: "Try again",
-    source: "Open on Lex.uz", more: "Continue reading", gaps: "Some sections are available on Lex.uz.",
+    source: "Open on Lex.uz", pdf: "Open original on Lex.uz", more: "Continue reading", gaps: "Some sections are available on Lex.uz.",
     preparing: "Full text is being prepared", observed: "Observed", catalogueCheck: "Catalogue checked",
   },
 } as const;
 
 type Entry = { work: string; title: string; url: string; edition: string | null; language: string };
 type Catalogue = { entries: Entry[]; categories: { id: string; label: string }[]; nextPage: string | null };
-type Act = { entry: Entry; units: { text: string; locator: string }[]; nextOffset: number | null; extractionGaps: boolean };
+type Act = { entry: Entry; units: { text: string; locator: string }[]; nextOffset: number | null; extractionGaps: boolean;
+  pdfUrl?: string; pdfLinks?: string[] };
 const languages = { ru: "Русский", uz: "O‘zbekcha", uzc: "Ўзбекча", en: "English" };
 
 async function requestCorpus<T>(workspaceId: string, params: URLSearchParams, signal: AbortSignal): Promise<T> {
@@ -152,9 +153,12 @@ export function CorpusText({ entry, locale, workspaceId, fromUpdate = false }: {
   }, [entry.work, offset, retry, workspaceId]);
   const loading = !failed && (!act || act.nextOffset === offset);
   return <>
-    {!fromUpdate && <a className="monitoring-source" href={entry.url} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden="true" />{t.source}</a>}
-    {act?.extractionGaps && <p className="monitoring-feed-note">{t.gaps}</p>}
-    <div className="monitoring-act-text">{act?.units.map((unit, index) => <p key={index}>{unit.text}</p>)}</div>
+    {act?.pdfUrl && <a className="monitoring-source" href={act.pdfUrl} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden="true" />{t.pdf}</a>}
+    {!act?.pdfUrl && (!fromUpdate || act || failed) && <a className="monitoring-source" href={entry.url} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden="true" />{t.source}</a>}
+    {!act?.pdfUrl && act?.extractionGaps && <p className="monitoring-feed-note">{t.gaps}</p>}
+    {act?.pdfLinks?.map((url, index, files) => <a key={url} className="monitoring-source" href={url} target="_blank" rel="noopener noreferrer">
+      <ExternalLink aria-hidden="true" />{t.pdf}{files.length > 1 ? ` · ${index + 1}` : ""}</a>)}
+    {!act?.pdfUrl && <div className="monitoring-act-text">{act?.units.map((unit, index) => <p key={index}>{unit.text}</p>)}</div>}
     {loading && <p className="monitoring-loading" role="status">{t.loading}</p>}
     {failed && <p className={missing && fromUpdate ? "monitoring-message monitoring-feed-note" : "monitoring-message error"}
       role={missing && fromUpdate ? "status" : "alert"}>{missing && fromUpdate ? t.preparing : t.unavailable}
@@ -162,7 +166,7 @@ export function CorpusText({ entry, locale, workspaceId, fromUpdate = false }: {
       setFailed(false);
       setRetry(retry + 1);
     }}>{t.retry}</button></p>}
-    {!loading && !failed && act?.nextOffset !== null && act?.nextOffset !== undefined
+    {!act?.pdfUrl && !loading && !failed && act?.nextOffset !== null && act?.nextOffset !== undefined
       && <button className="monitoring-button" type="button" onClick={() => setOffset(act.nextOffset!)}>{t.more}</button>}
   </>;
 }

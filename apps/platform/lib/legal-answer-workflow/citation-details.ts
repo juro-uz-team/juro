@@ -16,9 +16,11 @@ export async function savedCitationDetails(input: Parameters<typeof openSavedCit
     || (saved.receipt.kind === "provision" && saved.receipt.articleNumber === null && !!prepared && !wholeSection);
   return { documentTitle: saved.title, documentType: null, documentNumber: null, adoptingAuthority: null,
     sourceClass: "official", articleNumber: wholeSection ? null : saved.receipt.articleNumber, articleTitle: wholeSection ? null : saved.article,
-    part: null, chapter: null, section: wholeSection ? saved.article : null, text: saved.text, fullArticle: !wholeDocument && !wholeSection,
+    part: null, chapter: null, section: wholeSection ? saved.article : null,
+    text: saved.officialPdfUrl || saved.sourceFile ? null : saved.text, fullArticle: !wholeDocument && !wholeSection,
     fullDocument: wholeDocument && !saved.sourceFile, fullSection: wholeSection, evidenceUnavailable: false, truncated: false, language: saved.receipt.languageTag,
     ...(saved.sourceFile ? { originalPdfAvailable: true } : {}),
+    ...(saved.officialPdfUrl ? { officialPdfUrl: saved.officialPdfUrl } : {}),
     status: saved.status ?? "unconfirmed", validFrom: saved.effectiveDate, validTo: null, versionDate: null,
     officialUrl: saved.receipt.officialUrl, verifiedAt: saved.verifiedAt, availableLanguages: [], versionHistory: [] };
 }

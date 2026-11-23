@@ -1,5 +1,5 @@
 "use client";
-import { inlineReferences, referenceSourcesForPassage } from "../../lib/ai/legal-inline-references";
+import { inlineReferences, preferredOfficialSourceUrl, referenceSourcesForPassage } from "../../lib/ai/legal-inline-references";
 
 import { ExternalLink } from "lucide-react";
 import { useId, type ReactNode } from "react";
@@ -16,8 +16,7 @@ function publicSourceUrl(source: LegalAnswerViewSource): string | null {
   try {
     const url = new URL(source.originalUrl);
     if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return null;
-    if (source.sourceClass === "SECONDARY_REFERENCE" || ["lex.uz", "www.lex.uz"].includes(url.hostname.toLocaleLowerCase())) return url.href;
-    return null;
+    return source.sourceClass === "SECONDARY_REFERENCE" ? url.href : preferredOfficialSourceUrl(source) ?? null;
   } catch {
     return null;
   }

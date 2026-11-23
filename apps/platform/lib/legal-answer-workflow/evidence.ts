@@ -25,6 +25,7 @@ export const provisionLocatorSchema = z.object({
   objectKey: z.string().trim().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/),
   byteCount: z.number().int().positive(),
   sourceUrl: z.url(), privacyClass: z.literal("public_official_source"),
+  officialPdfUrl: z.url().optional(),
   sourceTitle: z.string().optional(),
   quarantined: z.literal(false), canonicalizationConflict: z.literal(false),
   temporalState: z.enum(["current_supported", "historical_only"]),
@@ -46,6 +47,7 @@ export type ProvisionLocator = {
   sha256: string;
   byteCount: number;
   sourceUrl: string;
+  officialPdfUrl?: string;
   /** Exact retained act title; distinct from a provision or chapter heading. */
   sourceTitle?: string;
   privacyClass: "public_official_source" | "private" | "unknown";

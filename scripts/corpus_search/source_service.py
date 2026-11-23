@@ -5,8 +5,42 @@ changes embeddings/indexes, and never promotes acquisition metadata to law.
 """
 import copy
 import re
+from urllib.parse import parse_qs, urlsplit
 from discovery_json import encode_discovery_json
+from source_assets import publisher_url
 from works import hydrate_records, work_key
+
+
+def pdf_link(value):
+    try:
+        url = publisher_url(value)
+        parsed = urlsplit(url)
+        path = parsed.path.lower()
+        uploaded_pdf = path == '/pages/getpdf.aspx' and any(
+            name.lower().endswith('.pdf') for name in parse_qs(parsed.query).get('file', []))
+        return url if re.fullmatch(r'/(?:pdffile|pdfs)/-?\d+', path) or path.endswith('.pdf') or uploaded_pdf else None
+    except ValueError:
+        return None
+
+
+def file_backed(unit):
+    return bool(unit.get('attachmentOrigin')) or str(unit.get('method', '')).startswith(
+        ('pdf_', 'rapidocr-', 'tesseract-', 'ocr')) or str(unit.get('locator', '')).startswith('page:')
+
+
+def pdf_presentation(inventory, prepared):
+    wrapper = pdf_link(inventory.get('capture_url') or inventory.get('url'))
+    assets = [(url, item.get('locator')) for item in prepared.get('discoveries', [])
+              if item.get('kind') == 'asset' and (url := pdf_link(item.get('url')))]
+    direct = next((url for url, locator in assets if locator == 'pdf-viewer'), None)
+    units = prepared.get('units', [])
+    has_text = any(unit.get('text') and not file_backed(unit) for unit in units)
+    origins = [url for unit in units if (url := pdf_link((unit.get('attachmentOrigin') or {}).get('url')))]
+    links = list(dict.fromkeys([*(url for url, _ in assets), *origins]))
+    if wrapper or (not has_text and (links or any(file_backed(unit) for unit in units))):
+        primary = direct or (links[0] if len(links) == 1 else wrapper or inventory['url'])
+        return {'pdfUrl': primary, 'pdfLinks': [url for url in links if url != primary]}
+    return {'pdfLinks': links} if links else {}
 
 
 class PreparedSourceService:
@@ -59,15 +93,21 @@ class PreparedSourceService:
         if any(not row or not row['prepared'] for row in locations):
             raise ValueError('source_catalog_identity')
         records = self.read_records('prepared', [row['prepared'] for row in locations], 128 * 1024 * 1024)
+        root = self.works.lookup([work_key(work)])[0]
+        inventory, = self.read_records('inventory', [root['inventory']], 32 * 1024 * 1024)
+        prepared = next((item for item in records if item.get('work') == work), None)
+        if prepared is None:
+            prepared, = self.read_records('prepared', [root['prepared']], 128 * 1024 * 1024)
         units, gaps = [], False
         for (key, start, count), record in zip(plan, records, strict=True):
             if record.get('work') != key or len(record['units']) < start + count:
                 raise ValueError('source_catalog_identity')
             gaps |= bool(record.get('gaps'))
-            units.extend({'text': unit['text'], 'locator': str(unit.get('locator') or '')}
+            units.extend({'text': unit['text'], 'locator': str(unit.get('locator') or ''),
+                          'fileBacked': key != work or file_backed(unit)}
                          for unit in record['units'][start:start+count] if isinstance(unit.get('text'), str))
         return {'entry': selected, 'units': units, 'nextOffset': offset + 24 if offset + 24 < total else None,
-                'extractionGaps': gaps}
+                'extractionGaps': gaps, **pdf_presentation(inventory, prepared)}
 
     def read_records(self, kind, locations, maximum):
         if self.source_rows is not None:
@@ -109,7 +149,8 @@ class PreparedSourceService:
             record = next(prepared) if location['prepared'] is not None else None
             if inventory.get('id') != work or (record is not None and record.get('work') != work):
                 raise ValueError('source_service_identity_mismatch')
-            sources[work] = {'inventory': inventory, 'prepared': record}
+            sources[work] = {'inventory': inventory, 'prepared': record,
+                             **(pdf_presentation(inventory, record) if record and inventory.get('kind') == 'document' else {})}
         result = {'package_sha256': self.package.sha256, 'work_index_sha256': self.works.manifest_sha256,
                   'sources': sources}
         if reference_status is not None:

@@ -1,10 +1,22 @@
 /** Public navigation only: URLs always come from supplied sources, never from prose. */
-export type ReferenceSource = { sourceId: string; actTitle: string; article?: string | null; originalUrl: string };
+export type ReferenceSource = { sourceId: string; actTitle: string; article?: string | null; originalUrl: string; officialPdfUrl?: string };
 export type InlineReference = { start: number; end: number; label: string; articleNumber?: string; articleNumbers?: string[]; source?: ReferenceSource; href?: string; navigationOnly?: boolean };
 export type ReferencePassage = { text: string; sourceIds?: readonly string[] };
 export function officialReferenceUrl(value: string): string | undefined {
   try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.port
     && ["lex.uz", "www.lex.uz"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; }
+}
+export function publisherPdfUrl(value: string): string | undefined {
+  const href = officialReferenceUrl(value);
+  if (!href) return undefined;
+  const url = new URL(href);
+  return /(?:^\/(?:pdffile|pdfs)\/-?\d+$|\.pdf$)/iu.test(url.pathname)
+    || (url.pathname.toLowerCase() === "/pages/getpdf.aspx" && /\.pdf$/iu.test(url.searchParams.get("file") ?? "")) ? href : undefined;
+}
+
+export function preferredOfficialSourceUrl(source: Pick<ReferenceSource, "originalUrl" | "officialPdfUrl">) {
+  const original = officialReferenceUrl(source.originalUrl);
+  return original && (officialReferenceUrl(source.officialPdfUrl ?? "") ?? original);
 }
 function actKey(source: ReferenceSource) {
   const url = new URL(source.originalUrl); url.hash = "";
@@ -73,7 +85,7 @@ export function inlineReferences(text: string, supplied: readonly ReferenceSourc
       const source = acts.size === 1 ? pool[0] : undefined;
       const from = index === 0 ? start : start + number.index!;
       const to = index === numbers.length - 1 ? end + longest : start + number.index! + number[0].length;
-      let href = source ? officialReferenceUrl(source.originalUrl) : undefined;
+      let href = source ? preferredOfficialSourceUrl(source) : undefined;
       if (href && !exact.length) { const url = new URL(href); url.hash = ""; href = url.href; }
       output.push({ start: from, end: to, label: text.slice(from, to), articleNumber, articleNumbers, source, href, navigationOnly: !!source && !exact.length });
     });
@@ -85,7 +97,7 @@ export function inlineReferences(text: string, supplied: readonly ReferenceSourc
       if ((start && /[\p{L}\p{N}_]/u.test(text[start - 1])) || /[\p{L}\p{N}_]/u.test(text[end] ?? "")) continue;
       if (output.some(item => start < item.end && end > item.start)) continue;
       if (sources.some(other => actKey(other) !== actKey(source) && aliases(other.actTitle).includes(name))) continue;
-      const url = new URL(source.originalUrl); url.hash = "";
+      const url = new URL(preferredOfficialSourceUrl(source)!); url.hash = "";
       output.push({ start, end, label: match[0], source, href: url.href });
     }
   }

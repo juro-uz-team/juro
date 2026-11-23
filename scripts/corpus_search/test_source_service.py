@@ -4,10 +4,27 @@ import pathlib
 from unittest.mock import patch
 from works import WorkIndex, build_work_index
 from test_discovery_catalog import Fixture
-from source_service import PreparedSourceService
+from source_service import PreparedSourceService, file_backed, pdf_presentation
 
 
 class SourceServiceTests(unittest.TestCase):
+    def test_original_pdf_links_cover_viewers_and_annexes_without_claiming_other_hosts(self):
+        inventory = {'url': 'https://lex.uz/docs/-123?ONDATE=01.10.2026',
+                     'capture_url': 'https://lex.uz/pdfs/-123?ONDATE=01.10.2026'}
+        pdf = 'https://lex.uz/pdffile/876'
+        annex = 'https://www.lex.uz/Pages/GetPdf.aspx?file=LexUz_123.pdf'
+        scanned = {'locator': 'page:1', 'text': 'Retained OCR', 'method': 'rapidocr-cpu-ru'}
+        discoveries = [{'kind': 'asset', 'locator': 'pdf-viewer', 'url': pdf},
+                       {'kind': 'asset', 'url': 'https://lex.uz.example.test/files/123.pdf'}]
+        self.assertEqual(pdf_presentation(inventory, {'units': [scanned], 'discoveries': discoveries}),
+                         {'pdfUrl': pdf, 'pdfLinks': []})
+        self.assertEqual(pdf_presentation(inventory, {'units': [scanned]})['pdfUrl'], inventory['capture_url'])
+        html = {'locator': '1', 'text': 'Publisher HTML', 'method': 'publisher_html'}
+        self.assertEqual(pdf_presentation({'url': inventory['url']}, {'units': [html, scanned],
+                         'discoveries': [{'kind': 'asset', 'url': annex}]}), {'pdfLinks': [annex]})
+        self.assertTrue(file_backed(scanned))
+        self.assertFalse(file_backed(html))
+
     def test_stored_inventory_reference_can_load_an_undiscovered_source(self):
         from types import SimpleNamespace
         from source_references import SourceReferences

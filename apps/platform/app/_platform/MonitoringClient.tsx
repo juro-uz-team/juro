@@ -467,9 +467,9 @@ function UpdateCard({ update, locale, workspaceId, headingRef }: {
     </dl>
     {update.changeSummary && <section><h4>{t.changed}</h4><p>{update.changeSummary}</p></section>}
     {update.recommendedAction && <section><h4>{t.action}</h4><p>{update.recommendedAction}</p></section>}
-    <a className="monitoring-source" href={update.officialUrl} target="_blank" rel="noopener noreferrer"><ExternalLink /><span><strong>{t.official}</strong><small>{update.sourceTitle}{update.sourceIdentifier ? ` · ${update.sourceIdentifier}` : ""}</small></span></a>
-    {update.corpusWork && <CorpusText key={update.corpusWork} entry={{ url: update.officialUrl, work: update.corpusWork }}
-      locale={locale} workspaceId={workspaceId} fromUpdate />}
+    {update.corpusWork ? <CorpusText key={update.corpusWork} entry={{ url: update.officialUrl, work: update.corpusWork }}
+      locale={locale} workspaceId={workspaceId} fromUpdate />
+      : <a className="monitoring-source" href={update.officialUrl} target="_blank" rel="noopener noreferrer"><ExternalLink /><span><strong>{t.official}</strong><small>{update.sourceTitle}{update.sourceIdentifier ? ` · ${update.sourceIdentifier}` : ""}</small></span></a>}
     <div className="monitoring-update-actions">
       <Link href={`${base}/document-review`}><FileSearch />{t.checkDocuments}</Link>
       <Link href={`${base}/action-plan`}>{t.createTask}</Link>

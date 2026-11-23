@@ -10,6 +10,7 @@ import { articleNumberFromHeading } from "./normalized-document";
 import type { EvidenceScope, ProvisionLocator, ReferenceOrigin } from "./evidence";
 import type { StoredProvisionReader, StoredProvisionReceipt } from "./stored-corpus";
 import { withinSignal } from "./lifetime";
+import { officialReferenceUrl, publisherPdfUrl } from "../ai/legal-inline-references";
 
 type Worker = Parameters<typeof createPreparedTransportPair>[0]["discovery"];
 const record = z.record(z.string(), z.unknown());
@@ -20,7 +21,9 @@ const packetSchema = z.object({ package_sha256: z.string(), work_index_sha256: z
 const referencePacketSchema = packetSchema.extend({ reference_status: z.enum(["unique", "missing", "ambiguous"]) });
 const metadataSchema = z.object({
   current_capture: captureState,
+  pdfUrl: z.string().optional(), pdfLinks: z.array(z.string()).optional(),
   inventory: z.object({ id: z.string(), kind: z.literal("document"), state: z.literal("done"), url: z.url(),
+    capture_url: z.string().optional(),
     raw_hash: z.string().regex(/^[a-f0-9]{64}$/u), context: z.object({ source: z.string(), edition: z.string().nullish() }),
     receipt: z.object({ status: z.literal(200), sha256: z.string(), observed: z.number().positive() }) }),
   prepared: z.object({ work: z.string(), source: z.string(), requested_edition: z.string().nullable(),
@@ -46,6 +49,38 @@ function editionDate(value: string) {
 function retainedSourceNotes(item: z.infer<typeof metadataSchema>) {
   return [...(item.prepared.header ?? []), ...(item.prepared.notices ?? [])
     .map(notice => typeof notice === "string" ? notice : JSON.stringify(notice))];
+}
+
+function originalFile(item: z.infer<typeof metadataSchema>, positions: ReadonlySet<string>, wholeDocument = false) {
+  const official = (value: unknown) => typeof value === "string" ? officialReferenceUrl(value) : undefined;
+  const file = publisherPdfUrl;
+  const retained = official(item.pdfUrl);
+  if (retained) return retained;
+  const wrapper = file(item.inventory.capture_url ?? item.inventory.url);
+  const discovered = z.array(z.object({ kind: z.string(), url: z.string(), locator: z.string().optional() }))
+    .safeParse(item.prepared.discoveries).data ?? [];
+  const files = discovered.filter(link => link.kind === "asset").flatMap(link => {
+    const url = file(link.url);
+    return url ? [{ url, locator: link.locator }] : [];
+  });
+  const isFileBacked = (unit: (typeof item.prepared.units)[number]) => unit.attachmentOrigin
+    || /^(?:pdf_|ocr|rapidocr-|tesseract-)/u.test(String(unit.method ?? "")) || /^page:/u.test(unit.locator);
+  const media = item.prepared.units.filter(isFileBacked);
+  const links = [...new Set(item.pdfLinks?.map(file).filter(Boolean) ?? files.map(link => link.url))];
+  const viewer = files.find(link => link.locator === "pdf-viewer")?.url;
+  const hasText = item.prepared.units.some(unit => typeof unit.text === "string" && unit.text.trim() && !isFileBacked(unit));
+  if (wrapper || (!hasText && (links.length || media.length))) {
+    return viewer ?? (links.length === 1 ? links[0] : wrapper) ?? item.inventory.url;
+  }
+  if (wholeDocument && hasText && media.length) return item.inventory.url;
+  const selected = media.filter(unit => wholeDocument || positions.has(unit.locator));
+  if (selected.length) {
+    const origin = z.object({ url: z.string() });
+    const origins = new Set(selected.map(unit => file(origin.safeParse(unit.attachmentOrigin).data?.url ?? "")));
+    if (origins.size === 1 && !origins.has(undefined)) return [...origins][0];
+    return links.length === 1 ? links[0] : item.inventory.url;
+  }
+  return undefined;
 }
 
 /** Public stored source reads under the existing package and work-index pins. No acquisition operations. */
@@ -182,6 +217,7 @@ export function createPreparedStoredReader(input: { release: unknown; worker: Wo
     }
     if (provision.position && /^-?\d+$/u.test(provision.position)) url.hash = provision.position;
     const positions = new Set(item.prepared.units.filter(unit => provision.ordinals.includes(unit.ordinal)).map(unit => unit.locator));
+    const officialPdfUrl = originalFile(item, positions, request.wholeDocument);
     const originUnits = new Map<string, typeof item.prepared.units>();
     const included = new Set(provision.ordinals);
     for (const unit of item.prepared.units) if (included.has(unit.ordinal)) {
@@ -212,6 +248,7 @@ export function createPreparedStoredReader(input: { release: unknown; worker: Wo
       selected: { kind: "provision", articleNumber: provision.articleTitle ? articleNumberFromHeading(provision.articleTitle) ?? null : null },
       locator: { identity, snapshot: `${configuration.artifacts.packageSha256}:${request.work}`,
         objectKey: provision.objectKey, sha256: provision.sha256, byteCount: provision.byteCount, sourceUrl: url.href,
+        ...(officialPdfUrl ? { officialPdfUrl } : {}),
         sourceTitle: provision.title,
         privacyClass: "public_official_source", quarantined: false, canonicalizationConflict: false,
         temporalState: request.scope.kind === "current" ? "current_supported" : "historical_only",
@@ -361,6 +398,14 @@ export function createPreparedStoredReader(input: { release: unknown; worker: Wo
     },
   };
   return { packageSha256: configuration.artifacts.packageSha256, provisions, get: objects.get,
+    async officialPdfUrl(target: { work: string; position: string; language: string; wholeDocument?: boolean; wholeSection?: boolean }, signal: AbortSignal) {
+      const item = await source(target.work, signal);
+      const direct = originalFile(item, new Set([target.position]), target.wholeDocument);
+      if (direct || !target.wholeSection) return direct;
+      const extent = (await objects.rangeReader(target.work, signal)).describe(target);
+      const positions = new Set(item.prepared.units.filter(unit => extent.ordinals.includes(unit.ordinal)).map(unit => unit.locator));
+      return originalFile(item, positions);
+    },
     async resolveExternalReference(value: string, scope: EvidenceScope, signal: AbortSignal) {
       const target = publisherUrl(value), position = target.hash.slice(1);
       target.hash = "";

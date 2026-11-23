@@ -52,6 +52,7 @@ const legalSourceRefModelSchema = z.object({
 }).strict();
 
 export const legalSourceRefSchema = legalSourceRefModelSchema.extend({
+  officialPdfUrl: z.url().max(4096).optional(),
   documentType: z.string().max(160).nullable().optional(),
   documentNumber: z.string().max(240).nullable().optional(),
   adoptingAuthority: z.string().max(500).nullable().optional(),

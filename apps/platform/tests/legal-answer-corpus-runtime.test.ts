@@ -11,6 +11,8 @@ import { ProviderReceiptJournal } from "../lib/legal-answer-workflow/receipt-jou
 import { createPreparedStoredReader } from "../lib/legal-answer-workflow/prepared-stored-reader";
 import { savedCitationDetails } from "../lib/legal-answer-workflow/citation-details";
 import { legalChatResponseSchema } from "../lib/ai/legal-chat-schema";
+import { parsePreparedProvisionKey } from "../lib/legal-answer-workflow/prepared-provision-objects";
+import { buildCorpusCitations } from "../lib/legal-answer-workflow/corpus-citations";
 
 test("runtime loads complete stored provisions and persists citations without publisher access or source writes", async () => {
   const hash = "a".repeat(64), workerHash = "b".repeat(64), token = "t".repeat(40);
@@ -146,12 +148,34 @@ test("runtime loads complete stored provisions and persists citations without pu
         sourceId: savedSource.sourceId, sourceUrl: savedSource.originalUrl, signal: AbortSignal.timeout(3000),
         objects: { get: (key: string, _identity: unknown, signal: AbortSignal) => freshReader.get(key, signal) } };
       const saved = await savedCitationDetails(reopen);
-      assert.match(saved!.text, /Authenticated complete rule/);
-      assert.match(saved!.text, /Exception for private events/);
+      assert.match(saved!.text ?? "", /Authenticated complete rule/);
+      assert.match(saved!.text ?? "", /Exception for private events/);
       assert.equal(saved!.fullArticle, true);
       assert.equal(saved!.verifiedAt, "2020-01-01T00:00:00.000Z");
       assert.equal(await savedCitationDetails({ ...reopen, userId: "another-user" }), null);
       assert.equal(objects.size, 0);
+      const pdfUrl = "https://lex.uz/pdffile/789";
+      Object.assign(sources.work.inventory, { capture_url: "https://lex.uz/pdfs/123" });
+      Object.assign(sources.work.prepared, { discoveries: [{ kind: "asset", locator: "pdf-viewer", url: pdfUrl }] });
+      const pdfReader = createPreparedStoredReader({ release: release("current"), worker });
+      const target = parsePreparedProvisionKey(locator.objectKey)!;
+      const openedPdf = await savedCitationDetails({ ...reopen, objects: {
+        get: (key, _identity, caller) => pdfReader.get(key, caller),
+        officialPdfUrl: (_key, _identity, caller) => pdfReader.officialPdfUrl(target, caller),
+      } });
+      assert.equal(openedPdf?.officialPdfUrl, pdfUrl);
+      assert.equal(openedPdf?.text, null);
+      const retainedPdf = await pdfReader.provisions.lookup({ ...target, scope }, reopen.signal);
+      const pdfEvidence = await readOfficialProvision(retainedPdf!.locator, pdfReader, scope, reopen.signal);
+      assert.match(pdfEvidence.text, /Exception for private events/);
+      const [pdfCitation] = buildCorpusCitations([pdfEvidence], { receipt: () => retainedPdf },
+        { namespace: `legal-prepared-${hash}`, generationSha256: hash });
+      assert.equal(pdfCitation.source.officialPdfUrl, pdfUrl);
+      Object.assign(sources.work.inventory, { capture_url: undefined });
+      Object.assign(sources.work.prepared.units[1], { attachmentOrigin: { url: pdfUrl } });
+      const mixedReader = createPreparedStoredReader({ release: release("current"), worker });
+      assert.equal(await mixedReader.officialPdfUrl({ ...target, position: "11" }, reopen.signal), pdfUrl);
+      assert.equal(await mixedReader.officialPdfUrl({ ...target, wholeDocument: true }, reopen.signal), sources.work.inventory.url);
     } finally { journal.close(); fixture.sqlite.close(); }
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

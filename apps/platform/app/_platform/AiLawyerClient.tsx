@@ -20,7 +20,7 @@ import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteCont
 import {requestLegalChatStream,shouldReuseLegalChatRequest,LegalChatClientError} from "../../lib/legal-answer-workflow/browser-stream";
 import type {LegalChatDelivery} from "../../lib/legal-answer-workflow/browser-stream";
 import {chatStageLabel} from "../../lib/legal-answer-workflow/browser-stream";
-import { answerReferenceContext, legalAnswerPassages } from "../../lib/ai/legal-inline-references";
+import { answerReferenceContext, legalAnswerPassages, officialReferenceUrl, publisherPdfUrl } from "../../lib/ai/legal-inline-references";
 import { AnswerWriting, writingResult } from "./AnswerWriting";
 import type { WritingDraft } from "../../lib/legal-answer-workflow/writing-stream";
 import {activateDialogFocus} from "../../lib/platform/dialog-focus";
@@ -47,6 +47,7 @@ type Source = {
   article: string | null;
   excerpt?: string | null;
   originalUrl: string;
+  officialPdfUrl?: string;
   status: string;
   effectiveDate: string | null;
   verifiedAt: string;
@@ -74,6 +75,7 @@ type ArticleDetails = {
   evidenceUnavailableReason?: "retired";
   fullDocument?: boolean;
   originalPdfAvailable?: boolean;
+  officialPdfUrl?: string;
   privateSource?: boolean;
   truncated: boolean;
   language: string;
@@ -726,6 +728,10 @@ function LegalSourceCard({
   const sourceDialogRef=useRef<HTMLElement>(null),closeRef=useRef<HTMLButtonElement>(null);
   const requestRef=useRef<AbortController|null>(null),returnFocus=useRef<HTMLElement|null>(null);
   const privateSource=isTrustedPrivateSource(source),secondarySource=isSafeSecondarySource(source);
+  const officialPdf = !privateSource && !secondarySource
+    ? officialReferenceUrl(source.officialPdfUrl ?? details?.officialPdfUrl ?? "") ?? publisherPdfUrl(source.originalUrl)
+    : undefined;
+  const openPublisherFile = aiText(locale, "Оригинал на Lex.uz", "Lex.uz’dagi asl hujjat", "Original on Lex.uz");
   const origin=source.sourceOrigin??(sourceAccessMode==="direct"?"live":"indexed");
   const fallback:ArticleDetails={documentTitle:source.actTitle,documentType:source.documentType??null,documentNumber:source.documentNumber??null,
     adoptingAuthority:source.adoptingAuthority??null,sourceClass:source.sourceClass??"OFFICIAL_LEGISLATION",articleNumber:source.article,
@@ -784,7 +790,7 @@ function LegalSourceCard({
       {source.article && <span>{source.article}</span>}
       {(source.documentType || source.documentNumber) && <small>{[source.documentType, source.documentNumber].filter(Boolean).join(" · ")}</small>}
       {source.adoptingAuthority && <small>{source.adoptingAuthority}</small>}
-      {!source.navigationOnly && source.excerpt && <q>{source.excerpt}</q>}
+      {!source.navigationOnly && !officialPdf && !display.originalPdfAvailable && source.excerpt && <q>{source.excerpt}</q>}
       <em>{sourceStatusLabel(source.status, locale)}{source.effectiveDate ? ` · ${formatDate(source.effectiveDate, locale)}` : ""}</em>
       <small>{sourceClassLabel(source.sourceClass, locale)} · {languageLabel(source.language ?? "", locale)} · {privateSource ? aiText(locale, "защищённый индекс", "himoyalangan indeks", "secure index") : secondarySource ? aiText(locale, "открытый интернет", "ochiq internet", "public web") : origin === "live" ? "live Lex.uz" : aiText(locale, "локальный индекс", "lokal indeks", "local index")}</small>
       <small>{source.navigationOnly ? aiText(locale, "Упомянуто в ответе · ссылка на полный акт; отдельный текст статьи не сохранён", "Javobda keltirilgan · to‘liq hujjatga havola; modda matni alohida saqlanmagan", "Mentioned in the answer · opens the full act; separate article text was not retained") : privateSource
@@ -796,22 +802,19 @@ function LegalSourceCard({
           : aiText(locale, "Проверено по утверждённому пакету источников", "Tasdiqlangan manbalar paketi bo‘yicha tekshirildi", "Verified against an approved source package")}</small>
     </div>
     <div className="ai-source-actions">
-      {!secondarySource && !source.navigationOnly && messageId && <button type="button" onClick={() => void showArticle()}><BookOpenCheck aria-hidden="true" />{privateSource ? aiText(locale, "Текст документа", "Hujjat matni", "Document text") : aiText(locale, "Текст статьи", "Modda matni", "Article text")}</button>}
-      {!privateSource && <a href={source.originalUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />{secondarySource ? aiText(locale, "Открыть материал", "Materialni ochish", "Open material") : aiText(locale, "Открыть Lex.uz", "Lex.uz saytini ochish", "Open Lex.uz")}</a>}
+      {!officialPdf && !secondarySource && !source.navigationOnly && messageId && <button type="button" onClick={() => void showArticle()}><BookOpenCheck aria-hidden="true" />{privateSource ? aiText(locale, "Текст документа", "Hujjat matni", "Document text") : aiText(locale, "Текст статьи", "Modda matni", "Article text")}</button>}
+      {!privateSource && <a href={officialPdf ?? source.originalUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />{officialPdf ? openPublisherFile : secondarySource ? aiText(locale, "Открыть материал", "Materialni ochish", "Open material") : aiText(locale, "Открыть Lex.uz", "Lex.uz saytini ochish", "Open Lex.uz")}</a>}
     </div>
     {!privateSource && !secondarySource && !source.navigationOnly && <SourceBookmarkControl source={source} cases={cases} locale={locale} />}
     {open && <div className="ai-source-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeSourceDialog(); }}>
       <section ref={sourceDialogRef} className="ai-source-modal" role="dialog" aria-modal="true" aria-labelledby="ai-source-modal-title">
         <header>
-          <div><small>{privateSource ? "JURO · PRIVATE DOCUMENT" : "JURO · LEX.UZ"}</small><h2 id="ai-source-modal-title">{privateSource ? aiText(locale, "Документ пользователя", "Foydalanuvchi hujjati", "User document") : display.originalPdfAvailable ? aiText(locale,"Сохранённый источник","Saqlangan manba","Saved source document") : display.fullArticle ? aiText(locale, "Полный текст статьи", "Moddaning to‘liq matni", "Full article text") : aiText(locale, "Проверенный фрагмент", "Tekshirilgan parcha", "Verified excerpt")}</h2></div>
+          <div><small>{privateSource ? "JURO · PRIVATE DOCUMENT" : "JURO · LEX.UZ"}</small><h2 id="ai-source-modal-title">{officialPdf ? openPublisherFile : privateSource ? aiText(locale, "Документ пользователя", "Foydalanuvchi hujjati", "User document") : display.originalPdfAvailable ? aiText(locale,"Сохранённый источник","Saqlangan manba","Saved source document") : display.fullArticle ? aiText(locale, "Полный текст статьи", "Moddaning to‘liq matni", "Full article text") : aiText(locale, "Проверенный фрагмент", "Tekshirilgan parcha", "Verified excerpt")}</h2></div>
           <button ref={closeRef} type="button" aria-label={aiText(locale, "Закрыть", "Yopish", "Close")} onClick={closeSourceDialog}><X /></button>
         </header>
         {loading ? <div className="ai-source-modal-state" role="status"><LoaderCircle className="spin" />{aiText(locale, "Загружаем проверенную редакцию…", "Tekshirilgan tahrir yuklanmoqda…", "Loading the verified version…")}</div> : <>
           {error && <p className="ai-source-modal-warning" role="status">{error}</p>}
-          {display.originalPdfAvailable && <div className="ai-source-modal-warning">
-            <p>{aiText(locale,"Для проверки таблиц и изображений откройте сохранённый PDF. Извлечённый текст служит для навигации.",
-              "Jadvallar va rasmlarni tekshirish uchun saqlangan PDF faylini oching. Ajratilgan matn yo‘l ko‘rsatish uchun berilgan.",
-              "Open the saved PDF to check tables and images. Extracted text is provided for navigation.")}</p>
+          {!officialPdf && display.originalPdfAvailable && <div className="ai-source-modal-warning">
             <button type="button" disabled={originalDownloading} onClick={()=>void downloadOriginal()}>{originalDownloading
               ? aiText(locale,"Загрузка…","Yuklanmoqda…","Downloading…")
               : aiText(locale,"Скачать сохранённый PDF","Saqlangan PDF faylini yuklab olish","Download saved PDF")}</button>
@@ -850,9 +853,9 @@ function LegalSourceCard({
             <summary className="juro-disclosure-summary">{aiText(locale, `История редакций (${display.versionHistory.length})`, `Tahrirlar tarixi (${display.versionHistory.length})`, `Version history (${display.versionHistory.length})`)}</summary>
             <ol>{display.versionHistory.map((version) => <li key={`${version.versionNumber}:${version.fetchedAt}`}><strong>#{version.versionNumber}</strong><span>{version.versionDate ? formatDate(version.versionDate, locale) : formatDate(version.fetchedAt, locale)} · {sourceStatusLabel(version.status, locale)}{version.validFrom ? ` · ${formatDate(version.validFrom, locale)}` : ""}{version.validTo ? ` — ${formatDate(version.validTo, locale)}` : ""}</span></li>)}</ol>
           </details>}
-          <div className="ai-source-modal-text">{display.text || aiText(locale, "Текст статьи не сохранён.", "Modda matni saqlanmagan.", "The article text was not saved.")}</div>
+          {!officialPdf && !display.originalPdfAvailable && <div className="ai-source-modal-text">{display.text || aiText(locale, "Текст статьи не сохранён.", "Modda matni saqlanmagan.", "The article text was not saved.")}</div>}
         </>}
-        {!privateSource && <footer><a href={display.officialUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />{aiText(locale, "Официальный источник", "Rasmiy manba", "Official source")}</a></footer>}
+        {!privateSource && <footer><a href={officialPdf ?? display.officialUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" />{officialPdf ? openPublisherFile : aiText(locale, "Официальный источник", "Rasmiy manba", "Official source")}</a></footer>}
       </section>
     </div>}
   </article>;

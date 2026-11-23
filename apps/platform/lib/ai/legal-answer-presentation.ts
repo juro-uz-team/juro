@@ -7,6 +7,7 @@ export type LegalAnswerViewSource = {
   actIdentifier?: string | null;
   article?: string | null;
   originalUrl: string;
+  officialPdfUrl?: string;
   status: string;
   effectiveDate?: string | null;
   verifiedAt?: string;

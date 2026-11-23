@@ -7,6 +7,17 @@ import {inlineReferences, answerReferenceContext, legalAnswerProse, legalAnswerP
 const section={sourceId:"section",actTitle:"Трудовой кодекс Республики Узбекистан",article:"§ 1. Особенности",originalUrl:"https://lex.uz/ru/docs/6257288#section"};
 const article={...section,sourceId:"409",article:"Статья 409. Гарантии",originalUrl:"https://lex.uz/ru/docs/6257288#409"};
 
+test("PDF citations and explicit Markdown links prefer the retained Lex.uz file", () => {
+ const pdf = "https://www.lex.uz/Pages/GetPdf.aspx?file=LexUz_123.pdf";
+ const scanned = { ...article, officialPdfUrl: pdf };
+ assert.equal(inlineReferences("Статья 409 ТК", [scanned])[0].href, pdf);
+ assert.equal(inlineReferences("Статья 409 ТК", [{ ...article, officialPdfUrl: "https://example.test/file.pdf" }])[0].href, article.originalUrl);
+ const html = renderToStaticMarkup(createElement(SafeMarkdown, { locale: "ru", referenceSources: [scanned], allowedLinks: [pdf],
+   children: `[Оригинал](${article.originalUrl})` }));
+ assert.ok(html.includes(`href="${pdf}"`));
+ assert.ok(!html.includes(`href="${article.originalUrl}"`));
+});
+
 test("article ranges resolve against their containing act despite another edition in the answer",()=>{
  const old={...section,sourceId:"old",article:"Статья 237. Гарантии",originalUrl:"https://lex.uz/docs/142859#237"};
  const pregnancy={...article,sourceId:"408",article:"Статья 408. Гарантии",originalUrl:"https://lex.uz/ru/docs/6257288#408"};

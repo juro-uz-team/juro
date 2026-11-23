@@ -42,7 +42,8 @@ def bind_attachments(work, subtree):
         for unit in prepared.get('units', []):
             position = f"annex:{number}:{unit['locator']}"
             transforms[str(unit['ordinal'])] = {**unit, 'ordinal': next_ordinal, 'locator': position,
-                'attachmentOrigin': {'work': attachment, 'sha256': source['raw_hash'], 'locator': unit['locator']}}
+                'attachmentOrigin': {'work': attachment, 'sha256': source['raw_hash'], 'locator': unit['locator'],
+                                     'url': source['url']}}
             next_ordinal += 1
         for entry in prepared.get('chunks', []):
             chunk = entry['chunk']

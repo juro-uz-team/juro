@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useState, useRef, type FormEvent } from 
 import { TurnstileWidget } from "../_auth/TurnstileWidget";
 import { LegalAnswerView, type LegalAnswerViewResult } from "../_platform/LegalAnswerView";
 import { aiText } from "../../lib/ai/localization";
+import { preferredOfficialSourceUrl } from "../../lib/ai/legal-inline-references";
 import { requestLegalChatStream,shouldReuseLegalChatRequest } from "../../lib/legal-answer-workflow/browser-stream";
 import {chatStageLabel} from "../../lib/legal-answer-workflow/browser-stream";
 import type { PlatformLocale } from "../../lib/platform/routing";
@@ -216,7 +217,7 @@ function GuestResultView({ result, locale }: { result: GuestResult; locale: Plat
       {result.sources.length > 0 ? <section className="guest-ai-sources" aria-labelledby="guest-ai-sources-title">
         <h2 id="guest-ai-sources-title">{aiText(locale, "Источники ответа", "Javob manbalari", "Answer sources")}</h2>
         <ul>{result.sources.map((source) => <li key={source.sourceId}>
-          <a href={source.originalUrl} target="_blank" rel="noreferrer noopener"><strong>{source.article ? `${source.article} · ` : ""}{source.actTitle}</strong><span>{source.sourceClass === "SECONDARY_REFERENCE" ? aiText(locale, "Дополнительный материал", "Qo‘shimcha material", "Additional material") : aiText(locale, "Официальный источник", "Rasmiy manba", "Official source")}</span></a>
+          <a href={preferredOfficialSourceUrl(source) ?? source.originalUrl} target="_blank" rel="noreferrer noopener"><strong>{source.article ? `${source.article} · ` : ""}{source.actTitle}</strong><span>{source.sourceClass === "SECONDARY_REFERENCE" ? aiText(locale, "Дополнительный материал", "Qo‘shimcha material", "Additional material") : aiText(locale, "Официальный источник", "Rasmiy manba", "Official source")}</span></a>
         </li>)}</ul>
       </section> : null}
     </article>

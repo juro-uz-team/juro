@@ -7,6 +7,7 @@ import { resolveSavedSourceRoute } from "../../../../../lib/legal-answer-workflo
 import { loadPreparedCorpusRoutes } from "../../../../../lib/legal-answer-workflow/runtime-configuration";
 import { requireSelectedWorkspace } from "../../../../../lib/platform/workspace";
 import { corpusDatabase } from "../../../../../lib/storage/connection";
+import { officialReferenceUrl } from "../../../../../lib/ai/legal-inline-references";
 
 const id = z.string().regex(/^[a-f0-9]{64}$/u);
 const category = z.string().regex(/^(?:(?:LBC|LS|TERM):\d{1,20})?$/u);
@@ -19,8 +20,16 @@ const entry = z.object({ work: id, title: z.string().min(1), url: z.string().ref
 }), edition: z.iso.date().nullable(), language: z.string() });
 const catalogue = z.object({ entries: z.array(entry).max(16), categories: z.array(z.object({ id: category, label: z.string() })),
   hasMore: z.boolean() });
-const document = z.object({ entry: entry.nullable(), units: z.array(z.object({ text: z.string(), locator: z.string() })).max(24),
-  nextOffset: z.number().int().positive().nullable(), extractionGaps: z.boolean().optional() });
+const publisherLink = z.string().refine(value => Boolean(officialReferenceUrl(value)));
+const document = z.object({ entry: entry.nullable(), units: z.array(z.object({ text: z.string(), locator: z.string(),
+  fileBacked: z.boolean().optional() })).max(24), nextOffset: z.number().int().positive().nullable(),
+  extractionGaps: z.boolean().optional(), pdfUrl: publisherLink.optional(), pdfLinks: z.array(publisherLink).optional() });
+
+function readerResponse(source: z.infer<typeof document>) {
+  const units = source.pdfUrl ? [] : source.units.filter(unit => !unit.fileBacked && !/^(?:page:|annex:\d+:page:)/u.test(unit.locator))
+    .map(({ text, locator }) => ({ text, locator }));
+  return respond({ ...source, units, nextOffset: source.pdfUrl ? null : source.nextOffset });
+}
 
 const respond = (body: unknown, status = 200) => Response.json(body, {
   status, headers: { "cache-control": "private, no-store" },
@@ -50,7 +59,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
         const source = document.parse(await transport.browseSources({ artifacts, ...parsed.data }, signal));
         if (source.entry === null) continue;
         if (source.entry.work !== work) throw new Error("CORPUS_SOURCE_IDENTITY");
-        return respond(source);
+        return readerResponse(source);
       }
       const archived = (await corpusDatabase().pool.query<{ package_sha256: string; manifest: Buffer }>(
         `SELECT s.package_sha256,e.manifest FROM storage.corpus_publication_sources s
@@ -61,7 +70,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
         const source = document.parse(await createCorpusTransport(saved.worker)
           .browseSources({ artifacts, ...parsed.data }, signal));
         if (source.entry?.work !== work) throw new Error("CORPUS_SOURCE_IDENTITY");
-        return respond(source);
+        return readerResponse(source);
       }
       return respond({ code: "CORPUS_SOURCE_MISSING" }, 404);
     }

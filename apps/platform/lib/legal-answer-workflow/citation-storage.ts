@@ -4,9 +4,10 @@ import { z } from "zod";
 import type { LegalChatResponse } from "../ai/legal-chat-schema";
 import type { CitationEvidenceReceipt } from "../legal-corpus/citation-evidence";
 import type { OfficialProvision } from "./contracts";
-import { readSavedNormalizedText, readNormalizedSourceFile } from "./normalized-document";
+import { readSavedNormalizedText, readNormalizedPresentation } from "./normalized-document";
 import { withinSignal } from "./lifetime";
 import { savedSourceIdentityMatches } from "./saved-source-identity";
+import { officialReferenceUrl, publisherPdfUrl } from "../ai/legal-inline-references";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/u);
 const receiptSchema = z.object({
@@ -83,7 +84,8 @@ export async function readSavedCitationReceipt(input: { db: D1Database; workspac
 export async function openSavedCitation(input: Parameters<typeof readSavedCitationReceipt>[0] & {
   signal: AbortSignal;
   includePdf?: boolean;
-  objects: { get(key: string, store: CitationEvidenceReceipt["store"], signal: AbortSignal): Promise<Uint8Array | null> };
+  objects: { get(key: string, store: CitationEvidenceReceipt["store"], signal: AbortSignal): Promise<Uint8Array | null>;
+    officialPdfUrl?(key: string, store: CitationEvidenceReceipt["store"], signal: AbortSignal): Promise<string | undefined> };
 }) {
   const saved = await withinSignal(input.signal, () => readSavedCitationReceipt(input));
   if (!saved) return null;
@@ -101,7 +103,11 @@ export async function openSavedCitation(input: Parameters<typeof readSavedCitati
   if (receipt.kind === "normalized-article" && !receipt.articleNumber) throw new Error("CITATION_ARTICLE_MISSING");
   const text = receipt.kind === "provision" ? serialized : readSavedNormalizedText({ serialized,
     expectedUrl: receipt.officialUrl, kind: receipt.kind, articleNumber: receipt.articleNumber, textSha256: receipt.textSha256 });
-  const sourceFile = receipt.kind === "provision" ? undefined : readNormalizedSourceFile(serialized, receipt.officialUrl);
+  const presentation = receipt.kind === "provision" ? undefined : readNormalizedPresentation(serialized, receipt.officialUrl);
+  const sourceFile = presentation?.sourceFile;
+  const publisherFile = input.includePdf ? undefined : publisherPdfUrl(receipt.officialUrl)
+    ?? await input.objects.officialPdfUrl?.(receipt.r2Key, receipt.store, input.signal)
+    ?? (presentation?.pdfBacked && !sourceFile ? receipt.officialUrl : undefined);
   let pdfBytes: Uint8Array | undefined;
   if (sourceFile) {
     const pdf = await withinSignal(input.signal, () => input.objects.get(sourceFile.objectKey, receipt.store, input.signal));
@@ -112,5 +118,6 @@ export async function openSavedCitation(input: Parameters<typeof readSavedCitati
   if (!current) return null;
   if (!isDeepStrictEqual(current, saved)) throw new Error("CITATION_RECEIPT_CHANGED");
   input.signal.throwIfAborted();
-  return { ...saved, text, ...(sourceFile ? { sourceFile } : {}), ...(pdfBytes ? { pdfBytes } : {}) };
+  return { ...saved, text, officialPdfUrl: publisherFile && officialReferenceUrl(publisherFile),
+    ...(sourceFile ? { sourceFile } : {}), ...(pdfBytes ? { pdfBytes } : {}) };
 }

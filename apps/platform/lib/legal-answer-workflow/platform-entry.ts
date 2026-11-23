@@ -192,6 +192,7 @@ export async function platformLegalAnswerBrowser(request: Request): Promise<Resp
 export async function platformSavedCitationGet(request: Request, context: { params: Promise<{ messageId: string }> }) {
   const deadlineAt = Date.now() + 10_000;
   const { messageId } = await context.params;
+  const preparedReaders = new Map<string, ReturnType<typeof createPreparedStoredReader>>();
   return handleSavedCitationHttp(request, messageId, { authenticate: authenticateSignedAnswer,
     objects: { async get(key, identity, signal) {
       if (identity) {
@@ -201,6 +202,7 @@ export async function platformSavedCitationGet(request: Request, context: { para
         const prepared = parsePreparedProvisionKey(key);
         if (prepared) {
           const reader = createPreparedStoredReader(resolveSavedSourceRoute(manifest, prepared.packageSha256, process.env));
+          preparedReaders.set(key, reader);
           return reader.get(key, signal);
         }
         return runIndexedRetrieval(signal, async () => {
@@ -219,6 +221,9 @@ export async function platformSavedCitationGet(request: Request, context: { para
         if (object.size < 1 || object.size > evidenceObjectMaximum(key)) throw new Error("CITATION_OBJECT_BOUND");
         return new Uint8Array(await withinSignal(signal, () => object.arrayBuffer()));
       }, performance.now() + Math.max(0, deadlineAt - Date.now()));
+    }, async officialPdfUrl(key, _identity, signal) {
+      const prepared = parsePreparedProvisionKey(key);
+      return prepared ? preparedReaders.get(key)?.officialPdfUrl(prepared, signal) : undefined;
     } },
   });
 }
