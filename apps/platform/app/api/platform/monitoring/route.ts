@@ -80,7 +80,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const search = (params.get("q") ?? "").trim().slice(0, 120);
   const changeType = params.get("changeType") ?? "";
   const requestedPage = params.get("page") ?? "0";
-  const pageSize = 12;
+  const pageSize = 4;
   if (!/^\d{1,5}$/u.test(requestedPage) || !["", "new_act", "metadata_changed", "edition"].includes(changeType)) {
     return response({ code: "MONITORING_FILTER_INVALID" }, 400);
   }

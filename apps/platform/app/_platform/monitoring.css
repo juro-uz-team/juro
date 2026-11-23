@@ -3,8 +3,8 @@
   display: grid;
   max-width: 1440px;
   margin-inline: auto;
-  padding: clamp(16px, 3.5vw, 48px);
-  gap: 18px;
+  padding: clamp(12px, 2.3vw, 30px);
+  gap: 14px;
   color: var(--ink);
 }
 
@@ -12,34 +12,34 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  padding: clamp(16px, 3vw, 34px);
-  background: var(--surface-brand);
+  gap: 14px;
+  padding: 12px clamp(12px, 2vw, 22px);
+  background: linear-gradient(105deg, var(--surface-brand), var(--white) 72%);
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 16px;
 }
 
 .monitoring-mark {
   display: grid;
-  width: 56px;
+  width: 44px;
   aspect-ratio: 1;
   place-items: center;
   color: var(--monitoring-accent);
   border: 1px solid var(--border-accent);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--amber-bg);
 }
 
-.monitoring-mark svg { width: 26px; height: 26px; }
+.monitoring-mark svg { width: 21px; height: 21px; }
 .monitoring-masthead h1, .monitoring-reader h2 {
   margin: 0;
   font-family: Georgia, serif;
   font-weight: 500;
-  font-size: clamp(25px, 3.4vw, 46px);
+  font-size: clamp(23px, 2.6vw, 36px);
   line-height: 1.12;
   letter-spacing: -.03em;
 }
-.monitoring-masthead p { margin: 7px 0 0; color: var(--text-secondary); line-height: 1.4; font-size: 14px; }
+.monitoring-masthead h1 { text-wrap: balance; }
 
 .monitoring-shell {
   overflow: hidden;
@@ -53,7 +53,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px 10px;
-  padding: 8px clamp(9px, 2vw, 22px);
+  padding: 5px clamp(9px, 1.8vw, 18px);
   border-bottom: 1px solid var(--line);
 }
 .monitoring-nav button, .monitoring-button, .monitoring-message button, .monitoring-save {
@@ -77,20 +77,21 @@
 .monitoring-nav svg, .monitoring-button svg, .monitoring-message svg, .monitoring-save svg { width: 17px; height: 17px; flex: none; }
 .monitoring-nav small { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
 .monitoring-nav small svg { color: var(--monitoring-accent); }
-.monitoring-split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
-.monitoring-list { min-width: 0; padding: clamp(12px, 2vw, 22px); }
+.monitoring-split { display: grid; grid-template-columns: minmax(0, 1fr); }
+.monitoring-split[data-reading="true"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+.monitoring-list { min-width: 0; padding: 10px clamp(10px, 1.7vw, 18px); }
 .monitoring-filter {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
-  gap: 10px;
-  padding-bottom: 14px;
+  gap: 8px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
-.monitoring-filter label { display: grid; gap: 5px; flex: 1 1 130px; min-width: 0; }
-.monitoring-filter label:first-child { flex-basis: 190px; }
-.monitoring-filter label span { font-size: 12px; font-weight: 650; color: var(--muted); }
-.monitoring-filter input, .monitoring-filter select {
+.monitoring-filter > :is(label, .monitoring-field) { display: grid; gap: 4px; flex: 1 1 125px; min-width: 0; }
+.monitoring-filter > label:first-child { flex: 2 1 200px; }
+.monitoring-filter > :is(label, .monitoring-field) > span { font-size: 12px; font-weight: 650; color: var(--muted); }
+.monitoring-filter input[type="search"] {
   min-width: 0;
   width: 100%;
   min-height: 44px;
@@ -103,16 +104,17 @@
   font-size: 16px;
 }
 .monitoring-filter button { flex: none; }
+.monitoring-filter .monitoring-search { background: var(--interactive-primary); color: var(--text-on-action); border-color: var(--border-accent); }
 
-.monitoring-date { padding: 16px 9px 5px; margin: 0; font-size: 13px; color: var(--muted); font-weight: 700; }
+.monitoring-date { padding: 6px 6px 1px; margin: 0; font-size: 12px; line-height: 1.3; color: var(--muted); font-weight: 700; }
 .monitoring-result {
   display: flex;
   gap: 10px;
   width: 100%;
-  min-height: 60px;
+  min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 8px 12px;
+  padding: 5px 8px;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-inline-start: 2px solid transparent;
@@ -121,25 +123,25 @@
   text-align: start;
   cursor: pointer;
 }
-.monitoring-result span { min-width: 0; overflow-wrap: anywhere; }
-.monitoring-result small { color: var(--monitoring-accent); display: block; line-height: 1.3; font-size: 12px; }
-.monitoring-result strong { display: block; margin-top: 3px; font-size: 15px; line-height: 1.4; font-weight: 640; }
+.monitoring-result > span { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.monitoring-result small { color: var(--monitoring-accent); flex: 0 0 134px; line-height: 1.25; font-size: 12px; }
+.monitoring-result strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; line-height: 1.35; font-weight: 650; }
 .monitoring-result svg { width: 16px; flex: none; color: var(--muted); }
 .monitoring-result[aria-pressed="true"] { border-inline-start-color: var(--border-accent); background: var(--amber-bg); }
-.monitoring-pagination { display: flex; gap: 8px; }
-.monitoring-pagination:not(:empty) { margin-top: 14px; }
+.monitoring-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.monitoring-pagination span { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.monitoring-pagination .monitoring-button:disabled { opacity: .48; }
 
-.monitoring-reader, .monitoring-reader-placeholder {
+.monitoring-reader {
+  align-self: start;
   min-width: 0;
-  padding: clamp(16px, 3vw, 32px);
+  padding: clamp(12px, 2vw, 24px);
   background: var(--soft);
   border-inline-start: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
-.monitoring-reader > .monitoring-button:first-child { margin-bottom: 16px; }
-.monitoring-reader h2 { font-size: clamp(24px, 2.6vw, 35px); margin-bottom: 16px; }
-.monitoring-reader-placeholder { display: grid; place-content: center; justify-items: center; text-align: center; color: var(--muted); }
-.monitoring-reader-placeholder svg { width: 34px; height: 34px; color: var(--monitoring-accent); }
+.monitoring-reader > .monitoring-button:first-child { margin-bottom: 12px; }
+.monitoring-reader h2 { font-size: clamp(21px, 2.3vw, 32px); margin-bottom: 12px; }
 .monitoring-act-text { line-height: 1.65; white-space: pre-wrap; }
 .monitoring-update dl { display: flex; flex-wrap: wrap; gap: 18px; }
 .monitoring-update dt { color: var(--muted); font-size: 12px; }
@@ -210,19 +212,25 @@ html[data-theme="dark"] .monitoring-message.success { color: color-mix(in srgb, 
   .monitoring-result:hover, .monitoring-nav button:hover { background: var(--amber-bg); }
   .monitoring-button:hover { border-color: var(--border-accent); }
 }
+@media (min-width: 881px) {
+  .monitoring-reader { max-height: max(280px, calc(100dvh - 235px)); overflow: auto; overscroll-behavior: contain; }
+  .monitoring-split[data-reading="true"] .monitoring-result > span { display: grid; gap: 1px; }
+}
 @media (max-width: 880px) {
-  .monitoring-split { grid-template-columns: minmax(0, 1fr); }
-  .monitoring-reader-placeholder, .monitoring-split[data-reading="true"] .monitoring-list { display: none; }
+  .monitoring-split[data-reading="true"] { grid-template-columns: minmax(0, 1fr); }
+  .monitoring-split[data-reading="true"] .monitoring-list { display: none; }
   .monitoring-reader { border-inline-start: 0; }
 }
 @media (max-width: 580px) {
-  .monitoring-workspace { gap: 12px; }
+  .monitoring-workspace { gap: 10px; }
   .monitoring-mark { display: none; }
   .monitoring-masthead { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .monitoring-preferences-trigger span { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
   .monitoring-nav small { margin-left: 0; flex-basis: 100%; }
-  .monitoring-filter:not(.corpus) label:first-child { flex-basis: 100%; }
-  .monitoring-filter:not(.corpus) label:nth-child(2) { flex-basis: 0; }
+  .monitoring-filter > label:first-child { flex-basis: 100%; }
+  .monitoring-filter > .monitoring-field { flex: 1 1 0; }
+  .monitoring-filter.corpus > .monitoring-search { flex-basis: 100%; }
+  .monitoring-result > span { display: grid; gap: 1px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .monitoring-workspace .spin { animation: none; }

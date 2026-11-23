@@ -5,6 +5,8 @@ import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteCont
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated monitoring preferences are hydrated after the first browser render */
 
 import {
+  ArrowLeft,
+  ArrowRight,
   BellRing,
   BriefcaseBusiness,
   CalendarClock,
@@ -29,6 +31,7 @@ import {
   type MonitoringAudience,
 } from "../../lib/platform/monitoring-preferences";
 import { CorpusBrowser, CorpusText, monitoringLabels } from "./MonitoringCorpus";
+import { Select } from "../_components/Select";
 
 const topicKeys = [
   "civil",
@@ -294,7 +297,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     void load(controller.signal);
     return () => controller.abort();
   }, [load, retry]);
-  useEffect(() => { if (selected) updateReader.current?.focus({ preventScroll: true }); }, [selected]);
+  useEffect(() => { if (selected) updateReader.current?.focus({ preventScroll: !matchMedia("(max-width: 880px)").matches }); }, [selected]);
 
   const selectedTopics = useMemo(() => new Set(preference.topics), [preference.topics]);
   function toggleTopic(topic: Topic) {
@@ -341,7 +344,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     <section className="monitoring-workspace">
       <header className="monitoring-masthead">
         <div className="monitoring-mark"><Scale aria-hidden="true" /></div>
-        <div><h1>{t.title}</h1><p>{labels.subtitle}</p></div>
+        <h1>{t.title}</h1>
         <button className="monitoring-button monitoring-preferences-trigger" type="button" onClick={() => settings.current?.showModal()}>
           <BellRing aria-hidden="true" /><span>{labels.settings}</span>
         </button>
@@ -399,12 +402,12 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
                 setPage(0);
               }}>
                 <label><span>{labels.search}</span><input name="search" type="search" maxLength={120} placeholder={labels.updatePlaceholder} /></label>
-                <label><span>{labels.change}</span><select value={changeType} onChange={event => {
+                <div className="monitoring-field"><span>{labels.change}</span><Select aria-label={labels.change} value={changeType} onChange={event => {
                   setChangeType(event.target.value);
                   setSelected(null);
                   setPage(0);
-                }}><option value="">{labels.all}</option><option value="new_act">{labels.newAct}</option><option value="edition">{labels.edition}</option><option value="metadata_changed">{labels.correction}</option></select></label>
-                <button className="monitoring-button" type="submit">{labels.search}</button>
+                }}><option value="">{labels.all}</option><option value="new_act">{labels.newAct}</option><option value="edition">{labels.edition}</option><option value="metadata_changed">{labels.correction}</option></Select></div>
+                <button className="monitoring-button monitoring-search" type="submit">{labels.search}</button>
               </form>
               {!loading && !loadFailed && !status.lastCorpusCheckedAt && status.integration !== "active" && <p className="monitoring-feed-note">
                 {status.integration === "disabled" ? t.integrationOff : status.lastRun?.status === "failed" ? t.runFailed : t.integrationPending}
@@ -419,24 +422,25 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
                       activeRow.current = event.currentTarget;
                       setSelected(update);
                     }}>
-                      <span><small>{updateType(update.changeType)}</small><strong>{update.title}</strong></span>
+                      <span><small>{updateType(update.changeType)}</small><strong title={update.title}>{update.title}</strong></span>
                       <ChevronRight aria-hidden="true" />
                     </button>
                   </div>;
                 })}</div>
                   : <p className="monitoring-empty">{query || changeType ? labels.noResults : t.empty}</p>}
-              <div className="monitoring-pagination">
-                {page > 0 && <button type="button" className="monitoring-button" onClick={() => { setSelected(null); setPage(page - 1); }}>{labels.previous}</button>}
-                {hasMore && <button type="button" className="monitoring-button" onClick={() => { setSelected(null); setPage(page + 1); }}>{labels.next}</button>}
-              </div>
+              {(page > 0 || hasMore) && <nav className="monitoring-pagination" aria-label={labels.updates}>
+                <button type="button" className="monitoring-button" disabled={page === 0} onClick={() => { setSelected(null); setPage(page - 1); }}><ArrowLeft aria-hidden="true" />{labels.previous}</button>
+                <span role="status">{labels.page} {page + 1}</span>
+                <button type="button" className="monitoring-button" disabled={!hasMore || loading} onClick={() => { setSelected(null); setPage(page + 1); }}>{labels.next}<ArrowRight aria-hidden="true" /></button>
+              </nav>}
             </section>
-            {selected ? <section className="monitoring-reader" aria-label={selected.title}>
+            {selected ? <section key={selected.id} className="monitoring-reader" aria-label={selected.title}>
               <button type="button" className="monitoring-button" onClick={() => {
                 setSelected(null);
                 requestAnimationFrame(() => activeRow.current?.focus());
               }}>{labels.back}</button>
               <UpdateCard update={selected} locale={locale} workspaceId={workspaceId} headingRef={updateReader} />
-            </section> : <div className="monitoring-reader-placeholder"><Scale aria-hidden="true" /><p>{labels.pickUpdate}</p></div>}
+            </section> : null}
           </div>
         </div>
         {mode === "corpus" && <CorpusBrowser locale={locale} workspaceId={workspaceId} />}

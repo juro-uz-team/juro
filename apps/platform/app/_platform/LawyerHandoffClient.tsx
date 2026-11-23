@@ -1,6 +1,7 @@
 "use client";
 
 import { Select } from "../_components/Select";
+import { DateTimePicker } from "../_components/ProfileControls";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated handoff records are loaded after the first browser render */
 
@@ -490,15 +491,8 @@ export function LawyerHandoffClient({
             <option value="chat">{text("Чат", "Chat", "Chat")}</option>
           </Select>
         </label>
-        <label>
-          {text("Предложить дату и время", "Sana va vaqtni taklif qilish", "Propose a date and time")}
-          <input
-            type="datetime-local"
-            value={proposedStartsAt}
-            onChange={(event) => setProposedStartsAt(event.target.value)}
-            disabled={!entitlements?.lawyerHandoff || busy}
-          />
-        </label>
+        <DateTimePicker locale={locale} label={text("Предложить дату и время", "Sana va vaqtni taklif qilish", "Propose a date and time")}
+          value={proposedStartsAt} onChange={setProposedStartsAt} disabled={!entitlements?.lawyerHandoff || busy} />
         <label>
           {text("Анонимизированное описание для conflict check", "Manfaatlar to‘qnashuvi tekshiruvi uchun anonimlashtirilgan tavsif", "Anonymised summary for the conflict check")}
           <textarea

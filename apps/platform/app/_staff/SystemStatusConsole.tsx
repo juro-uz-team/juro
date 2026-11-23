@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
 import { Activity, CircleCheckBig, Plus, RefreshCw, Send, ServerCog, ShieldCheck, TriangleAlert } from "lucide-react";
@@ -288,7 +289,7 @@ export function SystemStatusConsole({ locale, staffName, initial }: { locale: St
           <label>{t.messageRu}<textarea name="messageRu" required minLength={10} maxLength={2000}/></label>
           <label>{t.messageUz}<textarea name="messageUz" required minLength={10} maxLength={2000}/></label>
           <label>{t.messageEn}<textarea name="messageEn" required minLength={10} maxLength={2000}/></label>
-          <label>{t.startedAt}<input name="startedAt" type="datetime-local" defaultValue={localInputNow()} required/></label>
+          <DateTimePicker locale={locale} label={t.startedAt} name="startedAt" defaultValue={localInputNow()} required />
           <label>{t.impact}<Select value={impact} onChange={(event) => setImpact(event.target.value as StatusImpact)}>{(["degraded", "partial_outage", "outage", "maintenance"] as StatusImpact[]).map((value) => <option key={value} value={value}>{t[value]}</option>)}</Select></label>
           <fieldset><legend>{t.components}</legend><div className="status-component-checks">{componentKeys.map((key) => <label key={key}><input type="checkbox" checked={selectedComponents.includes(key)} onChange={(event) => setSelectedComponents((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))}/>{componentLabels[locale][key]}</label>)}</div></fieldset>
           <button className="staff-approve" disabled={busy || !selectedComponents.length}><Activity aria-hidden="true"/>{t.submit}</button>

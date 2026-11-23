@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
 import {
@@ -307,7 +308,7 @@ export function CostConsole({
           <label>{t.dailyLimit}<input name="dailyLimit" type="number" min="0.000001" max="1000000000" step="0.000001" required/></label>
           <label>{t.failureLimit}<input name="failureLimit" type="number" min="2" max="100000" step="1" defaultValue="5" required/></label>
           <label>{t.window}<input name="window" type="number" min="1" max="1440" step="1" defaultValue="15" required/></label>
-          <label>{t.effective}<input name="effectiveFrom" type="datetime-local" required/></label>
+          <DateTimePicker locale={locale} label={t.effective} name="effectiveFrom" required />
           <label className="cost-checkbox"><input name="enabled" type="checkbox" defaultChecked/>{t.enabled}</label>
           <button className="staff-approve" disabled={busy}><Plus aria-hidden="true"/>{t.savePolicy}</button>
         </form>
@@ -320,7 +321,7 @@ export function CostConsole({
           <label>{t.inputRate}<input name="inputRate" type="number" min="0" step="1" required/></label>
           <label>{t.outputRate}<input name="outputRate" type="number" min="0" step="1" defaultValue="0" required/></label>
           <label>{t.cachedRate}<input name="cachedRate" type="number" min="0" step="1" defaultValue="0" required/></label>
-          <label>{t.effective}<input name="effectiveFrom" type="datetime-local" required/></label>
+          <DateTimePicker locale={locale} label={t.effective} name="effectiveFrom" required />
           <label>{t.source}<input name="sourceUrl" type="url" inputMode="url" placeholder="https://openai.com/api/pricing/"/></label>
           <button className="staff-approve" disabled={busy}><Plus aria-hidden="true"/>{t.savePrice}</button>
         </form>

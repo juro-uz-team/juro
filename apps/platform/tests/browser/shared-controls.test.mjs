@@ -13,6 +13,7 @@ before(async () => {
       import {createRoot} from 'react-dom/client';
       import {useState} from 'react';
       import {Select} from './app/_components/Select';
+      import {DateTimePicker, TimePicker} from './app/_components/ProfileControls';
       import {ThemeSwitcher} from './app/_theme/ThemeSwitcher';
       function App(){const [value,setValue]=useState('active');return <main>
         <ThemeSwitcher locale="en" compact persistAccount={false}/>
@@ -22,14 +23,21 @@ before(async () => {
           <label>Required choice<Select name="required" defaultValue="" required><option value="">Choose one</option><option value="chosen">Chosen</option></Select></label>
           <label>Disabled<Select disabled><option>Unavailable</option></Select></label>
           <label>Long menu<Select name="long">{Array.from({length:50},(_,i)=><option key={i} value={i}>Option {i} — a longer label that wraps on small screens</option>)}</Select></label>
-          <button type="submit">Submit</button><button type="reset">Reset</button><output/>
+          <button type="submit">Submit</button><button type="reset">Reset</button><output id="select-values" />
         </form>
         <button onClick={()=>document.querySelector('dialog').showModal()}>Open dialog</button>
         <dialog><label>Dialog choice<Select><option>First</option><option>Second</option></Select></label></dialog>
+        <button onClick={()=>document.querySelector('#date-dialog').showModal()}>Change dates</button>
+        <dialog id="date-dialog"><form onSubmit={event=>{event.preventDefault();document.querySelector('#date-values').textContent=JSON.stringify(Object.fromEntries(new FormData(event.currentTarget)))}}>
+          <DateTimePicker locale="en" name="due" label="Due date" defaultValue="2026-11-24T09:30" required />
+          <DateTimePicker locale="en" name="deadline" label="Deadline" dateOnly pastOnly={false} required />
+          <TimePicker locale="en" label="Working hours" value="09:30" onChange={()=>{}} />
+          <button type="submit">Save dates</button><output id="date-values" />
+        </form></dialog>
       </main>};createRoot(document.getElementById('root')).render(<App/>);`,
-    }, bundle: true, write: false, jsx: "automatic",
+    }, bundle: true, write: false, jsx: "automatic", loader: { ".css": "empty" },
   });
-  const css = (await Promise.all(["globals.css", "_components/select.css", "_components/motion.css"].map(file => readFile(new URL(`../../app/${file}`, import.meta.url), "utf8")))).join("\n").replace('@import "tailwindcss";', "");
+  const css = (await Promise.all(["globals.css", "_components/select.css", "_components/motion.css", "_components/profile-controls.css"].map(file => readFile(new URL(`../../app/${file}`, import.meta.url), "utf8")))).join("\n").replace('@import "tailwindcss";', "");
   server = createServer((req, res) => {
     if (req.url === "/bundle.js") { res.setHeader("content-type", "text/javascript"); res.end(bundle.outputFiles[0].text); return; }
     res.setHeader("content-type", "text/html");
@@ -72,7 +80,7 @@ test("shared select preserves keyboard, real change events, validation, form val
     await required.click();
     await page.getByRole("option", { name: "Chosen", exact: true }).click();
     await page.getByRole("button", { name: "Submit", exact: true }).click();
-    const data = JSON.parse(await page.locator("output").textContent());
+    const data = JSON.parse(await page.locator("#select-values").textContent());
     assert.equal(data.status, "open"); assert.equal(data.workspace, ""); assert.equal(data.required, "chosen");
     await page.getByRole("button", { name: "Reset", exact: true }).click();
     assert.match(await workspace.textContent(), /Second workspace/);
@@ -84,7 +92,25 @@ test("shared select preserves keyboard, real change events, validation, form val
     await page.getByRole("combobox", { name: "Dialog choice" }).click();
     await page.getByRole("option", { name: "Second", exact: true }).click();
     assert.match(await page.getByRole("combobox", { name: "Dialog choice" }).textContent(), /Second/);
-    assert.equal(await page.locator("dialog").evaluate(e => e.open), true);
+    assert.equal(await page.locator("dialog").first().evaluate(e => e.open), true);
+  } finally { await page.close(); }
+});
+
+test("shared calendars in a modal retain required fields and native form submission", async () => {
+  const page = await browser.newPage({ viewport: { width: 375, height: 760 } });
+  try {
+    await page.goto(origin);
+    await page.getByRole("button", { name: "Change dates" }).click();
+    const save = page.getByRole("button", { name: "Save dates" });
+    await save.click();
+    assert.equal(await page.locator("#date-values").textContent(), "");
+    await page.getByRole("button", { name: "Open calendar" }).last().click();
+    const calendar = page.locator("#date-dialog .juro-calendar-popover");
+    await calendar.getByRole("button", { name: "Today", exact: true }).click();
+    await save.click();
+    const result = JSON.parse(await page.locator("#date-values").textContent());
+    assert.match(result.due, /^2026-11-24T09:30/);
+    assert.match(result.deadline, /^\d{4}-\d{2}-\d{2}$/);
   } finally { await page.close(); }
 });
 

@@ -1,39 +1,40 @@
 "use client";
 
-import { BookOpen, ChevronRight, ExternalLink, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, ExternalLink, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PlatformLocale } from "../../lib/platform/routing";
+import { Select } from "../_components/Select";
 
 export const monitoringLabels = {
   ru: {
-    subtitle: "Новые публикации и правовые акты Узбекистана", settings: "Уведомления",
+    settings: "Уведомления",
     updates: "Обновления", corpus: "Законодательство", close: "Закрыть",
     search: "Поиск", change: "Тип обновления", all: "Все", newAct: "Публикация", correction: "Изменение записи",
     updatePlaceholder: "Название или номер акта", noResults: "По этим фильтрам ничего не найдено.",
-    previous: "Назад", next: "Далее", back: "К списку", pickUpdate: "Выберите обновление, чтобы открыть его.",
-    pickAct: "Выберите акт для чтения.", language: "Язык", category: "Классификатор Lex.uz", edition: "Редакция",
+    previous: "Назад", next: "Далее", back: "К списку", page: "Страница",
+    language: "Язык", category: "Классификатор Lex.uz", edition: "Редакция",
     loading: "Загрузка…", unavailable: "Не удалось загрузить законодательство.", retry: "Повторить",
     source: "Открыть на Lex.uz", pdf: "Открыть оригинал на Lex.uz", more: "Продолжить чтение", gaps: "Некоторые части доступны на Lex.uz.",
     preparing: "Полный текст готовится", observed: "Обнаружено", catalogueCheck: "Сверка каталога",
   },
   uz: {
-    subtitle: "O‘zbekistonning yangi e’lonlari va huquqiy hujjatlari", settings: "Bildirishnomalar",
+    settings: "Bildirishnomalar",
     updates: "Yangilanishlar", corpus: "Qonunchilik", close: "Yopish",
     search: "Qidirish", change: "Yangilanish turi", all: "Barchasi", newAct: "E’lon", correction: "Yozuv o‘zgarishi",
     updatePlaceholder: "Hujjat nomi yoki raqami", noResults: "Bu filtrlar bo‘yicha natija topilmadi.",
-    previous: "Oldingi", next: "Keyingi", back: "Ro‘yxatga qaytish", pickUpdate: "Ochish uchun yangilanishni tanlang.",
-    pickAct: "O‘qish uchun hujjatni tanlang.", language: "Til", category: "Lex.uz tasnifi", edition: "Tahrir",
+    previous: "Oldingi", next: "Keyingi", back: "Ro‘yxatga qaytish", page: "Sahifa",
+    language: "Til", category: "Lex.uz tasnifi", edition: "Tahrir",
     loading: "Yuklanmoqda…", unavailable: "Qonunchilikni yuklab bo‘lmadi.", retry: "Qayta urinish",
     source: "Lex.uz’da ochish", pdf: "Asl hujjatni Lex.uz’da ochish", more: "O‘qishda davom etish", gaps: "Ayrim qismlar faqat Lex.uz’da mavjud.",
     preparing: "To‘liq matn tayyorlanmoqda", observed: "Aniqlangan sana", catalogueCheck: "Katalog tekshiruvi",
   },
   en: {
-    subtitle: "New publications and legal acts of Uzbekistan", settings: "Notifications",
+    settings: "Notifications",
     updates: "Updates", corpus: "Corpus", close: "Close",
     search: "Search", change: "Update type", all: "All", newAct: "Publication", correction: "Record change",
     updatePlaceholder: "Act title or number", noResults: "No results match these filters.",
-    previous: "Previous", next: "Next", back: "Back to results", pickUpdate: "Select an update to read it.",
-    pickAct: "Select an act to read it.", language: "Language", category: "Lex.uz category", edition: "Edition",
+    previous: "Previous", next: "Next", back: "Back to results", page: "Page",
+    language: "Language", category: "Lex.uz category", edition: "Edition",
     loading: "Loading…", unavailable: "The corpus could not be loaded.", retry: "Try again",
     source: "Open on Lex.uz", pdf: "Open original on Lex.uz", more: "Continue reading", gaps: "Some sections are available on Lex.uz.",
     preparing: "Full text is being prepared", observed: "Observed", catalogueCheck: "Catalogue checked",
@@ -45,6 +46,7 @@ type Catalogue = { entries: Entry[]; categories: { id: string; label: string }[]
 type Act = { entry: Entry; units: { text: string; locator: string }[]; nextOffset: number | null; extractionGaps: boolean;
   pdfUrl?: string; pdfLinks?: string[] };
 const languages = { ru: "Русский", uz: "O‘zbekcha", uzc: "Ўзбекча", en: "English" };
+const rowsPerPage = 4;
 
 async function requestCorpus<T>(workspaceId: string, params: URLSearchParams, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/platform/monitoring/corpus?${params}`, {
@@ -57,13 +59,18 @@ async function requestCorpus<T>(workspaceId: string, params: URLSearchParams, si
 export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale; workspaceId: string }) {
   const t = monitoringLabels[locale];
   const [filters, setFilters] = useState({ q: "", language: "", category: "", cursor: "" });
-  const [previous, setPrevious] = useState<string[]>([]);
+  const [previous, setPrevious] = useState<{ cursor: string; offset: number }[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Entry | null>(null);
   const [result, setResult] = useState<{ filters: typeof filters; data?: Catalogue }>();
   const [retry, setRetry] = useState(0);
   const activeRow = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const current = result?.filters === filters ? result : undefined;
+  const entries = current?.data?.entries ?? [];
+  const showNext = offset + rowsPerPage < entries.length || Boolean(current?.data?.nextPage);
+  const showPrevious = offset > 0 || previous.length > 0;
   useEffect(() => {
     const controller = new AbortController();
     requestCorpus<Catalogue>(workspaceId, new URLSearchParams(filters), controller.signal)
@@ -71,62 +78,74 @@ export function CorpusBrowser({ locale, workspaceId }: { locale: PlatformLocale;
       .catch(() => { if (!controller.signal.aborted) setResult({ filters }); });
     return () => controller.abort();
   }, [filters, retry, workspaceId]);
-  useEffect(() => { if (selected) heading.current?.focus({ preventScroll: true }); }, [selected]);
+  useEffect(() => { if (selected) heading.current?.focus({ preventScroll: !matchMedia("(max-width: 880px)").matches }); }, [selected]);
+
+  function applyFilters(changes: Partial<Pick<typeof filters, "q" | "language" | "category">>) {
+    setSelected(null);
+    setPrevious([]);
+    setOffset(0);
+    setPage(1);
+    setFilters({ ...filters, ...changes, cursor: "" });
+  }
 
   return <div className="monitoring-split" data-reading={Boolean(selected)}>
     <section className="monitoring-list" aria-label={t.corpus}>
       <form className="monitoring-filter corpus" onSubmit={event => {
         event.preventDefault();
-        setSelected(null);
-        setPrevious([]);
-        setFilters({ ...filters, q: String(new FormData(event.currentTarget).get("search") ?? ""), cursor: "" });
+        applyFilters({ q: String(new FormData(event.currentTarget).get("search") ?? "") });
       }}>
         <label><span>{t.search}</span><input type="search" name="search" maxLength={120} placeholder={t.updatePlaceholder} /></label>
-        <label><span>{t.language}</span><select value={filters.language} onChange={event => {
-          setSelected(null);
-          setPrevious([]);
-          setFilters({ ...filters, language: event.target.value, cursor: "" });
-        }}><option value="">{t.all}</option>{Object.entries(languages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        <label><span>{t.category}</span><select value={filters.category} onChange={event => {
-          setSelected(null);
-          setPrevious([]);
-          setFilters({ ...filters, category: event.target.value, cursor: "" });
-        }}><option value="">{t.all}</option>{result?.data?.categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <button className="monitoring-button" type="submit">{t.search}</button>
+        <div className="monitoring-field"><span>{t.language}</span><Select aria-label={t.language} value={filters.language} onChange={event => applyFilters({ language: event.target.value })}>
+          <option value="">{t.all}</option>{Object.entries(languages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</Select></div>
+        <div className="monitoring-field"><span>{t.category}</span><Select aria-label={t.category} value={filters.category} onChange={event => applyFilters({ category: event.target.value })}>
+          <option value="">{t.all}</option>{result?.data?.categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</Select></div>
+        <button className="monitoring-button monitoring-search" type="submit">{t.search}</button>
       </form>
       {!current ? <p className="monitoring-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" />{t.loading}</p>
         : !current.data ? <p className="monitoring-message error" role="alert">{t.unavailable}<button type="button" onClick={() => {
           setResult(undefined);
           setRetry(retry + 1);
         }}>{t.retry}</button></p>
-          : current.data.entries.length ? current.data.entries.map(item => <button key={item.work} type="button"
+          : entries.length ? entries.slice(offset, offset + rowsPerPage).map(item => <button key={item.work} type="button"
             className="monitoring-result" aria-pressed={selected?.work === item.work} onClick={event => {
               activeRow.current = event.currentTarget;
               setSelected(item);
             }}><span><small>{languages[item.language as keyof typeof languages] ?? item.language}{item.edition && ` · ${t.edition} ${item.edition}`}</small>
-              <strong>{item.title}</strong></span><ChevronRight aria-hidden="true" /></button>)
+              <strong title={item.title}>{item.title}</strong></span><ChevronRight aria-hidden="true" /></button>)
             : <p className="monitoring-empty">{t.noResults}</p>}
-      <div className="monitoring-pagination">
-        {previous.length > 0 && <button className="monitoring-button" type="button" onClick={() => {
+      {(showPrevious || showNext) && <nav className="monitoring-pagination" aria-label={t.corpus}>
+        <button className="monitoring-button" type="button" disabled={!showPrevious} onClick={() => {
           setSelected(null);
-          setFilters({ ...filters, cursor: previous.at(-1)! });
-          setPrevious(previous.slice(0, -1));
-        }}>{t.previous}</button>}
-        {current?.data?.nextPage && <button className="monitoring-button" type="button" onClick={() => {
+          setPage(page - 1);
+          if (offset > 0) setOffset(offset - rowsPerPage);
+          else if (previous.length) {
+            const last = previous[previous.length - 1];
+            setOffset(last.offset);
+            setFilters({ ...filters, cursor: last.cursor });
+            setPrevious(previous.slice(0, -1));
+          }
+        }}><ArrowLeft aria-hidden="true" />{t.previous}</button>
+        <span role="status">{t.page} {page}</span>
+        <button className="monitoring-button" type="button" disabled={!showNext} onClick={() => {
           setSelected(null);
-          setPrevious([...previous, filters.cursor]);
-          setFilters({ ...filters, cursor: current.data!.nextPage! });
-        }}>{t.next}</button>}
-      </div>
+          setPage(page + 1);
+          if (offset + rowsPerPage < entries.length) setOffset(offset + rowsPerPage);
+          else if (current?.data?.nextPage) {
+            setOffset(0);
+            setPrevious([...previous, { cursor: filters.cursor, offset }]);
+            setFilters({ ...filters, cursor: current.data.nextPage });
+          }
+        }}>{t.next}<ArrowRight aria-hidden="true" /></button>
+      </nav>}
     </section>
-    {selected ? <section className="monitoring-reader" aria-label={selected.title}>
+    {selected ? <section key={selected.work} className="monitoring-reader" aria-label={selected.title}>
       <button className="monitoring-button" type="button" onClick={() => {
         setSelected(null);
         requestAnimationFrame(() => activeRow.current?.focus());
       }}>{t.back}</button>
       <h2 ref={heading} tabIndex={-1}>{selected.title}</h2>
       <CorpusText key={selected.work} entry={selected} locale={locale} workspaceId={workspaceId} />
-    </section> : <div className="monitoring-reader-placeholder"><BookOpen aria-hidden="true" /><p>{t.pickAct}</p></div>}
+    </section> : null}
   </div>;
 }
 

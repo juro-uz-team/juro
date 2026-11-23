@@ -17,4 +17,26 @@ main{padding:32px;max-width:1600px;margin:auto;min-width:0}.page-heading{display
 @media(max-width:760px){.shell{display:block}.sidebar{display:none}.mobile-menu{display:inline-flex}.topbar{height:64px;padding:10px 16px;gap:8px}.topbar form{max-width:none}.topbar kbd{display:none}.topbar input{padding-right:10px}.toolbar-actions{gap:0}.toolbar-divider,.logout-link{display:none}.topbar form input{font-size:13px}.topbar .icon-button{min-width:40px;padding:8px}main{padding:24px 16px}.page-heading{margin-bottom:20px}h1{font-size:25px}.panel{padding:20px;margin:16px 0;scroll-margin-top:124px}.section-nav{top:64px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{padding:16px}.metric strong{font-size:28px}.metric:after{right:12px;top:12px}.metric>span:first-child{max-width:90%;font-size:11px}.filters{gap:12px;padding:12px}.filters label{flex:1 1 120px}.filters>button{flex:1}.filters .small{width:100%}.details{grid-template-columns:1fr}.details label{margin:10px 0}.grid{gap:16px}.actions{gap:8px}.actions button{flex:1}dl{grid-template-columns:1fr}dt{padding-bottom:0;border:0}dd{padding-top:4px}.login{margin:24px 16px;padding:28px;max-width:none}.panel h2{font-size:15px}.scroll{margin:0}th,td{padding:12px}.pagination{font-size:11px}.pagination a{padding:8px}.page-description{font-size:13px}}
 .back-link{display:inline-block;margin-bottom:20px;color:var(--muted);font-size:13px;text-decoration:none}.back-link:hover{color:var(--accent)}.panel>details:first-of-type{margin-top:0;border-top:0}.panel:has(button.danger):last-child>h2{color:var(--danger)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}.language-control{margin:0;display:block}.language-control select{width:72px;min-height:40px;padding:8px;background:transparent;border-color:transparent;font-size:12px;font-weight:650;cursor:pointer}.language-control select:hover{background:var(--hover);border-color:var(--line)}.theme-sun{display:none}:root[data-theme=dark] .theme-sun{display:inline-flex}:root[data-theme=dark] .theme-moon{display:none}.theme-moon{display:inline-flex}@media(max-width:420px){.login{padding:24px 20px}.login-header{gap:8px}.login-header .brand{gap:8px;font-size:20px;letter-spacing:.12em}.login-header .brand-art{width:32px;height:40px}.login-header .login-preferences{gap:2px}}.nav a:active,.icon-button:active{transform:scale(.98)}.panel h2:focus{outline:none}.section-nav:focus-within{border-color:var(--accent)}@media(max-width:760px){.section-nav{padding:12px;gap:8px}.section-nav label{display:grid;gap:8px}.section-nav select{width:100%;max-width:none}.section-count{display:none}.topbar{gap:4px;padding-inline:12px}.topbar form{min-width:0}.toolbar-actions{gap:0}.language-control select{width:62px;padding-inline:4px}.topbar input{padding-left:32px}.topbar form>svg{left:8px}.topbar .icon-button{min-width:40px}.section-nav{top:64px}.panel{scroll-margin-top:180px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+/* Preserve native form semantics while matching the Control Center theme. */
+select{cursor:pointer}
+select:disabled{cursor:not-allowed}
+input::file-selector-button{
+  margin-inline-end:10px;padding:7px 12px;border:1px solid var(--line);border-radius:6px;
+  background:var(--wash);color:var(--ink);font:inherit;cursor:pointer
+}
+@supports (appearance:base-select) and selector(::picker(select)){
+  select,select::picker(select){appearance:base-select}
+  select{gap:8px;min-height:44px;align-items:center}
+  select::picker-icon{color:var(--muted)}
+  select:open{border-color:var(--accent)}
+  select::picker(select){
+    margin-block:4px;max-inline-size:min(30rem,calc(100vw - 24px));max-block-size:min(20rem,60dvh);
+    padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);
+    box-shadow:var(--shadow);overscroll-behavior:contain
+  }
+  select option{gap:8px;min-block-size:44px;padding:8px 12px;border-radius:6px;white-space:normal;overflow-wrap:anywhere}
+  select option:checked{background:var(--accent-wash);font-weight:650}
+  select option:is(:hover,:focus-visible){background:var(--hover)}
+  select option::checkmark{order:1;margin-inline-start:auto;color:var(--accent)}
+}
 `;

@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, useContext, useState, type InputHTMLAttributes } from "react";
+import { memo, useCallback, useContext, useState, type InputHTMLAttributes } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, FileUp, X } from "lucide-react";
 import { Button, Calendar, CalendarCell, CalendarGrid, ComboBox, DateInput, DatePicker, DatePickerStateContext, TimeField, DateSegment, Dialog, Group, Heading, I18nProvider, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
-import { parseDateTime, parseDate, today, getLocalTimeZone } from "@internationalized/date";
+import { parseDateTime, parseDate, parseTime, today, getLocalTimeZone } from "@internationalized/date";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import "./profile-controls.css";
 
@@ -71,17 +71,40 @@ function CalendarActions({ locale, dateOnly }: { locale: PlatformLocale; dateOnl
   return <div className="juro-calendar-actions"><Button onPress={() => { state.setDateValue(today(getLocalTimeZone())); if (dateOnly) state.setOpen(false); }}>{ {ru:"Сегодня", uz:"Bugun", en:"Today"}[locale]}</Button><Button onPress={() => { state.setValue(null); state.setOpen(false); }}>{copy[locale].clear}</Button></div>;
 }
 
-export const DateTimePicker = memo(function DateTimePicker({ locale, label, value, onChange, disabled, dateOnly = false, pastOnly = dateOnly }: { locale: PlatformLocale; label: string; value: string; onChange: (value: string) => void; disabled?: boolean; dateOnly?: boolean; pastOnly?: boolean }) {
+export const DateTimePicker = memo(function DateTimePicker({ locale, label, name, value, defaultValue, onChange, disabled, required, min, dateOnly = false, pastOnly = dateOnly }: {
+  locale: PlatformLocale; label: string; name?: string; value?: string; defaultValue?: string;
+  onChange?: (value: string) => void; disabled?: boolean; required?: boolean; min?: string; dateOnly?: boolean; pastOnly?: boolean;
+}) {
   const t = copy[locale];
+  const parse = dateOnly ? parseDate : parseDateTime;
+  const [portal, setPortal] = useState<HTMLElement>();
+  const fieldRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) setPortal(node.closest<HTMLDialogElement>("dialog") ?? undefined);
+  }, []);
   return <I18nProvider locale={locale === "uz" ? "uz-Latn" : locale}><div className="juro-date-field">
-    <DatePicker className="juro-date-picker" shouldCloseOnSelect={dateOnly} granularity={dateOnly ? "day" : "minute"} hourCycle={24} maxValue={pastOnly ? today(getLocalTimeZone()) : undefined} value={value ? (dateOnly ? parseDate(value) : parseDateTime(value)) : null} onChange={next => onChange(next?.toString().slice(0,16) ?? "")} isDisabled={disabled}>
+    <DatePicker ref={fieldRef} className="juro-date-picker" name={name} isRequired={required} validationBehavior="native"
+      shouldCloseOnSelect={dateOnly} granularity={dateOnly ? "day" : "minute"} hourCycle={24}
+      minValue={min ? parse(min) : undefined} maxValue={pastOnly ? today(getLocalTimeZone()) : undefined}
+      defaultValue={defaultValue ? parse(defaultValue) : undefined} value={value === undefined ? undefined : value ? parse(value) : null}
+      onChange={next => onChange?.(next?.toString().slice(0,16) ?? "")} isDisabled={disabled}>
       <Label>{label}</Label>
       <Group className="juro-date-input"><DateInput>{segment => <DateSegment segment={segment}/>}</DateInput><Button aria-label={t.calendar}><CalendarDays size={18}/></Button></Group>
-      <Popover className="juro-control-popover juro-calendar-popover"><Dialog><Calendar firstDayOfWeek="mon"><header><Button slot="previous" aria-label={locale === "ru" ? "Предыдущий месяц" : locale === "uz" ? "Oldingi oy" : "Previous month"}><ChevronLeft size={18}/></Button><Heading/><Button slot="next" aria-label={locale === "ru" ? "Следующий месяц" : locale === "uz" ? "Keyingi oy" : "Next month"}><ChevronRight size={18}/></Button></header><CalendarGrid>{date => <CalendarCell date={date}/>}</CalendarGrid></Calendar><CalendarActions locale={locale} dateOnly={dateOnly}/>{!dateOnly && <CalendarTime locale={locale}/>}</Dialog></Popover>
+      <Popover UNSTABLE_portalContainer={portal} className="juro-control-popover juro-calendar-popover"><Dialog><Calendar firstDayOfWeek="mon"><header><Button slot="previous" aria-label={locale === "ru" ? "Предыдущий месяц" : locale === "uz" ? "Oldingi oy" : "Previous month"}><ChevronLeft size={18}/></Button><Heading/><Button slot="next" aria-label={locale === "ru" ? "Следующий месяц" : locale === "uz" ? "Keyingi oy" : "Next month"}><ChevronRight size={18}/></Button></header><CalendarGrid>{date => <CalendarCell date={date}/>}</CalendarGrid></Calendar><CalendarActions locale={locale} dateOnly={dateOnly}/>{!dateOnly && <CalendarTime locale={locale}/>}</Dialog></Popover>
     </DatePicker>
-    {value && <button className="juro-clear-date" type="button" disabled={disabled} onClick={() => onChange("")}>{t.clear}</button>}
+    {value && onChange && !required && <button className="juro-clear-date" type="button" disabled={disabled} onClick={() => onChange("")}>{t.clear}</button>}
   </div></I18nProvider>;
 });
+
+export function TimePicker({ locale, label, value, disabled, onChange }: {
+  locale: PlatformLocale; label: string; value: string; disabled?: boolean; onChange: (value: string) => void;
+}) {
+  return <I18nProvider locale={locale === "uz" ? "uz-Latn" : locale}>
+    <TimeField aria-label={label} className="juro-time-field juro-date-input" hourCycle={24} granularity="minute" isDisabled={disabled}
+      value={value ? parseTime(value) : null} onChange={next => onChange(next?.toString().slice(0, 5) ?? "")}>
+      <DateInput>{segment => <DateSegment segment={segment} />}</DateInput>
+    </TimeField>
+  </I18nProvider>;
+}
 
 type NumberPresetProps = {
   label: string;

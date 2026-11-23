@@ -89,6 +89,8 @@ fieldset:disabled :is(.juro-choice,.juro-duration,.juro-date-picker) { opacity: 
 .juro-date-picker .juro-date-input { min-height:48px; }
 .juro-date-picker .react-aria-DateInput { font-size:16px; min-width:0; }
 .juro-date-picker .react-aria-Label { font-size:13px; line-height:1.5; }
+.juro-time-field .react-aria-DateInput { justify-content:center; padding-inline:6px; font-size:16px; }
+.juro-time-field[data-disabled] { opacity:.55; }
 .juro-control-popover [data-focus-visible] { outline:2px solid var(--focus-ring); outline-offset:-3px; }
 .juro-clear-date { font:inherit; font-size:13px; min-height:44px; }
 @media(prefers-reduced-motion:no-preference) { .juro-control-popover[data-entering] { animation:control-appear 140ms ease-out; } @keyframes control-appear { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } } }

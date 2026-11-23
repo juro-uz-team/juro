@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Select } from "../_components/Select";
+import { DateTimePicker } from "../_components/ProfileControls";
 import type { Locale } from "../../lib/practice/domain";
 import { t } from "./copy";
 
@@ -199,6 +200,10 @@ export function ActionForm({
                 />
                 {field.label ?? t(locale, field.key)}
               </label>
+            ) : field.type === "date" || field.type === "datetime-local" ? (
+              <DateTimePicker locale={locale} label={field.label ?? t(locale, field.key)} dateOnly={field.type === "date"}
+                pastOnly={false} required={field.required !== false}
+                value={values[field.key] ?? ""} onChange={value => setValues(current => ({ ...current, [field.key]: value }))} />
             ) : (
               <>
                 <label htmlFor={id}>

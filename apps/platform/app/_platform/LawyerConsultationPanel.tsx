@@ -1,6 +1,7 @@
 "use client";
 
 import { Select } from "../_components/Select";
+import { DateTimePicker } from "../_components/ProfileControls";
 
 /* eslint-disable react-hooks/set-state-in-effect -- consultation state is loaded from the authenticated API */
 
@@ -241,24 +242,8 @@ export function LawyerConsultationPanel({
             consultation.status === "cancelled") && (
             <form onSubmit={(event) => void propose(event)}>
               <div>
-                <label>
-                  {text("Начало", "Boshlanishi", "Starts")}
-                  <input
-                    type="datetime-local"
-                    required
-                    value={startsAt}
-                    onChange={(event) => setStartsAt(event.target.value)}
-                  />
-                </label>
-                <label>
-                  {text("Окончание", "Tugashi", "Ends")}
-                  <input
-                    type="datetime-local"
-                    required
-                    value={endsAt}
-                    onChange={(event) => setEndsAt(event.target.value)}
-                  />
-                </label>
+                <DateTimePicker locale={locale} label={text("Начало", "Boshlanishi", "Starts")} required value={startsAt} onChange={setStartsAt} />
+                <DateTimePicker locale={locale} label={text("Окончание", "Tugashi", "Ends")} required value={endsAt} onChange={setEndsAt} />
               </div>
               <label>
                 {text("Формат", "Format", "Format")}

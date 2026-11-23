@@ -1,4 +1,5 @@
 "use client";
+import { FilePicker } from "../_components/ProfileControls";
 import { useEffect, useState } from "react";
 import { Select } from "../_components/Select";
 import type { Locale } from "../../lib/practice/domain";
@@ -440,8 +441,8 @@ export function TemplateDialog({
       <p>{t(locale, "docxWarning")}</p>
       <label>
         {t(locale, "upload")} DOCX
-        <input
-          type="file"
+        <FilePicker
+          locale={locale}
           accept=".docx"
           onChange={async (event) => {
             const file = event.target.files?.[0];
@@ -546,8 +547,8 @@ export function ImportDialog({
       <p>{t(locale, "importHelp")}</p>
       <label>
         {t(locale, "upload")}
-        <input
-          type="file"
+        <FilePicker
+          locale={locale}
           accept=".csv,.xlsx"
           onChange={async (event) => {
             const file = event.target.files?.[0];

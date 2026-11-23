@@ -1,4 +1,5 @@
 "use client";
+import { FilePicker } from "../_components/ProfileControls";
 import {
   useCallback,
   useEffect,
@@ -2545,9 +2546,9 @@ function UploadDialog({
       </label>
       <label>
         {t(locale, "upload")}
-        <input
+        <FilePicker
+          locale={locale}
           required
-          type="file"
           name="file"
           accept=".pdf,.docx,.png,.jpg,.jpeg"
         />

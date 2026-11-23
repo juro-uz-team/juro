@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
 import {
@@ -500,8 +501,8 @@ export function LegalSourceReviewInbox({ locale, reviewerName }: { locale: Local
         <section className="staff-decision" aria-labelledby="decision-title">
           <h2 id="decision-title">{l.notes}</h2><p>{l.notesHint}</p>
           <div className="staff-applicability-dates">
-            <label>{l.effectiveDate}<input type="date" required value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)}/></label>
-            <label>{l.expiresDate}<input type="date" min={effectiveDate || undefined} value={expiresDate} onChange={(event) => setExpiresDate(event.target.value)}/></label>
+            <DateTimePicker locale={locale} label={l.effectiveDate} dateOnly pastOnly={false} required value={effectiveDate} onChange={setEffectiveDate} />
+            <DateTimePicker locale={locale} label={l.expiresDate} dateOnly pastOnly={false} min={effectiveDate} value={expiresDate} onChange={setExpiresDate} />
           </div>
           <p>{l.applicabilityHint}</p>
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={5} aria-describedby="decision-help"/>
@@ -542,8 +543,8 @@ export function LegalSourceReviewInbox({ locale, reviewerName }: { locale: Local
           <h2 id="bulk-title">{l.bulkTitle}: {selectedEligibleReviewIds.size}</h2>
           <p>{l.bulkHint}</p>
           <div className="staff-applicability-dates">
-            <label>{l.effectiveDate}<input type="date" required value={bulkEffectiveDate} onChange={(event) => setBulkEffectiveDate(event.target.value)}/></label>
-            <label>{l.expiresDate}<input type="date" min={bulkEffectiveDate || undefined} value={bulkExpiresDate} onChange={(event) => setBulkExpiresDate(event.target.value)}/></label>
+            <DateTimePicker locale={locale} label={l.effectiveDate} dateOnly pastOnly={false} required value={bulkEffectiveDate} onChange={setBulkEffectiveDate} />
+            <DateTimePicker locale={locale} label={l.expiresDate} dateOnly pastOnly={false} min={bulkEffectiveDate} value={bulkExpiresDate} onChange={setBulkExpiresDate} />
           </div>
           <label>{l.notes}<textarea autoFocus value={bulkNotes} onChange={(event) => setBulkNotes(event.target.value)} maxLength={2000} rows={4}/></label>
           <div><button type="button" onClick={() => setBulkOpen(false)} disabled={busy !== ""}>{l.bulkCancel}</button><button type="button" className="staff-approve" disabled={busy !== "" || bulkNotes.trim().length < 10 || !bulkEffectiveDate || Boolean(bulkExpiresDate && bulkExpiresDate <= bulkEffectiveDate)} onClick={() => void bulkApprove()}>{busy === "bulk" ? <LoaderCircle className="is-spinning" aria-hidden="true"/> : <Check aria-hidden="true"/>}{l.bulkConfirm}: {selectedEligibleReviewIds.size}</button></div>

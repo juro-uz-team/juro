@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTimePicker } from "../_components/ProfileControls";
 import { Select } from "../_components/Select";
 
 import { Download, RefreshCw, Search, ShieldCheck } from "lucide-react";
@@ -179,8 +180,8 @@ export function AuditLogConsole({ locale, staffName }: { locale: OperationalLoca
         <label>{t.action}<input name="action" maxLength={80} pattern="[A-Za-z0-9._:-]+"/></label>
         <label>{t.actor}<input name="actorUserId" maxLength={180} pattern="[A-Za-z0-9:_-]+"/></label>
         <label>{t.scope}<input name="scopeId" maxLength={180} pattern="[A-Za-z0-9:_-]+"/></label>
-        <label>{t.from}<input name="from" type="datetime-local"/></label>
-        <label>{t.to}<input name="to" type="datetime-local"/></label>
+        <DateTimePicker locale={locale} label={t.from} name="from" />
+        <DateTimePicker locale={locale} label={t.to} name="to" />
         <div className="audit-filter-actions"><button disabled={busy || !online}><Search aria-hidden="true"/>{t.apply}</button><button type="button" onClick={(event) => void runQuery(event.currentTarget.form!)} disabled={busy || !online}><RefreshCw aria-hidden="true"/>{t.refresh}</button><button type="button" onClick={(event) => void exportCsv(event.currentTarget.form!)} disabled={busy || !online}><Download aria-hidden="true"/>{t.export}</button></div>
       </form>
       <section className="audit-table-wrap" aria-label={t.title}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { Select } from "../../_components/Select";
+import { TimePicker } from "../../_components/ProfileControls";
 
 import { Children, cloneElement, isValidElement, useState, type ReactElement, type ReactNode } from "react";
 import { Plus, Trash2, UserRoundCheck, UsersRound } from "lucide-react";
@@ -369,7 +370,7 @@ function TransferDynamicFields({ answers, update, prefix, method, locale }: { an
       <InputField label="Наименование банка" value={current.bankName} onChange={(event) => update(`${prefix}.bankName`, event.target.value)}/>
       <InputField label="Последние 4 цифры карты отправителя" value={current.senderCardLast4} onChange={(event) => update(`${prefix}.senderCardLast4`, event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric"/>
       <InputField label="Последние 4 цифры карты получателя" value={current.recipientCardLast4} onChange={(event) => update(`${prefix}.recipientCardLast4`, event.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric"/>
-      {prefix === "transfer" && <><DateField label="Дата перевода" value={answers.transfer.date} onChange={(value) => update("transfer.date", value)}/><InputField label="Время перевода" type="time" value={answers.transfer.time} onChange={(event) => update("transfer.time", event.target.value)}/><InputField label="Сумма перевода" value={answers.transfer.transferredAmount} onChange={(event) => update("transfer.transferredAmount", event.target.value)} inputMode="decimal"/></>}
+      {prefix === "transfer" && <><DateField label="Дата перевода" value={answers.transfer.date} onChange={(value) => update("transfer.date", value)}/><div className="dbt-field"><span className="dbt-field-label">Время перевода</span><TimePicker locale={locale} label="Время перевода" value={answers.transfer.time} onChange={value => update("transfer.time", value)} /></div><InputField label="Сумма перевода" value={answers.transfer.transferredAmount} onChange={(event) => update("transfer.transferredAmount", event.target.value)} inputMode="decimal"/></>}
       <InputField label="Номер транзакции" value={current.transactionNumber} onChange={(event) => update(`${prefix}.transactionNumber`, event.target.value)}/>
       {prefix === "transfer" && <TextAreaField label="Квитанция или скриншот" value={answers.transfer.confirmationDetails} onChange={(event) => update("transfer.confirmationDetails", event.target.value)} className="dbt-field-wide" rows={2}/>}
       <TextAreaField label="Дополнительный комментарий" value={current.comment} onChange={(event) => update(`${prefix}.comment`, event.target.value)} className="dbt-field-wide" rows={2}/>

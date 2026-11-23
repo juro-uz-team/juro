@@ -6,6 +6,7 @@ import { t } from "./copy";
 type Row = Record<string, any>;
 type Api = (path: string, payload?: unknown, form?: FormData) => Promise<any>;
 
+import { FilePicker } from "../_components/ProfileControls";
 export function DocumentEditor({
   id,
   locale,
@@ -249,7 +250,7 @@ export function DocumentEditor({
             >
               <label>
                 {t(locale, "signed")}
-                <input type="file" name="file" accept=".pdf" required />
+                <FilePicker locale={locale} name="file" accept=".pdf" required />
               </label>
               <button>{t(locale, "upload")}</button>
             </form>
