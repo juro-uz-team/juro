@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { startNativePlatform } from "../../platform/tests/helpers/native-server.mjs";
@@ -9,7 +8,6 @@ import { startNativePlatform } from "../../platform/tests/helpers/native-server.
 const require = createRequire(new URL("../../platform/package.json", import.meta.url));
 const { parse } = await import(pathToFileURL(require.resolve("parse5")));
 const sharp = require("sharp");
-const { transform } = require("esbuild");
 const attributes = node => Object.fromEntries((node.attrs || []).map(item => [item.name, item.value]));
 function find(node, predicate, result = []) { if (predicate(node)) result.push(node); for (const child of node.childNodes || []) find(child, predicate, result); return result; }
 const text = node => node.nodeName === "#text" ? node.value : (node.childNodes || []).map(text).join("");
@@ -18,14 +16,6 @@ function document(html) {
   const meta = Object.fromEntries(find(root, node => node.tagName === "meta").map(node => { const item = attributes(node); return [item.name || item.property, item.content]; }));
   return { root, links, meta, title: find(root, node => node.tagName === "title").map(text), canonical: links.find(item => item.rel === "canonical")?.href };
 }
-const profile = {
-  id: "published-professional", displayName: "Published professional", specialties: ["Contracts"], languages: ["English"],
-  experienceYears: 5, priceDescription: null, availabilityStatus: "available", nextAvailableAt: null,
-  advocateStatus: "not_declared", firmName: null, bio: "A public professional profile with document preparation experience.",
-  marketplaceStatus: "public_approved", canReceiveRequests: true, city: "Tashkent", region: null, education: null,
-  consultationFormats: ["Chat"], profilePhotoUrl: null, rating: { reviewCount: 0, overallAverage: null }, reviews: [],
-};
-const pending = { ...profile, id: "pending-professional", displayName: "Pending professional", marketplaceStatus: "pending_review", canReceiveRequests: false };
 const editorial = { slug: "published-guide", title: "Published guide", description: "A useful published page about the service and available tools.", body: "This is a published service guide for this isolated website fixture.", image: null, seo_title: null, seo_description: null };
 let platform, native, platformPort;
 const savedEnvironment = Object.fromEntries(["ADMIN_INTERNAL_TOKEN", "JURO_PUBLIC_PLATFORM_ORIGIN", "PORT", "APP_URL", "NEXT_PUBLIC_PLATFORM_ORIGIN", "PRIVATE_DEVELOPMENT", "DEPLOYMENT_ENVIRONMENT"].map(key => [key, process.env[key]]));
@@ -37,10 +27,7 @@ before(async () => {
     const url = new URL(request.url, "http://localhost");
     response.setHeader("content-type", "application/json");
     let result;
-    if (url.pathname.startsWith("/api/public/lawyers")) {
-      if (!["localhost:" + platformPort, "staging.app.juro.uz"].includes(request.headers.host) || request.headers["x-real-ip"] !== "127.0.0.1") { response.writeHead(403); response.end("{}"); return; }
-      result = url.pathname === "/api/public/lawyers" ? { lawyers: [profile, pending] } : { lawyer: url.pathname.endsWith(pending.id) ? pending : profile };
-    } else if (url.pathname === "/api/internal/admin/site-content/published") {
+    if (url.pathname === "/api/internal/admin/site-content/published") {
       assert.equal(request.headers["x-juro-admin-internal-token"], "isolated-site-content-fixture");
       const locale = url.searchParams.get("locale"), kind = url.searchParams.get("kind");
       result = kind === "page" && ["en", "ru"].includes(locale) ? [editorial] : kind === "news" && locale === "en" ? [{ ...editorial, slug: "service-update" }] : [];
@@ -61,8 +48,8 @@ test("every discoverable public page has consistent metadata, language links and
   const xml = await (await fetch(native.origin + "/sitemap.xml")).text();
   const urls = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]);
   assert.equal(new Set(urls).size, urls.length);
-  assert.equal(urls.length, 48, "42 product/editorial pages, three approved profiles, two published pages and one news edition");
-  assert.doesNotMatch(xml, /pending-professional|\/legal\/|<priority>|<changefreq>/);
+  assert.equal(urls.length, 42, "39 product/editorial pages, two published pages and one news edition");
+  assert.doesNotMatch(xml, /\/lawyers|\/legal\/|<priority>|<changefreq>/);
   assert.match(xml, /<lastmod>2026-07-26<\/lastmod>/);
   const pages = new Map(), images = new Map();
   for (const url of urls) {
@@ -114,41 +101,21 @@ test("every discoverable public page has consistent metadata, language links and
   }
 });
 
-test("approved professionals are reachable while filtered, pending and preview pages stay out of the index", async () => {
-  const html = await (await fetch(native.origin + "/en/lawyers")).text();
-  assert.match(html, /href="\/en\/lawyers\/published-professional"/);
-  for (const path of ["/en/lawyers?q=Contracts", "/en/lawyers/pending-professional", "/ru/legal/legal-information", "/en/legal/legal-information", "/ru/news"]) {
+test("legal previews stay out of search and retired lawyer catalogue routes return 404", async () => {
+  for (const path of ["/ru/legal/legal-information", "/en/legal/legal-information", "/ru/news"]) {
     const response = await fetch(native.origin + path);
     assert.equal(response.status, 200, path);
     const page = document(await response.text());
     assert.match(page.meta.robots, /noindex/, path);
     assert.match(page.meta.googlebot, /noindex/, path);
     assert.ok(page.meta["og:image"], path);
-    if (path.includes("?")) assert.equal(page.canonical, "https://juro.uz/en/lawyers");
   }
-  for (const path of ["/xx/document-builder", "/en/missing-search-page", "/uz/pages/published-guide"]) {
+  for (const path of ["/xx/document-builder", "/en/missing-search-page", "/uz/pages/published-guide",
+    ...["ru", "uz", "en"].flatMap(locale => [`/${locale}/lawyers`, `/${locale}/lawyers/retired-profile`]),
+  ]) {
     const response = await fetch(native.origin + path);
     assert.equal(response.status, 404, path);
     assert.match(document(await response.text()).meta.robots, /noindex/, path);
-  }
-});
-
-test("public catalogue reads use the canonical production Host over loopback", async () => {
-  const source = await readFile(new URL("../lib/public-platform.ts", import.meta.url), "utf8");
-  const compiled = await transform(source, { loader: "ts", format: "esm" });
-  const catalogueClient = await import("data:text/javascript;base64," + Buffer.from(compiled.code).toString("base64"));
-  const old = { ...process.env };
-  try {
-    process.env.PRIVATE_DEVELOPMENT = "false";
-    process.env.PORT = String(platformPort);
-    process.env.NEXT_PUBLIC_PLATFORM_ORIGIN = "https://staging.app.juro.uz";
-    process.env.APP_URL = "https://staging.app.juro.uz";
-    const value = await catalogueClient.publicPlatformJson("/api/public/lawyers");
-    assert.equal(value.lawyers[0].id, profile.id);
-    assert.equal(catalogueClient.publicPlatformOrigin(), "https://staging.app.juro.uz");
-    await assert.rejects(catalogueClient.publicPlatformJson("/api/internal/admin/users"), /Unsupported/);
-  } finally {
-    for (const key of ["PRIVATE_DEVELOPMENT", "PORT", "NEXT_PUBLIC_PLATFORM_ORIGIN", "APP_URL"]) { if (old[key] === undefined) delete process.env[key]; else process.env[key] = old[key]; }
   }
 });
 

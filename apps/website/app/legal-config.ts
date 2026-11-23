@@ -7,9 +7,9 @@ export const legalConfig = {
     app: process.env.NEXT_PUBLIC_PLATFORM_ORIGIN ?? "http://localhost:3000",
   },
   contacts: {
-    privacyEmail: "muzaffarbekmurodoff@gmail.com",
-    legalEmail: "muzaffarbekmurodoff@gmail.com",
-    supportEmail: "muzaffarbekmurodoff@gmail.com",
+    privacyEmail: "admin@juro.uz",
+    legalEmail: "admin@juro.uz",
+    supportEmail: "admin@juro.uz",
   },
   payments: { enabled: false },
   publication: {

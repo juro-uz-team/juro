@@ -43,7 +43,7 @@ export default async function RootLayout({
   const structuredData = JSON.stringify({
     "@context": "https://schema.org",
     "@graph": [
-      { "@type": "Organization", "@id": "https://juro.uz/#organization", name: "JURO", alternateName: "JURO Uzbekistan", url: "https://juro.uz", logo: { "@type": "ImageObject", url: "https://juro.uz/brand/juro-app-icon.png", width: 512, height: 512 }, description: "JURO is a legal technology platform for AI legal assistance, document preparation and finding legal professionals in Uzbekistan.", areaServed: { "@type": "Country", name: "Uzbekistan" }, email: "admin@juro.uz", telephone: "+998974022292", address: { "@type": "PostalAddress", addressLocality: "Tashkent", addressCountry: "UZ" } },
+      { "@type": "Organization", "@id": "https://juro.uz/#organization", name: "JURO", alternateName: "JURO Uzbekistan", url: "https://juro.uz", logo: { "@type": "ImageObject", url: "https://juro.uz/brand/juro-app-icon.png", width: 512, height: 512 }, description: "JURO is a legal technology platform for AI legal assistance, document preparation and finding legal professionals in Uzbekistan.", areaServed: { "@type": "Country", name: "Uzbekistan" }, email: "admin@juro.uz", telephone: "+998200023112", address: { "@type": "PostalAddress", addressLocality: "Tashkent", addressCountry: "UZ" } },
       { "@type": "WebSite", "@id": "https://juro.uz/#website", url: "https://juro.uz/", name: "JURO", alternateName: ["JURO Uzbekistan", "juro.uz"], inLanguage: ["ru", "uz", "en"], publisher: { "@id": "https://juro.uz/#organization" } },
     ],
   }).replaceAll("<", "\\u003c");

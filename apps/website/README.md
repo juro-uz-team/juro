@@ -8,7 +8,6 @@ Run application installation and local services from the repository root; see [t
 
 - `lib/public-seo.ts` defines branded titles, canonical URLs, language alternates, preview metadata and indexing rules. Published pages opt into indexing through this helper; unmatched routes remain excluded.
 - `content/search-pages.ts`, `content/seo-landings.ts` and `content/product-landings.ts` contain localized public descriptions. `app/sitemap.ts` adds published content and approved professional profiles without including drafts or private application routes.
-- `lib/public-platform.ts` reads the approved catalogue over the native application's loopback listener with its canonical Host. Public photo URLs remain on the application host; only approved public photos can opt into image indexing there.
 - Production canonical URLs use `https://juro.uz`. Staging has noindex metadata, a closed robots file and an empty sitemap, in addition to its operator access gate.
 
 Regenerate checked-in brand icons and 1200 × 630 preview images after changing their copy or source artwork:

@@ -10,7 +10,7 @@ export type LegalDocument = {
 // This is the same pre-incorporation contact published by the public site and
 // configured for platform operations. Keep policy content deterministic: an
 // environment-dependent value would make acceptance digests unverifiable.
-export const APP_LEGAL_OPERATOR_EMAIL = "muzaffarbekmurodoff@gmail.com";
+export const APP_LEGAL_OPERATOR_EMAIL = "admin@juro.uz";
 
 const sharedRu = {
   operator: `JURO работает в режиме предварительного запуска до регистрации отдельного оператора. Юридически значимые уведомления принимаются по адресу ${APP_LEGAL_OPERATOR_EMAIL}. Наименование и адрес зарегистрированного оператора будут опубликованы до заключения договоров от его имени.`,
@@ -30,7 +30,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     terms: {
       title: "Условия использования личного кабинета JURO",
       description: "Правила регистрации, работы с AI, документами, командой и специалистами внутри app.juro.uz.",
-      updated: "26 июля 2026",
+      updated: "23 ноября 2026",
       sections: [
         { heading: "1. Область действия", paragraphs: ["Эти условия относятся к закрытому личному кабинету app.juro.uz и дополняют информационные условия публичного сайта. Используя кабинет, пользователь подтверждает дееспособность и право передавать загружаемые материалы.", sharedRu.operator] },
         { heading: "2. Возможности и ограничения", paragraphs: ["JURO помогает структурировать ситуацию, хранить дела, создавать и проверять документы, вести планы и передавать выбранный контекст специалисту. Доступность отдельных функций зависит от тарифа, технических интеграций и применимых ограничений.", sharedRu.disclaimer] },
@@ -41,7 +41,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     privacy: {
       title: "Политика конфиденциальности приложения JURO",
       description: "Как закрытый кабинет обрабатывает аккаунт, документы, юридические ситуации и служебные журналы.",
-      updated: "5 сентября 2026",
+      updated: "23 ноября 2026",
       sections: [
         { heading: "1. Какие данные обрабатываются", paragraphs: ["JURO обрабатывает данные регистрации, настройки рабочего пространства, введённые пользователем факты, документы, комментарии, планы, согласия, технические журналы и историю действий. Состав данных зависит от используемой функции.", sharedRu.operator] },
         { heading: "2. Цели и доступ", paragraphs: ["Данные используются для предоставления функций кабинета, обеспечения безопасности, исполнения запросов, поддержки, расчёта лимитов и выполнения юридических обязанностей. Участники команды и специалисты видят только тот объём, который разрешён ролью, настройками и отдельным согласием.", "Содержание юридических вопросов и документов не должно передаваться в продуктовую аналитику."] },
@@ -73,7 +73,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     "personal-data": {
       title: "Уведомление об обработке персональных данных",
       description: "Состав, цели и управление обработкой данных внутри JURO.",
-      updated: "26 июля 2026",
+      updated: "23 ноября 2026",
       sections: [
         { heading: "Обработка", paragraphs: ["JURO обрабатывает данные, необходимые для аккаунта, рабочего пространства и выбранных функций. Чувствительные сведения следует вводить только когда это действительно необходимо для юридического сценария.", sharedRu.operator] },
         { heading: "Согласия", paragraphs: ["Согласие на общие правила, анализ документа, передачу специалисту и запись консультации фиксируются отдельно, когда соответствующая операция требует согласия. Согласие можно отозвать на будущее, если иное не следует из закона или уже исполненной операции."] },
@@ -85,7 +85,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     terms: {
       title: "JURO shaxsiy kabinetidan foydalanish shartlari",
       description: "app.juro.uz ichida ro‘yxatdan o‘tish, AI, hujjatlar, jamoa va mutaxassislar bilan ishlash qoidalari.",
-      updated: "2026-yil 26-iyul",
+      updated: "2026-yil 23-noyabr",
       sections: [
         { heading: "1. Qo‘llanish sohasi", paragraphs: ["Ushbu shartlar app.juro.uz yopiq kabinetiga tegishli va ommaviy sayt axborot shartlarini to‘ldiradi. Kabinetdan foydalangan shaxs yuklanadigan materiallarni berish huquqiga ega ekanini tasdiqlaydi.", sharedUz.operator] },
         { heading: "2. Imkoniyatlar va cheklovlar", paragraphs: ["JURO vaziyatni tuzishga, ishlarni saqlashga, hujjat yaratish va tekshirishga, reja yuritishga hamda tanlangan kontekstni mutaxassisga berishga yordam beradi. Ayrim funksiyalar tarif va texnik integratsiyalarga bog‘liq.", sharedUz.disclaimer] },
@@ -96,7 +96,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     privacy: {
       title: "JURO ilovasi maxfiylik siyosati",
       description: "Yopiq kabinet hisob, hujjat, yuridik vaziyat va xizmat jurnallarini qanday qayta ishlaydi.",
-      updated: "2026-yil 5-sentabr",
+      updated: "2026-yil 23-noyabr",
       sections: [
         { heading: "1. Qayta ishlanadigan ma’lumotlar", paragraphs: ["JURO ro‘yxatdan o‘tish ma’lumotlari, makon sozlamalari, faktlar, hujjatlar, izohlar, rejalar, roziliklar va harakatlar tarixini qayta ishlaydi.", sharedUz.operator] },
         { heading: "2. Maqsad va kirish", paragraphs: ["Ma’lumotlar kabinet funksiyalari, xavfsizlik, qo‘llab-quvvatlash va majburiyatlarni bajarish uchun ishlatiladi. Jamoa a’zolari va mutaxassislar faqat rol va alohida rozilik doirasidagi ma’lumotni ko‘radi.", "Yuridik savol va hujjat mazmuni mahsulot analitikasiga yuborilmasligi kerak."] },
@@ -128,7 +128,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     "personal-data": {
       title: "Shaxsiy ma’lumotlarni qayta ishlash xabarnomasi",
       description: "JURO ichida ma’lumotlar tarkibi, maqsadi va boshqaruvi.",
-      updated: "2026-yil 26-iyul",
+      updated: "2026-yil 23-noyabr",
       sections: [
         { heading: "Qayta ishlash", paragraphs: ["JURO hisob, makon va tanlangan funksiyalar uchun zarur ma’lumotlarni qayta ishlaydi. Nozik ma’lumotlar faqat yuridik ssenariy uchun zarur bo‘lsa kiritilishi kerak.", sharedUz.operator] },
         { heading: "Roziliklar", paragraphs: ["Umumiy qoidalar, hujjat tahlili, mutaxassisga uzatish va konsultatsiya yozuvi uchun roziliklar zarur holatlarda alohida qayd etiladi."] },
@@ -140,7 +140,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     terms: {
       title: "JURO account Terms of Use",
       description: "Rules for registration and for using AI, documents, teams, and professionals within app.juro.uz.",
-      updated: "26 July 2026",
+      updated: "23 November 2026",
       sections: [
         { heading: "1. Scope", paragraphs: ["These terms apply to the private account area at app.juro.uz and supplement the information terms of the public website. By using the account area, a user confirms that they have legal capacity and the right to provide any uploaded materials.", sharedEn.operator] },
         { heading: "2. Features and limitations", paragraphs: ["JURO helps users structure a matter, store cases, create and review documents, manage action plans, and share selected context with a professional. Availability may depend on the subscription, technical integrations, and applicable restrictions.", sharedEn.disclaimer] },
@@ -151,7 +151,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     privacy: {
       title: "JURO application Privacy Policy",
       description: "How the private account area processes account data, documents, legal matters, and service logs.",
-      updated: "5 September 2026",
+      updated: "23 November 2026",
       sections: [
         { heading: "1. Data we process", paragraphs: ["JURO processes registration data, workspace settings, facts entered by users, documents, comments, plans, consent records, technical logs, and activity history. The exact data depends on the feature being used.", sharedEn.operator] },
         { heading: "2. Purposes and access", paragraphs: ["Data is used to provide account features, maintain security, fulfil requests, provide support, calculate limits, and meet legal obligations. Team members and professionals can see only the information permitted by their role, settings, and any specific consent.", "The content of legal questions and documents must not be sent to product analytics."] },
@@ -183,7 +183,7 @@ export const appLegalContent: Record<"ru" | "uz" | "en", Record<AppLegalSlug, Le
     "personal-data": {
       title: "Personal Data Processing Notice",
       description: "The categories, purposes, and controls for data processing within JURO.",
-      updated: "26 July 2026",
+      updated: "23 November 2026",
       sections: [
         { heading: "Processing", paragraphs: ["JURO processes the data needed for the account, workspace, and selected features. Sensitive information should be provided only when it is genuinely necessary for the legal matter.", sharedEn.operator] },
         { heading: "Consent", paragraphs: ["Consent to general terms, document analysis, hand-off to a professional, and consultation recording is captured separately whenever the relevant operation requires it. Consent may be withdrawn for future processing unless the law or an operation already completed requires otherwise."] },

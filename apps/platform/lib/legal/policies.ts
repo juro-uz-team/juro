@@ -41,31 +41,31 @@ export const MARKETING_CONSENT_VERSION = "2026-07-26.1";
 // acceptance rows are append-only and must continue to reference the exact
 // text the user accepted.
 const POLICY_VERSION = "2026-09-04.draft.2";
-const PRIVACY_POLICY_VERSION = "2026-09-05.draft.3";
+const CONTACT_POLICY_VERSION = "2026-11-23.draft.1";
 
 const policyDefinitions = [
   {
     slug: "terms",
     documentKey: "terms",
-    documentVersion: POLICY_VERSION,
+    documentVersion: CONTACT_POLICY_VERSION,
     status: "draft",
     mandatoryAtRegistration: true,
     contentSha256: {
-      ru: "927d60c81bebe7aa97fc7a19585f738e5dfa4970ac90853f537a2aa2f5b6b73b",
-      uz: "cae77f18b62c49d40c041ef357287441153fe47fa635ed398904ce7124917181",
-      en: "b7b422f0dd08ba03a0002620a2d71d192012a155af06ff6075d96316b2b1deac",
+      ru: "a039300b1707b39eb4fe5f44efa6182db945482607d114dfc6231e4a00535655",
+      uz: "0922180a96c178e876176e7ceebe80b8c167153308080bd0ff4feaf78bc4704e",
+      en: "ee42632c7012b8229592142e55c317ebfcc28ff3f24d103ad224c00628845011",
     },
   },
   {
     slug: "privacy",
     documentKey: "privacy-policy",
-    documentVersion: PRIVACY_POLICY_VERSION,
+    documentVersion: CONTACT_POLICY_VERSION,
     status: "draft",
     mandatoryAtRegistration: true,
     contentSha256: {
-      ru: "4604e5fafabf31567403a2c2d6935177807ac0086fc7edf60415197b77771e8b",
-      uz: "8064d87d943cf15439ae1a8cafcb39e9c8df1d6f447ed68b070512a0a89f6dc5",
-      en: "335ede6d6690233970a0b5dab5b43ac412d2b4cd5eada0a4c5e0e2a6cf6686dd",
+      ru: "d099022f5f5ad283c6cf3556cd23a1accf2a1f0261616c45db6058722a9ca1c2",
+      uz: "57a8104daa163a73a35e8b48bf3f256a0b6ccbc4076877a2012688a3bd0ec8a9",
+      en: "ed6f4d1199fe5c070e171ee729c4910a4936acacab2aefa386841a66b0baadc8",
     },
   },
   {
@@ -95,13 +95,13 @@ const policyDefinitions = [
   {
     slug: "personal-data",
     documentKey: "personal-data-processing",
-    documentVersion: POLICY_VERSION,
+    documentVersion: CONTACT_POLICY_VERSION,
     status: "draft",
     mandatoryAtRegistration: true,
     contentSha256: {
-      ru: "7ca0fb1b296ae76dbbaaa29ccb6a2710e4ebf18a993e826e6a97eb14e662fbcc",
-      uz: "d0f590789fa279f866028ccaa9af992d58fa3fc2f53e09bc37e73de55478fdae",
-      en: "b1383b4fde327c552202248ad4ff96ae840e861ed54e4b123ab25bdff4366233",
+      ru: "a2d88c84532e20d2da6f13741033c94fa1fd2a0e4309a860120625b743cda31f",
+      uz: "6f4d27d8d72e40644fb4ead4bf9c94d16429c5602f239fc75cd3e7132b23eaa0",
+      en: "8146391ad3d58403d97544435cce5093acbd0580a18b52166964da9dbbc063f5",
     },
   },
 ] as const satisfies readonly PolicyDefinition[];

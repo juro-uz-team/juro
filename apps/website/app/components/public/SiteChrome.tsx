@@ -2,7 +2,7 @@
 
 import { OfficialLogo } from "./OfficialLogo";
 import Link from "next/link";
-import { platformAuthHref, platformRegistrationHref } from "./platform-hrefs";
+import { platformAuthHref, platformRegistrationHref, platformToolHref } from "./platform-hrefs";
 import { ArrowRight, ChevronDown, Menu, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { PublicLanguage } from "../../../content/types";
@@ -121,7 +121,7 @@ export function SiteHeader({ locale, tone = "light", languageHref, home = false 
 
   const nav = home ? [
     [t.product, "#product"],
-    [t.lawyers, `/${locale}/lawyers`],
+    [t.lawyers, platformToolHref(locale, "lawyers")],
     [{ ru: "Вопросы", uz: "Savollar", en: "FAQ" }[locale], "#faq"],
   ] : [
     [t.product, `/${locale}#product`],
@@ -178,7 +178,7 @@ export function SiteHeader({ locale, tone = "light", languageHref, home = false 
             <nav>
               {nav.map(([label, href], index) => <Link href={href} key={href} onClick={() => setOpen(false)}>{!home && <span>0{index + 1}</span>}{label}<ArrowRight aria-hidden="true" size={18} /></Link>)}
               {!home && <>
-                <Link href={`/${locale}/lawyers`} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
+                <Link href={platformToolHref(locale, "lawyers")} onClick={() => setOpen(false)}><span>05</span>{t.lawyers}<ArrowRight aria-hidden="true" size={18} /></Link>
                 <Link href={`/${locale}/video`} onClick={() => setOpen(false)}><span>06</span>{t.video}<ArrowRight aria-hidden="true" size={18} /></Link>
                 <Link href={`/${locale}/legal`} onClick={() => setOpen(false)}><span>07</span>{t.legal}<ArrowRight aria-hidden="true" size={18} /></Link>
               </>}

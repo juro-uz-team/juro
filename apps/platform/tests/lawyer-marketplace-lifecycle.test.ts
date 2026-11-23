@@ -284,21 +284,21 @@ test("profile photos remain fail-closed until the malware scanner verifies their
 });
 
 test("a completed profile stays private until approval and retains a self-only preview", () => {
-  const publicPhotoRoute = readFileSync(new URL("../app/api/public/lawyers/[profileId]/photo/route.ts", import.meta.url), "utf8");
+  const directoryPhotoRoute = readFileSync(new URL("../app/api/platform/lawyers/[lawyerId]/photo/route.ts", import.meta.url), "utf8");
   const directoryRoute = readFileSync(new URL("../app/api/platform/lawyers/route.ts", import.meta.url), "utf8");
-  const publicDirectoryRoute = readFileSync(new URL("../app/api/public/lawyers/route.ts", import.meta.url), "utf8");
-  const publicDetailRoute = readFileSync(new URL("../app/api/public/lawyers/[profileId]/route.ts", import.meta.url), "utf8");
   const directoryClient = readFileSync(new URL("../app/_platform/LawyerDirectoryClient.tsx", import.meta.url), "utf8");
   const detailRoute = readFileSync(new URL("../app/api/platform/lawyers/[lawyerId]/route.ts", import.meta.url), "utf8");
   const detailClient = readFileSync(new URL("../app/_platform/LawyerProfileClient.tsx", import.meta.url), "utf8");
   const privatePhotoRoute = readFileSync(new URL("../app/api/platform/lawyer-profile/photo/route.ts", import.meta.url), "utf8");
   const privateProfileRoute = readFileSync(new URL("../app/api/platform/lawyer-profile/route.ts", import.meta.url), "utf8");
-  for (const source of [publicPhotoRoute, directoryRoute, publicDirectoryRoute, publicDetailRoute, detailRoute]) {
+  for (const source of [directoryPhotoRoute, directoryRoute, detailRoute]) {
     assert.match(source, /status='public_approved'/);
     assert.match(source, /marketplace_status='public_approved'/);
     assert.doesNotMatch(source, /marketplace_status='pending_review' AND status='pending'/);
   }
-  assert.doesNotMatch(publicDirectoryRoute, /phone|user_profiles|moderation_notes/i);
+  assert.doesNotMatch(directoryRoute, /phone|user_profiles|moderation_notes/i);
+  assert.match(directoryPhotoRoute, /await requireApiUser\(request\)/);
+  assert.match(directoryPhotoRoute, /private, no-store/);
   assert.match(detailClient, /consultations\?lawyer=/);
   assert.match(privateProfileRoute, /lawyer_profile_status/);
   const application = readFileSync(new URL("../app/_platform/LawyerProfessionalProfile.tsx", import.meta.url), "utf8");

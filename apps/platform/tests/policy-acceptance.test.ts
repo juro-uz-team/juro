@@ -12,9 +12,9 @@ import { sqliteD1Fixture } from "./helpers/sqlite-d1";
 
 test("every displayed RU/UZ/EN policy has a locked version and content digest", async () => {
   const privacyUpdated = {
-    ru: "5 сентября 2026",
-    uz: "2026-yil 5-sentabr",
-    en: "5 September 2026",
+    ru: "23 ноября 2026",
+    uz: "2026-yil 23-noyabr",
+    en: "23 November 2026",
   } as const;
   for (const locale of ["ru", "uz", "en"] as const) {
     const registry = await policyRegistry(locale);
@@ -26,8 +26,8 @@ test("every displayed RU/UZ/EN policy has a locked version and content digest", 
     for (const policy of registry) {
       assert.equal(
         policy.documentVersion,
-        policy.slug === "privacy"
-          ? "2026-09-05.draft.3"
+        policy.mandatoryAtRegistration
+          ? "2026-11-23.draft.1"
           : "2026-09-04.draft.2",
       );
       assert.equal(policy.status, "draft");
@@ -117,9 +117,7 @@ test("registration records exact policy evidence and separates marketing consent
     for (const acceptance of acceptances) {
       assert.equal(
         acceptance.documentVersion,
-        acceptance.documentKey === "privacy-policy"
-          ? "2026-09-05.draft.3"
-          : "2026-09-04.draft.2",
+        "2026-11-23.draft.1",
       );
       assert.equal(acceptance.locale, "ru");
       assert.equal(acceptance.contentSha256, acceptance.policyDigest);
@@ -231,9 +229,9 @@ test("a new immutable privacy version coexists with production-era acceptance ro
         documentVersion !== "2026-07-26.draft.1"
       ).map((row) => ({ ...row })),
       [
-        { documentKey: "personal-data-processing", documentVersion: "2026-09-04.draft.2" },
-        { documentKey: "privacy-policy", documentVersion: "2026-09-05.draft.3" },
-        { documentKey: "terms", documentVersion: "2026-09-04.draft.2" },
+        { documentKey: "personal-data-processing", documentVersion: "2026-11-23.draft.1" },
+        { documentKey: "privacy-policy", documentVersion: "2026-11-23.draft.1" },
+        { documentKey: "terms", documentVersion: "2026-11-23.draft.1" },
       ],
     );
     const accepted = sqlite.prepare(
@@ -244,9 +242,9 @@ test("a new immutable privacy version coexists with production-era acceptance ro
       documentVersion: string;
     }>;
     assert.deepEqual(accepted.map((row) => ({ ...row })), [
-      { documentKey: "personal-data-processing", documentVersion: "2026-09-04.draft.2" },
-      { documentKey: "privacy-policy", documentVersion: "2026-09-05.draft.3" },
-      { documentKey: "terms", documentVersion: "2026-09-04.draft.2" },
+      { documentKey: "personal-data-processing", documentVersion: "2026-11-23.draft.1" },
+      { documentKey: "privacy-policy", documentVersion: "2026-11-23.draft.1" },
+      { documentKey: "terms", documentVersion: "2026-11-23.draft.1" },
     ]);
   } finally {
     sqlite.close();

@@ -62,7 +62,7 @@ test("shared public footer publishes the contact details", () => {
   assert.match(rootLayout, /<SiteFooter initialLocale=\{locale\}/);
   assert.match(homepage, /Ташкент, Узбекистан/);
   assert.match(footer, /mailto:admin@juro\.uz/);
-  assert.match(footer, /tel:\+998974022292/);
+  assert.match(footer, /tel:\+998200023112/);
 });
 
 test("English marketplace presentation localizes published taxonomy and tolerates missing external photos", () => {

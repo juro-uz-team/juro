@@ -1,12 +1,13 @@
 import { requireD1, requireR2 } from "../../../../../../lib/document-builder/storage/runtime";
 import { z } from "zod";
-import { publicProfileMediaIndexing } from "../../../../../../lib/platform/public-profile-media";
+import { requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
 
-type Context = { params: Promise<{ profileId: string }> };
+type Context = { params: Promise<{ lawyerId: string }> };
 const missingPhoto = () => new Response(null, { status: 404, headers: { "x-robots-tag": "noindex, nofollow, noarchive" } });
 
-export async function GET(_request: Request, context: Context) {
-  const profileId = z.string().uuid().safeParse((await context.params).profileId);
+export const GET = withApiErrors(async function GET(request: Request, context: Context) {
+  await requireApiUser(request);
+  const profileId = z.string().uuid().safeParse((await context.params).lawyerId);
   if (!profileId.success) return missingPhoto();
   const profile = await requireD1().prepare(
     `SELECT profile_photo_key AS profilePhotoKey,profile_photo_mime AS profilePhotoMime,
@@ -32,10 +33,10 @@ export async function GET(_request: Request, context: Context) {
   return new Response(object.body, {
     headers: {
       "content-type": profile.profilePhotoMime,
-      "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
+      "cache-control": "private, no-store",
       "x-content-type-options": "nosniff",
-      "x-robots-tag": publicProfileMediaIndexing() ? "index, follow" : "noindex, nofollow, noarchive",
+      "x-robots-tag": "noindex, nofollow, noarchive",
       etag: profile.profilePhotoSha256 ? `\"${profile.profilePhotoSha256}\"` : object.httpEtag,
     },
   });
-}
+});

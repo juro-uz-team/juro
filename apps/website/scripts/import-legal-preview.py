@@ -23,9 +23,9 @@ TOKEN = re.compile(r"\{\{[A-Z0-9_]+\}\}")
 CONFIRMED = {
     "{{DOMAIN}}": "juro.uz",
     "{{APP_DOMAIN}}": "app.juro.uz",
-    "{{PRIVACY_EMAIL}}": "muzaffarbekmurodoff@gmail.com",
-    "{{LEGAL_EMAIL}}": "muzaffarbekmurodoff@gmail.com",
-    "{{SUPPORT_EMAIL}}": "muzaffarbekmurodoff@gmail.com",
+    "{{PRIVACY_EMAIL}}": "admin@juro.uz",
+    "{{LEGAL_EMAIL}}": "admin@juro.uz",
+    "{{SUPPORT_EMAIL}}": "admin@juro.uz",
 }
 
 

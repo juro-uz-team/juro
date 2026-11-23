@@ -90,7 +90,7 @@ test("renders the production landing with localized canonical metadata and real 
     assert.match(html, locale === "ru" ? /Есть вопрос/ : /Huquqiy/);
     assert.match(html, /FAQPage/);
     assert.match(html, new RegExp(`href="/${locale}/video"`));
-    assert.match(html, new RegExp(`href="/${locale}/lawyers"`));
+    assert.match(html, new RegExp(`href="http://localhost:3000/${locale}/workspace/lawyers"`));
     assert.match(html, new RegExp(`href="/${locale}/legal"`));
     assert.match(html, new RegExp(`href="/${locale}/trust"`));
     assert.doesNotMatch(html, /landing-test|lending-test/);
@@ -157,7 +157,7 @@ test("renders the complete English public landing and keeps product actions on E
   assert.match(html.replaceAll("<!-- -->", ""), /<h1[^>]*>Have a legal <em>question\?<\/em><\/h1>/);
   assert.match(html, /http:\/\/localhost:3000\/en\/auth\/register\?accountType=individual/);
   assert.doesNotMatch(html, /http:\/\/localhost:3000\/ru\/auth/u);
-  for (const route of ["/en/video", "/en/lawyers", "/en/legal", "/en/trust"]) assert.match(html, new RegExp(`href="${route}"`));
+  for (const route of ["/en/video", "http://localhost:3000/en/workspace/lawyers", "/en/legal", "/en/trust"]) assert.match(html, new RegExp(`href="${route}"`));
 });
 
 test("the root and localized homepages render the worked examples and their real destinations", async () => {
@@ -230,17 +230,6 @@ test("serves localized search landing pages and a crawlable knowledge hub", asyn
       }
     }
   }
-});
-
-test("publishes the English lawyer catalogue with complete social metadata", async () => {
-  const worker = await createWorker();
-  const response = await worker.fetch(new Request("http://localhost/en/lawyers", { headers: { accept: "text/html" } }), runtime, context);
-  assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.match(html, /<link rel="canonical" href="https:\/\/juro\.uz\/en\/lawyers"/);
-  assert.match(html, /<meta property="og:description"/);
-  assert.match(html, /<meta name="twitter:description"/);
-  assert.match(html, /application\/ld\+json/);
 });
 
 test("keeps preview legal documents accessible but out of search indexing and the sitemap", async () => {
@@ -425,22 +414,6 @@ test("serves an English legal guide for every published document without claimin
     assert.match(html, new RegExp(`href="/uz/legal/${slug}"`), slug);
   }
 });
-
-test("renders the correct document language on each public lawyer catalogue locale", async () => {
-  const worker = await createWorker();
-  for (const locale of ["ru", "uz", "en"]) {
-    const response = await worker.fetch(
-      new Request(`http://localhost/${locale}/lawyers`, { headers: { accept: "text/html" } }),
-      runtime,
-      context,
-    );
-    assert.equal(response.status, 200, locale);
-    const html = await response.text();
-    assert.match(html, new RegExp(`<html\\b[^>]*\\blang="${locale}"`), locale);
-    assert.match(html, new RegExp(`https://juro\\.uz/${locale}/lawyers`), locale);
-  }
-});
-
 
 test("simultaneous requests retain their own language", async()=>{
   const worker=await createWorker();

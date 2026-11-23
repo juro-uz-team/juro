@@ -15,7 +15,7 @@ export const GET = withApiErrors(async function GET() {
        consultation_formats_json AS consultationFormatsJson,
        juro_approval_status AS juroApprovalStatus,top_lawyer_status AS topLawyerStatus,
        top_lawyer_criteria AS topLawyerCriteria,
-       CASE WHEN profile_photo_key IS NOT NULL THEN '/api/public/lawyers/' || id || '/photo' ELSE NULL END AS profilePhotoUrl
+       CASE WHEN profile_photo_key IS NOT NULL THEN '/api/platform/lawyers/' || id || '/photo' ELSE NULL END AS profilePhotoUrl
      FROM lawyer_profiles
      WHERE status='public_approved' AND marketplace_status='public_approved'
        AND public_approved_at IS NOT NULL

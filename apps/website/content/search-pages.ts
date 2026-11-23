@@ -5,7 +5,6 @@ import { en } from "./en";
 export const searchPages = {
   ru: {
     home: ru.meta,
-    lawyers: { title: "Юристы и адвокаты в Узбекистане", description: "Найдите юриста в каталоге JURO: специализации, опыт, языки и формат консультации. Сравните публичные профили и выберите специалиста для своей задачи." },
     knowledge: { title: "База знаний: договоры, документы и юридические вопросы", description: "Практические материалы JURO: подготовка к проверке договора, факты для плана действий и выбор юридического специалиста в Узбекистане." },
     trust: { title: "Безопасность, конфиденциальность и работа с данными", description: "Как JURO работает с доступом, документами, хранением, удалением и AI-провайдерами. Проверяемая информация о платформе и её политиках." },
     video: { title: "Как работает JURO: видеопрезентация", description: "Посмотрите, как JURO объединяет AI-юриста, проверку договоров, документы и поиск специалиста для юридических задач в Узбекистане." },
@@ -14,7 +13,6 @@ export const searchPages = {
   },
   uz: {
     home: uz.meta,
-    lawyers: { title: "O‘zbekistonda yurist va advokat topish", description: "JURO katalogida yurist toping: mutaxassislik, tajriba, tillar va maslahat shaklini taqqoslang. Yuridik vazifangiz uchun ochiq profillarni ko‘ring." },
     knowledge: { title: "Bilimlar bazasi: shartnomalar va yuridik hujjatlar", description: "JURO amaliy materiallari: shartnoma tekshiruviga tayyorgarlik, harakat rejasi uchun faktlar va O‘zbekistonda yuridik mutaxassis tanlash." },
     trust: { title: "Xavfsizlik, maxfiylik va ma’lumotlar bilan ishlash", description: "JUROda kirish, hujjatlar, saqlash, o‘chirish va AI-provayderlar bilan ishlash. Platforma va uning siyosatlari haqida tekshiriladigan ma’lumot." },
     video: { title: "JURO qanday ishlaydi: videotaqdimot", description: "JURO O‘zbekistondagi yuridik vazifalar uchun AI-yurist, shartnoma tekshirish, hujjat tayyorlash va mutaxassis topishni qanday birlashtirishini ko‘ring." },
@@ -23,7 +21,6 @@ export const searchPages = {
   },
   en: {
     home: en.meta,
-    lawyers: { title: "Find a Lawyer in Uzbekistan", description: "Browse legal professionals on JURO. Compare public profiles, specialisms, experience, languages and consultation formats for your legal task in Uzbekistan." },
     knowledge: { title: "Legal Guides: Contracts, Documents & Next Steps", description: "Practical JURO guides for Uzbekistan: prepare for contract review, gather facts for an action plan and decide when to consult a legal professional." },
     trust: { title: "Security, Privacy & Data Handling", description: "How JURO handles access, documents, retention, deletion and AI providers. Review verifiable information about the platform and its policies." },
     video: { title: "How JURO Works: Product Video", description: "See how JURO connects AI legal assistance, contract review, document preparation and legal professionals for tasks under Uzbekistan law." },

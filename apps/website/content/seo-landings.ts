@@ -57,7 +57,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Как устроен каталог",
       boundaries: ["Профиль получает статус после проверки JURO.", "Юристы и адвокаты не считаются взаимозаменяемыми: статус показывается только при наличии опубликованных данных.", "Специалисты работают независимо, а условия конкретной услуги согласуются отдельно."],
-      cta: { label: "Открыть каталог специалистов", href: "/ru/lawyers" },
+      cta: { label: "Открыть каталог специалистов", href: platformToolHref("ru", "lawyers") },
       related: { label: "Когда нужен профессиональный разбор", href: "/ru/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {
@@ -113,7 +113,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Katalog qanday ishlaydi",
       boundaries: ["Profil JURO tekshiruvidan so‘ng tegishli maqom oladi.", "Yurist va advokat bir xil tushuncha emas: maqom faqat e’lon qilingan ma’lumot mavjud bo‘lsa ko‘rsatiladi.", "Mutaxassislar mustaqil ishlaydi, aniq xizmat shartlari alohida kelishiladi."],
-      cta: { label: "Mutaxassislar katalogini ochish", href: "/uz/lawyers" },
+      cta: { label: "Mutaxassislar katalogini ochish", href: platformToolHref("uz", "lawyers") },
       related: { label: "Qachon professional tahlil kerak", href: "/uz/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {
@@ -169,7 +169,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "How the catalogue works",
       boundaries: ["A profile receives its published status after JURO review.", "Lawyers and advocates are not treated as interchangeable; a status is shown only when published data supports it.", "Professionals work independently and the terms of a particular service are agreed separately."],
-      cta: { label: "Browse legal professionals", href: "/en/lawyers" },
+      cta: { label: "Browse legal professionals", href: platformToolHref("en", "lawyers") },
       related: { label: "When professional review is needed", href: "/en/knowledge/when-lawyer-review-is-needed" },
     },
     "contract-review": {

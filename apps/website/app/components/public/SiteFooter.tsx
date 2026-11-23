@@ -33,7 +33,7 @@ export function SiteFooter({ initialLocale }: { initialLocale: PublicLanguage })
         <address className={styles.contact}>
           <span><MapPin aria-hidden="true" size={15} />{copy.location}</span>
           <a href="mailto:admin@juro.uz">admin@juro.uz</a>
-          <a href="tel:+998974022292">+998 97 402 22 92</a>
+          <a href="tel:+998200023112">+998 20 002 31 12</a>
         </address>
         <div className={styles.footerNote} data-nosnippet=""><span>© {new Date().getFullYear()} JURO</span><p>{copy.note}</p></div>
       </div>
