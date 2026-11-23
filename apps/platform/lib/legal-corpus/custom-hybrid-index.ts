@@ -12,7 +12,7 @@ export const CUSTOM_EMBEDDING_MAX_INPUT_TOKENS = 8_192 as const;
 export const CUSTOM_EMBEDDING_TRANSFORM_VERSION = "float32-l2-v1" as const;
 
 const targetTokensSchema = z.union([z.literal(512), z.literal(1_024), z.literal(2_048)]);
-const sourceProvisionSchema = z.object({
+const embeddingSourceSchema = z.object({
   snapshotProvisionId: z.string().trim().min(1).max(300),
   sourceDocumentTitle: z.string().trim().min(1).max(2_000),
   documentType: z.string().trim().min(1).max(300),
@@ -22,6 +22,8 @@ const sourceProvisionSchema = z.object({
   language: legalLanguageSchema,
   script: legalScriptSchema,
   officialText: z.string().min(1),
+}).strict();
+const sourceProvisionSchema = embeddingSourceSchema.extend({
   validFromEpoch: z.number().int(),
   validToEpoch: z.number().int().nullable(),
 }).strict().superRefine((value, context) => {
@@ -146,8 +148,18 @@ export async function buildRetrievalChunks(
   options: { targetTokens: 512 | 1_024 | 2_048 },
 ): Promise<CustomRetrievalChunk[]> {
   const source = sourceProvisionSchema.parse(rawSource);
+  const { validFromEpoch, validToEpoch, ...content } = source;
+  const chunks = await prepareEmbeddingChunks(content, options);
+  return chunks.map(chunk => ({ ...chunk, validFromEpoch, validToEpoch }));
+}
+
+export async function prepareEmbeddingChunks(
+  rawSource: z.input<typeof embeddingSourceSchema>,
+  options: { targetTokens: 512 | 1_024 | 2_048 },
+): Promise<Array<Omit<CustomRetrievalChunk, "validFromEpoch" | "validToEpoch">>> {
+  const source = embeddingSourceSchema.parse(rawSource);
   const targetTokens = targetTokensSchema.parse(options.targetTokens);
-  const chunks: CustomRetrievalChunk[] = [];
+  const chunks: Array<Omit<CustomRetrievalChunk, "validFromEpoch" | "validToEpoch">> = [];
   let remaining = source.officialText;
   while (remaining.length > 0) {
     const boundary = nextChunkBoundary(remaining, targetTokens);
@@ -162,7 +174,7 @@ export async function buildRetrievalChunks(
       targetTokens,
       officialTextSha256,
     }));
-    const chunk: CustomRetrievalChunk = {
+    const chunk = {
       id: `${CUSTOM_RETRIEVAL_CHUNK_POLICY_VERSION}:${idDigest}`,
       policyVersion: CUSTOM_RETRIEVAL_CHUNK_POLICY_VERSION,
       snapshotProvisionId: source.snapshotProvisionId,
@@ -178,8 +190,6 @@ export async function buildRetrievalChunks(
       officialText,
       officialTextSha256,
       embeddingTokenCount: 0,
-      validFromEpoch: source.validFromEpoch,
-      validToEpoch: source.validToEpoch,
     };
     chunk.embeddingTokenCount = countCustomEmbeddingTokens(serializeCustomEmbeddingInput(chunk));
     if (chunk.embeddingTokenCount > CUSTOM_EMBEDDING_MAX_INPUT_TOKENS) {

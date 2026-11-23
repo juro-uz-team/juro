@@ -9,25 +9,26 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
+  ChevronRight,
   CircleAlert,
   ExternalLink,
   FileSearch,
-  Gavel,
+  Library,
   LoaderCircle,
   RefreshCw,
   Save,
   Scale,
-  ShieldAlert,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
 import {
   normalizeMonitoringAudience,
   type MonitoringAudience,
 } from "../../lib/platform/monitoring-preferences";
+import { CorpusBrowser, CorpusText, monitoringLabels } from "./MonitoringCorpus";
 
 const topicKeys = [
   "civil",
@@ -56,33 +57,9 @@ type Preference = {
 };
 type MonitoringStatus = {
   integration: "disabled" | "active" | "degraded";
-  automaticPublication: boolean;
-  controlledBeta: boolean;
-  emailConfigured: boolean;
   lastCheckedAt: string | null;
-  verifiedSourceCount: number;
-  trustedSourceCount: number;
-  lexIngestionEnabled: boolean;
-  lastRun: {
-    status: string;
-    runType: string;
-    discoveredCount: number;
-    fetchedCount: number;
-    changedCount: number;
-    verifiedCount: number;
-    errorCount: number;
-    startedAt: string;
-    finishedAt: string | null;
-    errorSummary: string | null;
-  } | null;
-  freshness: {
-    state: "fresh" | "stale" | "unavailable";
-    latestCheckedAt: string | null;
-    ageDays: number | null;
-    maxAgeDays: number;
-    freshSourceCount: number;
-    trustedSourceCount: number;
-  };
+  lastCorpusCheckedAt?: string | null;
+  lastRun: { status: string } | null;
 };
 type LegislationUpdate = {
   id: string;
@@ -102,12 +79,13 @@ type LegislationUpdate = {
   sourceRevisionDate: string | null;
   sourceLastCheckedAt: string | null;
   sourceStatus: string;
+  changeType: string;
+  corpusWork?: string | null;
 };
 
 const copy = {
   ru: {
     title: "Мониторинг законодательства",
-    intro: "Последние записи из официальной RSS-ленты Lex.uz. Откройте акт в первоисточнике, чтобы проверить его содержание.",
     deliveryNote: "При изменении уже известной записи приходит уведомление в рабочем пространстве. Темы, аудитория и частота сохраняются как предпочтения.",
     runFailed: "Последняя проверка Lex.uz не удалась",
     preferences: "Предпочтения мониторинга",
@@ -126,19 +104,8 @@ const copy = {
     saved: "Настройки мониторинга сохранены.",
     integrationOff: "Lex.uz metadata-мониторинг сейчас отключён.",
     integrationPending: "Мониторинг Lex.uz включён, но свежий запуск ещё не завершён.",
-    integrationActive: "Официальная лента Lex.uz доступна.",
-    integrationAria: "Статус интеграции",
-    controlledBeta: "Статус Lex.uz",
-    fresh: "Есть свежий успешный запуск",
-    stale: "Последняя сверка Lex.uz устарела",
-    coverage: "Недавние записи и изменения в данных Lex.uz.",
-    feed: "Обновления Lex.uz",
     empty: "Обнаруженных изменений Lex.uz пока нет",
-    emptyHint: "Здесь появятся записи, найденные при проверке ленты.",
     lastCheck: "Последняя проверка источников",
-    lastRun: "Последний запуск Lex.uz",
-    never: "ещё не выполнялась",
-    sources: "Проверено записей",
     adopted: "Принят",
     effective: "Вступает в силу",
     changed: "Что изменилось",
@@ -156,7 +123,6 @@ const copy = {
   },
   uz: {
     title: "Qonunchilik monitoringi",
-    intro: "Lex.uz rasmiy RSS lentasidagi so‘nggi yozuvlar. Hujjat mazmunini tekshirish uchun asl manbani oching.",
     deliveryNote: "Avvalgi yozuv o‘zgarsa, ish makonida bildirishnoma chiqadi. Mavzular, auditoriya va tezlik afzallik sifatida saqlanadi.",
     runFailed: "Lex.uz’ning oxirgi tekshiruvi muvaffaqiyatsiz tugadi",
     preferences: "Monitoring afzalliklari",
@@ -175,19 +141,8 @@ const copy = {
     saved: "Monitoring sozlamalari saqlandi.",
     integrationOff: "Lex.uz metadata monitoringi hozir o‘chirilgan.",
     integrationPending: "Lex.uz monitoringi yoqilgan, ammo yangi ishga tushirish hali tugamagan.",
-    integrationActive: "Lex.uz rasmiy lentasi mavjud.",
-    integrationAria: "Integratsiya holati",
-    controlledBeta: "Lex.uz holati",
-    fresh: "Yangi muvaffaqiyatli ishga tushirish mavjud",
-    stale: "Lex.uz oxirgi tekshiruvi eskirgan",
-    coverage: "Lex.uz’dagi so‘nggi yozuvlar va ma’lumot o‘zgarishlari.",
-    feed: "Lex.uz yangilanishlari",
     empty: "Lex.uz’da aniqlangan o‘zgarishlar hozircha yo‘q",
-    emptyHint: "Lenta tekshiruvida topilgan yozuvlar shu yerda ko‘rinadi.",
     lastCheck: "Manbalar oxirgi tekshirilgan vaqt",
-    lastRun: "Lex.uz oxirgi ishga tushirilishi",
-    never: "hali bajarilmagan",
-    sources: "Tekshirilgan yozuvlar",
     adopted: "Qabul qilingan",
     effective: "Kuchga kiradi",
     changed: "Nima o‘zgardi",
@@ -205,7 +160,6 @@ const copy = {
   },
   en: {
     title: "Legislation monitoring",
-    intro: "Recent records from the official Lex.uz RSS feeds. Open the official act to review its contents.",
     deliveryNote: "Changes to existing records appear in workspace notifications. Topics, audience and frequency are saved as preferences.",
     runFailed: "The last Lex.uz check failed",
     preferences: "Monitoring preferences",
@@ -224,19 +178,8 @@ const copy = {
     saved: "Monitoring settings saved.",
     integrationOff: "Lex.uz metadata monitoring is currently off.",
     integrationPending: "Lex.uz monitoring is on, but a recent run has not completed yet.",
-    integrationActive: "The official Lex.uz feed is available.",
-    integrationAria: "Integration status",
-    controlledBeta: "Lex.uz status",
-    fresh: "Recent successful run available",
-    stale: "The latest Lex.uz check is out of date",
-    coverage: "Recent Lex.uz records and changes to their metadata.",
-    feed: "Lex.uz updates",
     empty: "No Lex.uz changes have been detected yet",
-    emptyHint: "Records will appear here after the feed is checked.",
     lastCheck: "Last source check",
-    lastRun: "Latest Lex.uz run",
-    never: "not run yet",
-    sources: "Records checked",
     adopted: "Adopted",
     effective: "Effective",
     changed: "What changed",
@@ -270,27 +213,28 @@ const topicLabels: Record<Topic, Record<PlatformLocale, string>> = {
 
 const defaultStatus: MonitoringStatus = {
   integration: "disabled",
-  automaticPublication: false,
-  controlledBeta: true,
-  emailConfigured: false,
   lastCheckedAt: null,
-  verifiedSourceCount: 0,
-  trustedSourceCount: 0,
-  lexIngestionEnabled: false,
   lastRun: null,
-  freshness: {
-    state: "unavailable",
-    latestCheckedAt: null,
-    ageDays: null,
-    maxAgeDays: 7,
-    freshSourceCount: 0,
-    trustedSourceCount: 0,
-  },
 };
 
 export function MonitoringClient({ locale, accountType }: { locale: PlatformLocale; accountType: AccountType }) {
   const t = copy[locale];
+  const labels = monitoringLabels[locale];
+  const updateType = (type: string) => type === "edition" ? labels.edition
+    : type === "metadata_changed" ? labels.correction : labels.newAct;
+  const updateDate = (update: LegislationUpdate) => update.sourceRevisionDate
+    ? formatDate(update.sourceRevisionDate, locale)
+    : formatDate(update.publishedAt, locale);
   const workspaceId = usePlatformWorkspaceId();
+  const settings = useRef<HTMLDialogElement>(null);
+  const updateReader = useRef<HTMLHeadingElement>(null);
+  const activeRow = useRef<HTMLButtonElement>(null);
+  const [mode, setMode] = useState<"updates" | "corpus">("updates");
+  const [selected, setSelected] = useState<LegislationUpdate | null>(null);
+  const [query, setQuery] = useState("");
+  const [changeType, setChangeType] = useState("");
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [preference, setPreference] = useState<Preference>({
     audience: normalizeMonitoringAudience(accountType),
     topics: ["civil", "contract"],
@@ -300,6 +244,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     documentImpactConsent: false,
   });
   const [status, setStatus] = useState<MonitoringStatus>(defaultStatus);
+  const lastCheck = status.lastCorpusCheckedAt ?? status.lastCheckedAt;
   const [updates, setUpdates] = useState<LegislationUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -307,21 +252,24 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
   const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setLoadFailed(false);
     setError("");
     try {
-      const response = await fetch(`/api/platform/monitoring?locale=${locale}`, {
-        cache: "no-store", headers: { "x-juro-workspace-id": workspaceId },
+      const params = new URLSearchParams({ locale, q: query, changeType, page: String(page) });
+      const response = await fetch(`/api/platform/monitoring?${params}`, {
+        cache: "no-store", signal, headers: { "x-juro-workspace-id": workspaceId },
       });
       const body = await response.json() as {
         preference?: Preference | null;
         updates?: LegislationUpdate[];
         status?: MonitoringStatus;
+        hasMore?: boolean;
         error?: string;
       };
       if (!response.ok) throw new Error(body.error || t.loadError);
+      if (signal?.aborted) return;
       if (body.preference) {
         setPreference({
           ...body.preference,
@@ -329,16 +277,24 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
         });
       }
       setUpdates(body.updates ?? []);
+      setHasMore(body.hasMore ?? false);
       setStatus(body.status ?? defaultStatus);
     } catch (value) {
+      if (signal?.aborted) return;
       setLoadFailed(true);
       setError(value instanceof Error ? value.message : t.loadError);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }, [locale, t.loadError, workspaceId]);
+  }, [changeType, locale, page, query, t.loadError, workspaceId]);
 
-  useEffect(() => { void load(); }, [load]);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load, retry]);
+  useEffect(() => { if (selected) updateReader.current?.focus({ preventScroll: true }); }, [selected]);
 
   const selectedTopics = useMemo(() => new Set(preference.topics), [preference.topics]);
   function toggleTopic(topic: Topic) {
@@ -373,6 +329,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
         });
       }
       setNotice(t.saved);
+      settings.current?.close();
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -382,33 +339,28 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
 
   return (
     <section className="monitoring-workspace">
-      <header>
-        <Scale aria-hidden="true" />
-        <div><h1>{t.title}</h1><p>{t.intro}</p></div>
+      <header className="monitoring-masthead">
+        <div className="monitoring-mark"><Scale aria-hidden="true" /></div>
+        <div><h1>{t.title}</h1><p>{labels.subtitle}</p></div>
+        <button className="monitoring-button monitoring-preferences-trigger" type="button" onClick={() => settings.current?.showModal()}>
+          <BellRing aria-hidden="true" /><span>{labels.settings}</span>
+        </button>
       </header>
 
-      {error && <p className="monitoring-message error" role="alert"><CircleAlert aria-hidden="true" />{error}{loadFailed && <button type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />{t.retry}</button>}</p>}
+      {error && loadFailed && <p className="monitoring-message error" role="alert"><CircleAlert aria-hidden="true" />{error}<button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw aria-hidden="true" />{t.retry}</button></p>}
       {notice && <p className="monitoring-message success" role="status"><CheckCircle2 />{notice}</p>}
 
-      {!loading && !loadFailed && <section className="monitoring-status" data-integration={status.integration} aria-label={t.integrationAria}>
-        <div className="monitoring-status-copy">
-          {status.integration === "active" ? <ShieldCheck aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />}
-          <div>
-            <small>{t.controlledBeta}</small>
-            <strong>{status.integration === "disabled" ? t.integrationOff : status.integration === "active" ? t.fresh : status.lastRun?.status === "failed" ? t.runFailed : status.freshness.state === "stale" ? t.stale : t.integrationPending}</strong>
-            {status.integration === "active" && <p>{t.integrationActive}</p>}
-          </div>
-        </div>
-        <dl>
-          <div><dt>{t.lastCheck}</dt><dd>{status.lastCheckedAt ? formatDate(status.lastCheckedAt, locale, true) : t.never}</dd></div>
-          <div><dt>{t.sources}</dt><dd>{status.verifiedSourceCount}</dd></div>
-          <div><dt>{t.lastRun}</dt><dd>{status.lastRun ? formatDate(status.lastRun.finishedAt ?? status.lastRun.startedAt, locale, true) : t.never}</dd></div>
-        </dl>
-      </section>}
-
-      <div className="monitoring-layout">
+      <div className="monitoring-shell">
+        <nav className="monitoring-nav" aria-label={t.title}>
+          <button type="button" aria-pressed={mode === "updates"} onClick={() => setMode("updates")}><CalendarClock aria-hidden="true" />{labels.updates}</button>
+          <button type="button" aria-pressed={mode === "corpus"} onClick={() => setMode("corpus")}><Library aria-hidden="true" />{labels.corpus}</button>
+          {lastCheck && <small><ShieldCheck aria-hidden="true" />
+            {status.lastCorpusCheckedAt ? labels.catalogueCheck : t.lastCheck} · {formatDate(lastCheck, locale, true)}</small>}
+        </nav>
+        <dialog className="monitoring-dialog" aria-labelledby="monitoring-preferences-heading" ref={settings}>
         <form className="monitoring-settings" onSubmit={save}>
-          <div className="monitoring-section-heading"><BellRing aria-hidden="true" /><div><h2>{t.preferences}</h2><p>{t.preferencesHint}</p></div></div>
+          <div className="monitoring-section-heading"><div><h2 id="monitoring-preferences-heading">{t.preferences}</h2><p>{t.preferencesHint}</p></div><button className="monitoring-button" type="button" onClick={() => settings.current?.close()}>{labels.close}</button></div>
+          {error && !loadFailed && <p role="alert" className="monitoring-message error">{error}</p>}
           <p className="monitoring-preference-note">{t.deliveryNote}</p>
 
           <fieldset>
@@ -436,37 +388,88 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
           <label className="monitoring-consent"><input type="checkbox" checked={preference.documentImpactConsent} onChange={event => setPreference(current => ({ ...current, documentImpactConsent: event.target.checked }))} /><span><strong>{t.documentConsent}</strong><small>{t.consentHint}</small></span></label>
           <button className="monitoring-save" disabled={saving || loading || loadFailed}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{t.save}</button>
         </form>
-
-        <section className="monitoring-feed">
-          <div className="monitoring-section-heading"><Gavel /><div><h2>{t.feed}</h2><p>{t.coverage}</p></div></div>
-          {loading ? <div className="monitoring-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" /><span>{t.loading}</span></div>
-            : loadFailed ? null
-            : updates.length ? <div className="monitoring-updates">{updates.map(update => <UpdateCard key={update.id} update={update} locale={locale} />)}</div>
-              : <div className="monitoring-empty"><Scale /><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
-        </section>
+        </dialog>
+        <div hidden={mode !== "updates"}>
+          <div className="monitoring-split" data-reading={Boolean(selected)}>
+            <section className="monitoring-list" aria-label={labels.updates}>
+              <form className="monitoring-filter" onSubmit={event => {
+                event.preventDefault();
+                setQuery(String(new FormData(event.currentTarget).get("search") ?? ""));
+                setSelected(null);
+                setPage(0);
+              }}>
+                <label><span>{labels.search}</span><input name="search" type="search" maxLength={120} placeholder={labels.updatePlaceholder} /></label>
+                <label><span>{labels.change}</span><select value={changeType} onChange={event => {
+                  setChangeType(event.target.value);
+                  setSelected(null);
+                  setPage(0);
+                }}><option value="">{labels.all}</option><option value="new_act">{labels.newAct}</option><option value="edition">{labels.edition}</option><option value="metadata_changed">{labels.correction}</option></select></label>
+                <button className="monitoring-button" type="submit">{labels.search}</button>
+              </form>
+              {!loading && !loadFailed && !status.lastCorpusCheckedAt && status.integration !== "active" && <p className="monitoring-feed-note">
+                {status.integration === "disabled" ? t.integrationOff : status.lastRun?.status === "failed" ? t.runFailed : t.integrationPending}
+              </p>}
+              {loading ? <p className="monitoring-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" />{t.loading}</p>
+                : loadFailed ? null
+                : updates.length ? <div>{updates.map((update, index) => {
+                  const date = updateDate(update);
+                  return <div key={update.id}>
+                    {(index === 0 || date !== updateDate(updates[index - 1])) && <h2 className="monitoring-date">{date}</h2>}
+                    <button type="button" className="monitoring-result" aria-pressed={selected?.id === update.id} onClick={event => {
+                      activeRow.current = event.currentTarget;
+                      setSelected(update);
+                    }}>
+                      <span><small>{updateType(update.changeType)}</small><strong>{update.title}</strong></span>
+                      <ChevronRight aria-hidden="true" />
+                    </button>
+                  </div>;
+                })}</div>
+                  : <p className="monitoring-empty">{query || changeType ? labels.noResults : t.empty}</p>}
+              <div className="monitoring-pagination">
+                {page > 0 && <button type="button" className="monitoring-button" onClick={() => { setSelected(null); setPage(page - 1); }}>{labels.previous}</button>}
+                {hasMore && <button type="button" className="monitoring-button" onClick={() => { setSelected(null); setPage(page + 1); }}>{labels.next}</button>}
+              </div>
+            </section>
+            {selected ? <section className="monitoring-reader" aria-label={selected.title}>
+              <button type="button" className="monitoring-button" onClick={() => {
+                setSelected(null);
+                requestAnimationFrame(() => activeRow.current?.focus());
+              }}>{labels.back}</button>
+              <UpdateCard update={selected} locale={locale} workspaceId={workspaceId} headingRef={updateReader} />
+            </section> : <div className="monitoring-reader-placeholder"><Scale aria-hidden="true" /><p>{labels.pickUpdate}</p></div>}
+          </div>
+        </div>
+        {mode === "corpus" && <CorpusBrowser locale={locale} workspaceId={workspaceId} />}
       </div>
     </section>
   );
 }
 
-function UpdateCard({ update, locale }: { update: LegislationUpdate; locale: PlatformLocale }) {
+function UpdateCard({ update, locale, workspaceId, headingRef }: {
+  update: LegislationUpdate; locale: PlatformLocale; workspaceId: string; headingRef: React.Ref<HTMLHeadingElement>;
+}) {
   const t = copy[locale];
+  const labels = monitoringLabels[locale];
   const base = usePlatformBasePath();
   return <article className="monitoring-update">
     <div className="monitoring-update-meta">
       {update.topics.map(topic => <span key={topic}>{topicLabels[topic as Topic]?.[locale] ?? topic}</span>)}
       <time dateTime={update.publishedAt}>{formatDate(update.publishedAt, locale)}</time>
     </div>
-    <h3>{update.title}</h3>
+    <h2 ref={headingRef} tabIndex={-1}>{update.title}</h2>
     {update.summary && <p>{update.summary}</p>}
     <dl>
       {update.adoptedAt && <div><dt>{t.adopted}</dt><dd>{formatDate(update.adoptedAt, locale)}</dd></div>}
       {update.effectiveAt && <div><dt>{t.effective}</dt><dd>{formatDate(update.effectiveAt, locale)}</dd></div>}
+      {update.sourceRevisionDate && <div><dt>{labels.edition}</dt><dd>{formatDate(update.sourceRevisionDate, locale)}</dd></div>}
+      <div><dt>{labels.observed}</dt><dd>{formatDate(update.publishedAt, locale, true)}</dd></div>
       <div><dt>{t.original}</dt><dd>{update.originalLanguage.toUpperCase()}</dd></div>
     </dl>
     {update.changeSummary && <section><h4>{t.changed}</h4><p>{update.changeSummary}</p></section>}
     {update.recommendedAction && <section><h4>{t.action}</h4><p>{update.recommendedAction}</p></section>}
     <a className="monitoring-source" href={update.officialUrl} target="_blank" rel="noopener noreferrer"><ExternalLink /><span><strong>{t.official}</strong><small>{update.sourceTitle}{update.sourceIdentifier ? ` · ${update.sourceIdentifier}` : ""}</small></span></a>
+    {update.corpusWork && <CorpusText key={update.corpusWork} entry={{ url: update.officialUrl, work: update.corpusWork }}
+      locale={locale} workspaceId={workspaceId} fromUpdate />}
     <div className="monitoring-update-actions">
       <Link href={`${base}/document-review`}><FileSearch />{t.checkDocuments}</Link>
       <Link href={`${base}/action-plan`}>{t.createTask}</Link>

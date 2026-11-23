@@ -242,7 +242,10 @@ _Avoid_: no coverage, no relevant law, insufficient evidence
 ### Workspace discovery
 
 **Legislation Monitoring**:
-The workspace feature for discovering new publications and changes to publication records in the official Lex.uz feed. Each update points to the official act so the reader can check its legal substance.
+The workspace for following official Lex.uz publication updates and browsing the Indexed Official Corpus. Each update links to the official act and identifies when the corresponding edition is available to read in JURO.
+
+**Publication Update**:
+A new official publication or an observed change to a publisher’s record for an act. A correction to the publication record is identified as such, and any claim about a change to the legal text requires evidence from the editions concerned.
 
 **Global Search**:
 The tenant-scoped discovery surface for finding existing workspace items and available sources. It is distinct from the Source Ladder used to produce a Legal Answer.

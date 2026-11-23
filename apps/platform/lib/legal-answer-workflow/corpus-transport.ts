@@ -87,6 +87,7 @@ async function readJson(response: Response, maximumBytes: number, signal: AbortS
 /** Fresh transport over the retained numeric discovery and original-source protocol. */
 export function createCorpusTransport(configuration: Configuration): Pick<Transport, "execute" | "readExact" | "readSources" | "readAsset"> & {
   readSourceReference(request: { artifacts: unknown; reference: { url: string; scope: EvidenceScope } }, signal?: AbortSignal): Promise<unknown>;
+  browseSources(request: unknown, signal: AbortSignal): Promise<unknown>;
 } {
   let url: URL;
   try { url = new URL(configuration.url); } catch { throw new Error("CORPUS_TRANSPORT_CONFIGURATION"); }
@@ -158,6 +159,7 @@ export function createCorpusTransport(configuration: Configuration): Pick<Transp
     readExact: (request, signal) => post("/read-exact", request, signal),
     readSources: (request, signal) => post("/read-sources", request, signal),
     readSourceReference: (request, signal) => post("/read-sources", request, signal),
+    browseSources: (request, signal) => post("/browse-sources", request, signal),
     readAsset: (request, signal) => post("/read-asset", request, signal),
   };
 }

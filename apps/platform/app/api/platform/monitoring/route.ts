@@ -26,6 +26,7 @@ const channels = new Set(["in_app", "email"]);
 const monitoringCopy: Record<PlatformLocale, {
   metadataChanged: string;
   newAct: string;
+  edition: string;
   invalidPreference: string;
   invalidTopics: string;
   invalidChannels: string;
@@ -33,7 +34,8 @@ const monitoringCopy: Record<PlatformLocale, {
 }> = {
   ru: {
     metadataChanged: "Lex.uz изменил metadata записи; откройте официальный акт для проверки содержания.",
-    newAct: "Lex.uz обнаружил новый акт в официальном RSS; откройте ссылку для проверки содержания.",
+    newAct: "Публикация обнаружена на Lex.uz. Откройте официальный акт для проверки содержания.",
+    edition: "Обнаружена редакция акта. Содержание и дату редакции можно проверить в официальном источнике.",
     invalidPreference: "Проверьте аудиторию и частоту.",
     invalidTopics: "Выберите хотя бы одну поддерживаемую область права.",
     invalidChannels: "Уведомления в приложении должны оставаться включёнными.",
@@ -41,7 +43,8 @@ const monitoringCopy: Record<PlatformLocale, {
   },
   uz: {
     metadataChanged: "Lex.uz yozuv metadata’larini o‘zgartirdi; mazmunini tekshirish uchun rasmiy aktni oching.",
-    newAct: "Lex.uz rasmiy RSS’da yangi aktni aniqladi; mazmunini tekshirish uchun havolani oching.",
+    newAct: "E’lon Lex.uz’da aniqlandi. Mazmunni tekshirish uchun rasmiy hujjatni oching.",
+    edition: "Hujjat tahriri aniqlandi. Matn va tahrir sanasini rasmiy manbadan tekshirish mumkin.",
     invalidPreference: "Auditoriya va tezlikni tekshiring.",
     invalidTopics: "Kamida bitta qo‘llab-quvvatlanadigan huquq sohasini tanlang.",
     invalidChannels: "Ilova ichidagi bildirishnomalar yoqilgan bo‘lishi kerak.",
@@ -49,7 +52,8 @@ const monitoringCopy: Record<PlatformLocale, {
   },
   en: {
     metadataChanged: "Lex.uz changed this record’s metadata. Open the official act to review its substance.",
-    newAct: "Lex.uz detected a new act in its official RSS feed. Open the source to review its substance.",
+    newAct: "JURO found this publication on Lex.uz. Open the official act to review its contents.",
+    edition: "JURO found an edition of this act. The official source has the text and edition date.",
     invalidPreference: "Check the audience and frequency.",
     invalidTopics: "Choose at least one supported area of law.",
     invalidChannels: "In-app notifications must remain enabled.",
@@ -71,10 +75,19 @@ function response(body: unknown, status = 200) {
 export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser(request);
   const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
-  const locale = normalizeMonitoringLocale(new URL(request.url).searchParams.get("locale"));
+  const params = new URL(request.url).searchParams;
+  const locale = normalizeMonitoringLocale(params.get("locale"));
+  const search = (params.get("q") ?? "").trim().slice(0, 120);
+  const changeType = params.get("changeType") ?? "";
+  const requestedPage = params.get("page") ?? "0";
+  const pageSize = 12;
+  if (!/^\d{1,5}$/u.test(requestedPage) || !["", "new_act", "metadata_changed", "edition"].includes(changeType)) {
+    return response({ code: "MONITORING_FILTER_INVALID" }, 400);
+  }
+  const pattern = `%${search.replace(/[!_%]/gu, character => `!${character}`)}%`;
   const t = monitoringCopy[locale];
   const db = requireD1();
-  const [preference, updates, sourceCheck, latestRun] = await db.batch([
+  const [preference, updates, sourceCheck, latestRun, corpusCheck] = await db.batch([
     db.prepare(
       `SELECT id,audience,topics_json AS topicsJson,channels_json AS channelsJson,
         frequency,locale,document_impact_consent AS documentImpactConsent,
@@ -82,16 +95,28 @@ export const GET = withApiErrors(async function GET(request: Request) {
        FROM monitoring_preferences WHERE workspace_id=? AND user_id=? LIMIT 1`,
     ).bind(workspace.id, user.id),
     db.prepare(
-      `SELECT e.id,e.act_title AS title,e.change_type AS changeType,e.detected_at AS publishedAt,
-        e.canonical_url AS officialUrl,m.canonical_id AS sourceIdentifier,m.locale AS originalLanguage,
-        m.act_title AS sourceTitle,m.revision_date AS sourceRevisionDate,
-        m.last_checked_at AS sourceLastCheckedAt,m.http_status AS sourceHttpStatus,
-        m.last_error_code AS sourceErrorCode
-       FROM legal_monitoring_change_events e
-       JOIN legal_monitoring_metadata m ON m.id=e.metadata_id
-       WHERE m.http_status BETWEEN 200 AND 299 AND m.last_error_code IS NULL
-       ORDER BY e.detected_at DESC LIMIT 50`,
-    ),
+      `WITH updates AS (
+        SELECT e.id,e.act_title AS title,e.change_type AS kind,e.detected_at AS observed,
+          e.canonical_url AS url,m.canonical_id AS canonical_id,m.locale AS language,
+          m.act_title AS source_title,NULL AS edition,m.last_checked_at AS checked,NULL AS work
+        FROM legal_monitoring_change_events e JOIN legal_monitoring_metadata m ON m.id=e.metadata_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM corpus_publication_updates u WHERE u.canonical_id=m.canonical_id AND u.kind=e.change_type
+          AND (e.change_type='new_act' OR
+            (u.title=e.act_title AND substr(u.observed_at,1,10)=substr(e.detected_at,1,10)))
+        )
+        UNION ALL
+        SELECT id,title,kind,observed_at,official_url,canonical_id,language,title,edition_date,observed_at,work
+        FROM corpus_publication_updates
+      )
+      SELECT id,title,kind AS changeType,observed AS publishedAt,url AS officialUrl,
+        canonical_id AS sourceIdentifier,language AS originalLanguage,source_title AS sourceTitle,
+        edition AS sourceRevisionDate,checked AS sourceLastCheckedAt,work AS corpusWork
+      FROM updates
+      WHERE (?='' OR kind=?)
+        AND (?='' OR LOWER(title) LIKE LOWER(?) ESCAPE '!' OR canonical_id=?)
+      ORDER BY COALESCE(edition,observed) DESC,id DESC LIMIT ? OFFSET ?`,
+    ).bind(changeType, changeType, search, pattern, search, pageSize + 1, Number(requestedPage) * pageSize),
     db.prepare(
       `SELECT canonical_url AS canonicalUrl,last_checked_at AS lastCheckedAt,
         http_status AS httpStatus,last_error_code AS lastErrorCode
@@ -107,6 +132,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
          AND run_type IN ('metadata_monitor','metadata_retry','manual_metadata_monitor')
        ORDER BY started_at DESC LIMIT 1`,
     ).bind(runtimeEnv().APP_ENV),
+    db.prepare("SELECT max(last_success_at) AS checked FROM corpus_publication_checkpoint"),
   ]);
   const rawPreference = preference.results[0] as Record<string, unknown> | undefined;
   const parsedPreference = rawPreference ? {
@@ -145,7 +171,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const enabled = (env as Record<string, unknown>).LEGAL_LEX_METADATA_MONITOR_ENABLED === "true";
   return response({
     preference: parsedPreference,
-    updates: updates.results
+    hasMore: updates.results.length > pageSize,
+    updates: updates.results.slice(0, pageSize)
       .map((raw) => {
         const item = raw as Record<string, unknown>;
         return {
@@ -156,9 +183,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
           sourceLastCheckedAt: String(item.sourceLastCheckedAt || ""),
           title: String(item.title || "Lex.uz"),
           summary: null,
-          changeSummary: String(item.changeType || "") === "metadata_changed"
-            ? t.metadataChanged
-            : t.newAct,
+          changeSummary: item.changeType === "metadata_changed" ? t.metadataChanged
+            : item.changeType === "edition" ? t.edition : t.newAct,
           recommendedAction: null,
           topics: [] as string[],
           affectedAudiences: [] as string[],
@@ -187,6 +213,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
       controlledBeta: false,
       emailConfigured: Boolean(env.RESEND_API_KEY && env.EMAIL_FROM),
       lastCheckedAt: freshness.latestCheckedAt,
+      lastCorpusCheckedAt: (corpusCheck.results[0] as { checked?: string | null } | undefined)?.checked ?? null,
       verifiedSourceCount: freshness.freshSourceCount,
       freshness,
       trustedSourceCount: freshness.trustedSourceCount,

@@ -14,9 +14,18 @@ const rates = z.object({ ...rateFields, longContext: tier.optional() }).strict()
   .refine(value => value.cachedInput <= value.input);
 const path = z.string().min(1).refine(isAbsolute);
 const spendingCaps = z.object({ generation: amount.positive(), embedding: amount.positive() }).strict();
+const sha256 = z.string().regex(/^[a-f0-9]{64}$/u);
+const workerSettings = z.object({ url: z.string(), workerSha256: sha256 }).strict();
+const additionSettings = z.object({
+  current: workerSettings.extend({ release: z.unknown() }),
+  history: workerSettings.extend({ release: z.unknown() }),
+  sources: workerSettings,
+  replacements: z.array(z.tuple([z.string().regex(/^-?\d+$/u), z.string().nullable()])).max(100_000),
+}).strict();
 const common = {
   format: z.literal("legal-answer-runtime-v1"), legalDatabaseAsOf: z.iso.date(),
   generationSha256: z.string().regex(/^[a-f0-9]{64}$/u), currentRelease: z.unknown(), historyRelease: z.unknown(),
+  corpusAdditions: z.array(additionSettings).max(16).optional(),
   generationRates: z.record(z.string().regex(/^gpt-[A-Za-z0-9._-]+$/u), rates), embeddingInputRate: amount.positive(),
   fastGenerationRates: z.partialRecord(z.enum(["gpt-6-luna", "gpt-6.1-terra"]), rates).optional(),
   serviceTier: z.partialRecord(z.enum(["gpt-6-luna", "gpt-6.1-terra"]), z.literal("default")).optional(),
@@ -44,17 +53,19 @@ const schema = z.discriminatedUnion("purpose", [
     spendingCaps: spendingCaps.optional() }).strict(),
 ]);
 
-/** Explicit deployment configuration; secrets remain in server environment and never enter source identity hashes. */
-export function parseAnswerRuntimeConfiguration(value: unknown, env: Readonly<Record<string, string | undefined>>) {
+type RuntimeEnv = Readonly<Record<string, string | undefined>>;
+function runtimeDocument(value: unknown) {
   const result = schema.safeParse(value);
   if (!result.success) throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID");
-  const config = result.data;
-  if (resolve(config.ledgerPath) === resolve(config.receiptPath)) throw new Error("ANSWER_FINANCIAL_PATH_CONFLICT");
-  const required = (name: string) => {
-    const value = env[name];
-    if (!value?.trim()) throw new Error("ANSWER_RUNTIME_SETTING_MISSING");
-    return value;
-  };
+  return result.data;
+}
+function requireSetting(env: RuntimeEnv, name: string) {
+  const value = env[name];
+  if (!value?.trim()) throw new Error("ANSWER_RUNTIME_SETTING_MISSING");
+  return value;
+}
+function parseCorpusRoutes(config: ReturnType<typeof runtimeDocument>, env: RuntimeEnv) {
+  const required = (name: string) => requireSetting(env, name);
   const currentRelease = parsePinnedCandidateRelease(config.currentRelease);
   const historyRelease = parsePinnedCandidateRelease(config.historyRelease);
   preparedCandidateConfigurationSchema.parse(currentRelease.configuration);
@@ -72,20 +83,48 @@ export function parseAnswerRuntimeConfiguration(value: unknown, env: Readonly<Re
   // Construction validates loopback endpoints, worker identities and transport credentials without network I/O.
   createPreparedTransportPair({ discovery: current.worker, sources });
   createPreparedTransportPair({ discovery: history.worker, sources });
+  const additions = (config.corpusAdditions ?? []).map(addition => {
+    const current = parsePinnedCandidateRelease(addition.current.release);
+    const history = parsePinnedCandidateRelease(addition.history.release);
+    const currentArtifacts = preparedCandidateConfigurationSchema.parse(current.configuration).artifacts;
+    const historyArtifacts = preparedCandidateConfigurationSchema.parse(history.configuration).artifacts;
+    if (current.capability !== "current" || history.capability !== "history"
+      || current.environment !== currentRelease.environment || history.environment !== currentRelease.environment
+      || JSON.stringify(currentArtifacts) !== JSON.stringify(historyArtifacts)) throw new Error("CORPUS_ADDITION_RELEASE_MISMATCH");
+    const token = required("PREPARED_TRANSPORT_TOKEN");
+    const currentWorker = { url: addition.current.url, workerSha256: addition.current.workerSha256, token };
+    const historyWorker = { url: addition.history.url, workerSha256: addition.history.workerSha256, token };
+    const sourceWorker = { ...addition.sources, token };
+    createPreparedTransportPair({ discovery: currentWorker, sources: sourceWorker });
+    createPreparedTransportPair({ discovery: historyWorker, sources: sourceWorker });
+    return { current: { release: current, worker: currentWorker }, history: { release: history, worker: historyWorker },
+      sources: sourceWorker, replacements: new Set(addition.replacements.map(value => JSON.stringify(value))) };
+  });
+  const releaseIds = [currentRelease.id, historyRelease.id, ...additions.flatMap(part => [part.current.release.id, part.history.release.id])];
+  if (new Set(releaseIds).size !== releaseIds.length) throw new Error("CORPUS_ADDITION_DUPLICATE");
+  return { current, history, sources, additions };
+}
+
+/** Explicit deployment configuration; secrets remain in server environment and never enter source identity hashes. */
+export function parseAnswerRuntimeConfiguration(value: unknown, env: RuntimeEnv) {
+  const config = runtimeDocument(value);
+  if (resolve(config.ledgerPath) === resolve(config.receiptPath)) throw new Error("ANSWER_FINANCIAL_PATH_CONFLICT");
+  const { current, history, sources, additions } = parseCorpusRoutes(config, env);
   const models = { fast: "gpt-6-luna", deep: "gpt-6.1-terra" } as const;
   if (Object.values(models).some(model => !config.generationRates[model])) throw new Error("ANSWER_MODEL_RATES_MISSING");
-  const publicUrl = new URL(required("APP_URL"));
+  const publicUrl = new URL(requireSetting(env, "APP_URL"));
   if (publicUrl.username || publicUrl.password || !["http:", "https:"].includes(publicUrl.protocol)) {
     throw new Error("ANSWER_PUBLIC_ORIGIN_INVALID");
   }
-  const sourceVersionHash = createHash("sha256").update(JSON.stringify({ currentRelease, historyRelease,
+  const sourceVersionHash = createHash("sha256").update(JSON.stringify({ currentRelease: current.release, historyRelease: history.release,
     workers: [current.worker.workerSha256, history.worker.workerSha256, sources?.workerSha256 ?? null],
+    ...(additions.length > 0 ? { additions: config.corpusAdditions } : {}),
     generationSha256: config.generationSha256 })).digest("hex");
   // Deployment policy must still match the existing cumulative ledger exactly.
   const caps = config.spendingCaps ?? (config.purpose === "qualification"
     ? { generation: 6_000_000, embedding: 1_000_000 } : undefined);
-  return { ...config, spendingCaps: caps, models, publicOrigin: publicUrl.origin, apiKey: required("OPENAI_API_KEY"), sourceVersionHash,
-    corpus: { current, history, sources, generationSha256: config.generationSha256,
+  return { ...config, spendingCaps: caps, models, publicOrigin: publicUrl.origin, apiKey: requireSetting(env, "OPENAI_API_KEY"), sourceVersionHash,
+    corpus: { current, history, sources, additions, generationSha256: config.generationSha256,
       automaticReadLimit: config.automaticReadLimit ?? 0, automaticReadScope: config.automaticReadScope ?? "provision",
       candidateReadScope: config.candidateReadScope ?? "provision",
       researchConcurrency: config.researchConcurrency ?? 3,
@@ -94,24 +133,33 @@ export function parseAnswerRuntimeConfiguration(value: unknown, env: Readonly<Re
       prefetchInitialSearch: config.prefetchInitialSearch ?? false } };
 }
 
-export async function loadAnswerRuntimeConfiguration(env: Readonly<Record<string, string | undefined>>) {
+async function loadRuntimeDocument(env: RuntimeEnv) {
   const path = env.LEGAL_ANSWER_RUNTIME_CONFIG;
   if (!path || !isAbsolute(path)) throw new Error("ANSWER_RUNTIME_CONFIGURATION_REQUIRED");
   const file = await open(path, "r");
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size < 1 || stat.size > 256 * 1024) throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID");
-    const bytes = Buffer.alloc(256 * 1024 + 1);
+    const maximum = 8 * 1024 * 1024;
+    if (!stat.isFile() || stat.size < 1 || stat.size > maximum) throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID");
+    const bytes = Buffer.alloc(stat.size + 1);
     let total = 0;
     while (total < bytes.length) {
       const read = await file.read(bytes, total, bytes.length - total, null);
       if (!read.bytesRead) break;
       total += read.bytesRead;
     }
-    if (total > 256 * 1024) throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID");
+    if (total !== stat.size) throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID");
     let value: unknown;
     try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, total))); }
     catch { throw new Error("ANSWER_RUNTIME_CONFIGURATION_INVALID"); }
-    return parseAnswerRuntimeConfiguration(value, env);
+    return value;
   } finally { await file.close(); }
+}
+
+export async function loadAnswerRuntimeConfiguration(env: RuntimeEnv) {
+  return parseAnswerRuntimeConfiguration(await loadRuntimeDocument(env), env);
+}
+
+export async function loadPreparedCorpusRoutes(env: RuntimeEnv) {
+  return parseCorpusRoutes(runtimeDocument(await loadRuntimeDocument(env)), env);
 }

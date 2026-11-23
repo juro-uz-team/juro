@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { legalAnswerDeadlineMs } from "./deadline";
 import { corpusDatabase } from "../storage/connection";
 import { requireD1, requireR2, runtimeEnv } from "../document-builder/storage/runtime";
@@ -31,12 +32,22 @@ import { createPreparedStoredReader } from "./prepared-stored-reader";
 import { resolveSavedSourceRoute } from "./saved-source-routing";
 
 type Configuration = Awaited<ReturnType<typeof loadAnswerRuntimeConfiguration>>;
-let configuration: Promise<Configuration> | undefined;
-let service: ReturnType<typeof openConfiguredAnswerRuntime> | undefined;
+let configuration: { identity: string; loaded: Promise<Configuration> } | undefined;
+const services = new WeakMap<Configuration, ReturnType<typeof openConfiguredAnswerRuntime>>();
 
-function loadConfiguration() {
-  configuration ??= loadAnswerRuntimeConfiguration(process.env).catch(error => { configuration = undefined; throw error; });
-  return configuration;
+async function loadConfiguration() {
+  const path = process.env.LEGAL_ANSWER_RUNTIME_CONFIG;
+  if (!path) return loadAnswerRuntimeConfiguration(process.env);
+  const file = await stat(path, { bigint: true });
+  const identity = [path, file.dev, file.ino, file.size, file.mtimeNs].join(":");
+  if (configuration?.identity !== identity) {
+    const loaded = loadAnswerRuntimeConfiguration(process.env).catch(error => {
+      if (configuration?.loaded === loaded) configuration = undefined;
+      throw error;
+    });
+    configuration = { identity, loaded };
+  }
+  return configuration.loaded;
 }
 
 async function operationalRejection(request: Request, signal: AbortSignal): Promise<Response | null> {
@@ -54,7 +65,9 @@ async function operationalRejection(request: Request, signal: AbortSignal): Prom
 }
 
 function openService(config: Configuration, deadlineAt: number, signal: AbortSignal) {
-  service ??= openConfiguredAnswerRuntime(config, {
+  const existing = services.get(config);
+  if (existing) return existing;
+  const service = openConfiguredAnswerRuntime(config, {
     corpusPool: corpusDatabase().pool,
     privateObjects: { async get(key, caller) {
       if (!caller) throw new Error("PRIVATE_DOCUMENT_LIFETIME_REQUIRED");
@@ -65,7 +78,8 @@ function openService(config: Configuration, deadlineAt: number, signal: AbortSig
         return new Uint8Array(await withinSignal(caller, () => object.arrayBuffer()));
       });
     } },
-  }, deadlineAt, signal).catch(error => { service = undefined; throw error; });
+  }, deadlineAt, signal).catch(error => { services.delete(config); throw error; });
+  services.set(config, service);
   return service;
 }
 

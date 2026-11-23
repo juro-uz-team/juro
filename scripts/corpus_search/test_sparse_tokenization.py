@@ -21,9 +21,10 @@ class SparseTokenizationTests(unittest.TestCase):
         platform=pathlib.Path(__file__).resolve().parents[2]/'apps'/'platform'
         loader=platform/'node_modules'/'tsx'/'dist'/'loader.mjs'
         if not shutil.which('node') or not loader.exists():self.skipTest('Node and installed platform tsx required')
-        command=['node','--import',loader.as_uri(),str(platform/'scripts'/'tokenize-prepared-sparse.mts')]
-        analyzer_pin=hashlib.sha256(b''.join((platform/'lib'/'legal-corpus'/name).read_bytes()
-            for name in ['custom-bm25.ts','prepared-sparse-profile.ts','prepared-sparse-stream.ts'])).hexdigest()
+        command=['node','--import',loader.as_uri(),str(platform/'scripts'/'lexuz-sparse-profile.mts')]
+        analyzer_pin=hashlib.sha256(b''.join((platform/name).read_bytes() for name in (
+            'lib/legal-corpus/custom-bm25.ts','lib/legal-corpus/prepared-sparse-profile.ts',
+            'scripts/lexuz-sparse-profile.mts'))).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
             root=pathlib.Path(directory);fixture=Fixture();identities=Identities(fixture)
             pin=publish_sparse_profiles(fixture,identities,root/'source')

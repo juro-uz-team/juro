@@ -17,6 +17,7 @@ from source_service import PreparedSourceService
 from trusted_source_storage import TrustedSourceProjection, TrustedWorkIndex
 from source_rows import SourceRows
 from source_references import SourceReferences
+from source_browser import SourceBrowser
 
 
 def read_manifest(path, pin):
@@ -28,7 +29,7 @@ def read_manifest(path, pin):
     if hashlib.sha256(raw).hexdigest() != pin:
         raise ValueError('source_worker_manifest_mismatch')
     spec = json.loads(raw, object_pairs_hook=unique_object)
-    if (not isinstance(spec, dict) or set(spec) - {'officeImage', 'sourceProjection'} != {'format', 'paths', 'artifacts', 'workers', 'maxPending'}
+    if (not isinstance(spec, dict) or set(spec) - {'officeImage', 'sourceProjection', 'browserCatalog'} != {'format', 'paths', 'artifacts', 'workers', 'maxPending'}
             or spec['format'] != 'prepared-source-worker-v1'
             or not isinstance(spec['paths'], dict) or set(spec['paths']) != {'package', 'works'}
             or any(not isinstance(value, str) or not pathlib.Path(value).is_absolute() for value in spec['paths'].values())
@@ -39,11 +40,12 @@ def read_manifest(path, pin):
             or ('officeImage' in spec and (not isinstance(spec['officeImage'], str)
                 or not re.fullmatch(r'sha256:[a-f0-9]{64}', spec['officeImage'])))):
         raise ValueError('source_worker_manifest_invalid')
-    projection = spec.get('sourceProjection')
-    if projection is not None and (not isinstance(projection, dict) or set(projection) != {'path', 'sha256'}
-            or not isinstance(projection['path'], str) or not pathlib.Path(projection['path']).is_absolute()
-            or not isinstance(projection['sha256'], str) or not re.fullmatch('[a-f0-9]{64}', projection['sha256'])):
-        raise ValueError('source_worker_projection_invalid')
+    for field in ('sourceProjection', 'browserCatalog'):
+        artifact = spec.get(field)
+        if artifact is not None and (not isinstance(artifact, dict) or set(artifact) != {'path', 'sha256'}
+                or not isinstance(artifact['path'], str) or not pathlib.Path(artifact['path']).is_absolute()
+                or not isinstance(artifact['sha256'], str) or not re.fullmatch('[a-f0-9]{64}', artifact['sha256'])):
+            raise ValueError('source_worker_projection_invalid')
     return spec
 
 
@@ -57,7 +59,7 @@ def open_reader(owner):
         local.connection = connection
         yield PreparedSourceService(owner.package, local, owner.artifacts, office_image=owner.office_image,
                                     source_rows=owner.source_rows,
-                                    source_references=owner.source_references)
+                                    source_references=owner.source_references, browser=owner.browser)
 
 
 def main():
@@ -78,8 +80,10 @@ def main():
             spec['artifacts']['workIndexSha256'], package.sha256)))
         references = SourceReferences(package)
         rows = SourceRows(package)
+        browser_spec = spec.get('browserCatalog')
+        browser = SourceBrowser(browser_spec['path'], browser_spec['sha256'], package.sha256) if browser_spec else None
         owner = PreparedSourceService(package, works, spec['artifacts'], office_image=spec.get('officeImage'),
-                                      source_rows=rows, source_references=references)
+                                      source_rows=rows, source_references=references, browser=browser)
         server = resources.enter_context(closing(create_numeric_http_server(owner,
             os.environ['JURO_PREPARED_TRANSPORT_TOKEN'], args.port, manifest_sha256=args.sha256,
             service_factory=lambda: open_reader(owner), workers=spec['workers'], max_pending=spec['maxPending'])))

@@ -360,5 +360,13 @@ export function createPreparedStoredReader(input: { release: unknown; worker: Wo
       return work === null ? null : lookupReference(work, position, request.scope, signal);
     },
   };
-  return { packageSha256: configuration.artifacts.packageSha256, provisions, get: objects.get };
+  return { packageSha256: configuration.artifacts.packageSha256, provisions, get: objects.get,
+    async resolveExternalReference(value: string, scope: EvidenceScope, signal: AbortSignal) {
+      const target = publisherUrl(value), position = target.hash.slice(1);
+      target.hash = "";
+      if (!/^\/docs\/-?\d+$/u.test(target.pathname)) return { found: false, receipt: null };
+      const resolved = await resolveScopedReference(target, scope, signal);
+      return { found: resolved.status !== "missing", receipt: resolved.work === null ? null
+        : await lookupReference(resolved.work, position, scope, signal) };
+    } };
 }

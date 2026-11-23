@@ -20,7 +20,7 @@ class PreparedSourceService:
     read_asset = None
 
     def __init__(self, package, works, artifacts, office_image=None, source_rows=None,
-                 source_references=None):
+                 source_references=None, browser=None):
         if (not isinstance(artifacts, dict) or set(artifacts) != self.ARTIFACTS
                 or any(not isinstance(value, str) or not re.fullmatch('[a-f0-9]{64}', value)
                        for value in artifacts.values())
@@ -36,6 +36,38 @@ class PreparedSourceService:
         if source_references is not None and source_references.package_sha256 != package.sha256:
             raise ValueError('source_reference_package_mismatch')
         self.source_references = source_references
+        self.browser = browser
+
+    def browse_sources(self, request):
+        if (not isinstance(request, dict) or request.get('artifacts') != self.artifacts
+                or self.browser is None):
+            raise ValueError('source_catalog_generation')
+        with self.browser.open() as catalog:
+            if set(request) == {'artifacts', 'query', 'language', 'category', 'page'}:
+                return catalog.search(request['query'], request['language'], request['category'], request['page'])
+            if set(request) != {'artifacts', 'work', 'offset'}:
+                raise ValueError('source_catalog_request')
+            work, offset = request['work'], request['offset']
+            if (not isinstance(work, str) or not re.fullmatch('[a-f0-9]{64}', work)
+                    or type(offset) is not int or not 0 <= offset <= 1_000_000):
+                raise ValueError('source_catalog_request')
+            selected = catalog.source(work)
+            if selected is None:
+                return {'entry': None, 'units': [], 'nextOffset': None}
+            plan, total = catalog.reading_plan(work, offset, 24)
+        locations = self.works.lookup([work_key(key) for key, _, _ in plan])
+        if any(not row or not row['prepared'] for row in locations):
+            raise ValueError('source_catalog_identity')
+        records = self.read_records('prepared', [row['prepared'] for row in locations], 128 * 1024 * 1024)
+        units, gaps = [], False
+        for (key, start, count), record in zip(plan, records, strict=True):
+            if record.get('work') != key or len(record['units']) < start + count:
+                raise ValueError('source_catalog_identity')
+            gaps |= bool(record.get('gaps'))
+            units.extend({'text': unit['text'], 'locator': str(unit.get('locator') or '')}
+                         for unit in record['units'][start:start+count] if isinstance(unit.get('text'), str))
+        return {'entry': selected, 'units': units, 'nextOffset': offset + 24 if offset + 24 < total else None,
+                'extractionGaps': gaps}
 
     def read_records(self, kind, locations, maximum):
         if self.source_rows is not None:

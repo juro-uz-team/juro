@@ -37,7 +37,9 @@ export type DocumentEmbeddingRequest = {
 };
 
 /** One direct request keeps the durable reservation equal to one provider dispatch. */
-export async function requestDocumentEmbeddings(apiKey: string, request: DocumentEmbeddingRequest,
+export async function requestDocumentEmbeddings(apiKey: string, request: Omit<DocumentEmbeddingRequest, "dimensions"> & {
+  dimensions: DocumentEmbeddingRequest["dimensions"] | 3072;
+},
   transport: typeof fetch = fetch): Promise<Response> {
   if (!apiKey) throw new TypeError("CUSTOM_EMBEDDING_PROVIDER_UNAVAILABLE");
   try {

@@ -11,6 +11,7 @@ type LexMetadataEnv = {
   DB: D1Database;
   LEGAL_LEX_METADATA_MONITOR_ENABLED?: string;
   LEGAL_LEX_RSS_DISCOVERY_ENABLED?: string;
+  LEGAL_CORPUS_MAINTENANCE_JOURNAL?: string;
 };
 
 export type LexMetadataMonitorSummary = {
@@ -185,7 +186,7 @@ export async function runLexMetadataMonitor(
       );
       // Initial discovery fills the feed without flooding customers. Subsequent
       // metadata changes create an ordinary in-app notification.
-      const notifications = isChanged
+      const notifications = isChanged && !env.LEGAL_CORPUS_MAINTENANCE_JOURNAL
         ? await monitoringNotificationStatements({ db: env.DB, eventId, title, canonicalUrl: entry.reference.canonicalUrl, now: timestamp })
         : [];
       await env.DB.batch([metadataWrite, eventWrite, ...notifications]);

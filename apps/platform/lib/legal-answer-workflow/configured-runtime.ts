@@ -8,6 +8,7 @@ import type { parseAnswerRuntimeConfiguration } from "./runtime-configuration";
 import type { executeSignedInAnswer } from "./signed-request";
 import { openRegisteredEvidenceStore } from "./evidence-registration";
 import { OperatingUsageLedger } from "./operating-usage";
+import { stableSourceSnapshotJson } from "../legal-corpus/source-snapshot";
 
 type Configuration = ReturnType<typeof parseAnswerRuntimeConfiguration>;
 type Store = Parameters<typeof createAnswerExecution>[0]["corpus"]["store"];
@@ -15,7 +16,21 @@ type Store = Parameters<typeof createAnswerExecution>[0]["corpus"]["store"];
 export async function openConfiguredAnswerRuntime(configuration: Configuration, bindings: {
   corpusPool: Pool; privateObjects: ProvisionObjects;
 }, deadlineAt: number, signal: AbortSignal) {
-  const { store } = await openRegisteredEvidenceStore(bindings.corpusPool, configuration.generationSha256, deadlineAt, signal, { readOnly: true });
+  const { store, manifest } = await openRegisteredEvidenceStore(bindings.corpusPool, configuration.generationSha256, deadlineAt, signal, { readOnly: true });
+  if (configuration.corpus.additions.length) {
+    const registered = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifest)) as {
+      corpusAdditions?: { currentRelease: unknown; historyRelease: unknown }[];
+      additionQualificationSha256?: string;
+    };
+    const expected = configuration.corpus.additions.map(({ current, history }) =>
+      ({ currentRelease: current.release, historyRelease: history.release }));
+    const selected = Array.isArray(registered.corpusAdditions)
+      ? registered.corpusAdditions.map(({ currentRelease, historyRelease }) => ({ currentRelease, historyRelease })) : [];
+    if (stableSourceSnapshotJson(selected) !== stableSourceSnapshotJson(expected)
+      || !/^[a-f0-9]{64}$/u.test(registered.additionQualificationSha256 ?? "")) {
+      throw new Error("CORPUS_ADDITION_NOT_REGISTERED");
+    }
+  }
   signal.throwIfAborted();
   return createConfiguredAnswerRuntime(configuration, { store, privateObjects: bindings.privateObjects });
 }

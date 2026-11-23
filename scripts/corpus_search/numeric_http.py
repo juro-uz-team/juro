@@ -116,6 +116,7 @@ def create_numeric_http_server(service, token, port=0, *, manifest_sha256, servi
             operation = {'/search': owned.search, '/read-exact': owned.read_exact_encoded if encoded else owned.read_exact,
                          '/read-sources':getattr(owned,'read_sources',None),
                          '/read-asset':getattr(owned,'read_asset',None),
+                         '/browse-sources':getattr(owned,'browse_sources',None),
                          '/locate-sources':getattr(owned,'locate_sources',None)}.get(self.path)
             if operation is None:
                 self.reply(404, {'error': 'not_found'})

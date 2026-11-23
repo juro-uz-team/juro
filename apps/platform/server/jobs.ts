@@ -10,6 +10,7 @@ import { dispatchOutbox } from "../worker/platform-outbox";
 import { handleScheduled } from "../worker/platform-scheduled";
 import { consumeNativeHealth, nativeHealthEnabled, nativeHealthQueueName } from "../worker/native-dependency-health";
 import { runPracticeJobs } from "../lib/practice/jobs";
+import { syncCorpusPublicationFeed } from "../lib/legal/corpus-publication-feed";
 
 const env = getSelfHostedRuntime();
 const pool = database().pool;
@@ -31,6 +32,10 @@ while (!stopping) {
       catch (error) { console.error("Scheduled housekeeping failed", error instanceof Error ? error.message : "Unknown error"); }
       try { await runPracticeJobs(); }
       catch { console.error("Practice housekeeping failed"); }
+      if (process.env.LEGAL_CORPUS_MAINTENANCE_JOURNAL) {
+        try { await syncCorpusPublicationFeed(pool, process.env.LEGAL_CORPUS_MAINTENANCE_JOURNAL); }
+        catch (error) { console.error("Corpus publication feed sync failed", error instanceof Error ? error.name : "Unknown error"); }
+      }
     }
     await dispatchOutbox(env);
     let processed = false;

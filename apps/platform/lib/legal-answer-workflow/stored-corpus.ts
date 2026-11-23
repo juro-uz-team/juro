@@ -9,7 +9,7 @@ import { maximumCandidateDescriptionBatch } from "./contracts";
 import type { CandidateDescription } from "./candidate-selection";
 
 export type StoredProvisionReceipt = CorpusCitationReceipt;
-type Discovery = {
+export type StoredDiscovery = {
   search(query: string, scope: EvidenceScope, signal: AbortSignal): Promise<{
     candidates: string[]; sparseAvailable: boolean; denseAvailable: boolean;
     ranking?: Record<string, CandidateRanking>;
@@ -40,10 +40,10 @@ const unitSchema = z.object({ locator: z.string().min(1).max(1024),
   language: z.enum(["en", "ru", "uz-Latn", "uz-Cyrl"]), text: z.string().min(1) });
 
 /** Search the full retained corpus; absent prepared evidence never triggers acquisition or repair. */
-export function createStoredCorpus(input: { current: Discovery; history: Discovery;
+export function createStoredCorpus(input: { current: StoredDiscovery; history: StoredDiscovery;
   objects: ProvisionObjects; provisions: StoredProvisionReader; deferSourceNavigation?: boolean }) {
   const discovered = new Set<string>();
-  const literalCandidates = new Map<string, Awaited<ReturnType<Discovery["readCandidate"]>>>();
+  const literalCandidates = new Map<string, Awaited<ReturnType<StoredDiscovery["readCandidate"]>>>();
   const ranges = new Map<string, { key: string; kind: "provision" | "section" | "document"; language: string; textByteCount?: number; unitCount?: number; sourceNotes?: string[];
     sourceSections?: { position: string; title: string; key: string; textByteCount?: number; unitCount?: number }[]; sections?: { position: string; title: string; key: string; textByteCount?: number; unitCount?: number }[] }>();
   async function describeRange(found: Awaited<ReturnType<typeof candidate>>, scope: EvidenceScope, signal: AbortSignal):
