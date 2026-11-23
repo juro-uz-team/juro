@@ -26,7 +26,8 @@ import {
   withApiErrors,
 } from "../../../../lib/document-builder/auth/api";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
-import { isLocale, isPersonalAccountType } from "../../../../lib/platform/routing";
+import { isLocale, isAccountType } from "../../../../lib/platform/routing";
+import { ensureDefaultWorkspace } from "../../../../lib/platform/workspace";
 import { lawyerLandingDestination } from "../../../../lib/platform/lawyer-entry-routing";
 import { issueSessionHandoff } from "../../../../lib/auth/session-handoff";
 import { authReturnDestination } from "../../../../lib/auth/return-path";
@@ -90,7 +91,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
       },
     );
     const userLocale = isLocale(result.locale) ? result.locale : locale;
-    const accountType = isPersonalAccountType(result.accountType)
+    const accountType = isAccountType(result.accountType)
       ? result.accountType
       : "individual";
     const themePreference = resolveThemePreference(result.themePreference);
@@ -116,7 +117,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
           lawyerProfileStatus: lawyerProfile?.lawyerProfileStatus ?? null,
           lawyerMarketplaceStatus: lawyerProfile?.lawyerMarketplaceStatus ?? null,
         }, lawyerHost, requestHostname)
-      : `/${userLocale}/${accountType}/dashboard`;
+      : accountType === "business"
+        ? `/${userLocale}/business/${encodeURIComponent(await ensureDefaultWorkspace(result.userId))}/dashboard`
+        : `/${userLocale}/${accountType}/dashboard`;
     const redirectTo = authReturnDestination(accountType !== "lawyer" && lawyerHost
       ? `https://app.juro.uz${accountRedirect}`
       : accountRedirect, parsed.data.returnTo);

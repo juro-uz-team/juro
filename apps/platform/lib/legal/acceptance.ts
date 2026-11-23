@@ -8,10 +8,9 @@ import {
 type RegistrationAcceptanceInput = {
   userId: string;
   locale: PolicyLocale;
-  otpChallengeId: string;
   acceptedMarketing: boolean;
   acceptedAt: string;
-};
+} & ({ otpChallengeId: string } | { googleProofId: string });
 
 export type RegistrationAcceptanceWrite = {
   statements: D1PreparedStatement[];
@@ -29,10 +28,11 @@ export async function prepareRegistrationAcceptanceWrite(
   if (mandatory.length === 0) {
     throw new Error("REGISTRATION_ACCEPTANCE_POLICY_SET_EMPTY");
   }
-  const evidenceJson = JSON.stringify({
-    otpChallengeId: input.otpChallengeId,
-    source: "registration",
-  });
+  const google = "googleProofId" in input;
+  const authSource = google ? "google" : "email_otp";
+  const evidenceJson = JSON.stringify(google
+    ? { googleProofId: input.googleProofId, source: "registration" }
+    : { otpChallengeId: input.otpChallengeId, source: "registration" });
   const statements = registry.map((policy) =>
     db.prepare(
       `INSERT OR IGNORE INTO policy_documents (
@@ -56,7 +56,7 @@ export async function prepareRegistrationAcceptanceWrite(
          content_sha256,acceptance_method,auth_source,session_id,evidence_json,
          accepted_at
        )
-       SELECT ?,?,?,?,?,?,?,?,'email_otp',NULL,?,?
+       SELECT ?,?,?,?,?,?,?,?,?,NULL,?,?
        FROM policy_documents
        WHERE id=?
          AND document_key=?
@@ -73,6 +73,7 @@ export async function prepareRegistrationAcceptanceWrite(
       policy.locale,
       policy.contentSha256,
       "registration_checkbox",
+      authSource,
       evidenceJson,
       input.acceptedAt,
       policy.id,
@@ -106,7 +107,7 @@ export async function prepareRegistrationAcceptanceWrite(
 
 export async function recordRegistrationAcceptances(
   db: D1Database,
-  input: RegistrationAcceptanceInput,
+  input: Extract<RegistrationAcceptanceInput, { otpChallengeId: string }>,
 ): Promise<void> {
   const write = await prepareRegistrationAcceptanceWrite(db, input);
   await db.batch(write.statements);

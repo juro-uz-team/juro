@@ -734,6 +734,7 @@ export async function createPasswordMfaProof(
     email: string;
     locale: "ru" | "uz" | "en";
     accountType: "individual" | "entrepreneur" | "lawyer";
+    primaryAuthMethod?: "password" | "google";
     now?: Date;
   },
 ): Promise<{ challengeId: string; emailHash: string }> {
@@ -742,7 +743,7 @@ export async function createPasswordMfaProof(
   const challengeId = crypto.randomUUID();
   const emailHash = await sha256(input.email);
   const codeSalt = randomToken(16);
-  const codeHash = await sha256(`${codeSalt}:password-primary`);
+  const codeHash = await sha256(`${codeSalt}:${input.primaryAuthMethod ?? "password"}-primary`);
   await db.prepare(
     `INSERT INTO auth_otp_challenges (
        id,email,email_hash,purpose,locale,account_type,code_salt,code_hash,

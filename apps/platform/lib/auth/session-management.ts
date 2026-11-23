@@ -391,7 +391,7 @@ export async function createPrimarySessionIfMfaDisabled(
   input: {
     userId: string;
     userAgent: string | null;
-    authMethod?: "email_otp" | "password";
+    authMethod?: "email_otp" | "password" | "google";
     securityEvidence?: AuthRequestSecurityEvidence | null;
     deviceContinuity?: PreparedDeviceContinuity | null;
     loginSecurityNotification?: LoginSecurityNotificationConfig | null;
@@ -409,8 +409,11 @@ export async function createPrimarySessionIfMfaDisabled(
       WHERE NOT EXISTS (
         SELECT 1 FROM auth_totp_credentials
         WHERE user_id=? AND status='active'
-      )`,
-    bindings: [input.userId],
+      )${input.authMethod === "google" ? ` AND EXISTS (
+        SELECT 1 FROM user_profiles
+        WHERE id=? AND lifecycle_status='active' AND email_verified_at IS NOT NULL
+      )` : ""}`,
+    bindings: input.authMethod === "google" ? [input.userId, input.userId] : [input.userId],
   } satisfies SessionInsertGuard;
   const statements = guardedSessionInsertStatements(db, prepared, guard);
   const results = await batchWithSecurityEvent(

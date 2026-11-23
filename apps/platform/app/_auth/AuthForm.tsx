@@ -23,7 +23,7 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ThemeSwitcher } from "../_theme/ThemeSwitcher";
 import {
   consentFieldError,
@@ -34,10 +34,13 @@ import {
 import { TurnstileWidget } from "./TurnstileWidget";
 import { AuthRequestTimeoutError, requestAuthJson } from "./auth-request";
 import { safeAuthReturnPath } from "../../lib/auth/return-path";
+import { GoogleAuthButton } from "./GoogleAuthButton";
 
 type AccountType = "individual" | "entrepreneur" | "lawyer";
 type Locale = "ru" | "uz" | "en";
 type Step = "details" | "verification-request" | "verification" | "mfa" | "recovery-request" | "recovery-code" | "recovery-success";
+
+export type GoogleFlowView = { kind: "login" | "signup" | "link"; email: string; name: string; rememberMe: boolean };
 
 type Props = {
   mode: "login" | "register";
@@ -48,6 +51,8 @@ type Props = {
   emailAuthEnabled: boolean;
   platformAuthEnabled: boolean;
   developmentAuthEnabled: boolean;
+  googleAuthEnabled?: boolean;
+  googleFlow?: GoogleFlowView;
   turnstileSiteKey?: string;
 };
 
@@ -58,6 +63,7 @@ type Handoff = {
 };
 
 type AuthResponse = {
+  authorizationUrl?: string;
   accountType?: AccountType;
   challengeId?: string;
   expiresInSeconds?: number;
@@ -275,6 +281,8 @@ export function AuthForm({
   emailAuthEnabled,
   platformAuthEnabled,
   developmentAuthEnabled,
+  googleAuthEnabled,
+  googleFlow,
   turnstileSiteKey,
 }: Props) {
   const locale = initialLocale;
@@ -292,13 +300,13 @@ export function AuthForm({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [mfaCode, setMfaCode] = useState("");
-  const [firstName, setFirstName] = useState("");
+  const [firstName, setFirstName] = useState(googleFlow?.name ?? "");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(googleFlow?.rememberMe ?? false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileReset, setTurnstileReset] = useState(0);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState(googleFlow?.kind === "login");
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [registrationRestartMessage, setRegistrationRestartMessage] = useState("");
@@ -317,6 +325,7 @@ export function AuthForm({
   const mfaInput = useRef<HTMLInputElement>(null);
   const verificationRequestHeading = useRef<HTMLHeadingElement>(null);
   const requestGeneration = useRef(0);
+  const googleResumed = useRef(false);
   const successPanel = useRef<HTMLDivElement>(null);
   const lawyerProduct = initialAccountType === "lawyer";
   const explicitReturnTo = safeAuthReturnPath(returnTo) ?? undefined;
@@ -361,6 +370,16 @@ export function AuthForm({
     session: searchParams.get("session") ?? searchParams.get("reason"),
     handoff: searchParams.get("handoff"),
   });
+  const googleStatus = searchParams.get("google");
+  const googlePrompt = googleStatus === "link"
+    ? tr({ ru: "Войдите в JURO с тем же email, чтобы подтвердить привязку Google.", uz: "Google hisobini bog‘lash uchun JUROga shu email bilan kiring.", en: "Sign in with the same email to confirm the Google connection." })
+    : googleStatus === "cancelled"
+      ? tr({ ru: "Вход через Google отменён.", uz: "Google orqali kirish bekor qilindi.", en: "Google sign-in was cancelled." })
+      : googleStatus === "email"
+        ? tr({ ru: "Подтвердите этот адрес через регистрацию по email, затем подключите Google.", uz: "Bu manzilni email orqali tasdiqlang, keyin Google hisobini ulang.", en: "Verify this address by registering with email, then connect Google." })
+        : googleStatus === "failed"
+          ? tr({ ru: "Не удалось войти через Google. Попробуйте снова.", uz: "Google orqali kirib bo‘lmadi. Qayta urinib ko‘ring.", en: "Google sign-in could not be completed. Try again." })
+          : null;
   const masked = useMemo(() => {
     const visibleEmail = challengeEmail || email;
     const [name, domain] = visibleEmail.split("@");
@@ -418,6 +437,10 @@ export function AuthForm({
   }
 
   function returnToDetails() {
+    if (googleFlow) {
+      window.location.replace(loginHref);
+      return;
+    }
     requestGeneration.current += 1;
     setPending(false);
     clearFeedback();
@@ -779,7 +802,94 @@ export function AuthForm({
     }
   }
 
-  const authAvailable = mode === "login" ? passwordAuthEnabled : emailAuthEnabled;
+  async function startGoogle() {
+    clearFeedback();
+    setPending(true);
+    try {
+      const { response, data } = await requestAuthentication("/api/auth/google/start", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
+        body: JSON.stringify({ mode, locale, accountType, rememberMe, returnTo: explicitReturnTo }),
+      });
+      const authorization = data.authorizationUrl ? new URL(data.authorizationUrl) : null;
+      if (!response.ok || authorization?.origin !== "https://accounts.google.com" || authorization.pathname !== "/o/oauth2/v2/auth") {
+        throw new Error(tr({ ru: "Не удалось открыть вход через Google.", uz: "Google orqali kirish ochilmadi.", en: "Google sign-in could not start." }));
+      }
+      window.location.assign(authorization.href);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+      setPending(false);
+    }
+  }
+
+  async function finishGoogle(event?: FormEvent) {
+    event?.preventDefault();
+    if (!googleFlow) return;
+    clearFeedback();
+    if (googleFlow.kind === "signup") {
+      setValidationAttemptedFor("details");
+      if (!firstName.trim()) {
+        setError(tr({ ru: "Укажите имя.", uz: "Ismingizni kiriting.", en: "Enter your name." }));
+        firstNameInput.current?.focus();
+        return;
+      }
+      if (!acceptTerms || !acceptPrivacy) {
+        (acceptTerms ? privacyInput : termsInput).current?.focus();
+        return;
+      }
+    }
+    setPending(true);
+    try {
+      const { response, data } = await requestAuthentication("/api/auth/google/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
+        body: JSON.stringify({
+          kind: googleFlow.kind, accountType, name: firstName.trim(),
+          acceptTerms, acceptPrivacy, acceptPersonalData: acceptPrivacy,
+        }),
+      });
+      if (!response.ok) throw new Error(data.error || tr({
+        ru: "Не удалось завершить вход через Google. Начните вход заново.",
+        uz: "Google orqali kirish yakunlanmadi. Qayta urinib ko‘ring.",
+        en: "Google sign-in could not be completed. Start again.",
+      }));
+      if (data.requiresTwoFactor) {
+        setStep("mfa");
+        return;
+      }
+      completeAuthentication(data);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const resumeGoogle = useEffectEvent(() => { void finishGoogle(); });
+  useEffect(() => {
+    if (googleFlow?.kind !== "login" || googleResumed.current) return;
+    googleResumed.current = true;
+    resumeGoogle();
+  }, [googleFlow?.kind]);
+
+  const googleButton = googleAuthEnabled && googleStatus !== "link"
+    ? <GoogleAuthButton locale={locale} onClick={() => void startGoogle()} pending={pending} />
+    : null;
+  const registrationConsents = (
+    <div className="auth-consents">
+      <Consent name="accept-terms" checked={acceptTerms} onChange={setAcceptTerms} onTouched={() => setTermsTouched(true)} inputRef={termsInput} error={termsError} disabled={pending}>
+        {tr({ ru: "Принимаю", uz: "", en: "I accept the" })}{locale === "uz" ? null : " "}
+        <a href={`/legal/terms?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "Условия использования", uz: "Foydalanish shartlarini", en: "Terms of Use" })}</a>{locale === "uz" ? " qabul qilaman" : ""}
+      </Consent>
+      <Consent name="accept-privacy" checked={acceptPrivacy} onChange={setAcceptPrivacy} onTouched={() => setPrivacyTouched(true)} inputRef={privacyInput} error={privacyError} disabled={pending}>
+        {tr({ ru: "Ознакомлен(а) с", uz: "Men", en: "I have read the" })}{" "}
+        <a href={`/legal/privacy?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "Политикой конфиденциальности", uz: "Maxfiylik siyosati", en: "Privacy Policy" })}</a>{" "}
+        {tr({ ru: "и согласен(на) на", uz: "bilan tanishdim va", en: "and consent to" })}{" "}
+        <a href={`/legal/personal-data?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "обработку персональных данных", uz: "shaxsiy ma’lumotlarni qayta ishlashga", en: "personal data processing" })}</a>{locale === "uz" ? " roziman" : ""}.
+      </Consent>
+    </div>
+  );
+  const authAvailable = Boolean(googleFlow || googleButton || (mode === "login" ? passwordAuthEnabled : emailAuthEnabled));
   if (!authAvailable) {
     return (
       <main className="auth-page" lang={locale}>
@@ -810,10 +920,38 @@ export function AuthForm({
       <BrandPanel locale={locale} hrefFor={localeHref} />
       <section className="auth-card">
         {authNotice && <AuthNotice {...authNotice} />}
+        {googlePrompt && <p className="auth-notice" role="status">{googlePrompt}</p>}
 
-        {step === "details" && mode === "login" && (
+        {step === "details" && googleFlow && (
+          <form className="auth-details" onSubmit={finishGoogle} noValidate>
+            <AuthHeading icon={<KeyRound aria-hidden="true" />} eyebrow="Google"
+              title={googleFlow.kind === "signup"
+                ? tr({ ru: "Создайте аккаунт JURO", uz: "JURO hisobini yarating", en: "Create your JURO account" })
+                : googleFlow.kind === "link"
+                  ? tr({ ru: "Подключите Google", uz: "Google hisobini ulang", en: "Connect Google" })
+                  : tr({ ru: "Вход в JURO", uz: "JUROga kirish", en: "Signing in to JURO" })}
+              description={googleFlow.kind === "link"
+                ? tr({ ru: "Подтвердите, что хотите использовать этот Google-аккаунт для входа в JURO.", uz: "Bu Google hisobidan JUROga kirish uchun foydalanishni tasdiqlang.", en: "Confirm that you want to use this Google account to sign in to JURO." })
+                : tr({ ru: "Google подтвердил ваш адрес электронной почты.", uz: "Google emailingizni tasdiqladi.", en: "Google verified your email address." })} />
+            <p className="auth-google-identity">{googleFlow.email}</p>
+            {googleFlow.kind === "signup" && <>
+              {!lawyerProduct && <AccountTypePicker locale={locale} value={accountType} onChange={setAccountType} disabled={pending} />}
+              <AuthTextField inputRef={firstNameInput} id="google-name" name="name" label={tr({ ru: "Имя", uz: "Ism", en: "Name" })} type="text" value={firstName} onChange={setFirstName} required autoComplete="name" maxLength={160} disabled={pending} />
+              {registrationConsents}
+            </>}
+            <SubmitButton pending={pending} disabled={false} label={googleFlow.kind === "link"
+              ? tr({ ru: "Подключить", uz: "Ulash", en: "Connect account" })
+              : googleFlow.kind === "signup"
+                ? tr({ ru: "Создать аккаунт", uz: "Hisob yaratish", en: "Create account" })
+                : tr({ ru: "Продолжить", uz: "Davom etish", en: "Continue" })} />
+            <Link href={loginHref} className="auth-secondary-login">{tr({ ru: "Вернуться ко входу", uz: "Kirishga qaytish", en: "Back to sign in" })}</Link>
+          </form>
+        )}
+
+        {step === "details" && mode === "login" && !googleFlow && (
           <form className="auth-details" onSubmit={login} noValidate>
             <AuthHeading icon={<KeyRound aria-hidden="true" />} eyebrow={tr({ ru: "Безопасная сессия", uz: "Xavfsiz sessiya", en: "Secure session" })} title={tr({ ru: "Войдите в JURO", uz: "JURO hisobiga kiring", en: "Sign in to JURO" })} description={tr({ ru: "Войдите, чтобы продолжить работу с документами и делами.", uz: "Hujjatlar va ishlar bilan ishlashni davom ettirish uchun kiring.", en: "Sign in to continue with your documents and matters." })} />
+            {googleButton}
             <AuthTextField inputRef={emailInput} id="auth-email" name="email" label="Email" type="email" value={email} onChange={setEmail} onBlur={() => { setEmailTouched(true); setEmail(normalizeEmailInput(email)); }} required autoComplete="username" autoCapitalize="none" inputMode="email" enterKeyHint="next" placeholder="name@example.com" spellCheck={false} maxLength={254} error={emailError} disabled={pending} />
             <PasswordField locale={locale} id="auth-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="current-password" disabled={pending} />
             <div className="auth-form-options">
@@ -826,10 +964,11 @@ export function AuthForm({
           </form>
         )}
 
-        {step === "details" && mode === "register" && (
+        {step === "details" && mode === "register" && !googleFlow && (
           <form className="auth-details" onSubmit={register} noValidate>
             <AuthHeading icon={<Sparkles aria-hidden="true" />} eyebrow={tr({ ru: "Ваше пространство JURO", uz: "Sizning JURO makoningiz", en: "Your JURO workspace" })} title={tr({ ru: "Создайте аккаунт", uz: "Hisob yarating", en: "Create your account" })} description={tr({ ru: "Заполните данные, затем подтвердите email кодом из письма.", uz: "Ma’lumotlarni kiriting, so‘ng emailni xatdagi kod bilan tasdiqlang.", en: "Enter your details, then verify your email with a code." })} />
             {!lawyerProduct && <AccountTypePicker locale={locale} value={accountType} onChange={setAccountType} disabled={pending} />}
+            {googleButton}
             <div className="auth-row">
               <AuthTextField inputRef={firstNameInput} id="first-name" name="given-name" label={tr({ ru: "Имя", uz: "Ism", en: "First name" })} value={firstName} onChange={setFirstName} onBlur={() => { setFirstNameTouched(true); setFirstName(firstName.trim()); }} required autoComplete="given-name" enterKeyHint="next" maxLength={80} error={firstNameError} disabled={pending} />
               <AuthTextField inputRef={emailInput} id="auth-email" name="email" label="Email" type="email" value={email} onChange={setEmail} onBlur={() => { setEmailTouched(true); setEmail(normalizeEmailInput(email)); }} required autoComplete="username" autoCapitalize="none" inputMode="email" enterKeyHint="next" placeholder="name@example.com" spellCheck={false} maxLength={254} error={emailError} disabled={pending} />
@@ -845,18 +984,7 @@ export function AuthForm({
                 {confirmPassword && <small id="password-match" className={passwordsMatch ? "auth-valid" : "auth-field-error"}>{passwordsMatch ? tr({ ru: "Пароли совпадают", uz: "Parollar mos", en: "Passwords match" }) : tr({ ru: "Пароли не совпадают", uz: "Parollar mos emas", en: "Passwords do not match" })}</small>}
               </div>
             </div>
-            <div className="auth-consents">
-              <Consent name="accept-terms" checked={acceptTerms} onChange={setAcceptTerms} onTouched={() => setTermsTouched(true)} inputRef={termsInput} error={termsError} disabled={pending}>
-                {tr({ ru: "Принимаю", uz: "", en: "I accept the" })}{locale === "uz" ? null : " "}
-                <a href={`/legal/terms?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "Условия использования", uz: "Foydalanish shartlarini", en: "Terms of Use" })}</a>{locale === "uz" ? " qabul qilaman" : ""}
-              </Consent>
-              <Consent name="accept-privacy" checked={acceptPrivacy} onChange={setAcceptPrivacy} onTouched={() => setPrivacyTouched(true)} inputRef={privacyInput} error={privacyError} disabled={pending}>
-                {tr({ ru: "Ознакомлен(а) с", uz: "Men", en: "I have read the" })}{" "}
-                <a href={`/legal/privacy?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "Политикой конфиденциальности", uz: "Maxfiylik siyosati", en: "Privacy Policy" })}</a>{" "}
-                {tr({ ru: "и согласен(на) на", uz: "bilan tanishdim va", en: "and consent to" })}{" "}
-                <a href={`/legal/personal-data?lang=${legalLocale}`} target="_blank" rel="noreferrer">{tr({ ru: "обработку персональных данных", uz: "shaxsiy ma’lumotlarni qayta ishlashga", en: "personal data processing" })}</a>{locale === "uz" ? " roziman" : ""}.
-              </Consent>
-            </div>
+            {registrationConsents}
             {turnstileSiteKey && <TurnstileWidget siteKey={turnstileSiteKey} locale={locale} resetSignal={turnstileReset} onToken={setTurnstileToken} action="auth_registration" />}
             <SubmitButton pending={pending} disabled={!turnstileToken || !passwordValid || !passwordsMatch} label={tr({ ru: "Создать аккаунт", uz: "Hisob yaratish", en: "Create account" })} />
           </form>

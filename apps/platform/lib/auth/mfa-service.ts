@@ -753,7 +753,7 @@ export async function createLoginMfaChallenge(
     userId: string;
     emailHash: string;
     emailOtpChallengeId: string;
-    primaryAuthMethod?: "email_otp" | "password";
+    primaryAuthMethod?: "email_otp" | "password" | "google";
     userAgent: string | null;
     now?: Date;
   },
@@ -1516,9 +1516,8 @@ export async function verifyLoginMfa(
   const prepared = await prepareLocalSessionCreation(db, {
     userId: challenge.userId,
     userAgent: input.userAgent,
-    authMethod: challenge.primaryAuthMethod === "password"
-      ? (factor.factorType === "totp" ? "password+totp" : "password+backup_code")
-      : (factor.factorType === "totp" ? "email_otp+totp" : "email_otp+backup_code"),
+    authMethod: `${challenge.primaryAuthMethod === "password" || challenge.primaryAuthMethod === "google"
+      ? challenge.primaryAuthMethod : "email_otp"}+${factor.factorType}`,
     assuranceLevel: "mfa",
     deviceContinuity,
     loginSecurityNotification: {
