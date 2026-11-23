@@ -100,7 +100,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
           e.canonical_url AS url,m.canonical_id AS canonical_id,m.locale AS language,
           m.act_title AS source_title,NULL AS edition,m.last_checked_at AS checked,NULL AS work
         FROM legal_monitoring_change_events e JOIN legal_monitoring_metadata m ON m.id=e.metadata_id
-        WHERE NOT EXISTS (
+        WHERE m.http_status BETWEEN 200 AND 299 AND m.last_error_code IS NULL
+        AND NOT EXISTS (
           SELECT 1 FROM corpus_publication_updates u WHERE u.canonical_id=m.canonical_id AND u.kind=e.change_type
           AND (e.change_type='new_act' OR
             (u.title=e.act_title AND substr(u.observed_at,1,10)=substr(e.detected_at,1,10)))

@@ -1159,18 +1159,21 @@ test("billing exposes only the gated Payment foundation and never treats credent
   assert.doesNotMatch(client + createRoute, /providerPaymentId.*success|status:\s*["']paid["']/i);
 });
 
-test("legislation monitoring exposes only fresh official Lex metadata and does not use a local review corpus", async () => {
+test("legislation monitoring combines checked Lex events and official corpus publication updates", async () => {
   const source = await readFile(new URL("../app/api/platform/monitoring/route.ts", import.meta.url), "utf8");
   assert.match(source, /legal_monitoring_metadata/);
   assert.match(source, /legal_monitoring_change_events/);
   assert.match(source, /http_status BETWEEN 200 AND 299/);
+  assert.match(source, /FROM corpus_publication_updates/);
+  assert.match(source, /FROM corpus_publication_checkpoint/);
+  assert.match(source, /url\.protocol === "https:" && \(url\.hostname === "lex\.uz" \|\| url\.hostname === "www\.lex\.uz"\)/);
   assert.match(source, /summarizeLexMetadataMonitoringFreshness/);
   assert.match(source, /automaticPublication: true/);
   assert.match(source, /controlledBeta: false/);
   assert.doesNotMatch(source, /published_verified|verification_state|content_sha256|pending_review/);
 });
 
-test("monitoring keeps delivery disabled until a fresh Lex metadata run is available", async () => {
+test("monitoring keeps in-app delivery copy and workspace preferences in the settings dialog", async () => {
   const [shell, client] = await Promise.all([
     readFile(new URL("../app/_platform/PlatformShell.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/MonitoringClient.tsx", import.meta.url), "utf8"),
@@ -1179,11 +1182,10 @@ test("monitoring keeps delivery disabled until a fresh Lex metadata run is avail
   assert.match(shell, /key: "help", ru: "Помощь", uz: "Yordam", en: "Support"/);
   assert.match(client, /normalizeMonitoringAudience\(accountType\)/);
   assert.match(client, /normalizeMonitoringAudience\(body\.preference\.audience\)/);
-  assert.match(client, /monitoringPreferencesAreInformationalOnly\(\{/);
-  assert.match(client, /controlledBeta: status\.controlledBeta/);
-  assert.match(client, /t\.preferenceOnlyNotice/);
-  assert.match(client, /disabled=\{preferenceOnly \|\| !status\.emailConfigured\}/);
-  assert.match(client, /preferenceOnly \? t\.savePreferences : t\.save/);
+  assert.match(client, /<dialog[^>]+aria-labelledby="monitoring-preferences-heading"/);
+  assert.match(client, /t\.deliveryNote/);
+  assert.match(client, /"x-juro-workspace-id": workspaceId/);
+  assert.match(client, /disabled=\{saving \|\| loading \|\| loadFailed\}/);
 });
 
 test("JURO motion tokens are bounded and the dashboard route is static", async () => {
@@ -1249,7 +1251,7 @@ test("new work surfaces keep mobile, zoom and keyboard accessibility safeguards"
   assert.match(comparison, /max-width:820px/);
   assert.match(comparison, /max-width:560px/);
   assert.match(comparison, /prefers-reduced-motion:reduce/);
-  assert.match(monitoring, /max-width:700px/);
+  assert.match(monitoring, /max-width:\s*580px/);
   assert.match(readability, /font-size:14px/);
   assert.match(readability, /min-height:44px/);
   for (const source of [dashboard, comparison, monitoring]) {
