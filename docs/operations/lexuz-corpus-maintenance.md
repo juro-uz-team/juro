@@ -13,12 +13,14 @@ Install the maintenance service and timer from `deploy/` in the dedicated corpus
 | `baseVectors.path`, `baseVectors.sha256` | Directory and completion pin of the existing 3,072-dimensional vector pool |
 | `baseVectors.identitiesPath`, `baseVectors.identitiesSha256` | Existing exact compact-input identity index and its manifest pin |
 | `ocr.models`, `ocr.tessdata`, `ocr.tesseract`, `ocr.device` | Qualified OCR files and execution device |
-| `dailyNewInputTokens` | Daily token budget for inputs without an exact compatible vector |
+| `dailyNewInputTokens` | Optional daily token budget for inputs without an exact compatible vector |
 | `releaseTemplate` | Absolute path to a JSON object containing the current and history pinned release configurations |
 | `readerRole` | Restricted PostgreSQL navigation reader |
 | `serving.workerEnvironment`, `serving.runtimeConfig` | Restricted operator environment file and active answer-runtime configuration. Omit `serving` for a build-only environment. |
 
 Provide the existing provider credential through the private service environment. The builder connects with `JURO_PREPARED_BUILD_DATABASE_URL`. The serving workers use `JURO_PREPARED_DATABASE_URL` and `JURO_PREPARED_TRANSPORT_TOKEN`. Activation uses the application's existing configuration and `PREPARED_TRANSPORT_TOKEN`, which must authenticate to the new workers. Keep credentials out of the maintenance JSON and the generated worker manifests.
+
+Each request covers at most 32 unique inputs and records a durable reservation before contacting the provider. An ambiguous result stops further paid requests for operator reconciliation. Completed coordinates are reused across interrupted runs and new releases.
 
 Apply the application migration before enabling `LEGAL_CORPUS_MAINTENANCE_JOURNAL` on the platform jobs service. Point it to the absolute path of `maintenance.sqlite`. Apply the corpus publication source migration to the shared corpus database when application and corpus storage use separate databases. The application imports the journal transactionally, with one in-app summary after the first catch-up release has activated and accounted for outstanding material. Individual notices begin with subsequent discoveries. Monitoring labels its catalogue check time separately from when readers can open a prepared edition.
 

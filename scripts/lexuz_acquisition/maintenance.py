@@ -192,10 +192,6 @@ class MaintenanceCoordinator(Coordinator):
         identity = digest(encoded([item['url'], signature, self.day])) if known else digest(encoded([item['url'], 'new_act']))
         db = self.observations.db
         with db:
-            for (url,) in self.store.db.execute("SELECT DISTINCT url FROM work WHERE kind='document' AND attempts>0"):
-                ref = document(url)
-                if ref and not ref['edition']:
-                    db.execute('INSERT OR REPLACE INTO attempted_sources VALUES (?,?)', (ref['url'], now))
             db.execute('INSERT OR IGNORE INTO updates VALUES (?,?,?,?,?,?,?,?,?,?)', (
                 identity, self.day, item['source'], f"https://lex.uz/docs/{item['source']}", time.time(),
                 item.get('title') or f"Lex.uz · {item['source']}", None, kind, item['edition'],
@@ -228,6 +224,10 @@ class MaintenanceCoordinator(Coordinator):
         now = time.time()
         db = self.observations.db
         with db:
+            for (url,) in self.store.db.execute("SELECT DISTINCT url FROM work WHERE kind='document' AND attempts>0"):
+                ref = document(url)
+                if ref and not ref['edition']:
+                    db.execute('INSERT OR REPLACE INTO attempted_sources VALUES (?,?)', (ref['url'], now))
             changed_attachments = set()
             corrected_records = set()
             for row in self.store.db.execute("""SELECT * FROM work WHERE kind IN ('asset','member','card')

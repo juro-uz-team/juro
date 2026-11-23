@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .maintenance import DAY, SourceObservations, edition_on_or_after
+from .maintenance import DAY, MaintenanceCoordinator, SourceObservations, edition_on_or_after
 from .maintenance_package import checked_input, cumulative_works, select_rows, write_package
 from .maintenance_vectors import EmbeddingCache, fill
 from .store import Store, digest
@@ -36,6 +36,20 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(initial, resumed)
         self.assertNotEqual(initial[0][1], initial[1][1])
 
+    def test_uncapped_embedding_leaves_unconfirmed_requests_fenced(self):
+        with sqlite3.connect(':memory:') as db:
+            cache = EmbeddingCache(db)
+            requests = []
+
+            def embed(inputs):
+                requests.append(inputs)
+                return {'unresolved': True}
+
+            for key in (b'first', b'second'):
+                with self.assertRaisesRegex(ValueError, 'maintenance_embedding_outcome_unresolved'):
+                    cache.request([(key, 'Legal text', 2)], embed, None)
+            self.assertEqual(requests, [['Legal text']])
+
     def test_daily_checks_are_oldest_first_and_resume_the_first_catchup(self):
         db = sqlite3.connect(':memory:')
         maintenance = SourceObservations(db)
@@ -49,6 +63,24 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(maintenance.begin(1795449600 + DAY), first)
         self.assertTrue(first[2])
         self.assertTrue(edition_on_or_after('24.11.2026 12', 1795449600))
+
+    def test_daily_catalogue_updates_and_rotates_attempts_even_without_changes(self):
+        day = '2026-11-24'
+        with tempfile.TemporaryDirectory() as temporary, Store(Path(temporary) / day) as store, sqlite3.connect(':memory:') as db:
+            observations = SourceObservations(db)
+            db.execute('INSERT INTO runs(day,started,catchup) VALUES (?,0,0)', (day,))
+            current = store.enqueue('document', 'https://lex.uz/docs/10')
+            historical = store.enqueue('document', 'https://lex.uz/docs/10?ONDATE=24.11.2026')
+            store.db.execute('UPDATE work SET attempts=1 WHERE id IN (?,?)', (current, historical))
+            store.db.executemany('INSERT INTO partitions(phase,language,reported,count) VALUES (?,?,1,1)',
+                                 [(phase, language) for phase in ('initial', 'final') for language in range(1, 5)])
+            coordinator = MaintenanceCoordinator(store, None, observations, day, False)
+            coordinator._catalogue_update({'url': 'https://lex.uz/docs/11', 'source': '11', 'edition': None},
+                                          'signature', None, False)
+            self.assertEqual(db.execute('SELECT kind FROM updates').fetchall(), [('new_act',)])
+            self.assertEqual(coordinator.finish({'state': 'observed', 'unresolved_count': 0,
+                                                 'unresolved_material': 0})['state'], 'observed')
+            self.assertEqual(db.execute('SELECT url FROM attempted_sources').fetchall(), [('https://lex.uz/docs/10',)])
 
     def test_selected_edition_round_trips_through_the_production_package_reader(self):
         with tempfile.TemporaryDirectory() as temporary:

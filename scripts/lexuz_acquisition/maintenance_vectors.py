@@ -59,10 +59,11 @@ class EmbeddingCache:
             raise ValueError('maintenance_embedding_outcome_unresolved')
         day = datetime.now(timezone.utc).date().isoformat()
         tokens = sum(item[2] for item in items)
-        used = self.db.execute("SELECT coalesce(sum(tokens),0) FROM reservations WHERE day=? AND state<>'rejected'",
-                               (day,)).fetchone()[0]
-        if used + tokens > limit:
-            raise ValueError('maintenance_embedding_daily_budget')
+        if limit is not None:
+            used = self.db.execute("SELECT coalesce(sum(tokens),0) FROM reservations WHERE day=? AND state<>'rejected'",
+                                   (day,)).fetchone()[0]
+            if used + tokens > limit:
+                raise ValueError('maintenance_embedding_daily_budget')
         with self.db:
             intent = self.db.execute("INSERT INTO reservations(day,tokens,state) VALUES (?,?,'pending')",
                                      (day, tokens)).lastrowid
@@ -152,9 +153,9 @@ def main():
     parser.add_argument('--base-sha256', required=True)
     parser.add_argument('--identities', type=Path, required=True)
     parser.add_argument('--identities-sha256', required=True)
-    parser.add_argument('--daily-new-input-tokens', type=int, required=True)
+    parser.add_argument('--daily-new-input-tokens', type=int)
     args = parser.parse_args()
-    if args.daily_new_input_tokens < 0:
+    if args.daily_new_input_tokens is not None and args.daily_new_input_tokens < 0:
         parser.error('The token limit must be nonnegative')
     package = PreparedPackage(args.package, args.package_sha256)
     with exclusive(args.cache), ExitStack() as resources:

@@ -152,10 +152,12 @@ def run(config):
                 finally:
                     rows.close()
         package_pin = receipt(package, package/'package-manifest.json')['sha256']
+        token_limit = config.get('dailyNewInputTokens')
+        budget = ['--daily-new-input-tokens', token_limit] if token_limit is not None else []
         command('scripts.lexuz_acquisition.maintenance_vectors', package, package_pin, target/'vectors',
                 '--cache', root/'embedding-cache', '--base', vectors['path'], '--base-sha256', vectors['sha256'],
                 '--identities', vectors['identitiesPath'], '--identities-sha256', vectors['identitiesSha256'],
-                '--daily-new-input-tokens', config['dailyNewInputTokens'])
+                *budget)
         vector_pin = receipt(target/'vectors', target/'vectors/completion.json')['sha256']
         # A failed build can leave unselected material for diagnosis. Each
         # subsequent attempt builds to a different immutable worker path.
