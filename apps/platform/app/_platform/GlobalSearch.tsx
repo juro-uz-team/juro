@@ -110,12 +110,12 @@ export function GlobalSearch({ locale }: { locale: PlatformLocale; accountType: 
   const copy = searchCopy[locale];
   const text = (ru: string, uz: string, en: string) => locale === "ru" ? ru : locale === "uz" ? uz : en;
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchRequested = useSearchParams().get("search") === "open";
   const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
-  const [open, setOpen] = useState(() => searchParams.get("search") === "open");
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [resultsQuery, setResultsQuery] = useState<string | null>(null);
@@ -133,6 +133,10 @@ export function GlobalSearch({ locale }: { locale: PlatformLocale; accountType: 
   useEffect(() => {
     setShortcutLabel(/Mac|iPhone|iPad/u.test(navigator.platform) ? "⌘K" : "Ctrl K");
   }, []);
+
+  useEffect(() => {
+    if (searchRequested) setOpen(true);
+  }, [searchRequested]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
