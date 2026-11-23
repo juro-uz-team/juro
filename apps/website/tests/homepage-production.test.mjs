@@ -12,16 +12,15 @@ const homepage = fs.readFileSync("content/homepage.ts", "utf8");
 const chromeStyles = fs.readFileSync("app/components/public/site-chrome.module.css", "utf8");
 const headerTouchStyles = fs.readFileSync("app/components/public/header-touch-targets.module.css", "utf8");
 const sitemap = fs.readFileSync("app/sitemap.ts", "utf8");
-const lawyerCatalog = fs.readFileSync("app/[locale]/lawyers/catalog.ts", "utf8");
-const lawyerAvatar = fs.readFileSync("app/[locale]/lawyers/LawyerAvatar.tsx", "utf8");
 
 test("public chrome exposes every primary public destination in both locales", () => {
-  for (const route of ["/trust", "/video", "/lawyers", "/legal", "/knowledge"]) {
+  for (const route of ["/trust", "/video", "/legal", "/knowledge"]) {
     assert.match(chrome + footer, new RegExp(route.replaceAll("/", "\\/")));
   }
   assert.match(chrome, /languageHref/);
   assert.match(chrome, /platformRegistrationHref/);
-  assert.match(sitemap, /\/lawyers/);
+  assert.doesNotMatch(sitemap, /\/lawyers/);
+  assert.match(chrome, /platformToolHref\(locale, "lawyers"\)/);
   assert.doesNotMatch(sitemap, /prototype/);
 });
 
@@ -63,14 +62,6 @@ test("shared public footer publishes the contact details", () => {
   assert.match(homepage, /Ташкент, Узбекистан/);
   assert.match(footer, /mailto:admin@juro\.uz/);
   assert.match(footer, /tel:\+998200023112/);
-});
-
-test("English marketplace presentation localizes published taxonomy and tolerates missing external photos", () => {
-  assert.match(lawyerCatalog, /Banking and finance law/);
-  assert.match(lawyerCatalog, /Tashkent State University of Law/);
-  assert.match(lawyerCatalog, /Unknown future values intentionally fall back/);
-  assert.match(lawyerAvatar, /onError=\{\(\) => setFailed\(true\)\}/);
-  assert.match(lawyerAvatar, /if \(!src \|\| failed\)/);
 });
 
 test("mobile chrome keeps both sign-in and registration available", () => {

@@ -49,5 +49,5 @@ test("preview contacts are centrally configured and no payment merchant is impli
   const config = await readFile(new URL("../app/legal-config.ts", import.meta.url), "utf8");
   assert.match(config, /PRE_INCORPORATION_PREVIEW/u);
   assert.match(config, /payments: \{ enabled: false \}/u);
-  assert.equal((config.match(/muzaffarbekmurodoff@gmail\.com/g) ?? []).length, 3);
+  assert.equal((config.match(/admin@juro\.uz/g) ?? []).length, 3);
 });
