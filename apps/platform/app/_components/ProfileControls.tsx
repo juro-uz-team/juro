@@ -16,7 +16,7 @@ const copy = {
 export function FilePicker({ locale, onChange, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { locale: PlatformLocale }) {
   const [names, setNames] = useState("");
   const t = copy[locale];
-  return <span className="juro-file-picker" data-disabled={props.disabled || undefined}>
+  return <span className="juro-file-picker" data-focus-field data-disabled={props.disabled || undefined}>
     <span className="juro-file-action"><FileUp size={18} aria-hidden="true"/>{t.choose}</span>
     <span className="juro-file-name" aria-live="polite">{names || t.empty}</span>
     <input title="" {...props} type="file" onChange={(event) => { setNames(Array.from(event.currentTarget.files ?? []).map(file => file.name).join(", ")); onChange?.(event); }} ref={(node) => {
@@ -47,7 +47,7 @@ export const ChoiceInput = memo(function ChoiceInput({ locale, label, value, onC
     <ComboBox onBlur={() => { if (multiple && query.trim()) add(query); }} inputValue={input} onInputChange={multiple ? setQuery : onChange} selectedKey={!multiple && options.includes(value) ? value : null} onSelectionChange={key => { if (key !== null) add(String(key)); }} items={items} allowsCustomValue menuTrigger="input" isDisabled={disabled}>
       <Label>{label}</Label>
       {multiple && selected.length > 0 && <div className="juro-chips" aria-label={label}>{selected.map(item => <span key={item}>{item}<button type="button" disabled={disabled} aria-label={`${t.remove}: ${item}`} onClick={() => onChange(selected.filter(v => v !== item).join(", "))}><X size={14}/></button></span>)}</div>}
-      <Group className="juro-choice-input"><Input maxLength={maxLength} placeholder={t.search} required={required && !value.trim()} onKeyDown={event => { if (multiple && (event.key === "," || (event.key === "Enter" && !event.currentTarget.getAttribute("aria-activedescendant"))) && query.trim()) { event.preventDefault(); add(query); } }}/><Button aria-label={t.options}><ChevronDown size={18}/></Button></Group>
+      <Group className="juro-choice-input" data-focus-field><Input maxLength={maxLength} placeholder={t.search} required={required && !value.trim()} onKeyDown={event => { if (multiple && (event.key === "," || (event.key === "Enter" && !event.currentTarget.getAttribute("aria-activedescendant"))) && query.trim()) { event.preventDefault(); add(query); } }}/><Button aria-label={t.options}><ChevronDown size={18}/></Button></Group>
       <Popover className="juro-control-popover"><ListBox items={items} className="juro-choice-list">{item => <ListBoxItem id={item.id} textValue={item.id}>{item.title}</ListBoxItem>}</ListBox></Popover>
     </ComboBox>
     <small className="juro-control-hint">{t.hint}</small>
@@ -121,7 +121,7 @@ type NumberPresetProps = {
 
 export function NumberPresetInput({ label, value, onChange, min, max, step, presets, unit, disabled = false, required = true }: NumberPresetProps) {
   return <div className="juro-duration">
-    <label>{label}<span className="juro-duration-input">
+    <label>{label}<span className="juro-duration-input" data-focus-field>
       <input type="number" inputMode="numeric" required={required} disabled={disabled} min={min} max={max} step={step} value={value} onChange={event => onChange(event.target.value)}/>
       <span aria-hidden="true">{unit(Number(value))}</span>
     </span></label>

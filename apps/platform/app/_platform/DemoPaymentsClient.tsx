@@ -125,7 +125,7 @@ export function DemoPaymentsClient({ locale, accountType, workspaceId }: { local
     <WorkspaceTitle icon={<WalletCards />} title={copy.title} description={copy.description} />
     <div className="demo-payment-warning" role="note"><ShieldCheck aria-hidden="true"/><div><strong>{copy.simulation}</strong><p><code>provider=demo</code> · <code>isSimulation=true</code>. {copy.simulationDescription}</p></div></div>
     {error && <p className="billing-error" role="alert"><CircleAlert aria-hidden="true"/>{error}<button type="button" onClick={() => void load()}>{copy.retry}</button></p>}
-    {!data ? <div className="billing-loading" role="status"><LoaderCircle className="spin"/><span>{copy.loading}</span></div> : !data.availability.enabled ? <div className="billing-empty"><Ban aria-hidden="true"/><div><h2>{copy.disabled}</h2><p>{data.availability.reason}</p></div></div> : <>
+    {!data ? <div className="billing-loading" role="status"><LoaderCircle className="spin"/><span>{copy.loading}</span></div> : !data.availability.enabled ? <section className="billing-catalogue billing-catalogue-empty"><span className="billing-empty-icon"><Ban aria-hidden="true" /></span><div><h2>{copy.disabled}</h2><p>{copy.simulationDescription}</p></div></section> : <>
       <div className="demo-payment-flows">
         {(Object.keys(copy.flows) as DemoPaymentFlowType[]).map(flowType => <article key={flowType}>
           <small>DEMO · {flowType === "uzum_installment" ? "UZUM" : "JURO"}</small><h2>{copy.flows[flowType]}</h2>

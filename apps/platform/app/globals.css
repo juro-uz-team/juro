@@ -424,3 +424,14 @@ html[data-theme=dark] .ask-bar {
 .platform-shell :is(input,textarea)::placeholder { color:var(--text-secondary); opacity:.8; }
 .platform-shell :is(input,textarea,select)[aria-invalid=true] { border-color:var(--status-danger); }
 @media(max-width:680px) { .platform-shell :is(input,textarea,select,.juro-select):not([type=checkbox]):not([type=radio]):not([type=hidden]) { font-size:16px; } }
+
+/* The field outline tracks text entry; adjacent actions keep their own focus. */
+[data-focus-field]:has(> :is(input, textarea):focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+[data-focus-field] > :is(input, textarea):focus-visible,
+.platform-shell [data-focus-field] > :is(input, textarea):focus-visible {
+  outline: none;
+  box-shadow: none;
+}

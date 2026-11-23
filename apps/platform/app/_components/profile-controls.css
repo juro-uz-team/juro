@@ -2,7 +2,6 @@
 .juro-file-action { padding: 8px 12px; border-radius: 6px; background: var(--surface-brand); display: flex; align-items: center; gap: 8px; color: var(--brand-gold-text); font-size: 13px; font-weight: 600; }
 .juro-file-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
 .juro-file-picker input[type=file] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
-.juro-file-picker:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .juro-file-picker:not([data-disabled]):not(:has(input:disabled)):hover { border-color: var(--control-border-hover); background: var(--surface-subtle); }
 .juro-file-picker:not(:has(input:disabled)):hover .juro-file-action { background: var(--interactive-primary); color: var(--text-on-action); }
 .juro-file-picker:has(input:disabled) { opacity: .6; cursor: not-allowed; }
@@ -12,7 +11,7 @@
 .juro-choice .react-aria-Label,.juro-date-picker .react-aria-Label { display: block; font-size: 12px; font-weight: 600; color: var(--text-primary); }
 .juro-choice-input,.juro-date-input { display: flex; align-items: center; min-height: 48px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-background); min-width: 0; }
 .juro-choice .juro-choice-input input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; outline: none; padding: 8px 12px; font-size: 13px; font-weight: 400; }
-.juro-choice-input:focus-within,.juro-date-input:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.juro-date-input:has(.react-aria-DateSegment:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .juro-choice-input > button,.juro-date-input > button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; background: transparent; border: 0; border-radius: 8px; color: var(--text-secondary); }
 .juro-control-hint { font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-secondary); }
 .juro-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -35,7 +34,7 @@
 .juro-control-popover .react-aria-CalendarCell { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .juro-control-popover [data-outside-month] { color: var(--text-secondary); opacity: .5; }
 .juro-control-popover [data-selected] { background: var(--interactive-primary); color: var(--text-on-action); font-weight: 700; }
-.juro-control-popover [data-focus-visible],.juro-chips button:focus-visible,.juro-duration button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.juro-control-popover :is(button,.react-aria-CalendarCell)[data-focus-visible],.juro-chips button:focus-visible,.juro-duration button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .juro-clear-date { justify-self: start; border: 0; background: transparent; color: var(--text-secondary); font-size: 12px; min-height: 40px; padding: 0 4px; }
 .juro-duration-input { display: flex; align-items: center; border: 1px solid var(--control-border); background: var(--control-background); border-radius: 10px; }
 .juro-duration .juro-duration-input input { border: 0; background: transparent; appearance: textfield; }
@@ -46,14 +45,12 @@
 .juro-duration-presets button[aria-pressed=true] { background: var(--surface-brand); border-color: var(--border-accent); color: var(--brand-gold-text); }
 .juro-duration-presets button:hover,.juro-choice-input > button:hover,.juro-date-input > button:hover { background: var(--surface-hover); }
 .juro-clear-date:hover { color: var(--text-primary); text-decoration: underline; }
-.juro-duration-input:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.juro-duration .juro-duration-input input:focus { outline: 0; }
+
+
 .juro-choice button:disabled,.juro-duration button:disabled,.juro-date-picker[data-disabled] { opacity: .5; cursor: default; }
 fieldset:disabled :is(.juro-choice,.juro-duration,.juro-date-picker) { opacity: .65; }
 @media(max-width:380px) { .juro-control-popover .react-aria-CalendarCell { width: 36px; } }
 
-/* Compound controls own one focus ring, including within account forms. */
-.juro-choice .juro-choice-input > input:is(:focus, :focus-visible) { outline: none; box-shadow: none; }
 .juro-choice .juro-choice-input > input { border-radius: 0; color: var(--text-primary); }
 .juro-choice .juro-choice-input > button,
 .juro-date-picker .juro-date-input > button {
@@ -91,7 +88,7 @@ fieldset:disabled :is(.juro-choice,.juro-duration,.juro-date-picker) { opacity: 
 .juro-date-picker .react-aria-Label { font-size:13px; line-height:1.5; }
 .juro-time-field .react-aria-DateInput { justify-content:center; padding-inline:6px; font-size:16px; }
 .juro-time-field[data-disabled] { opacity:.55; }
-.juro-control-popover [data-focus-visible] { outline:2px solid var(--focus-ring); outline-offset:-3px; }
+.juro-control-popover :is(button,.react-aria-CalendarCell)[data-focus-visible] { outline:2px solid var(--focus-ring); outline-offset:-3px; }
 .juro-clear-date { font:inherit; font-size:13px; min-height:44px; }
 @media(prefers-reduced-motion:no-preference) { .juro-control-popover[data-entering] { animation:control-appear 140ms ease-out; } @keyframes control-appear { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } } }
 .juro-calendar-actions { display:flex; justify-content:space-between; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--border-subtle); }

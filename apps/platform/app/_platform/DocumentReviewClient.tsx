@@ -196,7 +196,7 @@ function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, public
     {error && <p className="review-message error" role="alert"><CircleAlert />{error}</p>}
     {notice && <p className="review-message success" role="status"><ShieldCheck />{notice}</p>}
     <form className="review-upload" onSubmit={upload}>
-      <label className="review-drop" htmlFor="document-review-file">
+      <label className="review-drop" data-focus-field htmlFor="document-review-file">
         <Upload />
         <div>
           <strong>{file?.name || copy.supportedFiles}</strong>

@@ -245,7 +245,7 @@ export function DashboardClient({ locale, accountType, userName }: DashboardProp
           </div>
           <p>{userName ? `${copy.greeting}, ${userName}` : copy.greeting}</p>
           <h1>{copy.question}</h1>
-          <form className="dashboard-command-form" onSubmit={startTask}>
+          <form className="dashboard-command-form" data-focus-field onSubmit={startTask}>
             <label className="sr-only" htmlFor="dashboard-legal-task">{copy.prompt}</label>
             <Sparkles aria-hidden="true" />
             <textarea

@@ -1,5 +1,6 @@
 "use client";
 
+import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
 import { WorkspaceTitle } from "./WorkspaceTitle";
 
 import { Select } from "../_components/Select";
@@ -69,16 +70,19 @@ export function HelpClient({ locale }: { locale: PlatformLocale; accountType: Ac
 
   async function submitSupport(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSending(true); setSupportStatus(""); try { const response = await fetch("/api/platform/support-tickets", { method: "POST", headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale }, body: JSON.stringify({ category, severity, subject, message, locale }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.requestFailed)); setSubject(""); setMessage(""); setSupportStatus(copy.sent); await loadTickets(); } catch (value) { setSupportStatus(value instanceof Error ? value.message : copy.requestFailed); } finally { setSending(false); } }
   async function submitReply(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!selectedTicket || !reply.trim()) return; setReplying(true); try { const response = await fetch(`/api/platform/support-tickets/${encodeURIComponent(selectedTicket.id)}`, { method: "POST", headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale }, body: JSON.stringify({ message: reply.trim() }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.requestFailed)); setReply(""); await openTicket(selectedTicket.id); await loadTickets(); setSupportStatus(copy.replySent); } catch (value) { setSupportStatus(value instanceof Error ? value.message : copy.requestFailed); } finally { setReplying(false); } }
+  const articlesPage = useWorkspacePagination(knowledgeArticles.length, 5, knowledgeQuery);
+  const ticketsPage = useWorkspacePagination(tickets.length, 5);
   return (
     <section className="help-workspace workspace-page">
-      <WorkspaceTitle icon={<HelpCircle />} title={copy.title} description={copy.description} />
+      <WorkspaceTitle icon={<HelpCircle />} title={copy.title}
+        actions={<a href="#help-support">{copy.supportTitle}</a>} />
       <section className="help-knowledge" aria-labelledby="knowledge-title">
         <div className="help-knowledge-heading">
           <div>
             <h2 id="knowledge-title">{copy.knowledgeTitle}</h2>
             <p>{copy.knowledgeDescription}</p>
           </div>
-          <form role="search" onSubmit={(event) => { event.preventDefault(); void loadKnowledge(knowledgeQuery); }}>
+          <form role="search" data-focus-field onSubmit={(event) => { event.preventDefault(); void loadKnowledge(knowledgeQuery); }}>
             <label className="sr-only" htmlFor="knowledge-search">{copy.knowledgeSearch}</label>
             <Search aria-hidden="true" />
             <input id="knowledge-search" type="search" value={knowledgeQuery} maxLength={120} onChange={(event) => setKnowledgeQuery(event.target.value)} placeholder={copy.knowledgePlaceholder} />
@@ -89,42 +93,45 @@ export function HelpClient({ locale }: { locale: PlatformLocale; accountType: Ac
           {loadingKnowledge ? copy.articlesLoading : knowledgeError || (knowledgeArticles.length === 0 ? copy.articlesEmpty : "")}
         </div>
         {!loadingKnowledge && knowledgeError && <button className="help-retry" type="button" onClick={() => void loadKnowledge(knowledgeQuery)}>{copy.retry}</button>}
-        {!loadingKnowledge && !knowledgeError && knowledgeArticles.length > 0 && <ul className="help-knowledge-list">
-          {knowledgeArticles.map((article) => <li key={article.slug}>
+        {!loadingKnowledge && !knowledgeError && knowledgeArticles.length > 0 && <><ul className="help-knowledge-list">
+          {knowledgeArticles.slice(articlesPage.from, articlesPage.to).map((article) => <li key={article.slug}>
             <Link href={`${base}/help/${article.slug}`}>
               <span><strong>{article.title}</strong><small>{article.summary}</small></span>
               <span className="help-knowledge-meta">{copy.version(article.versionNumber, formatKnowledgeDate(article.updatedAt, locale))}<ArrowRight aria-hidden="true" /></span>
             </Link>
           </li>)}
-        </ul>}
+        </ul><WorkspacePagination locale={locale} {...articlesPage} /></>}
       </section>
-      <div className="help-grid">
-        <article>
-          <Bot />
-          <h2>{copy.aiTitle}</h2>
-          <p>{copy.aiDescription}</p>
-          <Link href={`${base}/ai-chat`}>{copy.aiAction}</Link>
-        </article>
-        <article>
-          <FilePenLine />
-          <h2>{copy.documentTitle}</h2>
-          <p>{copy.documentDescription}</p>
-          <Link href={`${base}/document-builder`}>{copy.documentAction}</Link>
-        </article>
-        <article>
-          <Scale />
-          <h2>{copy.specialistTitle}</h2>
-          <p>{copy.specialistDescription}</p>
-          <Link href={`${base}/consultations`}>{copy.specialistAction}</Link>
-        </article>
-        <article>
-          <ShieldCheck />
-          <h2>{copy.securityTitle}</h2>
-          <p>{copy.securityDescription}</p>
-          <Link href={`${base}/settings/privacy`}>{copy.securityAction}</Link>
-        </article>
-      </div>
-      <form className="help-support" onSubmit={(event) => void submitSupport(event)} aria-busy={sending}>
+      <details className="help-shortcuts">
+        <summary className="juro-disclosure-summary">{locale === "ru" ? "Инструменты JURO" : locale === "uz" ? "JURO vositalari" : "JURO tools"}</summary>
+        <div className="help-grid">
+          <article>
+            <Bot />
+            <h2>{copy.aiTitle}</h2>
+            <p>{copy.aiDescription}</p>
+            <Link href={`${base}/ai-chat`}>{copy.aiAction}</Link>
+          </article>
+          <article>
+            <FilePenLine />
+            <h2>{copy.documentTitle}</h2>
+            <p>{copy.documentDescription}</p>
+            <Link href={`${base}/document-builder`}>{copy.documentAction}</Link>
+          </article>
+          <article>
+            <Scale />
+            <h2>{copy.specialistTitle}</h2>
+            <p>{copy.specialistDescription}</p>
+            <Link href={`${base}/consultations`}>{copy.specialistAction}</Link>
+          </article>
+          <article>
+            <ShieldCheck />
+            <h2>{copy.securityTitle}</h2>
+            <p>{copy.securityDescription}</p>
+            <Link href={`${base}/settings/privacy`}>{copy.securityAction}</Link>
+          </article>
+        </div>
+      </details>
+      <form id="help-support" className="help-support" tabIndex={-1} onSubmit={(event) => void submitSupport(event)} aria-busy={sending}>
         <h2>{copy.supportTitle}</h2>
         <div className="help-support-selects"><label>{support.category}<Select value={category} onChange={(event) => setCategory(event.target.value as SupportCategory)}>{supportCategories.map((value) => <option key={value} value={value}>{support[value]}</option>)}</Select></label><label>{support.severity}<Select value={severity} onChange={(event) => setSeverity(event.target.value as SupportSeverity)}>{supportSeverities.map((value) => <option key={value} value={value}>{support[value]}</option>)}</Select></label></div>
         <label>{copy.subject}<input value={subject} minLength={4} maxLength={180} required onChange={(event) => setSubject(event.target.value)} /></label>
@@ -134,7 +141,7 @@ export function HelpClient({ locale }: { locale: PlatformLocale; accountType: Ac
       </form>
       <section className="help-ticket-history" aria-labelledby="support-history-title">
         <div className="help-ticket-heading"><h2 id="support-history-title">{copy.requestsTitle}</h2><button type="button" onClick={() => void loadTickets()} disabled={loadingTickets}>{copy.refresh}</button></div>
-        {loadingTickets && tickets.length === 0 ? <p role="status">{support.historyLoading}</p> : tickets.length === 0 ? <p>{copy.requestsEmpty}</p> : <ul>{tickets.map((ticket) => <li key={ticket.id}><button type="button" onClick={() => void openTicket(ticket.id)} disabled={loadingTickets} aria-label={`${ticket.subject}: ${support[ticket.status]}`}><strong>{ticket.subject}</strong><span>{support[ticket.status]}</span></button></li>)}</ul>}
+        {loadingTickets && tickets.length === 0 ? <p role="status">{support.historyLoading}</p> : tickets.length === 0 ? <p>{copy.requestsEmpty}</p> : <><ul>{tickets.slice(ticketsPage.from, ticketsPage.to).map((ticket) => <li key={ticket.id}><button type="button" onClick={() => void openTicket(ticket.id)} disabled={loadingTickets} aria-label={`${ticket.subject}: ${support[ticket.status]}`}><strong>{ticket.subject}</strong><span>{support[ticket.status]}</span></button></li>)}</ul><WorkspacePagination locale={locale} {...ticketsPage} /></>}
         {selectedTicket && <section className="help-ticket-thread" aria-live="polite"><h3>{selectedTicket.subject}</h3><p>{support[selectedTicket.status]}</p>{selectedTicket.messages.map((item) => <article key={item.id} data-author={item.authorType}><strong>{item.authorType === "staff" ? copy.staff : copy.you}</strong><p>{item.body}</p></article>)}{selectedTicket.status !== "resolved" && <form className="help-ticket-reply" onSubmit={(event) => void submitReply(event)} aria-busy={replying}><label>{copy.reply}<textarea required minLength={1} maxLength={8000} value={reply} onChange={(event) => setReply(event.target.value)} /></label><button disabled={replying || !reply.trim()}>{replying && <LoaderCircle className="spin" />}{copy.sendReply}</button></form>}</section>}
       </section>
       <aside className="help-legal">

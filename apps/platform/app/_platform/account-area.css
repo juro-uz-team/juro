@@ -111,7 +111,7 @@
 .account-content .lawyer-professional-profile .profile-form { padding: 0; border: 0; background: transparent; }
 .account-content .lawyer-application-steps { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .account-content .lawyer-application-status { font-size: 13px; }
-.account-loading { display: flex; align-items: center; gap: 12px; min-height: 200px; justify-content: center; color: var(--text-secondary); font-size: 13px; }
+.account-loading { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised); color: var(--text-secondary); font-size: 13px; }
 .account-loading svg { width: 20px; }
 .account-show-devices { margin-top: 16px; }
 .account-content .professional-credentials { display: grid; gap: 16px; padding: 0 0 24px; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; }

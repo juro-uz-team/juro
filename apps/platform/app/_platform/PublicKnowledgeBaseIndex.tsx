@@ -47,7 +47,7 @@ export function PublicKnowledgeBaseIndex({ locale, articles, query }: { locale: 
   const alternateLocales = (["ru", "uz", "en"] as const).filter((value) => value !== locale);
   return <main className="public-knowledge" id="main-content">
     <header><BookOpenCheck aria-hidden="true" /><div><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
-    <form role="search" method="get">
+    <form role="search" data-focus-field method="get">
       <label className="sr-only" htmlFor="public-knowledge-search">{copy.search}</label>
       <Search aria-hidden="true" /><input id="public-knowledge-search" type="search" name="q" defaultValue={query} maxLength={120} placeholder={copy.search} /><button>{copy.find}</button>
     </form>

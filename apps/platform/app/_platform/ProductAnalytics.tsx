@@ -8,19 +8,19 @@ import styles from "./ProductAnalytics.module.css";
 
 const copy = {
   en: {
-    title: "Your privacy, your choice",
+    title: "Optional analytics",
     description: "Optional analytics help us improve JURO. Your documents, messages and AI questions are never included.",
     necessary: "Essential only", allow: "Allow analytics",
     note: "Change this anytime in Account settings → Privacy.",
   },
   ru: {
-    title: "Ваша приватность — ваш выбор",
+    title: "Необязательная аналитика",
     description: "Необязательная аналитика помогает улучшать JURO. Документы, переписка и вопросы к AI в неё не входят.",
     necessary: "Только необходимые", allow: "Разрешить аналитику",
     note: "Изменить выбор: настройки аккаунта → Приватность.",
   },
   uz: {
-    title: "Maxfiylik — sizning tanlovingiz",
+    title: "Ixtiyoriy tahlil",
     description: "Ixtiyoriy tahliliy ma’lumotlar JURO’ni yaxshilashga yordam beradi. Hujjatlar, yozishmalar va AI savollari bunga kiritilmaydi.",
     necessary: "Faqat zaruriy", allow: "Tahlilga ruxsat berish",
     note: "Tanlovni hisob sozlamalari → Maxfiylik bo‘limida o‘zgartiring.",

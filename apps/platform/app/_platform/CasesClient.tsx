@@ -64,7 +64,7 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
     <section className="cases-live workspace-page">
       <WorkspaceTitle icon={<BriefcaseBusiness />} title={copy.section} actions={ <><Link href={`${base}/cases/new`}><Plus />{copy.create}</Link></> } />
       <div className="cases-live-tools">
-        <label><Search /><span className="sr-only">{copy.searchLabel}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} /></label>
+        <label data-focus-field><Search /><span className="sr-only">{copy.searchLabel}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} /></label>
         <Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label={copy.filter}>
           <option value="active">{copy.active}</option>
           <option value="all">{copy.all}</option>

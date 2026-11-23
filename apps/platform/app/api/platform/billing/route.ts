@@ -11,7 +11,7 @@ import {
   withApiErrors,
 } from "../../../../lib/document-builder/auth/api";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
-import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -20,9 +20,9 @@ function response(body: unknown, status = 200) {
   });
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const [records, entitlements] = await Promise.all([
     db.batch([

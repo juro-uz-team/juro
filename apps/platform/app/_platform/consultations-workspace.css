@@ -49,7 +49,8 @@
 .consultation-status { padding: 5px 9px; border-radius: 8px; background: var(--amber-bg); color: var(--brand-gold-text); font-size: 12px; font-weight: 650; }
 .consultation-status:is([data-status=confirmed], [data-status=completed]) { background: var(--green-bg); color: var(--text-primary); }
 .consultation-status[data-status=cancelled] { background: var(--surface-subtle); color: var(--text-secondary); }
-.consultation-feedback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface-brand); }
+.consultation-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--surface-brand); }
+.consultation-feedback > button { margin-inline-start: auto; }
 .consultation-feedback svg { width: 17px; height: 17px; }
 .consultation-feedback.error { border: 1px solid var(--status-danger); background: var(--red-bg); color: var(--text-primary); }
 .consultation-dialog { width: min(470px, calc(100% - 24px)); max-height: calc(100dvh - 24px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-raised); color: var(--text-primary); }

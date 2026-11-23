@@ -20,10 +20,7 @@
   color:var(--muted);
   font-size:13px;
 }
-.review-upload>label:has(>input[type=checkbox]):focus-within{
-  border-color:var(--brand-gold-text);
-  box-shadow:0 0 0 2px rgba(138,103,40,.16);
-}
+
 .review-upload>label:has(>input[type=checkbox]) input{
   width:20px;
   height:20px;
@@ -46,4 +43,3 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 
 /* The native file control covers the complete upload target. */
 .review-upload .review-drop input[type=file] { width: 100%; height: 100%; }
-.review-drop:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 3px; }

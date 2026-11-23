@@ -360,10 +360,7 @@
   border-color: var(--border-accent);
   background: var(--surface-brand);
 }
-.deletion-mode-options label:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
+
 .deletion-mode-copy {
   display: grid;
   gap: 4px;
@@ -541,7 +538,7 @@
 }
 
 .notification-preferences-list label:has(input:checked) { border-color:var(--p7); background: var(--p8); }
-.notification-preferences-list label:focus-within { outline: 3px solid color-mix(in srgb,var(--pb) 54%,transparent); outline-offset: 2px; }
+
 .notification-preferences-list input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--p7); }
 .notification-preferences-list span { display: grid; gap: 3px; }
 .notification-preferences-list strong { color: var(--p2); font-size: 12px; }
@@ -614,7 +611,7 @@
 }
 
 .memory-toggle:has(input:checked) { border-color:var(--p7); background: var(--p8); }
-.memory-toggle:focus-within { outline: 3px solid color-mix(in srgb,var(--pb) 54%,transparent); outline-offset: 2px; }
+
 .memory-toggle input,
 .memory-sensitive-confirmation input { width: 20px; height: 20px; margin: 0; accent-color: var(--p7); }
 

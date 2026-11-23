@@ -1,7 +1,8 @@
 .review-mode-tabs{display:flex;width:max-content;max-width:100%;gap:4px;padding:4px;border:1px solid var(--d4);border-radius:13px;background:var(--d0);overflow-x:auto}
 .review-mode-tabs button{display:flex;min-height:44px;align-items:center;gap:8px;padding:0 16px;border:0;border-radius:9px;background:transparent;color:var(--d3);font-weight:600;white-space:nowrap}
 .review-mode-tabs button svg{width:19px}
-.review-mode-tabs button.active{background:var(--d6);color:var(--text-primary)}
+.review-mode-tabs button[aria-selected=true]{background:var(--surface-selected);color:var(--brand-gold-text);box-shadow:inset 0 0 0 1px var(--border-accent)}
+.review-mode-tabs button:focus-visible{outline-offset:-3px}
 .comparison-create{display:grid;gap:20px}
 .comparison-create>form{display:grid;gap:16px;padding:22px;border:1px solid var(--d4);border-radius:18px;background:var(--d0)}
 .comparison-file-grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:16px}

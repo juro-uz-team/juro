@@ -528,7 +528,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               <AiDatePicker locale={locale} value={legalContextDate} max={uzbekistanCalendarDate()} onChange={changeLegalContextDate} />
             </div>
           </details>
-          {voiceMode ? <VoiceConversation locale={locale} workspaceId={workspaceId} busy={sending} messageId={answer?.messageId} onClose={()=>{setVoiceMode(false);streamAbortRef.current?.abort();}} onTranscript={value=>{void send({question:value.transcript,voiceRecordingId:value.recordingId,documentIds,locale,answerMode,reasoningMode,conversationId:answer?.conversationId,operation:answer?"follow_up":"new",sourceMessageId:answer?.messageId,idempotencyKey:crypto.randomUUID()});}}/> : <div className="ai-composer-input">
+          {voiceMode ? <VoiceConversation locale={locale} workspaceId={workspaceId} busy={sending} messageId={answer?.messageId} onClose={()=>{setVoiceMode(false);streamAbortRef.current?.abort();}} onTranscript={value=>{void send({question:value.transcript,voiceRecordingId:value.recordingId,documentIds,locale,answerMode,reasoningMode,conversationId:answer?.conversationId,operation:answer?"follow_up":"new",sourceMessageId:answer?.messageId,idempotencyKey:crypto.randomUUID()});}}/> : <div className="ai-composer-input" data-focus-field>
             <ChatAttachments key={`${workspaceId}:${selectedConversationId}`} locale={locale} workspaceId={workspaceId} disabled={sending} onDocuments={setDocumentIds} onBusy={setAttachmentBusy}/>
 
             <VoiceMessageControls
@@ -542,7 +542,7 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
               onClear={() => setVoiceRecordingId("")}
             />
             <label className="sr-only" htmlFor="ai-question">{text("Юридический вопрос", "Yuridik savol", "Legal question")}</label>
-            <textarea ref={composerRef} id="ai-question" value={question} rows={1} onChange={changeQuestion} onKeyDown={handleComposerKeyDown} disabled={!status?.configured || sending} placeholder={text("Опишите ситуацию или задайте вопрос…", "Vaziyatni yozing yoki savol bering…", "Describe your situation or ask a question…")} />
+            <textarea ref={composerRef} id="ai-question" value={question} rows={1} onChange={changeQuestion} onKeyDown={handleComposerKeyDown} disabled={!status?.configured || sending} placeholder={text("Ваш правовой вопрос…", "Huquqiy savolingiz…", "Your legal question…")} />
             {sending
               ? <button key="stop" type="button" onClick={event => { event.preventDefault(); streamAbortRef.current?.abort(); }} aria-label={text("Остановить генерацию", "Javob yaratishni to‘xtatish", "Stop generation")}><Square /></button>
               : !question.trim() ? <button type="button" disabled={!status?.configured||attachmentBusy} onClick={()=>{window.dispatchEvent(new Event("juro:stop-answer-audio"));setVoiceMode(true);}} aria-label={text("Голосовой разговор","Ovozli suhbat","Voice conversation")}><AudioLines/></button> : <button key="send" type="submit" disabled={!status?.configured || attachmentBusy || !question.trim() || Boolean(selectedConversationId&&!answer)} aria-label={text("Отправить", "Yuborish", "Send")}><ArrowUp /></button>}

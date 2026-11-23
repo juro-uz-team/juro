@@ -1,9 +1,139 @@
-.billing-workspace{display:grid;max-width:1380px;margin:auto;padding:clamp(24px,4vw,54px);gap:20px}.billing-workspace>header{display:flex;padding:clamp(24px,4vw,44px);gap:20px;border-radius:25px;background:var(--surface-brand);color:var(--text-primary)}.billing-workspace>header>svg{width:52px;height:52px;color:var(--brand-gold-text);flex:none}.billing-workspace header small{color:var(--brand-gold-text);font-weight:850;letter-spacing:.11em}.billing-workspace header h1{margin:8px 0;font-size:clamp(31px,4vw,50px);letter-spacing:-.045em}.billing-workspace header p{max-width:760px;margin:0;color:var(--text-secondary);line-height:1.6}.billing-error,.billing-provider{display:flex;padding:14px;gap:10px;border-radius:12px}.billing-error{background:var(--red-bg);color:var(--danger)}.billing-provider{border:1px solid var(--line);background:var(--amber-bg);color:var(--muted)}.billing-provider.ready{border-color:var(--line);background:var(--green-bg);color:var(--success)}.billing-provider svg,.billing-error svg{width:21px;flex:none}.billing-provider p{margin:3px 0 0;font-size:12px}.billing-free{padding:18px 20px;border:1px solid var(--line);border-radius:15px;background:var(--white)}.billing-free strong{color:var(--brand-gold-text)}.billing-free p{margin:5px 0 0;color:var(--muted);font-size:12px}.billing-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.billing-plans article{display:flex;min-width:0;padding:24px;border:1px solid var(--line);border-radius:20px;background:var(--white);flex-direction:column}.billing-plans article.current{border-color:var(--border-accent);box-shadow:0 16px 45px rgba(190,151,79,.12)}.billing-plans small{color:var(--brand-gold-text);font-size:9px;font-weight:850;letter-spacing:.1em}.billing-plans h2{margin:12px 0 6px;font-size:22px}.billing-price{min-height:57px;overflow-wrap:anywhere;color:var(--ink);font-size:clamp(20px,2.1vw,30px);font-weight:850}.billing-plans ul{display:grid;margin:17px 0;padding:17px 0 0;border-top:1px solid var(--line);gap:9px;list-style:none}.billing-plans li{display:flex;gap:7px;color:var(--muted);font-size:12px}.billing-plans li svg{width:15px;color:var(--success);flex:none}.billing-plans button{display:flex;min-height:46px;margin-top:auto;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border-accent);border-radius:10px;background:var(--interactive-primary);color:var(--text-on-action);font-weight:600;box-shadow:none}.billing-plans button:disabled{cursor:not-allowed;opacity:.45}.billing-plans button svg{width:18px}.billing-history{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:var(--white)}.billing-history h2{display:flex;margin:0;padding:18px;align-items:center;gap:9px;border-bottom:1px solid var(--line);font-size:18px}.billing-history h2 svg{width:20px;color:var(--brand-gold-text)}.billing-history>div{display:grid;padding:14px 18px;border-bottom:1px solid var(--line);grid-template-columns:1fr auto auto;gap:15px}.billing-history>p{padding:22px;color:var(--muted)}.billing-loading{display:grid;min-height:55vh;place-items:center}.billing-loading svg{width:35px}@media(max-width:900px){.billing-plans{grid-template-columns:1fr}.billing-price{min-height:auto;font-size:28px}}@media(max-width:600px){.billing-workspace{padding:18px 14px}.billing-workspace>header>svg{display:none}.billing-workspace header h1{font-size:32px}.billing-history>div{grid-template-columns:1fr auto}.billing-history time{grid-column:1/-1}}
+.billing-workspace { display: grid; gap: 16px; }
+.billing-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 16px;
+}
+.billing-catalogue, .billing-history {
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-raised);
+}
+.billing-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-block-size: 60px;
+  gap: 10px;
+  padding: 12px clamp(14px, 2vw, 20px);
+  border-bottom: 1px solid var(--line);
+}
+.billing-card-header h2, .billing-catalogue-empty :is(h2, h3), .billing-plans h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.billing-card-header > svg { inline-size: 20px; block-size: 20px; flex: none; color: var(--brand-gold-text); }
+.billing-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--amber-bg);
+  color: var(--brand-gold-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.billing-card-header .billing-mode { margin-inline-start: auto; }
+.billing-mode svg { width: 14px; height: 14px; }
+.billing-catalogue-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  gap: 14px;
+  min-block-size: 156px;
+  padding: clamp(14px, 3vw, 26px);
+}
+.billing-empty-icon { display: grid; place-items: center; inline-size: 42px; block-size: 42px; border-radius: 11px; background: var(--amber-bg); color: var(--brand-gold-text); }
+.billing-empty-icon svg { inline-size: 21px; block-size: 21px; }
+.billing-catalogue-empty p, .billing-provider p, .billing-demo-entry p {
+  max-inline-size: 58ch;
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.billing-provider { display: flex; gap: 12px; padding: 14px 18px 0; }
+.billing-provider > svg { width: 20px; height: 20px; color: var(--brand-gold-text); flex: none; }
+.billing-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  padding: clamp(12px, 2vw, 18px);
+}
+.billing-plans article {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-canvas);
+}
+.billing-plans article.current { border-color: var(--border-accent); }
+.billing-plans article .billing-mode { align-self: start; margin-block-end: 3px; }
+.billing-price { font-size: clamp(20px, 2vw, 27px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.billing-period { margin: 0; font-size: 13px; color: var(--text-secondary); }
+.billing-plans ul { display: grid; gap: 8px; margin: 8px 0; padding: 12px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.billing-plans li { display: flex; align-items: flex-start; gap: 7px; color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+.billing-plans li svg { width: 16px; height: 16px; flex: none; color: var(--brand-gold-text); }
+.billing-plans button { margin-block-start: auto; }
+.billing-demo-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px clamp(14px, 2vw, 20px);
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+  border-radius: 0 0 15px 15px;
+}
+.billing-demo-entry div { min-inline-size: 0; }
+.billing-demo-entry a, .billing-plans button, .demo-payment-back {
+  display: inline-flex;
+  min-block-size: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-accent);
+  border-radius: 9px;
+  background: var(--interactive-primary);
+  color: var(--text-on-action);
+  text-decoration: none;
+  font-weight: 650;
+}
+.billing-demo-entry a { background: var(--surface-raised); color: var(--text-primary); }
+.billing-demo-entry a:hover { background: var(--surface-hover); }
+.billing-plans button:hover:not(:disabled) { background: var(--interactive-hover); }
+.billing-plans button:disabled { cursor: not-allowed; opacity: .55; }
+.billing-plans button svg { width: 17px; height: 17px; flex: none; }
+.billing-history-empty { display: flex; align-items: center; min-block-size: 82px; padding: 14px clamp(14px, 2vw, 20px); color: var(--text-secondary); }
+.billing-history-empty p { margin: 0; }
+.billing-history-list { padding: 0 clamp(14px, 2vw, 20px) 12px; }
+.billing-history-list ul { margin: 0; padding: 0; list-style: none; }
+.billing-history-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; min-block-size: 56px; align-content: center; padding-block: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.billing-history-list time, .billing-history-list li span { color: var(--text-secondary); font-size: 13px; }
+.billing-history-list li strong { font-variant-numeric: tabular-nums; }
+.billing-error, .billing-loading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-block-size: 60px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; }
+.billing-loading { color: var(--text-secondary); background: var(--surface-raised); }
+.billing-error { background: var(--red-bg); color: var(--danger); }
+.billing-error span { flex: 1 1 12rem; }
+.billing-error button { min-block-size: 44px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); color: var(--text-primary); }
+.billing-error svg, .billing-loading svg { width: 20px; height: 20px; flex: none; }
+@media (max-width: 980px) { .billing-overview { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 450px) { .billing-catalogue-empty { min-block-size: 0; } }
 
-.billing-demo-entry{display:flex;padding:18px 20px;align-items:center;justify-content:space-between;gap:18px;border:1px solid var(--line);border-radius:16px;background:var(--blue-bg);color:var(--ink)}.billing-demo-entry div{display:grid;gap:4px}.billing-demo-entry small{color:var(--muted);font-size:.7rem;font-weight:850;letter-spacing:.08em}.billing-demo-entry p{margin:0;color:var(--muted);font-size:.82rem}.billing-demo-entry a,.demo-payment-back{display:inline-flex;min-height:44px;padding:0 18px;align-items:center;justify-content:center;border-radius:10px;background:var(--interactive-primary);color:var(--text-on-action);font-weight:600;text-decoration:none;white-space:nowrap;box-shadow:none;border:1px solid var(--border-accent)}
 .demo-payments-workspace{display:grid;max-width:1380px;margin:auto;padding:clamp(24px,4vw,54px);gap:20px}.demo-payments-workspace>header{display:flex;padding:clamp(24px,4vw,44px);align-items:flex-start;gap:20px;border-radius:25px;background:var(--surface-brand);color:var(--text-primary)}.demo-payments-workspace>header>svg{width:52px;height:52px;color:var(--brand-gold-text);flex:none}.demo-payments-workspace header small,.demo-payment-history-title small,.demo-payment-flows small{color:var(--brand-gold-text);font-size:.68rem;font-weight:850;letter-spacing:.1em}.demo-payments-workspace header h1{margin:8px 0;font-size:clamp(31px,4vw,50px);letter-spacing:-.045em}.demo-payments-workspace header p{max-width:760px;margin:0;color:var(--text-secondary);line-height:1.6}.demo-payment-warning{display:flex;padding:18px;gap:12px;border:2px solid var(--border-accent);border-radius:16px;background:var(--amber-bg);color:var(--brand-gold-text)}.demo-payment-warning svg{width:24px;flex:none}.demo-payment-warning p{margin:5px 0 0;line-height:1.55}.demo-payment-warning code{font-weight:800}.demo-payment-flows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.demo-payment-flows article{display:grid;padding:22px;border:1px solid var(--line);border-radius:18px;background:var(--white);gap:15px}.demo-payment-flows h2{margin:0;color:var(--ink)}.demo-payment-flows label{display:grid;color:var(--muted);font-size:.8rem;font-weight:700;gap:6px}.demo-payment-flows input,.demo-payment-flows :is(select, .juro-select){min-height:44px;padding:0 12px;border:1px solid var(--control-border);border-radius:9px;background:var(--control-background);color:var(--ink);font:inherit}.demo-payment-flows button,.demo-payment-actions button,.demo-payment-history-title button{display:inline-flex;min-height:44px;padding:0 14px;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border-accent);border-radius:9px;background:var(--interactive-primary);color:var(--text-on-action);font-weight:600;box-shadow:none}.demo-payment-flows button:disabled,.demo-payment-actions button:disabled{cursor:not-allowed;opacity:.45}.demo-payment-flows button svg,.demo-payment-actions button svg,.demo-payment-history-title button svg{width:18px}.demo-payment-history{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:var(--white)}.demo-payment-history-title{display:flex;padding:18px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.demo-payment-history-title h2{margin:4px 0 0}.demo-payment-history-title button{width:44px;padding:0;background:var(--soft)}.demo-payment-history>article{display:grid;padding:16px 18px;align-items:center;border-bottom:1px solid var(--line);grid-template-columns:minmax(0,1fr) auto;gap:12px}.demo-payment-history>article>div:first-child{display:grid;gap:3px}.demo-payment-history>article small{overflow-wrap:anywhere;color:var(--muted)}.demo-payment-status{margin:0;padding:7px 10px;border-radius:999px;background:var(--blue-bg);color:var(--muted);font-size:.78rem;font-weight:800}.demo-payment-status.succeeded,.demo-payment-status.paid_out{background:var(--green-bg);color:var(--success)}.demo-payment-status.failed,.demo-payment-status.cancelled{background:var(--red-bg);color:var(--danger)}.demo-payment-status.refunded{background:var(--blue-bg);color:var(--muted)}.demo-payment-actions{display:flex;grid-column:1/-1;flex-wrap:wrap;gap:8px}.demo-payment-actions button{background:var(--soft);color:var(--text-primary)}.demo-payment-history>p{padding:22px;color:var(--muted)}.demo-payment-back{width:max-content}
-@media (hover:hover) and (pointer:fine){.billing-demo-entry a:hover,.demo-payment-back:hover{background:var(--interactive-primary);box-shadow:none;border:1px solid var(--border-accent);font-weight:600}.demo-payment-flows button:hover:not(:disabled){background:var(--interactive-primary);box-shadow:none;border:1px solid var(--border-accent);font-weight:600}.demo-payment-actions button:hover:not(:disabled){background:var(--surface-elevated)}}
-@media(max-width:900px){.demo-payment-flows{grid-template-columns:1fr}.billing-demo-entry{align-items:flex-start;flex-direction:column}}
-@media(max-width:600px){.demo-payments-workspace{padding:18px 14px}.demo-payments-workspace>header>svg{display:none}.demo-payments-workspace header h1{font-size:32px}.demo-payment-history>article{grid-template-columns:1fr}.demo-payment-status{width:max-content}.billing-demo-entry a{width:100%}}
-@media(prefers-reduced-motion:reduce){.billing-demo-entry a,.demo-payment-back,.demo-payment-flows button,.demo-payment-actions button{transition:none}}
-html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payment-status.cancelled){color:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.billing-provider.ready,.demo-payment-status.succeeded,.demo-payment-status.paid_out){color:color-mix(in srgb,var(--success) 48%,white)}
+@media (hover:hover) and (pointer:fine){.demo-payment-back:hover{background:var(--interactive-primary);box-shadow:none;border:1px solid var(--border-accent);font-weight:600}.demo-payment-flows button:hover:not(:disabled){background:var(--interactive-primary);box-shadow:none;border:1px solid var(--border-accent);font-weight:600}.demo-payment-actions button:hover:not(:disabled){background:var(--surface-elevated)}}
+@media(max-width:900px){.demo-payment-flows{grid-template-columns:1fr}}
+@media(max-width:600px){.demo-payments-workspace{padding:18px 14px}.demo-payments-workspace>header>svg{display:none}.demo-payments-workspace header h1{font-size:32px}.demo-payment-history>article{grid-template-columns:1fr}.demo-payment-status{width:max-content}}
+@media(prefers-reduced-motion:reduce){.demo-payment-back,.demo-payment-flows button,.demo-payment-actions button{transition:none}}
+html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payment-status.cancelled){color:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.demo-payment-status.succeeded,.demo-payment-status.paid_out){color:color-mix(in srgb,var(--success) 48%,white)}

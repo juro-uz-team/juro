@@ -106,7 +106,7 @@ export function WorkspaceTools({
           <X />
         </button>
       </header>
-      <label className="workspace-tools-search">
+      <label className="workspace-tools-search" data-focus-field>
         <Search aria-hidden="true" />
         <input
           ref={inputRef}

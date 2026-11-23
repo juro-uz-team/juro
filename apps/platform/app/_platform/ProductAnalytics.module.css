@@ -51,7 +51,7 @@
 .allow:hover { background: var(--interactive-hover); border-color: var(--interactive-hover); }
 .necessary:active, .allow:active { transform: scale(.98); }
 .note { margin: 14px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; text-align: center; }
-.card button:focus-visible, .option:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.card button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .preferences { padding: 24px; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--surface-raised); color: var(--text-primary); }
 .preferences .title { display: flex; align-items: center; gap: 10px; }
 .preferences .title svg { color: var(--brand-gold-text); flex: none; }
@@ -63,8 +63,19 @@
 .scope { margin-top: 14px; font-size: 12px; color: var(--text-secondary); }
 
 @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 800px) {
+  :global(body:has(.platform-mobile-nav)) .card {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 92px - env(safe-area-inset-bottom));
+  }
+}
 @media (max-width: 480px) {
-  .card { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); padding: 20px; }
+    .card { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: calc(100vw - 24px); padding: 14px; border-radius: 14px; }
+  .card .icon { width: 32px; height: 32px; border-radius: 8px; }
+  .card .title { font-size: 15px; }
+  .card .description { margin-block: 8px 12px; font-size: 13px; line-height: 1.5; }
+  .card .note { margin-block-start: 8px; }
+  .card .actions button { padding: 8px; }
   .preferences { padding: 18px; }
   .options { flex-direction: column; }
 }
