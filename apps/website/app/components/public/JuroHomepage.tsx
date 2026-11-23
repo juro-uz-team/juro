@@ -11,7 +11,7 @@ import { HomepageFaq } from "./HomepageFaq";
 import { HomepageMotion } from "./HomepageMotion";
 import { HomepageWorkspace } from "./HomepageWorkspace";
 import { OfficialLogo } from "./OfficialLogo";
-import { platformPersonalHref, platformRegistrationHref } from "./platform-hrefs";
+import { platformRegistrationHref, platformToolHref } from "./platform-hrefs";
 import { SiteHeader } from "./SiteChrome";
 import styles from "./juro-home.module.css";
 
@@ -29,7 +29,7 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const copy = homepageCopy[language];
   const { chat } = copy;
   const register = platformRegistrationHref(language);
-  const chatHref = platformPersonalHref(language, "/ai-chat");
+  const chatHref = platformToolHref(language, "ai-chat");
   const sources = language === "ru" ? labourCode.ru : labourCode.uz;
 
   return (
@@ -115,8 +115,8 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
               <h2 id="product-title">{copy.review.heading}</h2>
               <p>{copy.review.intro}</p>
               <div className={styles.sectionActions}>
-                <a className={styles.primary} href={platformPersonalHref(language, "/document-analysis")}>{copy.review.action}<ArrowUpRight aria-hidden="true" size={17} /></a>
-                {copy.review.tools.map((label, index) => <Link className={styles.textLink} href={`/${language}/${documentTools[index]}`} key={label}>{label}<ArrowUpRight aria-hidden="true" size={15} /></Link>)}
+                <a className={styles.primary} href={platformToolHref(language, "document-analysis")}>{copy.review.action}<ArrowUpRight aria-hidden="true" size={17} /></a>
+                {copy.review.tools.map((label, index) => <a className={styles.textLink} href={platformToolHref(language, documentTools[index])} key={label}>{label}<ArrowUpRight aria-hidden="true" size={15} /></a>)}
               </div>
             </div>
             <div className={styles.comparison} data-home-reveal="repeat">
@@ -171,7 +171,7 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
                 {copy.plan.steps.map((step, index) => <li key={step.title}><span aria-hidden="true">{index + 1}</span><div><strong>{step.title}</strong><p>{step.detail}</p></div></li>)}
               </ol>
             </div>
-            <a className={styles.textLink} href={platformPersonalHref(language, "/action-plan")}>{copy.plan.action}<ArrowUpRight aria-hidden="true" size={16} /></a>
+            <a className={styles.textLink} href={platformToolHref(language, "action-plan")}>{copy.plan.action}<ArrowUpRight aria-hidden="true" size={16} /></a>
           </section>
 
           <section className={styles.lawyers} id="lawyer-handoff" aria-labelledby="lawyers-title">
@@ -200,7 +200,7 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
                 })}
               </ul>
             </div>
-            <Link className={styles.textLink} href={`/${language}/lawyers`}>{copy.lawyers.action}<ArrowRight aria-hidden="true" size={16} /></Link>
+            <a className={styles.textLink} href={platformToolHref(language, "lawyers")}>{copy.lawyers.action}<ArrowRight aria-hidden="true" size={16} /></a>
           </section>
         </div>
 
@@ -226,7 +226,7 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
             <Link href={`/${language}/video`}>{copy.video}</Link>
             <Link href={`/${language}/knowledge`}>{copy.knowledge}</Link>
             <Link href={`/${language}/legal`}>{copy.legal}</Link>
-            <a href={`${register}&intent=business`}>{copy.business}</a>
+            <a href={`${register}&returnTo=${encodeURIComponent(`/${language}/workspace/team`)}`}>{copy.business}</a>
           </div>
           <address className={styles.contact}>
             <span><MapPin aria-hidden="true" size={15} />{copy.location}</span>

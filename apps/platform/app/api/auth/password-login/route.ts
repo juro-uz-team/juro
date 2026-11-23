@@ -34,6 +34,7 @@ import {
 } from "../../../../lib/auth/session";
 import { createPrimarySessionIfMfaDisabled } from "../../../../lib/auth/session-management";
 import { issueSessionHandoff } from "../../../../lib/auth/session-handoff";
+import { authReturnDestination } from "../../../../lib/auth/return-path";
 import { deviceContinuityTokenFromCookie } from "../../../../lib/auth/session-token";
 import { userIdByEmail } from "../../../../lib/auth/identity-protection";
 import { runtimeIdentityProtection } from "../../../../lib/auth/identity-runtime";
@@ -73,7 +74,7 @@ function message(
 
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
-  const parsed = await parseJsonRequest(request, passwordLoginInputSchema);
+  const parsed = await parseJsonRequest(request, passwordLoginInputSchema, 8_192);
   if (!parsed.ok) {
     return json({
       code: parsed.error.toLocaleUpperCase(),
@@ -209,9 +210,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
     : profile.accountType === "business" && workspaceId
         ? `/${routeLocale}/business/${encodeURIComponent(workspaceId)}/dashboard`
         : `/${routeLocale}/${profile.accountType}/dashboard`;
-  const redirectTo = profile.accountType !== "lawyer" && lawyerHost
+  const redirectTo = authReturnDestination(profile.accountType !== "lawyer" && lawyerHost
     ? `https://app.juro.uz${accountRedirect}`
-    : accountRedirect;
+    : accountRedirect, parsed.data.returnTo);
 
   if (await hasActiveMfa(db, profile.id)) {
     const proof = await createPasswordMfaProof(db, {

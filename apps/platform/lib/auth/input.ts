@@ -4,6 +4,7 @@ const emailInput = z.string().trim().min(3).max(254);
 const localeInput = z.enum(["ru", "uz", "en"]).default("ru");
 const authLocaleInput = z.enum(["ru", "uz", "en"]).default("ru");
 const passwordInput = z.string().min(8).max(256);
+const returnToInput = z.string().max(2048).optional();
 // Ordinary authentication is password-first. Public email-code endpoints are
 // limited to registration confirmation and password recovery; an internal
 // OTP row may still be used as a foreign-key bridge for password + MFA.
@@ -64,6 +65,7 @@ export const verifyOtpInputSchema = z.object({
   acceptPersonalData: z.boolean().optional(),
   marketing: z.boolean().optional(),
   rememberMe: z.boolean().default(false),
+  returnTo: returnToInput,
 }).strict();
 
 const mfaCodeInput = z.string().trim().min(6).max(64);
@@ -72,6 +74,7 @@ export const verifyMfaInputSchema = z.object({
   code: mfaCodeInput,
   locale: authLocaleInput,
   rememberMe: z.boolean().default(false),
+  returnTo: returnToInput,
 }).strict();
 
 export const passwordLoginInputSchema = z.object({
@@ -79,6 +82,7 @@ export const passwordLoginInputSchema = z.object({
   password: passwordInput,
   locale: authLocaleInput,
   rememberMe: z.boolean().default(false),
+  returnTo: returnToInput,
   turnstileToken: z.string().trim().min(1).max(2_048),
 }).strict();
 

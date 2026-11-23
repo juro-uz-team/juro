@@ -19,7 +19,7 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -110,11 +110,12 @@ export function GlobalSearch({ locale }: { locale: PlatformLocale; accountType: 
   const copy = searchCopy[locale];
   const text = (ru: string, uz: string, en: string) => locale === "ru" ? ru : locale === "uz" ? uz : en;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => searchParams.get("search") === "open");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [resultsQuery, setResultsQuery] = useState<string | null>(null);

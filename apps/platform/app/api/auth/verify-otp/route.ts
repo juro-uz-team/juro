@@ -38,6 +38,7 @@ import {
   createPrimarySessionIfMfaDisabled,
 } from "../../../../lib/auth/session-management";
 import { issueSessionHandoff } from "../../../../lib/auth/session-handoff";
+import { authReturnDestination } from "../../../../lib/auth/return-path";
 import {
   deviceContinuityTokenFromCookie,
 } from "../../../../lib/auth/session-token";
@@ -275,9 +276,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
         lawyerMarketplaceStatus: user.lawyerMarketplaceStatus,
       }, lawyerHost, requestHostname)
     : `/${routeLocale}/${accountType}/dashboard`;
-  const redirectTo = accountType !== "lawyer" && lawyerHost
+  const redirectTo = authReturnDestination(accountType !== "lawyer" && lawyerHost
     ? `https://app.juro.uz${accountRedirect}`
-    : accountRedirect;
+    : accountRedirect, body.returnTo);
   if (await hasActiveMfa(db, user.id)) {
     try {
       const challenge = await createLoginMfaChallenge(

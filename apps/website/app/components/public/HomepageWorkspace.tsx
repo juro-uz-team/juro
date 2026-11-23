@@ -1,7 +1,7 @@
 import { ArrowDownRight, ArrowUpRight, Archive, Bell, BriefcaseBusiness, CalendarDays, ChevronDown, Clock, FileText, LayoutGrid, Mail, MessageSquareText, Search, UsersRound } from "lucide-react";
 import { workspaceCopy } from "../../../content/homepage-workspace";
 import type { PublicLanguage } from "../../../content/types";
-import { platformAccountHref, platformPersonalHref } from "./platform-hrefs";
+import { platformToolHref } from "./platform-hrefs";
 import styles from "./juro-home.module.css";
 import workspace from "./homepage-workspace.module.css";
 
@@ -16,12 +16,6 @@ const resultIcons = [MessageSquareText, BriefcaseBusiness, FileText];
 export function HomepageWorkspace({ language }: { language: PublicLanguage }) {
   const copy = workspaceCopy[language];
   const { monitoring, calendar, search, team } = copy;
-  const paths = {
-    monitoring: platformPersonalHref(language, "/monitoring"),
-    calendar: platformPersonalHref(language, "/calendar"),
-    search: platformPersonalHref(language, "/dashboard"),
-    team: platformAccountHref(language, "business", "/dashboard"),
-  };
   const source = language === "ru" ? "https://lex.uz/ru/docs/6257461" : "https://lex.uz/uz/acts/-6257345";
   const previews = {
     monitoring: (
@@ -94,7 +88,7 @@ export function HomepageWorkspace({ language }: { language: PublicLanguage }) {
               <h3 id={`workspace-title-${id}`}>{copy[id].title}</h3>
               <p className={workspace.hint}>{copy[id].hint}</p>
               {previews[id]}
-              <a className={styles.textLink} href={paths[id]} aria-label={`${copy.open} · ${copy[id].label}`}>{copy.open}<ArrowUpRight size={15} aria-hidden="true" /></a>
+              <a className={styles.textLink} href={platformToolHref(language, id)} aria-label={`${copy.open} · ${copy[id].label}`}>{copy.open}<ArrowUpRight size={15} aria-hidden="true" /></a>
             </article>
           ))}
         </div>
@@ -103,13 +97,13 @@ export function HomepageWorkspace({ language }: { language: PublicLanguage }) {
           <div className={workspace.moreLinks}>
             <div>
               <strong>{copy.individual}</strong>
-              <a href={platformPersonalHref(language, "/history")}><Clock size={16} aria-hidden="true" />{copy.history}</a>
-              <a href={platformPersonalHref(language, "/archive")}><Archive size={16} aria-hidden="true" />{copy.archive}</a>
+              <a href={platformToolHref(language, "history")}><Clock size={16} aria-hidden="true" />{copy.history}</a>
+              <a href={platformToolHref(language, "archive")}><Archive size={16} aria-hidden="true" />{copy.archive}</a>
             </div>
             <div>
               <strong>{copy.lawyer}</strong>
-              <a href={platformAccountHref(language, "lawyer", "/consultations?view=requests")}><Bell size={16} aria-hidden="true" />{copy.requests}</a>
-              <a href={platformAccountHref(language, "lawyer", "/consultations?view=schedule")}><CalendarDays size={16} aria-hidden="true" />{copy.schedule}</a>
+              <a href={platformToolHref(language, "consultation-requests")}><Bell size={16} aria-hidden="true" />{copy.requests}</a>
+              <a href={platformToolHref(language, "consultation-schedule")}><CalendarDays size={16} aria-hidden="true" />{copy.schedule}</a>
             </div>
           </div>
         </details>

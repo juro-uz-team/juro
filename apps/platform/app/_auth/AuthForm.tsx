@@ -33,6 +33,7 @@ import {
 } from "./auth-field-validation";
 import { TurnstileWidget } from "./TurnstileWidget";
 import { AuthRequestTimeoutError, requestAuthJson } from "./auth-request";
+import { safeAuthReturnPath } from "../../lib/auth/return-path";
 
 type AccountType = "individual" | "entrepreneur" | "lawyer";
 type Locale = "ru" | "uz" | "en";
@@ -110,19 +111,6 @@ function fieldErrorMessage(
     },
   };
   return copy(locale, messages[code]);
-}
-
-function safeReturnPath(value?: string): string | null {
-  if (!value?.startsWith("/") || value.startsWith("//")) return null;
-  try {
-    const url = new URL(value, "https://app.juro.uz");
-    if (url.origin !== "https://app.juro.uz") return null;
-    if (["/login", "/register", "/signin-with-chatgpt", "/signout-with-chatgpt", "/callback"].includes(url.pathname)) return null;
-    if (/^\/(?:ru|uz|en)\/auth\/(?:login|register)\/?$/u.test(url.pathname)) return null;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return null;
-  }
 }
 
 function normalizeEmailInput(value: string): string {
@@ -331,8 +319,13 @@ export function AuthForm({
   const requestGeneration = useRef(0);
   const successPanel = useRef<HTMLDivElement>(null);
   const lawyerProduct = initialAccountType === "lawyer";
-  const explicitReturnTo = safeReturnPath(returnTo);
+  const explicitReturnTo = safeAuthReturnPath(returnTo) ?? undefined;
   const protectedReturnTo = explicitReturnTo ?? "/";
+  const toolReturnQuery = explicitReturnTo ? `&returnTo=${encodeURIComponent(explicitReturnTo)}` : "";
+  const loginQuery = new URLSearchParams();
+  if (lawyerProduct) loginQuery.set("accountType", "lawyer");
+  if (explicitReturnTo) loginQuery.set("returnTo", explicitReturnTo);
+  const loginHref = `/${locale}/auth/login${loginQuery.size ? `?${loginQuery}` : ""}`;
   const strength = passwordScore(password);
   const passwordsMatch = password === confirmPassword;
   const passwordValid = password.length >= 8 && password.length <= 256;
@@ -373,7 +366,7 @@ export function AuthForm({
     const [name, domain] = visibleEmail.split("@");
     return domain ? `${name.slice(0, 2)}•••@${domain}` : visibleEmail;
   }, [challengeEmail, email]);
-  const registrationRestartHref = `/${locale}/auth/register?email=${encodeURIComponent(challengeEmail || normalizeEmailInput(email))}&accountType=${challengeAccountType}`;
+  const registrationRestartHref = `/${locale}/auth/register?email=${encodeURIComponent(challengeEmail || normalizeEmailInput(email))}&accountType=${challengeAccountType}${toolReturnQuery}`;
 
   const localeHref = (nextLocale: Locale): string => {
     const localePath = pathname.replace(/^\/(?:ru|uz|en)(?=\/|$)/u, `/${nextLocale}`);
@@ -505,7 +498,7 @@ export function AuthForm({
       const { response, data } = await requestAuthentication("/api/auth/password-login", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
-        body: JSON.stringify({ email: normalizedEmail, password, locale, rememberMe, turnstileToken }),
+        body: JSON.stringify({ email: normalizedEmail, password, locale, rememberMe, turnstileToken, returnTo: explicitReturnTo }),
       });
       if (requestGeneration.current !== generation) return;
       if (!response.ok) {
@@ -708,6 +701,7 @@ export function AuthForm({
           acceptPersonalData: true,
           marketing: false,
           rememberMe,
+          returnTo: explicitReturnTo,
         }),
       });
       if (!response.ok) {
@@ -770,7 +764,7 @@ export function AuthForm({
       const { response, data } = await requestAuthentication("/api/auth/verify-mfa", {
         method: "POST",
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-locale": locale },
-        body: JSON.stringify({ code: mfaCode.trim(), locale, rememberMe }),
+        body: JSON.stringify({ code: mfaCode.trim(), locale, rememberMe, returnTo: explicitReturnTo }),
       });
       if (!response.ok) {
         const terminal = ["MFA_CHALLENGE_INVALID", "MFA_CHALLENGE_EXPIRED", "MFA_CHALLENGE_USED", "MFA_ATTEMPTS_EXCEEDED", "MFA_RATE_LIMITED"].includes(data.code ?? "");
@@ -955,8 +949,8 @@ export function AuthForm({
 
         {step === "details" && <div className="auth-switch">
           {mode === "register"
-            ? <>{tr({ ru: "Уже есть аккаунт?", uz: "Hisobingiz bormi?", en: "Already have an account?" })} <Link href={`/${locale}/auth/login${lawyerProduct ? "?accountType=lawyer" : ""}`}>{tr({ ru: "Войти", uz: "Kirish", en: "Sign in" })}</Link></>
-            : <>{tr({ ru: "Нет аккаунта?", uz: "Hisob yo‘qmi?", en: "New to JURO?" })} <Link href={`/${locale}/auth/register?accountType=${accountType}`}>{tr({ ru: "Создать аккаунт", uz: "Hisob yaratish", en: "Create account" })}</Link></>}
+            ? <>{tr({ ru: "Уже есть аккаунт?", uz: "Hisobingiz bormi?", en: "Already have an account?" })} <Link href={loginHref}>{tr({ ru: "Войти", uz: "Kirish", en: "Sign in" })}</Link></>
+            : <>{tr({ ru: "Нет аккаунта?", uz: "Hisob yo‘qmi?", en: "New to JURO?" })} <Link href={`/${locale}/auth/register?accountType=${accountType}${toolReturnQuery}`}>{tr({ ru: "Создать аккаунт", uz: "Hisob yaratish", en: "Create account" })}</Link></>}
         </div>}
 
         {step === "details" && (developmentAuthEnabled

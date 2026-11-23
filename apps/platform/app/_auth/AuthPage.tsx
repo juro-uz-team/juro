@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { localDevelopmentAuthEnabled } from "../../lib/auth/development-auth";
+import { authReturnDestination } from "../../lib/auth/return-path";
 import { runtimeEnv } from "../../lib/document-builder/storage/runtime";
 import {
   authenticatedAuthRedirect,
@@ -46,7 +47,7 @@ export async function AuthPage({
       lawyerHost: isLawyerHostRequest(requestHeaders),
       profile: await workspaceProfile(authenticated.email),
     });
-    if (destination) redirect(destination);
+    if (destination) redirect(authReturnDestination(destination, returnTo));
   }
   const env = runtimeEnv();
   return (

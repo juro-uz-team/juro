@@ -1,4 +1,4 @@
-import { platformPersonalHref } from "../app/components/public/platform-hrefs";
+import { platformToolHref } from "../app/components/public/platform-hrefs";
 import type { PublicLanguage } from "./types";
 import type { SeoLanding } from "./seo-landings";
 
@@ -17,7 +17,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Продолжите работу с проектом", body: "Сохраните документ в доступном формате. При изменении условий сравните версии или передайте проект специалисту." },
       ],
       boundariesTitle: "Перед подписанием документа", boundaries: ["Шаблон не учитывает автоматически все особенности вашей ситуации.", "Проверьте полномочия сторон, условия и актуальность применимых требований.", "Если необходимы нотариус, государственная процедура или представитель, подготовка проекта их не заменяет."],
-      cta: { label: "Открыть конструктор документов", href: platformPersonalHref("ru", "/document-builder") },
+      cta: { label: "Открыть конструктор документов", href: platformToolHref("ru", "document-builder") },
       related: { label: "Подготовка договора к проверке", href: "/ru/knowledge/contract-review-preparation" },
     },
     "document-comparison": {
@@ -32,7 +32,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Обсудите спорные правки", body: "Сформулируйте вопросы к изменённым условиям. При необходимости продолжите проверку договора или привлеките специалиста." },
       ],
       boundariesTitle: "Различия в тексте и юридический смысл", boundaries: ["Выделение правок не означает, что условие законно или выгодно.", "Результат зависит от качества текста и выбранных версий; исходные файлы остаются важными.", "Проверяйте приложения, структуру документа и контекст сделки отдельно от списка изменений."],
-      cta: { label: "Сравнить документы в JURO", href: platformPersonalHref("ru", "/documents/comparisons") },
+      cta: { label: "Сравнить документы в JURO", href: platformToolHref("ru", "document-comparison") },
       related: { label: "Проверка договора и его условий", href: "/ru/contract-review" },
     },
     "legal-action-plan": {
@@ -47,7 +47,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Продолжите с нужного места", body: "Вернитесь к делу, уточните факты или подготовьте выбранный контекст для консультации независимого специалиста." },
       ],
       boundariesTitle: "План помогает организовать работу", boundaries: ["Рабочий план не гарантирует исход спора и не заменяет индивидуальный совет.", "Сроки, адресат и порядок обращения зависят от конкретных обстоятельств.", "Конфиденциальные материалы передаются специалисту только после вашего подтверждения."],
-      cta: { label: "Начать работу с делом", href: platformPersonalHref("ru", "/cases") },
+      cta: { label: "Начать работу с делом", href: platformToolHref("ru", "cases") },
       related: { label: "Какие факты собрать для плана действий", href: "/ru/knowledge/facts-for-action-plan" },
     },
   },
@@ -64,7 +64,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Loyiha bilan davom eting", body: "Hujjatni mavjud formatda saqlang. Shartlar o‘zgarsa, versiyalarni taqqoslang yoki loyihani mutaxassisga bering." },
       ],
       boundariesTitle: "Hujjatni imzolashdan oldin", boundaries: ["Shablon vaziyatingizning barcha xususiyatlarini avtomatik hisobga olmaydi.", "Tomonlar vakolati, shartlar va amaldagi talablarni tekshiring.", "Notarius, davlat tartib-taomili yoki vakil zarur bo‘lsa, loyiha tayyorlash ularning o‘rnini bosmaydi."],
-      cta: { label: "Hujjat konstruktorini ochish", href: platformPersonalHref("uz", "/document-builder") },
+      cta: { label: "Hujjat konstruktorini ochish", href: platformToolHref("uz", "document-builder") },
       related: { label: "Shartnoma tekshiruviga tayyorgarlik", href: "/uz/knowledge/contract-review-preparation" },
     },
     "document-comparison": {
@@ -79,7 +79,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Bahsli tahrirlarni muhokama qiling", body: "O‘zgargan shartlar bo‘yicha savollar tuzing. Zarur bo‘lsa, shartnoma tekshiruvi yoki mutaxassis bilan davom eting." },
       ],
       boundariesTitle: "Matndagi farq va yuridik ma’no", boundaries: ["Tahrir ajratib ko‘rsatilishi shart qonuniy yoki foydali ekanini anglatmaydi.", "Natija matn sifati va tanlangan versiyalarga bog‘liq; asl fayllar muhimligicha qoladi.", "Ilovalar, tuzilma va bitim kontekstini o‘zgarishlar ro‘yxatidan alohida tekshiring."],
-      cta: { label: "JUROda hujjatlarni taqqoslash", href: platformPersonalHref("uz", "/documents/comparisons") },
+      cta: { label: "JUROda hujjatlarni taqqoslash", href: platformToolHref("uz", "document-comparison") },
       related: { label: "Shartnoma va uning shartlarini tekshirish", href: "/uz/contract-review" },
     },
     "legal-action-plan": {
@@ -94,7 +94,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Kerakli joydan davom eting", body: "Ishga qayting, faktlarni aniqlashtiring yoki tanlangan kontekstni mustaqil mutaxassis maslahati uchun tayyorlang." },
       ],
       boundariesTitle: "Reja ishni tashkil etishga yordam beradi", boundaries: ["Ishchi reja nizo natijasini kafolatlamaydi va individual maslahat o‘rnini bosmaydi.", "Muddat, adresat va murojaat tartibi aniq holatlarga bog‘liq.", "Maxfiy materiallar mutaxassisga faqat tasdiqlashingizdan so‘ng beriladi."],
-      cta: { label: "Ish bilan ishlashni boshlash", href: platformPersonalHref("uz", "/cases") },
+      cta: { label: "Ish bilan ishlashni boshlash", href: platformToolHref("uz", "cases") },
       related: { label: "Harakat rejasi uchun qanday faktlar kerak", href: "/uz/knowledge/facts-for-action-plan" },
     },
   },
@@ -111,7 +111,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Continue working with the draft", body: "Save the document in an available format. Compare versions when terms change or arrange a professional review." },
       ],
       boundariesTitle: "Before signing a document", boundaries: ["A template does not automatically account for every detail of your situation.", "Check the parties’ authority, the terms and the applicable requirements.", "Preparing a draft does not replace a notary, official procedure or representative where one is required."],
-      cta: { label: "Open the document builder", href: platformPersonalHref("en", "/document-builder") },
+      cta: { label: "Open the document builder", href: platformToolHref("en", "document-builder") },
       related: { label: "Prepare for a contract review", href: "/en/knowledge/contract-review-preparation" },
     },
     "document-comparison": {
@@ -126,7 +126,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Discuss disputed edits", body: "List questions about the changed terms. Continue with contract review or a legal professional where needed." },
       ],
       boundariesTitle: "Text changes and legal meaning", boundaries: ["Highlighting an edit does not establish that a term is lawful or beneficial.", "Results depend on text quality and the versions selected; keep the source files.", "Check attachments, document structure and the transaction context separately from the change list."],
-      cta: { label: "Compare documents in JURO", href: platformPersonalHref("en", "/documents/comparisons") },
+      cta: { label: "Compare documents in JURO", href: platformToolHref("en", "document-comparison") },
       related: { label: "Review a contract and its terms", href: "/en/contract-review" },
     },
     "legal-action-plan": {
@@ -141,7 +141,7 @@ export const productLandings: Record<PublicLanguage, Record<(typeof productLandi
         { title: "Continue from the right place", body: "Return to the case, clarify facts or prepare selected context for an independent professional’s review." },
       ],
       boundariesTitle: "A plan helps organise your work", boundaries: ["A working plan does not guarantee a dispute outcome or replace individual advice.", "Deadlines, recipients and procedures depend on the circumstances.", "Confidential case materials are shared with a professional only after your confirmation."],
-      cta: { label: "Start working with a case", href: platformPersonalHref("en", "/cases") },
+      cta: { label: "Start working with a case", href: platformToolHref("en", "cases") },
       related: { label: "Gather facts for an action plan", href: "/en/knowledge/facts-for-action-plan" },
     },
   },

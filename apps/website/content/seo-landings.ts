@@ -1,4 +1,4 @@
-import { platformPersonalHref } from "../app/components/public/platform-hrefs";
+import { platformToolHref } from "../app/components/public/platform-hrefs";
 import type { PublicLanguage } from "./types";
 import { productLandingSlugs, productLandings } from "./product-landings";
 
@@ -39,7 +39,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Границы AI-помощи",
       boundaries: ["AI не заменяет индивидуальную юридическую консультацию.", "Юридический результат зависит от фактов, сроков и применимого права.", "Работа с вопросом или файлом начинается в защищённом аккаунте."],
-      cta: { label: "Задать вопрос в JURO", href: platformPersonalHref("ru", "/ai-lawyer/new") },
+      cta: { label: "Задать вопрос в JURO", href: platformToolHref("ru", "ai-chat") },
       related: { label: "Какие факты нужны для плана действий", href: "/ru/knowledge/facts-for-action-plan" },
     },
     "online-lawyer": {
@@ -75,7 +75,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Что важно учитывать",
       boundaries: ["Автоматический анализ не гарантирует юридический результат.", "Условия нужно сопоставлять с документами сделки и актуальной редакцией права.", "Для спорной, срочной или крупной сделки может потребоваться независимый специалист."],
-      cta: { label: "Подготовить документ к проверке", href: platformPersonalHref("ru", "/document-analysis") },
+      cta: { label: "Подготовить документ к проверке", href: platformToolHref("ru", "document-analysis") },
       related: { label: "Как подготовиться к проверке договора", href: "/ru/knowledge/contract-review-preparation" },
     },
   },
@@ -95,7 +95,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "AI-yordam chegaralari",
       boundaries: ["AI individual yuridik maslahat o‘rnini bosmaydi.", "Natija faktlar, muddatlar va qo‘llaniladigan huquqqa bog‘liq.", "Savol yoki fayl bilan ish himoyalangan akkauntda boshlanadi."],
-      cta: { label: "JUROda savol berish", href: platformPersonalHref("uz", "/ai-lawyer/new") },
+      cta: { label: "JUROda savol berish", href: platformToolHref("uz", "ai-chat") },
       related: { label: "Harakatlar rejasi uchun qanday faktlar kerak", href: "/uz/knowledge/facts-for-action-plan" },
     },
     "online-lawyer": {
@@ -131,7 +131,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Muhim cheklovlar",
       boundaries: ["Avtomatik tahlil yuridik natijani kafolatlamaydi.", "Shartlarni bitim hujjatlari va amaldagi huquq bilan solishtirish kerak.", "Nizoli, shoshilinch yoki katta bitim uchun mustaqil mutaxassis kerak bo‘lishi mumkin."],
-      cta: { label: "Hujjatni tekshirishga tayyorlash", href: platformPersonalHref("uz", "/document-analysis") },
+      cta: { label: "Hujjatni tekshirishga tayyorlash", href: platformToolHref("uz", "document-analysis") },
       related: { label: "Shartnoma tekshiruviga qanday tayyorlanish", href: "/uz/knowledge/contract-review-preparation" },
     },
   },
@@ -151,7 +151,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Limits of AI assistance",
       boundaries: ["AI does not replace individual legal advice.", "A legal outcome depends on the facts, deadlines and applicable law.", "Work with a question or file begins in a protected account."],
-      cta: { label: "Ask JURO a question", href: platformPersonalHref("en", "/ai-lawyer/new") },
+      cta: { label: "Ask JURO a question", href: platformToolHref("en", "ai-chat") },
       related: { label: "What facts make an action plan useful", href: "/en/knowledge/facts-for-action-plan" },
     },
     "online-lawyer": {
@@ -187,7 +187,7 @@ const coreLandings: Record<PublicLanguage, Record<(typeof coreLandingSlugs)[numb
       ],
       boundariesTitle: "Important limits",
       boundaries: ["Automated analysis does not guarantee a legal outcome.", "Terms should be checked against the transaction documents and current law.", "A disputed, urgent or material transaction may require an independent professional."],
-      cta: { label: "Prepare a document for review", href: platformPersonalHref("en", "/document-analysis") },
+      cta: { label: "Prepare a document for review", href: platformToolHref("en", "document-analysis") },
       related: { label: "How to prepare for contract review", href: "/en/knowledge/contract-review-preparation" },
     },
   },

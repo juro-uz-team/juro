@@ -63,6 +63,6 @@ export function lawyerHostTarget(url: URL): URL | null {
     if (mapped.view) target.searchParams.set("view", mapped.view);
     return target;
   }
-  if (/^\/(?:ru|uz|en)\/lawyer(?:\/|$)/u.test(url.pathname)) return target;
+  if (/^\/(?:ru|uz|en)\/(?:lawyer(?:\/|$)|workspace\/[a-z-]+$)/u.test(url.pathname)) return target;
   return null;
 }

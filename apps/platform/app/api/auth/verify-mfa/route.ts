@@ -29,6 +29,7 @@ import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { isLocale, isPersonalAccountType } from "../../../../lib/platform/routing";
 import { lawyerLandingDestination } from "../../../../lib/platform/lawyer-entry-routing";
 import { issueSessionHandoff } from "../../../../lib/auth/session-handoff";
+import { authReturnDestination } from "../../../../lib/auth/return-path";
 import { localizedRequestFormatError } from "../../../../lib/auth/request-locale";
 import {
   resolveThemePreference,
@@ -116,9 +117,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
           lawyerMarketplaceStatus: lawyerProfile?.lawyerMarketplaceStatus ?? null,
         }, lawyerHost, requestHostname)
       : `/${userLocale}/${accountType}/dashboard`;
-    const redirectTo = accountType !== "lawyer" && lawyerHost
+    const redirectTo = authReturnDestination(accountType !== "lawyer" && lawyerHost
       ? `https://app.juro.uz${accountRedirect}`
-      : accountRedirect;
+      : accountRedirect, parsed.data.returnTo);
     const handoff = await issueSessionHandoff(requireD1(), {
       userId: result.userId,
       sourceSessionId: result.session.sessionId,

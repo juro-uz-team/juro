@@ -13,6 +13,10 @@ export function platformRegistrationHref(locale: PublicLanguage): string {
   return `${platformAuthHref(locale, "register")}?accountType=individual`;
 }
 
+export function platformToolHref(locale: PublicLanguage, tool: string): string {
+  return `${PLATFORM_ORIGIN}/${locale}/workspace/${tool}`;
+}
+
 export function platformPersonalHref(
   locale: PublicLanguage,
   path: string,

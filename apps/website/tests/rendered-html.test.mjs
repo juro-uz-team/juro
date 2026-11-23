@@ -175,8 +175,8 @@ test("the root and localized homepages render the worked examples and their real
       assert.match(input, new RegExp(`aria-controls="${example}-comparison"`));
       assert.match(html, new RegExp(`id="${example}-comparison"`));
     }
-    for (const href of [`http://localhost:3000/${locale}/individual/ai-chat`, `http://localhost:3000/${locale}/individual/document-analysis`, `http://localhost:3000/${locale}/individual/action-plan`, `/${locale}/lawyers`]) {
-      assert.ok(html.includes(`href="${href}"`), href);
+    for (const tool of ["ai-chat", "document-analysis", "document-builder", "document-comparison", "action-plan", "lawyers"]) {
+      assert.ok(html.includes(`href="http://localhost:3000/${locale}/workspace/${tool}"`), tool);
     }
     assert.match(html, /src="\/jurobek-point\.webp"/);
     assert.match(html, /id="ai-playground"[\s\S]+?<details[^>]*><summary>/);
@@ -204,8 +204,8 @@ test("the root and localized homepages render the worked examples and their real
     }
     const record = locale === "ru" ? "ru/docs/6257461" : "uz/acts/-6257345";
     assert.ok(workspace.includes(`href="https://lex.uz/${record}"`));
-    for (const route of ["individual/monitoring", "individual/calendar", "individual/dashboard", "business/dashboard", "individual/history", "individual/archive", "lawyer/consultations?view=requests", "lawyer/consultations?view=schedule"]) {
-      assert.ok(workspace.includes(`href="http://localhost:3000/${locale}/${route}"`), route);
+    for (const tool of ["monitoring", "calendar", "search", "team", "history", "archive", "consultation-requests", "consultation-schedule"]) {
+      assert.ok(workspace.includes(`href="http://localhost:3000/${locale}/workspace/${tool}"`), tool);
     }
     assert.doesNotMatch(html, /setAttribute\("data-juro-loading"/);
     assert.doesNotMatch(html, /<textarea\b|<input[^>]+type="file"/);
@@ -215,7 +215,8 @@ test("the root and localized homepages render the worked examples and their real
 test("serves localized search landing pages and a crawlable knowledge hub", async () => {
   const worker = await createWorker();
   for (const locale of ["ru", "uz", "en"]) {
-    for (const slug of ["ai-lawyer", "online-lawyer", "contract-review", "knowledge"]) {
+    const toolBySlug = { "ai-lawyer": "ai-chat", "contract-review": "document-analysis", "document-builder": "document-builder", "document-comparison": "document-comparison", "legal-action-plan": "cases" };
+    for (const slug of [...Object.keys(toolBySlug), "online-lawyer", "knowledge"]) {
       const route = `/${locale}/${slug}`;
       const response = await worker.fetch(new Request(`http://localhost${route}`, { headers: { accept: "text/html" } }), runtime, context);
       assert.equal(response.status, 200, route);
@@ -224,9 +225,8 @@ test("serves localized search landing pages and a crawlable knowledge hub", asyn
       assert.match(html, /<meta property="og:description"/);
       assert.match(html, /<meta name="twitter:description"/);
       assert.match(html, /application\/ld\+json/);
-      if (slug === "ai-lawyer" || slug === "contract-review") {
-        const path = slug === "ai-lawyer" ? "ai-lawyer/new" : "document-analysis";
-        assert.ok(html.includes(`href="http://localhost:3000/${locale}/individual/${path}"`), route);
+      if (toolBySlug[slug]) {
+        assert.ok(html.includes(`href="http://localhost:3000/${locale}/workspace/${toolBySlug[slug]}"`), route);
       }
     }
   }

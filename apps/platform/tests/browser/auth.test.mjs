@@ -19,6 +19,7 @@ before(async () => {
         const query = new URLSearchParams(location.search);
         createRoot(document.getElementById('root')).render(<AuthForm
           mode={query.get('mode') || 'login'} initialLocale={query.get('locale') || 'en'}
+          returnTo={query.get('returnTo') || undefined}
           passwordAuthEnabled emailAuthEnabled
           turnstileSiteKey={query.get('challenge') || 'private-local'} />);`,
       resolveDir: root, loader: "tsx",
@@ -183,13 +184,20 @@ for (const scenario of [
 }
 
 test("verified credentials advance to MFA and then navigate on success", async context => {
-  const page = await loginPage(context);
-  await page.route("**/api/auth/password-login", route => route.fulfill({ json: { requiresTwoFactor: true } }));
-  await page.route("**/api/auth/verify-mfa", route => route.fulfill({ json: { redirectTo: "/en/individual/dashboard" } }));
+  const target = "/en/workspace/document-comparison";
+  const page = await loginPage(context, `?returnTo=${encodeURIComponent(target)}`);
+  await page.route("**/api/auth/password-login", route => {
+    assert.equal(route.request().postDataJSON().returnTo, target);
+    return route.fulfill({ json: { requiresTwoFactor: true } });
+  });
+  await page.route("**/api/auth/verify-mfa", route => {
+    assert.equal(route.request().postDataJSON().returnTo, target);
+    return route.fulfill({ json: { redirectTo: target } });
+  });
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.locator('[name="mfa-code"]').fill("123456");
   await page.getByRole("button", { name: "Finish sign-in" }).click();
-  await page.waitForURL("**/en/individual/dashboard");
+  await page.waitForURL(origin + target);
 });
 
 test("unverified email opens the verification recovery flow", async context => {
