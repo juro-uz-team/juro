@@ -53,7 +53,8 @@ function createDb() {
       id text PRIMARY KEY,environment text NOT NULL,source_kind text NOT NULL,run_type text NOT NULL,
       status text NOT NULL,lock_key text NOT NULL,discovered_count integer NOT NULL,fetched_count integer NOT NULL,
       changed_count integer NOT NULL,verified_count integer NOT NULL,error_count integer NOT NULL,
-      started_at text NOT NULL,finished_at text,error_summary text,created_at text NOT NULL,updated_at text NOT NULL
+      started_at text NOT NULL,finished_at text,error_summary text,created_at text NOT NULL,updated_at text NOT NULL,
+      CHECK (changed_count + verified_count <= fetched_count)
     );
     CREATE TABLE source_sync_errors (
       id text PRIMARY KEY,run_id text NOT NULL,source_url text,external_id text,error_code text NOT NULL,

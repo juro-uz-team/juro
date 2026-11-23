@@ -195,7 +195,7 @@ export async function runLexMetadataMonitor(
           SET status='success',discovered_count=?,fetched_count=?,changed_count=?,verified_count=?,error_count=0,
               finished_at=?,error_summary=NULL,updated_at=?
         WHERE id=? AND status='running'`,
-    ).bind(entries.length, processed, changed, processed, timestamp, timestamp, id).run();
+    ).bind(entries.length, processed, changed, processed - changed, timestamp, timestamp, id).run();
     return { status: "success", runId: id, discovered: entries.length, processed, changed, errors: 0 };
   } catch (error) {
     const code = safeErrorCode(error);
