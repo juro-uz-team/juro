@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { seoLandings, seoLandingSlugs, type SeoLandingSlug } from "../../../content/seo-landings";
 import type { PublicLanguage } from "../../../content/types";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import styles from "./seo-landing.module.css";
 
 type Props = { params: Promise<{ locale: string }> };
@@ -55,6 +55,5 @@ export async function SeoLanding({ slug, params }: { slug: SeoLandingSlug; param
         <ul>{seoLandingSlugs.filter(value => value !== slug).map(value => <li key={value}><Link href={`/${locale}/${value}`}>{seoLandings[locale][value].title}</Link></li>)}</ul>
       </section>
     </main>
-    <SiteFooter locale={locale} />
   </div>;
 }

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, BriefcaseBusiness, CalendarDays, ChevronDown, FileText, House, Layers, ListChecks, MapPin, MessageSquareText, PencilLine, Receipt, Wallet } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, BriefcaseBusiness, CalendarDays, ChevronDown, FileText, House, Layers, ListChecks, MessageSquareText, PencilLine, Receipt, Wallet } from "lucide-react";
 import { homepageCopy } from "../../../content/homepage";
 import { workspaceCopy } from "../../../content/homepage-workspace";
 import { en } from "../../../content/en";
@@ -10,8 +10,7 @@ import type { PublicLanguage } from "../../../content/types";
 import { HomepageFaq } from "./HomepageFaq";
 import { HomepageMotion } from "./HomepageMotion";
 import { HomepageWorkspace } from "./HomepageWorkspace";
-import { OfficialLogo } from "./OfficialLogo";
-import { platformRegistrationHref, platformToolHref } from "./platform-hrefs";
+import { platformToolHref } from "./platform-hrefs";
 import { SiteHeader } from "./SiteChrome";
 import styles from "./juro-home.module.css";
 
@@ -28,7 +27,6 @@ const faqByLanguage = { ru: ru.faq.items, uz: uz.faq.items, en: en.faq.items };
 export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const copy = homepageCopy[language];
   const { chat } = copy;
-  const register = platformRegistrationHref(language);
   const chatHref = platformToolHref(language, "ai-chat");
   const sources = language === "ru" ? labourCode.ru : labourCode.uz;
 
@@ -214,28 +212,6 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
         </section>
       </main>
 
-      <footer className={styles.footer} id="resources">
-        <div className={styles.wrap}>
-          <div className={styles.anchors} aria-hidden="true"><span id="audiences" /><span id="pricing" /></div>
-          <div className={styles.closing} id="start" data-nosnippet="" data-home-reveal>
-            <h2>{copy.closing}</h2>
-            <a className={styles.primary} href={register}>{copy.start}<ArrowUpRight aria-hidden="true" size={19} /></a>
-          </div>
-          <div className={styles.footerLinks} data-nosnippet="">
-            <Link aria-label="JURO" href={`/${language}`}><OfficialLogo inverse /></Link>
-            <Link href={`/${language}/video`}>{copy.video}</Link>
-            <Link href={`/${language}/knowledge`}>{copy.knowledge}</Link>
-            <Link href={`/${language}/legal`}>{copy.legal}</Link>
-            <a href={`${register}&returnTo=${encodeURIComponent(`/${language}/workspace/team`)}`}>{copy.business}</a>
-          </div>
-          <address className={styles.contact}>
-            <span><MapPin aria-hidden="true" size={15} />{copy.location}</span>
-            <a href="mailto:admin@juro.uz">admin@juro.uz</a>
-            <a href="tel:+998974022292">+998 97 402 22 92</a>
-          </address>
-          <div className={styles.footerNote} data-nosnippet=""><span>© {new Date().getFullYear()} JURO</span><p>{copy.note}</p></div>
-        </div>
-      </footer>
       <HomepageMotion />
     </div>
   );

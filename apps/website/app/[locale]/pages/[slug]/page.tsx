@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { publishedArticles, type SiteArticle } from "../../../../lib/site-content";
 import type { PublicLanguage } from "../../../../content/types";
 import { publicMetadata, breadcrumbSchema } from "../../../../lib/public-seo";
-import { SiteHeader, SiteFooter } from "../../../components/public/SiteChrome";
+import { SiteHeader } from "../../../components/public/SiteChrome";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ locale: string; slug: string }> };
@@ -25,7 +25,6 @@ export default async function ContentPage({ params }: Props) {
   return <>
     <SiteHeader locale={locale} languageHref={`/${locale}`} />
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema(locale, [{ name: found.title, path: "/pages/" + encodeURIComponent(found.slug) }])).replaceAll("<", "\\u003c") }} />
-    <main id="main-content" style={{ maxWidth: 920, margin: "96px auto 64px", padding: 24 }}><h1>{found.title}</h1><p>{found.description}</p><div style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{found.body}</div></main>
-    <SiteFooter locale={locale} />
+    <main id="main-content" style={{ maxWidth: 920, margin: "96px auto 64px", padding: 24 }}><h1>{found.title}</h1><p>{found.description}</p><div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.7 }}>{found.body}</div></main>
   </>;
 }

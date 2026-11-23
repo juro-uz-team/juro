@@ -1,7 +1,7 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { PublicLanguage } from "../../../content/types";
 
 type ThemeMode = "light" | "dark";
@@ -34,6 +34,22 @@ function apply(mode: ThemeMode) {
   document.documentElement.dataset.themeMode = mode;
   document.documentElement.dataset.theme = mode;
   document.documentElement.style.colorScheme = mode;
+}
+
+export function PublicThemeFallback() {
+  useEffect(() => {
+    if (document.documentElement.dataset.themeMode) return;
+    // Next can mount a recovered 404 without executing the inline theme script.
+    let preference: string | null | undefined;
+    try {
+      preference = document.cookie.match(/(?:^|; )juro_theme=(system|light|dark)(?:;|$)/)?.[1] ?? localStorage.getItem("juro-theme");
+    } catch {
+      preference = null;
+    }
+    apply(preference === "dark" ? "dark" : "light");
+    announceThemeMode();
+  }, []);
+  return null;
 }
 
 function persistThemeCookie(mode: ThemeMode) {

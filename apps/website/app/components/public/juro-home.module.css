@@ -1,6 +1,10 @@
-.page {
+.page, .footer {
   --gutter: clamp(16px, 4vw, 56px);
   --midnight: #071d30;
+  --fast: 180ms cubic-bezier(.2, .7, .3, 1);
+}
+
+.page {
   --stage-gold: #efd59e;
   --stage-line: #527084;
   --ease-out: cubic-bezier(.2, .72, .24, 1);
@@ -9,13 +13,12 @@
   --muted: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
   --gold-ink: var(--brand-gold-ink);
   --rule: var(--border-subtle);
-  --fast: 180ms cubic-bezier(.2, .7, .3, 1);
   background: var(--paper);
   color: var(--ink);
 }
 
 .wrap { width: min(1264px, calc(100% - 2 * var(--gutter))); margin-inline: auto; }
-.page :is(section, footer, div, span)[id] { scroll-margin-top: 100px; }
+.page :is(section, div, span)[id], .footer, .footer [id] { scroll-margin-top: 100px; }
 .page :focus-visible { outline: 2px solid var(--gold-ink); outline-offset: 4px; }
 .visuallyHidden, .contractChoices input, .chatChoices input {
   position: absolute;
@@ -313,7 +316,7 @@
 .anchors span { display: block; }
 .productLayout { display: grid; align-items: start; gap: 26px 38px; }
 .productHeading h2 { margin-bottom: 12px; }
-.page :is(.productHeading, .sectionCopy, .faq, .closing) h2 {
+.page :is(.productHeading, .sectionCopy, .faq) h2, .closing h2 {
   font-size: clamp(1.65rem, 2.65vw, 2.25rem);
   font-weight: 760;
   letter-spacing: -.045em;
@@ -490,7 +493,7 @@
   color: #fff;
 }
 
-.footer :focus-visible { outline-color: #ecd09b; }
+.footer :focus-visible { outline: 2px solid #ecd09b; outline-offset: 4px; }
 .closing {
   position: relative;
   display: flex;
@@ -506,11 +509,8 @@
   inset: auto 0 0;
   height: 1px;
   background: linear-gradient(90deg, #d8bb80, #d2dce439 72%);
-  transform-origin: left;
   content: '';
 }
-.closing[data-entered]::after { animation: footer-rule-in 620ms var(--ease-out) both; }
-@keyframes footer-rule-in { from { transform: scaleX(.3); } }
 .closing .primary svg { transition: transform var(--fast); }
 .closing .primary:is(:hover, :focus-visible) svg { transform: translate(2px, -2px); }
 .closing h2 { max-width: 26ch; }
@@ -585,5 +585,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page *, .page *::before, .page *::after { animation: none !important; transition: none !important; }
+  .page *, .page *::before, .page *::after, .footer * { animation: none !important; transition: none !important; }
+}
+
+@media print {
+  .footer { display: none; }
 }

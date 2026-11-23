@@ -3,7 +3,7 @@ import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { PublicLanguage } from "../../../content/types";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import { LawyerCard } from "./LawyerCard";
 import { getPublicLawyers, localizePublicLawyer, localizePublicLawyerText } from "./catalog";
 import styles from "./lawyers.module.css";
@@ -72,6 +72,5 @@ export default async function LawyersPage({ params, searchParams }: Props) {
         {!available ? <p className={styles.notice} role="status">{t.unavailable}</p> : <><p className={styles.count}>{t.count}: {results.length}</p><div className={styles.grid}>{approved.map((lawyer) => <LawyerCard key={lawyer.id} lawyer={localizePublicLawyer(lawyer, locale)} locale={locale} />)}</div>{pending.length > 0 && <section className={styles.pendingSection} aria-labelledby="pending-heading"><h2 id="pending-heading">{t.pendingHeading}</h2><p>{t.pendingLead}</p><div className={styles.grid}>{pending.map((lawyer) => <LawyerCard key={lawyer.id} lawyer={localizePublicLawyer(lawyer, locale)} locale={locale} />)}</div></section>}{results.length === 0 && <section className={styles.empty}><h2>{t.emptyHeading}</h2><p>{t.emptyLead}</p></section>}</>}
       </section>
     </main>
-    <SiteFooter locale={locale} />
   </div>;
 }

@@ -54,36 +54,6 @@
   letter-spacing: .16em;
 }
 
-.footerLogo {
-  align-items: center;
-  color: #fff;
-  display: inline-flex;
-  gap: .72rem;
-  text-decoration: none;
-}
-
-.footerMarkFrame {
-  display: block;
-  flex: 0 0 auto;
-  height: 50px;
-  overflow: hidden;
-  width: 50px;
-}
-
-.footerMark.footerMark {
-  height: auto;
-  max-width: none;
-  transform: translate(-11px, -10px);
-  width: 72px;
-}
-
-.footerLogo span {
-  font-family: var(--font-display);
-  font-size: 1.32rem;
-  font-weight: 600;
-  letter-spacing: .2em;
-}
-
 @media (max-width: 620px) {
   .logo.logo {
     gap: .45rem;

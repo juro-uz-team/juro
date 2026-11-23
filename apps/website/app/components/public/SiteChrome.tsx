@@ -3,12 +3,10 @@
 import { OfficialLogo } from "./OfficialLogo";
 import Link from "next/link";
 import { platformAuthHref, platformRegistrationHref } from "./platform-hrefs";
-import { ArrowRight, ChevronDown, Mail, MapPin, Menu, Phone, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Menu, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { PublicLanguage } from "../../../content/types";
 import brandStyles from "./brand-lockup.module.css";
-import footerContactStyles from "./footer-contact.module.css";
-import footerRailStyles from "./footer-rail.module.css";
 import headerTouchStyles from "./header-touch-targets.module.css";
 import styles from "./site-chrome.module.css";
 import { PublicThemeSwitcher } from "./ThemeSwitcher";
@@ -30,22 +28,6 @@ const copy = {
     open: "Открыть меню",
     close: "Закрыть меню",
     skip: "К основному содержанию",
-    productLabel: "Продукт",
-    companyLabel: "JURO",
-    legalLabel: "Правовая информация",
-    description: "Юридическая ситуация превращается в проверяемый план, документ и следующий шаг.",
-    ai: "AI-юрист",
-    document: "Проверка документа",
-    plan: "План действий",
-    business: "Для бизнеса",
-    knowledge: "База знаний",
-    privacy: "Конфиденциальность",
-    terms: "Условия использования",
-    data: "Персональные данные",
-    aiRules: "Правила AI",
-    contacts: "Контакты",
-    address: "Ташкент, Узбекистан",
-    note: "AI помогает подготовить работу, но не заменяет обязательную профессиональную помощь.",
   },
   uz: {
     nav: "Asosiy navigatsiya",
@@ -61,25 +43,9 @@ const copy = {
     open: "Menyuni ochish",
     close: "Menyuni yopish",
     skip: "Asosiy mazmunga o‘tish",
-    productLabel: "Mahsulot",
-    companyLabel: "JURO",
-    legalLabel: "Huquqiy ma’lumot",
-    description: "Yuridik vaziyat tekshiriladigan reja, hujjat va keyingi qadamga aylanadi.",
-    ai: "AI-yurist",
-    document: "Hujjatni tekshirish",
-    plan: "Harakatlar rejasi",
-    business: "Biznes uchun",
-    knowledge: "Bilimlar bazasi",
-    privacy: "Maxfiylik",
-    terms: "Foydalanish shartlari",
-    data: "Shaxsiy ma’lumotlar",
-    aiRules: "AI qoidalari",
-    contacts: "Aloqa",
-    address: "Toshkent, O‘zbekiston",
-    note: "AI ishni tayyorlashga yordam beradi, ammo majburiy professional yordamni almashtirmaydi.",
   },
   en: {
-    nav: "Main navigation", product: "Product", people: "Who it is for", trust: "Trust", resources: "Resources", lawyers: "Professionals", video: "Video", legal: "Legal Centre", signIn: "Sign in", start: "Start with JURO", open: "Open menu", close: "Close menu", skip: "Skip to main content", productLabel: "Product", companyLabel: "JURO", legalLabel: "Legal information", description: "A legal situation becomes a verifiable plan, a document and a clear next step.", ai: "AI legal assistant", document: "Document review", plan: "Action plan", business: "For business", knowledge: "Knowledge base", privacy: "Privacy", terms: "Terms of use", data: "Personal data", aiRules: "AI rules", contacts: "Contact", address: "Tashkent, Uzbekistan", note: "AI helps prepare legal work, but does not replace required professional advice.",
+    nav: "Main navigation", product: "Product", people: "Who it is for", trust: "Trust", resources: "Resources", lawyers: "Professionals", video: "Video", legal: "Legal Centre", signIn: "Sign in", start: "Start with JURO", open: "Open menu", close: "Close menu", skip: "Skip to main content",
   },
 } as const;
 
@@ -99,7 +65,6 @@ export function SiteHeader({ locale, tone = "light", languageHref, home = false 
   const languagePickerRef = useRef<HTMLDetailsElement>(null);
   const localizedSuffix = languageHref?.replace(/^\/(?:ru|uz|en)(?=\/|$)/, "") ?? "";
   const localeHref = (target: Locale) => `/${target}${localizedSuffix}`;
-  const LanguageLink = home ? "a" : Link;
 
   useEffect(() => {
     const picker = languagePickerRef.current;
@@ -179,7 +144,7 @@ export function SiteHeader({ locale, tone = "light", languageHref, home = false 
         </nav>
         <div className={styles.actions}>
           <PublicThemeSwitcher locale={locale} />
-          <div aria-label={languagePickerLabels[locale]} className={styles.languageSet}>{languages.map((target) => <LanguageLink aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</LanguageLink>)}</div>
+          <div aria-label={languagePickerLabels[locale]} className={styles.languageSet}>{languages.map((target) => <a aria-current={target === locale ? "page" : undefined} className={`${styles.language} ${headerTouchStyles.language}`} href={localeHref(target)} key={target}>{languageLabels[target]}</a>)}</div>
           <details className={styles.mobileLanguage} ref={languagePickerRef} onBlur={(event) => {
             if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
           }} onKeyDown={(event) => {
@@ -227,41 +192,5 @@ export function SiteHeader({ locale, tone = "light", languageHref, home = false 
       ) : null}
     </header>
     </>
-  );
-}
-
-export function SiteFooter({ locale }: { locale: Locale }) {
-  const t = copy[locale];
-  const year = new Date().getFullYear();
-  const productLinks = [
-    [t.ai, `/${locale}/ai-lawyer`],
-    [t.document, `/${locale}/contract-review`],
-    [locale === "ru" ? "Создание документов" : locale === "uz" ? "Hujjat tayyorlash" : "Document builder", `/${locale}/document-builder`],
-    [locale === "ru" ? "Сравнение договоров" : locale === "uz" ? "Shartnomalarni taqqoslash" : "Compare contracts", `/${locale}/document-comparison`],
-    [t.plan, `/${locale}/legal-action-plan`],
-    [t.lawyers, `/${locale}/lawyers`],
-  ] as const;
-  return (
-    <footer className={`${styles.footer} ${footerRailStyles.footer}`}>
-      <div data-nosnippet="" className={`${styles.footerTop} ${footerRailStyles.top}`}>
-        <div className={`${styles.footerBrand} ${footerRailStyles.brand}`}>
-          <Link aria-label="JURO" className={brandStyles.footerLogo} href={`/${locale}`}>
-            <OfficialLogo inverse />
-          </Link>
-          <p>{t.description}</p>
-          <a className={footerRailStyles.brandCta} href={platformRegistrationHref(locale)}>{t.start}<ArrowRight aria-hidden="true" size={16} /></a>
-        </div>
-        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.productLabel}</strong>{productLinks.map(([label, href]) => href.startsWith("/") ? <Link href={href} key={href}>{label}</Link> : <a href={href} key={href}>{label}</a>)}</div>
-        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.companyLabel}</strong><Link href={`/${locale}/trust`}>Trust Center</Link><Link href={`/${locale}/video`}>{t.video}</Link><Link href={`/${locale}/knowledge`}>{t.knowledge}</Link></div>
-        <div className={`${styles.footerColumn} ${footerRailStyles.column}`}><strong>{t.legalLabel}</strong><Link href={`/${locale}/legal`}>{t.legal}</Link><Link href={`/${locale}/legal/privacy-policy`}>{t.privacy}</Link><Link href={`/${locale}/legal/user-agreement`}>{t.terms}</Link><Link href={`/${locale}/legal/personal-data-processing-policy`}>{t.data}</Link><Link href={`/${locale}/legal/ai-use-policy`}>{t.aiRules}</Link></div>
-      </div>
-      <address aria-label={t.contacts} className={`${footerContactStyles.contacts} ${footerRailStyles.contacts}`}>
-        <div className={footerRailStyles.contactIntro}><span className={footerRailStyles.contactEyebrow}>{t.contacts}</span><strong>{locale === "ru" ? "На связи. По делу." : locale === "uz" ? "Aloqadamiz. Ish yuzasidan." : "A conversation. A next step."}</strong><span><MapPin aria-hidden="true" size={14} />{t.address}</span></div>
-        <a className={footerRailStyles.contactCard} href="mailto:admin@juro.uz"><Mail aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Написать нам" : locale === "uz" ? "Bizga yozing" : "Write to us"}</small><strong>admin@juro.uz</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
-        <a className={footerRailStyles.contactCard} href="tel:+998974022292"><Phone aria-hidden="true" size={19} /><span><small>{locale === "ru" ? "Позвонить" : locale === "uz" ? "Qo‘ng‘iroq qilish" : "Call us"}</small><strong>+998 97 402 22 92</strong></span><ArrowRight aria-hidden="true" size={18} /></a>
-      </address>
-      <div data-nosnippet="" className={footerRailStyles.signature} aria-hidden="true"><span>JURO</span><small>LEGAL INTELLIGENCE<br />HUMAN DIRECTION.</small></div>
-      <div data-nosnippet="" className={`${styles.footerBottom} ${footerContactStyles.bottom} ${footerRailStyles.bottom}`}><span>© {year} JURO</span><p>{t.note}</p><span className={styles.footerLanguages}>{languages.map((target) => <Link aria-current={target === locale ? "page" : undefined} href={`/${target}`} key={target}>{languageLabels[target]}</Link>)}</span></div>
-    </footer>
   );
 }

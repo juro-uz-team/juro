@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { knowledgeArticles, knowledgeSlugs } from "../../../content/knowledge";
 import type { PublicLanguage } from "../../../content/types";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import styles from "./knowledge.module.css";
 
 type Props = { params: Promise<{ locale: string }> };
@@ -47,6 +47,5 @@ export default async function KnowledgeHub({ params }: Props) {
       <section className={styles.grid} aria-label={content.title}>{articles.map((article) => <article className={styles.card} key={article.slug}><p>{article.category}</p><h2><Link href={`/${locale}/knowledge/${article.slug}`}>{article.title}</Link></h2><span>{article.description}</span><small>{content.updated}: {article.updatedAt}</small><Link className={styles.read} href={`/${locale}/knowledge/${article.slug}`}>{content.read} <b aria-hidden="true">→</b></Link></article>)}</section>
       <aside className={styles.sourceNote}>{content.source}</aside>
     </main>
-    <SiteFooter locale={locale} />
   </div>;
 }

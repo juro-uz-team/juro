@@ -2,7 +2,7 @@ import { publicMetadata } from "../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import { legalConfig } from "../../legal-config";
 import { getLegalDocument, isLegalLocale, legalGroups, legalPath } from "../../legal-content";
 import styles from "./legal.module.css";
@@ -19,7 +19,6 @@ export default async function LegalCenter({ params }: Props) {
   const { locale } = await params;
   if (!isLegalLocale(locale)) notFound();
   const ru = locale === "ru";
-  const copy = legalConfig.publication[locale];
   return (
     <div className={styles.page} lang={locale}>
       <SiteHeader languageHref={`/${locale === "ru" ? "uz" : "ru"}/legal`} locale={locale} />
@@ -28,7 +27,6 @@ export default async function LegalCenter({ params }: Props) {
         <p className={styles.eyebrow}>{ru ? "JURO · ЮРИДИЧЕСКИЙ ЦЕНТР" : "JURO · YURIDIK MARKAZ"}</p>
         <h1>{ru ? "Документы, которые легко найти и прочитать" : "Topish va o‘qish oson bo‘lgan hujjatlar"}</h1>
         <p>{ru ? "Условия использования, конфиденциальность, AI, документы, маркетплейс и порядок обращений — в единой актуальной структуре." : "Foydalanish shartlari, maxfiylik, AI, hujjatlar, marketpleys va murojaat qilish tartibi — yagona tuzilmada."}</p>
-        <aside className={styles.previewNotice}><strong>{copy.label}</strong><span>{copy.notice}</span></aside>
       </section>
       <section className={styles.catalogue} aria-label={ru ? "Каталог документов" : "Hujjatlar katalogi"}>
         {legalGroups.map((group) => (
@@ -45,7 +43,6 @@ export default async function LegalCenter({ params }: Props) {
         ))}
       </section>
       </main>
-      <SiteFooter locale={locale} />
     </div>
   );
 }

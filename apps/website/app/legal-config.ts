@@ -17,11 +17,9 @@ export const legalConfig = {
     isPreview: true,
     ru: {
       label: "Тестовый просмотр",
-      notice: "Документы показаны для проверки структуры и интерфейса. Перед коммерческим запуском будет опубликована утверждённая редакция с полными обязательными сведениями.",
     },
     uz: {
       label: "Sinov ko‘rish",
-      notice: "Hujjatlar tuzilma va interfeysni tekshirish uchun ko‘rsatilgan. Tijoriy ishga tushirishdan oldin barcha majburiy ma’lumotlar bilan tasdiqlangan tahrir e’lon qilinadi.",
     },
   },
 } as const;

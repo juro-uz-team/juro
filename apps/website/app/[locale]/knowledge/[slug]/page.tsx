@@ -2,7 +2,7 @@ import { publicMetadata, articleDate, breadcrumbSchema } from "../../../../lib/p
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SiteFooter, SiteHeader } from "../../../components/public/SiteChrome";
+import { SiteHeader } from "../../../components/public/SiteChrome";
 import { platformPersonalHref } from "../../../components/public/platform-hrefs";
 import {
   knowledgeArticles,
@@ -100,7 +100,6 @@ export default async function KnowledgeArticlePage({ params }: Props) {
           </aside>
         </article>
       </main>
-      <SiteFooter locale={parsed.locale} />
     </div>
   );
 }

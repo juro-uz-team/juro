@@ -1,9 +1,9 @@
 .page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 82% 8%, rgba(190, 151, 79, 0.2), transparent 26rem),
-    #061f36;
-  color: #f8f6f2;
+    radial-gradient(circle at 82% 8%, var(--accent-subtle), transparent 26rem),
+    var(--surface-canvas);
+  color: var(--text-primary);
 }
 
 .header,
@@ -60,7 +60,7 @@
 
 .hero p,
 .hero span {
-  color: #e0c892;
+  color: var(--brand-gold-ink);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -84,15 +84,15 @@
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border: 1px solid rgba(248, 246, 242, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 1rem;
   background: #020b14;
-  box-shadow: 0 2rem 5rem rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-soft);
 }
 
 .player > p {
   margin: 1rem 0 0;
-  color: rgba(248, 246, 242, 0.62);
+  color: var(--text-secondary);
   font-size: 0.78rem;
 }
 

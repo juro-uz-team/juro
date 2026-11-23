@@ -2,7 +2,7 @@ import { publicMetadata } from "../../../../lib/public-seo";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SiteFooter, SiteHeader } from "../../../components/public/SiteChrome";
+import { SiteHeader } from "../../../components/public/SiteChrome";
 import { legalConfig } from "../../../legal-config";
 import { getLegalDocument, isLegalLocale, legalPath, relatedLegalDocuments, type LegalBlock } from "../../../legal-content";
 import styles from "../legal.module.css";
@@ -51,7 +51,6 @@ export default async function LegalDocumentPage({ params }: Props) {
           <h1>{document.title}</h1>
           <p>{document.description}</p>
           <div className={styles.metadata}><span>{ru ? "Версия" : "Versiya"}: {document.version}</span><span>{copy.label}</span><LegalPrintButton label={ru ? "Печать / PDF" : "Chop etish / PDF"} /></div>
-          <aside className={styles.previewNotice}><strong>{copy.label}</strong><span>{copy.notice}</span></aside>
         </header>
         <details className={styles.mobileToc}><summary className="juro-disclosure-summary">{ru ? "Содержание документа" : "Hujjat mazmuni"}</summary><ol>{sections.map((section) => <li key={section.id}><a href={`#${section.id}`}>{section.heading}</a></li>)}</ol></details>
         <div className={styles.documentLayout}>
@@ -62,7 +61,6 @@ export default async function LegalDocumentPage({ params }: Props) {
         {related.length > 0 && <section className={styles.related}><p>{ru ? "Связанные документы" : "Bog‘liq hujjatlar"}</p><div>{related.map((item) => <Link href={legalPath(locale, item.slug)} key={item.slug}><span>{item.title}</span><i aria-hidden="true">→</i></Link>)}</div></section>}
       </article>
       </main>
-      <SiteFooter locale={locale} />
     </div>
   );
 }

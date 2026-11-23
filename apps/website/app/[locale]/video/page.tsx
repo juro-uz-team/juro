@@ -2,7 +2,7 @@ import { publicMetadata } from "../../../lib/public-seo";
 import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import { investorVideo } from "../../investor-video";
 import styles from "./video.module.css";
 
@@ -55,7 +55,7 @@ export default async function InvestorVideoPage({ params }: Props) {
 
   return (
     <div className={styles.page} lang={locale}>
-      <SiteHeader languageHref={content.languageHref} locale={locale} tone="dark" />
+      <SiteHeader languageHref={content.languageHref} locale={locale} />
       <main id="main-content">
       <section className={styles.hero}>
         <p>{content.eyebrow}</p>
@@ -73,7 +73,6 @@ export default async function InvestorVideoPage({ params }: Props) {
         <p>{content.notice}</p>
       </section>
       </main>
-      <SiteFooter locale={locale} />
     </div>
   );
 }

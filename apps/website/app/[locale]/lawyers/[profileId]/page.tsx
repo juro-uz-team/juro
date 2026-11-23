@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { PublicLanguage } from "../../../../content/types";
-import { SiteFooter, SiteHeader } from "../../../components/public/SiteChrome";
+import { SiteHeader } from "../../../components/public/SiteChrome";
 import { platformPersonalHref } from "../../../components/public/platform-hrefs";
 import { getPublicLawyer, localizePublicLawyer, publicPhotoUrl } from "../catalog";
 import { LawyerAvatar } from "../LawyerAvatar";
@@ -58,5 +58,5 @@ export default async function LawyerProfilePage({ params }: Props) {
     {pending && <aside className={styles.reviewNotice}>{t.pendingNotice}</aside>}
     <div className={styles.profileGrid}><section><h2>{t.about}</h2><p>{lawyer.bio || t.unknown}</p>{lawyer.education && <><h2>{t.education}</h2><p>{lawyer.education}</p></>}</section><aside><dl className={styles.detailFacts}><div><dt>{t.languages}</dt><dd>{lawyer.languages.join(", ")}</dd></div>{lawyer.city && <div><dt>{t.city}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}{lawyer.experienceYears !== null && <div><dt>{t.experience}</dt><dd>{lawyer.experienceYears} {t.years}</dd></div>}{lawyer.priceDescription && <div><dt>{t.price}</dt><dd>{lawyer.priceDescription}</dd></div>}<div><dt>{t.format}</dt><dd>{lawyer.consultationFormats.join(", ") || "—"}</dd></div></dl>{!pending && <a className={styles.profileCta} href={platformPersonalHref(locale, `/consultations?lawyer=${encodeURIComponent(lawyer.id)}`)}>{t.request}</a>}</aside></div>
     <section className={styles.privacy}><h2>{t.privacy}</h2><p>{t.privacyLead}</p></section>
-  </article></main><SiteFooter locale={locale} /></div>;
+  </article></main></div>;
 }

@@ -19,6 +19,7 @@
   --control-selected-text: #071827;
   --brand-gold-ink: #805d26;
   --interactive-primary: #0d2c47;
+  --text-on-interactive: #fff;
   --interactive-hover: #17415f;
   --focus-ring: #d7b56f;
   --status-success: #26755d;
@@ -51,6 +52,7 @@ html[data-theme="dark"] {
   --border-subtle: rgba(220, 232, 240, 0.13);
   --border-strong: rgba(220, 232, 240, 0.25);
   --interactive-primary: #d7b56f;
+  --text-on-interactive: var(--control-selected-text);
   --interactive-hover: #e2c784;
   --focus-ring: #e2c784;
   --overlay: rgba(0, 6, 12, 0.72);

@@ -2,7 +2,7 @@ import { publicMetadata } from "../../../lib/public-seo";
 import { searchPages } from "../../../content/search-pages";
 import type { Metadata } from "next";
 import { englishInvestorVideo } from "../../investor-video";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import styles from "../../[locale]/video/video.module.css";
 
 export const metadata: Metadata = publicMetadata({ locale: "en", ...searchPages.en.video, path: "/video", image: "video" });
@@ -10,7 +10,7 @@ export const metadata: Metadata = publicMetadata({ locale: "en", ...searchPages.
 export default function EnglishInvestorVideoPage() {
   return (
     <div className={styles.page} lang="en">
-      <SiteHeader languageHref="/ru/video" locale="en" tone="dark" />
+      <SiteHeader languageHref="/ru/video" locale="en" />
       <main id="main-content">
         <section className={styles.hero}>
           <p>JURO VIDEO PRESENTATION</p>
@@ -26,7 +26,6 @@ export default function EnglishInvestorVideoPage() {
           <p>The video starts automatically without sound. Turn it on in the player controls when you are ready.</p>
         </section>
       </main>
-      <SiteFooter locale="en" />
     </div>
   );
 }

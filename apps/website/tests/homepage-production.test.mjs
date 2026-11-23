@@ -7,6 +7,8 @@ const themeSwitcher = fs.readFileSync("app/components/public/ThemeSwitcher.tsx",
 const platformHrefs = fs.readFileSync("app/components/public/platform-hrefs.ts", "utf8");
 const globalStyles = fs.readFileSync("app/globals.css", "utf8");
 const chrome = fs.readFileSync("app/components/public/SiteChrome.tsx", "utf8");
+const footer = fs.readFileSync("app/components/public/SiteFooter.tsx", "utf8");
+const homepage = fs.readFileSync("content/homepage.ts", "utf8");
 const chromeStyles = fs.readFileSync("app/components/public/site-chrome.module.css", "utf8");
 const headerTouchStyles = fs.readFileSync("app/components/public/header-touch-targets.module.css", "utf8");
 const sitemap = fs.readFileSync("app/sitemap.ts", "utf8");
@@ -15,7 +17,7 @@ const lawyerAvatar = fs.readFileSync("app/[locale]/lawyers/LawyerAvatar.tsx", "u
 
 test("public chrome exposes every primary public destination in both locales", () => {
   for (const route of ["/trust", "/video", "/lawyers", "/legal", "/knowledge"]) {
-    assert.match(chrome, new RegExp(route.replaceAll("/", "\\/")));
+    assert.match(chrome + footer, new RegExp(route.replaceAll("/", "\\/")));
   }
   assert.match(chrome, /languageHref/);
   assert.match(chrome, /platformRegistrationHref/);
@@ -57,9 +59,10 @@ test("brand uses official complete JURO logo assets in both themes", () => {
 });
 
 test("shared public footer publishes the contact details", () => {
-  for (const value of ["Ташкент, Узбекистан", "+998974022292", "admin@juro.uz"]) assert.match(chrome, new RegExp(value.replaceAll("+", "\\+")));
-  assert.match(chrome, /mailto:admin@juro\.uz/);
-  assert.match(chrome, /tel:\+998974022292/);
+  assert.match(rootLayout, /<SiteFooter initialLocale=\{locale\}/);
+  assert.match(homepage, /Ташкент, Узбекистан/);
+  assert.match(footer, /mailto:admin@juro\.uz/);
+  assert.match(footer, /tel:\+998974022292/);
 });
 
 test("English marketplace presentation localizes published taxonomy and tolerates missing external photos", () => {

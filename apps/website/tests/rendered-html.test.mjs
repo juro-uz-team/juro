@@ -373,10 +373,11 @@ test("serves the English investor video from its dedicated public route", async 
   assert.match(html, /muted/);
 });
 
-test("every discoverable internal public link resolves", async () => {
+test("every discoverable internal public link resolves and shares the localized homepage footer", async () => {
   const worker = await createWorker();
   const queue = ["/ru", "/uz", "/en"];
   const visited = new Set();
+  const footers = new Map();
 
   while (queue.length > 0) {
     const path = queue.shift();
@@ -392,6 +393,14 @@ test("every discoverable internal public link resolves", async () => {
     }
 
     const html = await response.text();
+    const locale = path.split("/")[1];
+    const pageFooters = html.match(/<footer\b[\s\S]*?<\/footer>/g) ?? [];
+    assert.equal(pageFooters.length, 1, path);
+    if (path === `/${locale}`) footers.set(locale, pageFooters[0]);
+    assert.equal(pageFooters[0], footers.get(locale), path);
+    if (/^\/(?:ru|uz)\/legal(?:\/|$)/u.test(path)) {
+      assert.doesNotMatch(html, /Документы показаны для проверки структуры|Hujjatlar tuzilma va interfeysni tekshirish/u, path);
+    }
     for (const match of html.matchAll(/\shref="([^"]+)"/g)) {
       const raw = match[1].replaceAll("&amp;", "&");
       if (!raw.startsWith("/")) continue;

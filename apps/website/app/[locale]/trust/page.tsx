@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { experience } from "../../../content/experience";
 import type { PublicLanguage } from "../../../content/types";
-import { SiteFooter, SiteHeader } from "../../components/public/SiteChrome";
+import { SiteHeader } from "../../components/public/SiteChrome";
 import { legalConfig } from "../../legal-config";
 import styles from "./trust.module.css";
 
@@ -43,7 +43,6 @@ function EnglishTrustPage() {
       <section className={styles.policies}><h2>Policies and rules</h2><div><Link href="/en/legal">Legal Centre</Link><Link href="/en/terms">Terms of use</Link><Link href="/en/privacy-policy">Privacy policy</Link><Link href="/en/personal-data-processing">Personal data processing</Link><Link href="/en/cookies">Cookies</Link><Link href="/en/ai-rules">AI rules</Link></div></section>
       <section className={styles.contact}><h2>Question about security or data?</h2><p>For privacy and data-processing questions, use JURO’s published contact.</p><a href={`mailto:${legalConfig.contacts.privacyEmail}`}>Contact us about data</a></section>
     </main>
-    <SiteFooter locale="en" />
   </div>;
 }
 
@@ -198,7 +197,6 @@ export default async function TrustPage({ params }: Props) {
           <a href={`mailto:${legalConfig.contacts.privacyEmail}`}>{ru ? "Написать по вопросам данных" : "Ma’lumotlar bo‘yicha yozish"}</a>
         </section>
       </main>
-      <SiteFooter locale={locale} />
     </div>
   );
 }

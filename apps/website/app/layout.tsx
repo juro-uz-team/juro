@@ -1,4 +1,6 @@
 import { ProductAnalytics } from "./components/public/ProductAnalytics";
+import { SiteFooter } from "./components/public/SiteFooter";
+import { PublicThemeFallback } from "./components/public/ThemeSwitcher";
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "@fontsource-variable/manrope/wght.css";
@@ -58,12 +60,14 @@ export default async function RootLayout({
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <PublicThemeFallback />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />
         {!homepage && <>
           <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.setAttribute("data-juro-loading", "true");' }} />
           <BrandLoading language={locale} />
         </>}
         {children}
+        <SiteFooter initialLocale={locale} />
         <ProductAnalytics />
       </body>
     </html>
