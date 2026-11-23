@@ -94,7 +94,7 @@
 .account-content .mfa-state > button { margin-top: 16px; }
 .account-content .notification-preferences-list { gap: 0; margin: 0; }
 .account-content .notification-preferences-list label { grid-template-columns: minmax(0,1fr) 24px; align-items: center; padding: 16px 0; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; background: transparent; }
-.account-content .notification-preferences-list label > input { grid-column: 2; grid-row: 1; }
+.account-content .notification-preferences-list label > :is(input, .notification-preference-check) { grid-column: 2; grid-row: 1; place-self: center; }
 .account-content .notification-preferences-list label > span { grid-column: 1; grid-row: 1; gap: 6px; }
 .account-content .notification-preferences-list strong { font-size: 13px; font-weight: 600; }
 .account-content .notification-preferences-list small { font-size: 12px; line-height: 1.6; }

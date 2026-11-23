@@ -537,9 +537,18 @@
   cursor: pointer;
 }
 
-.notification-preferences-list label:has(input:checked) { border-color:var(--p7); background: var(--p8); }
-
-.notification-preferences-list input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--p7); }
+.notification-preferences-list input {
+  appearance: none; inline-size: 20px; block-size: 20px; margin: 0; justify-self: center;
+  border: 1px solid var(--control-border); border-radius: 5px; background: var(--control-background); cursor: inherit;
+}
+.notification-preferences-list input:checked { border-color: var(--brand-gold-text); background: var(--brand-gold-text); }
+.notification-preference-check { display: none; inline-size: 14px; block-size: 14px; stroke-width: 3; pointer-events: none; color: var(--surface-raised); }
+.notification-preferences-list input:checked + .notification-preference-check { display: block; }
+.notification-preferences-list label:has(input:disabled) { cursor: default; opacity: .65; }
+@media (forced-colors: active) {
+  .notification-preferences-list input { appearance: auto; }
+  .notification-preferences-list input:checked + .notification-preference-check { display: none; }
+}
 .notification-preferences-list span { display: grid; gap: 3px; }
 .notification-preferences-list strong { color: var(--p2); font-size: 12px; }
 .notification-preferences-list small { color: var(--p3); font-size: 11px; line-height: 1.45; }

@@ -152,7 +152,7 @@ test("mobile AI, notification, and privacy actions retain 44px touch targets", a
   assert.match(documents, /:where\(\.dbt-root, \.dbt-signed-access\) :where\(button, a\) \{ min-width: 44px; \}/);
   assert.match(notifications, /import "\.\/notifications\.css";/);
   assert.doesNotMatch(notifications, /<BuilderHeader/);
-  assert.match(notificationCss, /\.notifications-workspace :is\(button, \.notifications-entry-actions a, \.notifications-links a\) \{[^}]*min-block-size: 44px;[^}]*min-inline-size: 44px;/);
+  assert.match(notificationCss, /\.notifications-workspace :is\(button, \.notifications-entry-actions a\) \{[^}]*min-block-size: 44px;[^}]*min-inline-size: 44px;/);
   assert.match(notificationCss, /\.notifications-entry-actions \{ grid-column: 2; \}/);
   assert.match(profile, /\.delete-request button \{ min-height: 44px; \}/);
 });

@@ -3,6 +3,7 @@ import { documentVisibilityScope } from "../../../../lib/document-builder/permis
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { workspaceForUser, workspaceForUserById } from "../../../../lib/platform/workspace";
 import { isWorkspaceId } from "../../../../lib/platform/routing";
+import { readWebsiteNotificationPreferences, websiteNotificationFilter } from "../../../../lib/platform/website-notifications";
 
 function response(body: unknown) {
   return Response.json(body, { headers: { "cache-control": "private, no-store", pragma: "no-cache" } });
@@ -24,14 +25,15 @@ export const GET = withApiErrors(async function GET(request: Request) {
     );
   }
   const documentVisibility = documentVisibilityScope(user.id, workspace.id);
+  const notificationFilter = websiteNotificationFilter(await readWebsiteNotificationPreferences(db, user.id, workspace.id));
   const [counts, cases, documents, deadlines, consultations, notifications, analyses, comparisons] = await db.batch([
     db.prepare(
       `SELECT
         (SELECT count(*) FROM cases WHERE workspace_id = ? AND archived_at IS NULL) AS activeCases,
         (SELECT count(*) FROM documents d WHERE ${documentVisibility.sql} AND d.archived_at IS NULL) AS documents,
         (SELECT count(*) FROM consultation_bookings WHERE workspace_id = ? AND status NOT IN ('completed','cancelled')) AS consultations,
-        (SELECT count(*) FROM notifications WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL) AS unreadNotifications`,
-    ).bind(workspace.id, ...documentVisibility.bindings, workspace.id, user.id, workspace.id),
+        (SELECT count(*) FROM notifications WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL AND ${notificationFilter.sql}) AS unreadNotifications`,
+    ).bind(workspace.id, ...documentVisibility.bindings, workspace.id, user.id, workspace.id, ...notificationFilter.bindings),
     db.prepare(
       `SELECT c.id,c.title,c.status,c.updated_at AS updatedAt,p.progress_percent AS progressPercent
        FROM cases c LEFT JOIN action_plans p ON p.case_id=c.id
@@ -58,8 +60,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
     ).bind(workspace.id),
     db.prepare(
       `SELECT id,title,body,created_at AS createdAt FROM notifications
-       WHERE user_id=? AND workspace_id=? ORDER BY created_at DESC LIMIT 4`,
-    ).bind(user.id, workspace.id),
+       WHERE user_id=? AND workspace_id=? AND ${notificationFilter.sql} ORDER BY created_at DESC LIMIT 4`,
+    ).bind(user.id, workspace.id, ...notificationFilter.bindings),
     db.prepare(
       `SELECT a.id,a.status,a.error_code AS errorCode,a.updated_at AS updatedAt,f.file_name AS fileName
        FROM document_analyses a JOIN document_files f ON f.id=a.uploaded_file_id

@@ -1337,9 +1337,9 @@ test("notification reads use strict bounded input and expose resilient UI states
   assert.match(route, /z\.string\(\)\.min\(1\)\.max\(128\)/);
   assert.match(route, /parseJsonRequest\(request, notificationReadSchema, 1_024\)/);
   assert.match(route, /Boolean\(value\.id\) !== Boolean\(value\.all\)/);
-  assert.match(client, /aria-busy=\{loading \|\| marking !== null\}/);
+  assert.match(client, /aria-busy=\{pendingView \|\| marking !== null\}/);
   assert.match(client, /aria-live="polite"/);
-  assert.match(client, /disabled=\{loading \|\| marking !== null\}/);
+  assert.match(client, /disabled=\{pendingView \|\| marking !== null\}/);
   assert.match(client, /Не удалось загрузить уведомления/);
 });
 
@@ -1427,7 +1427,7 @@ test("notification reads and read acknowledgements remain workspace-scoped", asy
   assert.match(notificationRoute, /WHERE user_id = \? AND workspace_id = \?/);
   assert.match(notificationRoute, /id = \? AND user_id = \? AND workspace_id = \?/);
   assert.match(dashboardRoute, /notifications WHERE user_id = \? AND workspace_id = \? AND read_at IS NULL/);
-  assert.match(dashboardRoute, /WHERE user_id=\? AND workspace_id=\? ORDER BY created_at DESC LIMIT 4/);
+  assert.match(dashboardRoute, /WHERE user_id=\? AND workspace_id=\? AND \$\{notificationFilter\.sql\} ORDER BY created_at DESC LIMIT 4/);
   assert.doesNotMatch(notificationRoute, /WHERE user_id = \? ORDER BY created_at DESC/);
 });
 test("handoff UI requires a fresh owner consent before grant and exposes revoke", async () => {

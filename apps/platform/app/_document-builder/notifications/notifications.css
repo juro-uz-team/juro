@@ -1,5 +1,5 @@
 .notifications-workspace { display: grid; gap: 14px; }
-.notifications-inbox, .notifications-links {
+.notifications-inbox, .notifications-settings {
   min-inline-size: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -15,7 +15,7 @@
   border-bottom: 1px solid var(--line);
 }
 .notifications-filters, .notifications-entry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.notifications-workspace :is(button, .notifications-entry-actions a, .notifications-links a) {
+.notifications-workspace :is(button, .notifications-entry-actions a) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -30,7 +30,7 @@
   font: inherit;
   text-decoration: none;
 }
-.notifications-workspace :is(button:not(:disabled), .notifications-entry-actions a, .notifications-links a):hover {
+.notifications-workspace :is(button:not(:disabled), .notifications-entry-actions a):hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
@@ -41,8 +41,8 @@
   font-weight: 650;
 }
 .notifications-count { font-size: 12px; font-variant-numeric: tabular-nums; }
-.notifications-workspace button:disabled { cursor: wait; opacity: .55; }
-.notifications-workspace :is(button, a):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.notifications-workspace button:disabled { cursor: default; opacity: .55; }
+.notifications-workspace :is(button, a, summary):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .notifications-workspace :is(button, a) svg { inline-size: 16px; block-size: 16px; flex: none; }
 .notifications-list { margin: 0; padding: 0; list-style: none; }
 .notifications-list li {
@@ -62,6 +62,7 @@
 .notifications-entry p, .notifications-empty p { margin: 4px 0; color: var(--text-secondary); }
 .notifications-entry time { color: var(--text-secondary); font-size: 12px; }
 .notifications-entry-actions button { min-inline-size: 44px; border-color: var(--line); }
+.notifications-entry-actions button span { text-wrap: balance; }
 .notifications-pagination { padding: 0 12px 10px; border-top: 1px solid var(--line); }
 .notifications-pagination .workspace-pagination button { border-color: var(--line); }
 .notifications-empty { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; padding: clamp(16px, 2vw, 24px); }
@@ -70,12 +71,49 @@
 .notifications-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; color: var(--text-secondary); }
 .notifications-feedback[role=alert] { background: var(--red-bg); color: var(--text-primary); }
 .notifications-feedback svg { inline-size: 18px; block-size: 18px; }
-.notifications-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 6px; gap: 4px; }
-.notifications-links a { justify-content: flex-start; min-inline-size: 0; text-align: start; overflow-wrap: anywhere; }
-.notifications-links a > svg:first-child { color: var(--brand-gold-text); }
-.notifications-links a > svg:last-child { margin-inline-start: auto; }
+.notifications-settings summary {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center;
+  min-block-size: 52px; gap: 8px; padding: 8px 14px; border-radius: inherit;
+  list-style: none; cursor: pointer; font-weight: 650;
+}
+.notifications-settings summary::-webkit-details-marker { display: none; }
+.notifications-settings summary:hover { background: var(--surface-hover); }
+.notifications-settings summary svg { inline-size: 17px; block-size: 17px; color: var(--brand-gold-text); }
+.notifications-settings-chevron { grid-column: 4; }
+.notifications-settings[open] .notifications-settings-chevron { transform: rotate(180deg); }
+.notifications-settings-state {
+  justify-self: end; padding: 3px 8px; border-radius: 999px;
+  background: var(--surface-subtle); color: var(--text-secondary); font-size: 12px;
+}
+.notifications-settings-state[data-enabled=true] { background: var(--amber-bg); color: var(--brand-gold-text); }
+.notifications-settings form { padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.notifications-settings form p { margin: 0 0 6px; color: var(--text-secondary); }
+.notifications-switch {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center;
+  gap: 10px; min-block-size: 44px; padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+.notifications-switch:has(input:enabled):hover { background: var(--surface-hover); }
+.notifications-switch:has(input:disabled) { cursor: default; opacity: .55; }
+.notifications-switch input { position: absolute; inset-inline-end: 6px; inline-size: 36px; block-size: 22px; margin: 0; opacity: 0; cursor: inherit; }
+.notifications-switch-track { display: flex; align-items: center; padding: 2px; block-size: 22px; border: 1px solid var(--control-border); border-radius: 999px; background: var(--control-background); }
+.notifications-switch-track::before { content: ""; inline-size: 16px; block-size: 16px; border-radius: 50%; background: var(--text-secondary); }
+.notifications-switch input:checked + .notifications-switch-track { justify-content: flex-end; background: var(--brand-gold-text); border-color: var(--brand-gold-text); }
+.notifications-switch input:checked + .notifications-switch-track::before { background: var(--surface-raised); }
+.notifications-switch input:focus-visible + .notifications-switch-track { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.notifications-settings-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; min-inline-size: 0; margin: 0; padding: 4px 0; border: 0; border-block: 1px solid var(--line); }
+.notifications-settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-block-size: 44px; margin-top: 8px; }
+.notifications-settings-actions [role=alert] { margin-inline-end: auto; color: var(--text-primary); }
+.notifications-settings-actions [role=status] { color: var(--text-secondary); }
+.notifications-workspace .notifications-settings-actions button { border-color: var(--border-accent); background: var(--surface-selected); color: var(--brand-gold-text); }
+.notifications-workspace .notifications-settings-actions button:enabled:hover { border-color: var(--brand-gold-text); }
+@media (forced-colors: active) {
+  .notifications-switch input { position: static; justify-self: end; inline-size: 20px; block-size: 20px; opacity: 1; }
+  .notifications-switch-track { display: none; }
+}
+@media (max-width: 760px) {
+  .notifications-settings-categories { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
 @media (max-width: 620px) {
-  .notifications-links { grid-template-columns: minmax(0, 1fr); }
   .notifications-list li { grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; }
   .notifications-entry-actions { grid-column: 2; }
   .notifications-entry-actions:empty { display: none; }

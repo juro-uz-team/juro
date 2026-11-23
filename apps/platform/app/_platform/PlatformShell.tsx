@@ -52,6 +52,7 @@ import {
 import type { WorkspaceOption } from "../../lib/platform/workspace";
 import { GlobalSearch } from "./GlobalSearch";
 import { LogoutButton } from "./LogoutButton";
+import { NotificationBell } from "./NotificationBell";
 import { PlatformRouteProvider } from "./PlatformRouteContext";
 import { useSessionRefresh } from "./useSessionRefresh";
 import { ThemeSwitcher } from "../_theme/ThemeSwitcher";
@@ -569,6 +570,8 @@ export function PlatformShell({
             </div>
             <div>
               <GlobalSearch locale={locale} accountType={accountType} />
+              <NotificationBell key={activeWorkspaceId} locale={locale} workspaceId={activeWorkspaceId}
+                href={`${base}/notifications`} active={routeIsActive("notifications")} />
               <ThemeSwitcher locale={locale} compact />
               <Select
                 className="platform-language-switcher"

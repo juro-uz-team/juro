@@ -2,17 +2,20 @@
 
 import { WorkspacePagination, useWorkspacePagination } from "../../_platform/WorkspacePagination";
 import { WorkspaceTitle } from "../../_platform/WorkspaceTitle";
+import { notificationsChanged, refreshNotifications } from "../../_platform/NotificationBell";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BookOpenText, BookUser, Check, CheckCheck, ChevronRight, FileCheck2, Files, Inbox, LoaderCircle, MessageSquareText, Scale, UserRoundCheck } from "lucide-react";
+import { Bell, Check, CheckCheck, ChevronRight, FileCheck2, Inbox, LoaderCircle, MessageSquareText, Scale, UserRoundCheck } from "lucide-react";
 import type { NotificationRecord } from "../../../lib/document-builder/types";
+import type { WebsiteNotificationPreferences } from "../../../lib/platform/website-notifications";
 import { builderNavigationPaths } from "../../../lib/platform/builder-paths";
 import { workspaceCopy } from "../../../lib/platform/builder-workspace-copy";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "../../_platform/PlatformRouteContext";
 import { apiFetch } from "../_components/api-client";
 import { builderError, builderIntlLocale, builderText, builderUiLocale } from "../builder-localization";
+import { WebsiteNotificationSettings } from "./WebsiteNotificationSettings";
 import "./notifications.css";
 
 const EN_NOTIFICATION_COPY: Readonly<Record<string, { title: string; body: string }>> = {
@@ -41,8 +44,12 @@ function notificationPresentation(item: NotificationRecord, locale: string | nul
 }
 
 export function NotificationsClient() {
-  const paths = builderNavigationPaths(usePathname());
   const workspaceId = usePlatformWorkspaceId();
+  return <NotificationsInbox key={workspaceId} workspaceId={workspaceId} />;
+}
+
+function NotificationsInbox({ workspaceId }: { workspaceId: string }) {
+  const paths = builderNavigationPaths(usePathname());
   const base = usePlatformBasePath();
   const locale = builderUiLocale(paths.locale);
   const copy = workspaceCopy(locale).notifications;
@@ -50,7 +57,10 @@ export function NotificationsClient() {
   const loadError = inline("Не удалось загрузить уведомления.", "Bildirishnomalarni yuklab bo‘lmadi.", "We could not load your notifications.");
   const dateLocale = builderIntlLocale(locale);
   const [items, setItems] = useState<NotificationRecord[]>([]);
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [preferences, setPreferences] = useState<WebsiteNotificationPreferences | null>(null);
+  const [loadedView, setLoadedView] = useState<boolean | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState<string | "all" | null>(null);
@@ -60,72 +70,76 @@ export function NotificationsClient() {
     const sequence = ++requestSequence.current;
     if (!background) setLoading(true);
     try {
-      const result = await apiFetch<{ notifications: NotificationRecord[] }>("/api/document-builder/notifications", {
+      const result = await apiFetch<{ notifications: NotificationRecord[]; unreadCount: number; preferences: WebsiteNotificationPreferences }>(`/api/document-builder/notifications?view=${unreadOnly ? "unread" : "all"}`, {
         cache: "no-store", headers: { "x-juro-workspace-id": workspaceId },
       });
       if (sequence !== requestSequence.current) return;
       setItems(result.notifications);
+      setUnreadCount(result.unreadCount);
+      setPreferences(result.preferences);
+      setLoadedView(unreadOnly);
       setError("");
     } catch (caught) {
       if (sequence === requestSequence.current) setError(builderError(locale, caught, loadError));
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [locale, loadError, workspaceId]);
+  }, [locale, loadError, unreadOnly, workspaceId]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     const refresh = () => { if (!document.hidden) void load(true); };
     const interval = window.setInterval(refresh, 60_000);
     document.addEventListener("visibilitychange", refresh);
+    window.addEventListener(notificationsChanged, refresh);
     return () => {
       requestSequence.current += 1;
       window.clearTimeout(timer);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener(notificationsChanged, refresh);
     };
   }, [load]);
   const mark = async (id?: string) => {
+    if (marking !== null) return;
     const target = id ?? "all";
     setMarking(target);
     try {
       await apiFetch("/api/document-builder/notifications", {
-        method: "PATCH", headers: { "x-juro-workspace-id": workspaceId },
+        method: "PATCH", headers: { "x-juro-workspace-id": workspaceId }, keepalive: true,
         body: JSON.stringify(id ? { id } : { all: true }),
       });
       setNotice(id
         ? inline("Уведомление прочитано.", "Bildirishnoma o‘qildi.", "Notification marked as read.")
         : inline("Все уведомления прочитаны.", "Barcha bildirishnomalar o‘qildi.", "All notifications marked as read."));
-      await load(true);
+      refreshNotifications();
     } catch (caught) {
       setError(builderError(locale, caught, inline("Не удалось обновить уведомление.", "Bildirishnomani yangilab bo‘lmadi.", "We could not update the notification.")));
     } finally {
       setMarking(null);
     }
   };
-  const unread = items.filter(item => !item.readAt);
-  const visible = unreadOnly ? unread : items;
+  const visible = loadedView === unreadOnly ? items : [];
+  const pendingView = loading || (loadedView !== unreadOnly && !error);
   const pagination = useWorkspacePagination(visible.length, 6, unreadOnly ? "unread" : "all");
   const dateFormat = new Intl.DateTimeFormat(dateLocale, { dateStyle: "medium", timeStyle: "short" });
   const allLabel = inline("Все", "Barchasi", "All");
   const unreadLabel = inline("Непрочитанные", "O‘qilmaganlar", "Unread");
-  const links = [
-    { href: paths.library, label: inline("Библиотека шаблонов", "Shablonlar kutubxonasi", "Template library"), Icon: BookOpenText },
-    { href: paths.documents, label: inline("Мои документы", "Mening hujjatlarim", "My documents"), Icon: Files },
-    { href: paths.contacts, label: inline("Контакты", "Kontaktlar", "Contacts"), Icon: BookUser },
-  ];
-
   return <section className="notifications-workspace workspace-page">
     <WorkspaceTitle icon={<Bell />} title={copy.title} />
     <p className="sr-only" aria-live="polite">{notice}</p>
-    <section className="notifications-inbox" aria-label={copy.title} aria-busy={loading || marking !== null}>
+    <WebsiteNotificationSettings locale={locale} workspaceId={workspaceId} preferences={preferences} onSaved={value => {
+      setPreferences(value);
+      refreshNotifications();
+    }} />
+    <section className="notifications-inbox" aria-label={copy.title} aria-busy={pendingView || marking !== null}>
       <div className="notifications-toolbar">
         <div className="notifications-filters" role="group" aria-label={inline("Фильтр уведомлений", "Bildirishnoma filtri", "Filter notifications")}>
           <button type="button" aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>{allLabel}</button>
           <button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>
-            {unreadLabel}{unread.length > 0 && <span className="notifications-count">{unread.length}</span>}
+            {unreadLabel}{unreadCount > 0 && <span className="notifications-count">{unreadCount}</span>}
           </button>
         </div>
-        {unread.length > 0 && <button type="button" className="notifications-mark-all" disabled={loading || marking !== null} onClick={() => void mark()}>
+        {(unreadCount > 0 || visible.some(item => !item.readAt)) && <button type="button" className="notifications-mark-all" disabled={pendingView || marking !== null} onClick={() => void mark()}>
           {marking === "all" ? <LoaderCircle aria-hidden="true" className="spin" /> : <CheckCheck aria-hidden="true" />}
           {copy.readAll}
         </button>}
@@ -133,7 +147,7 @@ export function NotificationsClient() {
       {error && <div className="notifications-feedback" role="alert"><span>{error}</span>
         <button type="button" onClick={() => void load()} disabled={loading}>{inline("Повторить", "Qayta urinish", "Try again")}</button>
       </div>}
-      {loading ? <p className="notifications-feedback" role="status"><LoaderCircle aria-hidden="true" className="spin" />{inline("Загружаем уведомления…", "Bildirishnomalar yuklanmoqda…", "Loading notifications…")}</p>
+      {pendingView ? <p className="notifications-feedback" role="status"><LoaderCircle aria-hidden="true" className="spin" />{inline("Загружаем уведомления…", "Bildirishnomalar yuklanmoqda…", "Loading notifications…")}</p>
         : visible.length ? <>
           <ul className="notifications-list">
             {visible.slice(pagination.from, pagination.to).map(item => {
@@ -141,6 +155,7 @@ export function NotificationsClient() {
               const Icon = isMonitoring ? Scale : item.type.includes("comment") ? MessageSquareText
                 : item.type.includes("confirm") || item.type.includes("agreement") ? UserRoundCheck : FileCheck2;
               const content = notificationPresentation(item, locale);
+              const markOnOpen = () => { if (!item.readAt) void mark(item.id); };
               return <li key={item.id} data-unread={!item.readAt}>
                 <span className="notifications-icon"><Icon aria-hidden="true" /></span>
                 <div className="notifications-entry">
@@ -149,11 +164,12 @@ export function NotificationsClient() {
                   <time dateTime={item.createdAt}>{dateFormat.format(new Date(item.createdAt))}</time>
                 </div>
                 <div className="notifications-entry-actions">
-                  {item.documentId && <Link href={paths.document(item.documentId)}>{copy.openDocument}<ChevronRight aria-hidden="true" /></Link>}
-                  {isMonitoring && <Link href={`${base}/monitoring`}>{inline("Открыть мониторинг", "Monitoringni ochish", "Open monitoring")}<ChevronRight aria-hidden="true" /></Link>}
+                  {item.documentId && <Link href={paths.document(item.documentId)} onClick={markOnOpen}>{copy.openDocument}<ChevronRight aria-hidden="true" /></Link>}
+                  {isMonitoring && <Link href={`${base}/monitoring`} onClick={markOnOpen}>{inline("Открыть мониторинг", "Monitoringni ochish", "Open monitoring")}<ChevronRight aria-hidden="true" /></Link>}
                   {!item.readAt && <button type="button" aria-label={`${copy.markRead} · ${content.title}`} title={copy.markRead}
                     disabled={marking !== null} onClick={() => void mark(item.id)}>
                     {marking === item.id ? <LoaderCircle aria-hidden="true" className="spin" /> : <Check aria-hidden="true" />}
+                    <span>{copy.markRead}</span>
                   </button>}
                 </div>
               </li>;
@@ -163,15 +179,16 @@ export function NotificationsClient() {
         </> : !error && <div className="notifications-empty">
           <span className="notifications-icon">{unreadOnly ? <CheckCheck aria-hidden="true" /> : <Inbox aria-hidden="true" />}</span>
           <div>
-            <h2>{unreadOnly ? inline("Всё прочитано", "Hammasi o‘qilgan", "You’re caught up") : copy.emptyTitle}</h2>
-            {unreadOnly ? items.length > 0 && <button type="button" onClick={() => setUnreadOnly(false)}>
+            <h2>{unreadOnly
+              ? preferences?.enabled === false
+                ? inline("Уведомления на сайте приостановлены", "Saytdagi bildirishnomalar to‘xtatilgan", "Website notifications are paused")
+                : inline("Нет непрочитанных уведомлений", "O‘qilmagan bildirishnomalar yo‘q", "No unread notifications")
+              : copy.emptyTitle}</h2>
+            {unreadOnly ? <button type="button" onClick={() => setUnreadOnly(false)}>
               {inline("Показать все уведомления", "Barcha bildirishnomalarni ko‘rish", "Show all notifications")}
             </button> : <p>{inline("Здесь появятся действия по документам и обновления законодательства, на которые вы подписались.", "Hujjatlar bo‘yicha hodisalar va siz obuna bo‘lgan qonunchilik yangiliklari shu yerda ko‘rinadi.", "Document activity and legislation updates you follow will appear here.")}</p>}
           </div>
         </div>}
     </section>
-    <nav className="notifications-links" aria-label={inline("Инструменты для документов", "Hujjat vositalari", "Document tools")}>
-      {links.map(({ href, label, Icon }) => <Link href={href} key={href}><Icon aria-hidden="true" /><span>{label}</span><ChevronRight aria-hidden="true" /></Link>)}
-    </nav>
   </section>;
 }

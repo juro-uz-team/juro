@@ -18,6 +18,7 @@ import {
 import { workspaceForUser } from "../../../../lib/platform/workspace";
 import { canManageTeam } from "../../../../lib/platform/role-policy";
 import { isLocale } from "../../../../lib/platform/routing";
+import { WEBSITE_NOTIFICATION_PREFERENCE } from "../../../../lib/platform/website-notifications";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "private, no-store", pragma: "no-cache" } });
@@ -46,8 +47,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
     ).bind(user.id),
     db.prepare("SELECT id,name,full_name AS fullName,short_name AS shortName,type,locale FROM workspaces WHERE id=? LIMIT 1").bind(workspace.id),
     db.prepare(
-      "SELECT type,version,granted_at AS grantedAt,revoked_at AS revokedAt FROM consents WHERE user_id=? ORDER BY granted_at DESC",
-    ).bind(user.id),
+      "SELECT type,version,granted_at AS grantedAt,revoked_at AS revokedAt FROM consents WHERE user_id=? AND type<>? ORDER BY granted_at DESC",
+    ).bind(user.id, WEBSITE_NOTIFICATION_PREFERENCE),
     db.prepare(
       `SELECT
          acceptance.document_key AS type,

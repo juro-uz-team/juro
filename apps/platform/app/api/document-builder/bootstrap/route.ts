@@ -6,6 +6,7 @@ import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import type { IdentityDocumentType, UserProfile } from "../../../../lib/document-builder/types";
 import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { countWebsiteNotifications, readWebsiteNotificationPreferences } from "../../../../lib/platform/website-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,9 @@ export async function GET(): Promise<Response> {
       const workspace = await workspaceForUser(user);
       const documents = await bindings.DB.prepare("SELECT count(*) AS count FROM documents WHERE owner_user_id = ? AND workspace_id = ?")
         .bind(user.id, workspace.id).first<{ count: number }>();
-      const notifications = await bindings.DB.prepare("SELECT count(*) AS count FROM notifications WHERE user_id = ? AND read_at IS NULL")
-        .bind(user.id).first<{ count: number }>();
-      counts = { documents: Number(documents?.count ?? 0), notifications: Number(notifications?.count ?? 0) };
+      const preferences = await readWebsiteNotificationPreferences(bindings.DB, user.id, workspace.id);
+      const notifications = await countWebsiteNotifications(bindings.DB, user.id, workspace.id, preferences);
+      counts = { documents: Number(documents?.count ?? 0), notifications };
     }
     return jsonResponse({ user, counts, storage: { d1: true, r2: Boolean(bindings.BUCKET) } });
   } catch (error) {

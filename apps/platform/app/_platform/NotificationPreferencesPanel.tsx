@@ -4,7 +4,7 @@
 
 import { accountSettingsCopy } from "./account-settings-copy";
 
-import { BellRing, LoaderCircle, Save } from "lucide-react";
+import { BellRing, Check, LoaderCircle, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
@@ -122,6 +122,7 @@ export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocal
       <legend className="sr-only">{copy.legend}</legend>
       {keys.map((key) => <label key={key}>
         <input type="checkbox" checked={preferences[key]} onChange={(event) => { setPreferences(current => ({ ...current, [key]: event.target.checked })); setMessage(""); }} disabled={saving || savedPreferences === null} />
+        <Check className="notification-preference-check" aria-hidden="true" />
         <span><strong>{preferenceCopy[locale][key].title}</strong><small>{preferenceCopy[locale][key].description}</small></span>
       </label>)}
     </fieldset>}

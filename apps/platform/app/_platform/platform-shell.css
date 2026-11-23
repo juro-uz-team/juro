@@ -212,6 +212,24 @@ html[data-theme=dark] .platform-shell {
 .platform-topbar > div:first-of-type small { font-size: 11px; }
 .platform-topbar > div:first-of-type strong { font-size: 13px; font-weight: 600; }
 .platform-shell .platform-topbar :is(button, a) { border-color: transparent; background: transparent; min-width: 44px; height: 44px; font-weight: 500; }
+.platform-notification-bell { position: relative; flex: none; }
+.platform-shell .platform-topbar .platform-notification-bell a[aria-current=page] { color: var(--brand-gold-text); background: var(--surface-selected); }
+.platform-notification-count {
+  position: absolute; inset-block-start: 1px; inset-inline-end: 0;
+  display: grid; place-items: center; min-inline-size: 21px; block-size: 21px; padding-inline: 4px;
+  border: 2px solid var(--platform-topbar-surface); border-radius: 999px;
+  background: #ae2840; color: #fff; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.platform-notification-tooltip {
+  display: none; position: absolute; z-index: 1; inset-block-start: 100%; inset-inline-end: 0;
+  padding: 6px 9px; border: 1px solid var(--border-subtle); border-radius: 8px;
+  background: var(--surface-elevated); color: var(--text-primary); box-shadow: var(--shadow-soft);
+  font-size: 12px; inline-size: max-content; max-inline-size: min(220px, 50vw);
+}
+.platform-notification-bell:is(:hover, :focus-within) .platform-notification-tooltip { display: block; }
+@media (max-width: 520px) {
+  .platform-notification-tooltip { inset-inline: 0 auto; }
+}
 .platform-shell { min-height: 100dvh; }
 .platform-shell .platform-content {
   min-height: calc(100dvh - var(--platform-topbar-height, 76px));
