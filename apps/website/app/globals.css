@@ -209,11 +209,22 @@ summary {
   }
 }
 
-@media (max-width: 420px) {
-  html:not([data-theme="dark"]) .public-theme-switcher button[data-theme-option="light"],
-  html[data-theme="dark"] .public-theme-switcher button[data-theme-option="dark"] {
-    display: none;
+.public-theme-switcher .public-theme-toggle,
+html[data-theme="dark"] .public-theme-toggle svg:last-child,
+html:not([data-theme="dark"]) .public-theme-toggle svg:first-child {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .public-theme-switcher { border: 0; padding: 0; }
+  .public-theme-switcher button[data-theme-option] { display: none; }
+  .public-theme-switcher .public-theme-toggle {
+    display: grid;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 10px;
+    cursor: pointer;
   }
+  .public-theme-toggle svg { width: 18px; height: 18px; }
 }
 
 /* Global motion and accessibility rules, outside CSS Module local scope. */

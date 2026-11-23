@@ -30,7 +30,7 @@ test("mobile chrome keeps fixed controls clear of iOS safe areas", () => {
   assert.match(chromeStyles, /safe-area-inset-right/);
   assert.match(chrome, /headerTouchStyles\.language/);
   assert.match(headerTouchStyles, /min-height: 44px/);
-  assert.match(headerTouchStyles, /aria-current="page"/);
+  assert.match(chromeStyles, /\.languageOptions a\[aria-current="page"\]/);
   assert.match(chrome, /aria-modal="true"/);
   assert.match(chrome, /event\.key === "Escape"/);
   assert.match(chrome, /trigger\?\.focus\(\)/);

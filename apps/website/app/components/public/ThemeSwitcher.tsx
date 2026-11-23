@@ -47,6 +47,7 @@ function persistThemeCookie(mode: ThemeMode) {
 
 export function PublicThemeSwitcher({ locale }: { locale: PublicLanguage }) {
   const mode = useSyncExternalStore<ThemeMode | null>(subscribeThemeMode, readThemeMode, () => null);
+  const alternateMode = mode === "dark" ? "light" : "dark";
 
   function select(next: ThemeMode) {
     apply(next);
@@ -75,6 +76,10 @@ export function PublicThemeSwitcher({ locale }: { locale: PublicLanguage }) {
           <Icon aria-hidden="true" />
         </button>
       ))}
+      <button className="public-theme-toggle" aria-label={labels[locale][alternateMode]} onClick={() => select(alternateMode)} type="button">
+        <Sun aria-hidden="true" />
+        <Moon aria-hidden="true" />
+      </button>
     </div>
   );
 }

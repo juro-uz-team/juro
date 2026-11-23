@@ -3,7 +3,6 @@
   display: inline-flex;
   min-height: 44px;
 }
-
 .language {
   align-items: center;
   display: inline-flex;
@@ -17,12 +16,6 @@
   /* Sign-in remains available inside the mobile panel. Reassert this after
      the touch-target declaration so CSS-module load order cannot unhide it. */
   .login {
-    display: none;
-  }
-}
-
-@media (max-width: 620px) {
-  .language:not([aria-current="page"]) {
     display: none;
   }
 }
