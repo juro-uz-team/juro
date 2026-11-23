@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Lex.uz daily at midnight in Tashkent
+
+[Timer]
+OnCalendar=*-*-* 00:00:00 Asia/Tashkent
+Persistent=true
+
+[Install]
+WantedBy=timers.target

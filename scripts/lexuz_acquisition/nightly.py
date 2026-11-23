@@ -59,7 +59,7 @@ def serve_candidate(candidate, pin, settings, target):
                 f'[Service]\nWorkingDirectory={REPOSITORY}\nEnvironmentFile={environment}\n'
                 f'Environment="PYTHONPATH={REPOSITORY}"\n'
                 f'ExecStart=:{command_line}\nRestart=on-failure\n'
-                '[Install]\nWantedBy=multi-user.target\n', encoding='utf8')
+                '[Install]\nWantedBy=default.target\n', encoding='utf8')
         subprocess.run(['systemctl', '--user', 'enable', '--now', str(unit)], check=True)
     deadline = time.monotonic() + 240
     for port in ports.values():

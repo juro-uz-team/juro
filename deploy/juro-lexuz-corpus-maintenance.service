@@ -1,0 +1,10 @@
+[Unit]
+Description=Maintain the JURO Lex.uz corpus
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.local/share/juro-corpus/current
+EnvironmentFile=%h/.config/juro-corpus/maintenance.env
+ExecStart=%h/.local/share/juro-corpus/venv/bin/python -m scripts.lexuz_acquisition.nightly %h/.config/juro-corpus/maintenance.json
+TimeoutStartSec=infinity
+UMask=0027
