@@ -42,6 +42,9 @@ function safeErrorCode(error: unknown): string {
 }
 
 function localizedNotification(locale: string, title: string, url: string) {
+  if (locale === "en") {
+    return { title: "Lex.uz legislation update", body: `${title} · ${url}`.slice(0, 2_000) };
+  }
   if (locale === "uz") {
     return {
       title: "Lex.uz’da qonunchilik yangilanishi",
@@ -54,29 +57,31 @@ function localizedNotification(locale: string, title: string, url: string) {
   };
 }
 
-async function notifyMonitoringUsers(input: {
+async function monitoringNotificationStatements(input: {
   db: D1Database;
   eventId: string;
   title: string;
   canonicalUrl: string;
   now: string;
-}): Promise<void> {
+}): Promise<D1PreparedStatement[]> {
   const recipients = await input.db.prepare(
-    `SELECT workspace_id AS workspaceId,user_id AS userId,locale
-       FROM monitoring_preferences
-      WHERE instr(channels_json,'"in_app"')>0`,
+    `SELECT p.workspace_id AS workspaceId,p.user_id AS userId,p.locale
+       FROM monitoring_preferences p
+       JOIN workspace_members m ON m.workspace_id=p.workspace_id AND m.user_id=p.user_id
+      WHERE m.status='active' AND p.channels_json LIKE '%"in_app"%'`,
   ).all<{ workspaceId: string; userId: string; locale: string }>();
   const statements: D1PreparedStatement[] = [];
   for (const recipient of recipients.results) {
     const message = localizedNotification(recipient.locale, input.title, input.canonicalUrl);
-    const id = `lex_monitor_${await sha256(`${input.eventId}:${recipient.userId}`)}`.slice(0, 96);
+    const id = `lex_monitor_${await sha256(`${input.eventId}:${recipient.workspaceId}:${recipient.userId}`)}`;
     statements.push(input.db.prepare(
       `INSERT OR IGNORE INTO notifications
        (id,workspace_id,user_id,document_id,type,title,body,read_at,created_at)
-       VALUES (?,?,?,NULL,'legislation_monitor',?,?,NULL,?)`,
-    ).bind(id, recipient.workspaceId, recipient.userId, message.title, message.body, input.now));
+       SELECT ?,?,?,NULL,'legislation_monitor',?,?,NULL,?
+       WHERE EXISTS (SELECT 1 FROM legal_monitoring_change_events WHERE id=?)`,
+    ).bind(id, recipient.workspaceId, recipient.userId, message.title, message.body, input.now, input.eventId));
   }
-  if (statements.length) await input.db.batch(statements);
+  return statements;
 }
 
 /**
@@ -135,7 +140,7 @@ export async function runLexMetadataMonitor(
       const metadataId = existing?.id ?? crypto.randomUUID();
       const isChanged = Boolean(existing && existing.fingerprint !== fingerprint);
       const isNew = !existing;
-      await env.DB.prepare(
+      const metadataWrite = env.DB.prepare(
         `INSERT INTO legal_monitoring_metadata
           (id,canonical_url,canonical_id,locale,act_title,revision_date,effective_at,fingerprint,http_status,first_seen_at,last_seen_at,last_checked_at,last_error_code,created_at,updated_at)
          VALUES (?,?,?,?,?,?,NULL,?,200,?,?,?,NULL,?,?)
@@ -156,12 +161,15 @@ export async function runLexMetadataMonitor(
         timestamp,
         timestamp,
         timestamp,
-      ).run();
+      );
       processed += 1;
-      if (!isNew && !isChanged) continue;
+      if (!isNew && !isChanged) {
+        await metadataWrite.run();
+        continue;
+      }
       changed += isChanged ? 1 : 0;
       const eventId = crypto.randomUUID();
-      await env.DB.prepare(
+      const eventWrite = env.DB.prepare(
         `INSERT OR IGNORE INTO legal_monitoring_change_events
          (id,metadata_id,canonical_url,act_title,change_type,fingerprint,detected_at,created_at)
          VALUES (?,?,?,?,?,?,?,?)`,
@@ -174,12 +182,13 @@ export async function runLexMetadataMonitor(
         fingerprint,
         timestamp,
         timestamp,
-      ).run();
+      );
       // Initial discovery fills the feed without flooding customers. Subsequent
       // metadata changes create an ordinary in-app notification.
-      if (isChanged) {
-        await notifyMonitoringUsers({ db: env.DB, eventId, title, canonicalUrl: entry.reference.canonicalUrl, now: timestamp });
-      }
+      const notifications = isChanged
+        ? await monitoringNotificationStatements({ db: env.DB, eventId, title, canonicalUrl: entry.reference.canonicalUrl, now: timestamp })
+        : [];
+      await env.DB.batch([metadataWrite, eventWrite, ...notifications]);
     }
     await env.DB.prepare(
       `UPDATE source_sync_runs
@@ -223,17 +232,19 @@ export async function reconcileStaleLexMetadataMonitorRuns(
   return Number(result.meta.changes ?? 0);
 }
 
-export async function lexMetadataRetryDue(
+export async function dueLexMetadataRun(
   env: Pick<LexMetadataEnv, "APP_ENV" | "DB">,
   now = new Date(),
-): Promise<boolean> {
+): Promise<"metadata_monitor" | "metadata_retry" | null> {
   const row = await env.DB.prepare(
     `SELECT status,finished_at AS finishedAt FROM source_sync_runs
       WHERE environment=? AND source_kind='lex'
         AND run_type IN ('metadata_monitor','metadata_retry','manual_metadata_monitor')
       ORDER BY started_at DESC LIMIT 1`,
   ).bind(env.APP_ENV).first<{ status: string; finishedAt: string | null }>();
-  if (!row || row.status !== "failed" || !row.finishedAt) return false;
+  if (!row) return "metadata_monitor";
+  if (!row.finishedAt) return null;
   const age = now.getTime() - Date.parse(row.finishedAt);
-  return Number.isFinite(age) && age >= 5 * 60 * 1_000;
+  if (row.status === "failed") return age >= 60 * 60_000 ? "metadata_retry" : null;
+  return age >= 24 * 60 * 60_000 ? "metadata_monitor" : null;
 }

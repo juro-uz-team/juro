@@ -125,7 +125,7 @@ export function NotificationPreferencesPanel({ locale }: { locale: PlatformLocal
         <span><strong>{preferenceCopy[locale][key].title}</strong><small>{preferenceCopy[locale][key].description}</small></span>
       </label>)}
     </fieldset>}
-    {error && <p className="notification-preferences-state error" role="alert">{error} <button type="button" className="account-button secondary" onClick={() => void load()} disabled={loading || saving}>{ui.retry}</button></p>}
+    {error && <p className="notification-preferences-state error" role="alert">{error}{savedPreferences === null && <button type="button" className="account-button secondary" onClick={() => void load()} disabled={loading || saving}>{ui.retry}</button>}</p>}
     {message && <p className="notification-preferences-state success" role="status">{message}</p>}
     <footer className="account-save-bar"><span>{dirty ? ui.unsaved : ui.saved}</span><div>
       {dirty && <button type="button" className="account-button secondary" disabled={saving} onClick={() => { if (savedPreferences) setPreferences(savedPreferences); setError(""); setMessage(""); }}>{ui.discard}</button>}

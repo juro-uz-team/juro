@@ -34,6 +34,7 @@ import {
 import { TurnstileWidget } from "./TurnstileWidget";
 import { AuthRequestTimeoutError, requestAuthJson } from "./auth-request";
 import { safeAuthReturnPath } from "../../lib/auth/return-path";
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from "../../lib/auth/password-policy";
 import { GoogleAuthButton } from "./GoogleAuthButton";
 
 type AccountType = "individual" | "entrepreneur" | "lawyer";
@@ -124,8 +125,8 @@ function normalizeEmailInput(value: string): string {
 }
 
 function passwordScore(password: string): number {
-  if (!password) return 0;
-  let score = password.length >= 8 ? 1 : 0;
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) return 0;
+  let score = 1;
   if (password.length >= 12) score += 1;
   if (/\p{Ll}/u.test(password) && /\p{Lu}/u.test(password)) score += 1;
   if (/\d/u.test(password) || /[^\p{L}\d\s]/u.test(password)) score += 1;
@@ -198,6 +199,7 @@ function PasswordField({
   onChange,
   autoComplete,
   describedBy,
+  inputRef,
   invalid = false,
   disabled = false,
 }: {
@@ -209,12 +211,13 @@ function PasswordField({
   onChange: (value: string) => void;
   autoComplete: "current-password" | "new-password";
   describedBy?: string;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   invalid?: boolean;
   disabled?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
-  const tooLong = value.length > 256;
+  const tooLong = value.length > PASSWORD_MAX_LENGTH;
   const trackCapsLock = (event: KeyboardEvent<HTMLInputElement>) => {
     setCapsLock(event.getModifierState("CapsLock"));
   };
@@ -231,6 +234,7 @@ function PasswordField({
       <label htmlFor={id}>{label}</label>
       <span className="auth-password-control">
         <input
+          ref={inputRef}
           id={id}
           name={name}
           type={visible ? "text" : "password"}
@@ -240,7 +244,7 @@ function PasswordField({
           onKeyUp={trackCapsLock}
           onBlur={() => setCapsLock(false)}
           required
-          minLength={8}
+          minLength={autoComplete === "new-password" ? PASSWORD_MIN_LENGTH : undefined}
           autoComplete={autoComplete}
           aria-describedby={descriptionIds}
           aria-invalid={invalid || tooLong || undefined}
@@ -322,6 +326,8 @@ export function AuthForm({
   const termsInput = useRef<HTMLInputElement>(null);
   const privacyInput = useRef<HTMLInputElement>(null);
   const otpInput = useRef<HTMLInputElement>(null);
+  const resetPasswordInput = useRef<HTMLInputElement>(null);
+  const resetConfirmationInput = useRef<HTMLInputElement>(null);
   const mfaInput = useRef<HTMLInputElement>(null);
   const verificationRequestHeading = useRef<HTMLHeadingElement>(null);
   const requestGeneration = useRef(0);
@@ -337,7 +343,11 @@ export function AuthForm({
   const loginHref = `/${locale}/auth/login${loginQuery.size ? `?${loginQuery}` : ""}`;
   const strength = passwordScore(password);
   const passwordsMatch = password === confirmPassword;
-  const passwordValid = password.length >= 8 && password.length <= 256;
+  const passwordValid = strength > 0;
+  const resetAttempted = validationAttemptedFor === "recovery-code";
+  const resetPasswordInvalid = (resetAttempted || password.length > 0) && !passwordValid;
+  const resetConfirmationInvalid = !passwordsMatch || !confirmPassword;
+  const showResetConfirmation = resetAttempted || confirmPassword.length > 0;
   const currentEmailError = fieldErrorMessage(locale, emailFieldError(email));
   const currentFirstNameError = fieldErrorMessage(
     locale,
@@ -752,8 +762,10 @@ export function AuthForm({
   async function resetPassword(event: FormEvent) {
     event.preventDefault();
     clearFeedback();
-    if (!passwordValid || !passwordsMatch) {
-      setError(tr({ ru: "Проверьте новый пароль и его подтверждение.", uz: "Yangi parol va uning tasdig‘ini tekshiring.", en: "Check the new password and its confirmation." }));
+    setValidationAttemptedFor("recovery-code");
+    if (code.length !== 6 || !passwordValid || resetConfirmationInvalid) {
+      const field = code.length !== 6 ? otpInput : !passwordValid ? resetPasswordInput : resetConfirmationInput;
+      field.current?.focus();
       return;
     }
     setPending(true);
@@ -976,7 +988,7 @@ export function AuthForm({
 
             <div className="auth-row">
               <div className="auth-password-fields">
-                <PasswordField locale={locale} id="new-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="new-password" describedBy="password-strength" disabled={pending} />
+                <PasswordField locale={locale} id="new-password" name="password" label={tr({ ru: "Пароль", uz: "Parol", en: "Password" })} value={password} onChange={setPassword} autoComplete="new-password" describedBy="password-strength" invalid={Boolean(password) && !passwordValid} disabled={pending} />
                 <PasswordStrength locale={locale} password={password} score={strength} />
               </div>
               <div className="auth-password-fields">
@@ -1039,16 +1051,16 @@ export function AuthForm({
         )}
 
         {step === "recovery-code" && (
-          <form onSubmit={resetPassword}>
+          <form onSubmit={resetPassword} noValidate>
             <BackButton onClick={() => { requestGeneration.current += 1; clearFeedback(); setPending(false); setStep("recovery-request"); setChallengeId(""); setChallengeEmail(""); setCode(""); setCooldown(0); resetTurnstile(); }} label={tr({ ru: "Изменить email", uz: "Emailni o‘zgartirish", en: "Change email" })} disabled={pending} />
             <AuthHeading icon={<LockKeyhole aria-hidden="true" />} eyebrow={tr({ ru: "Код действует 10 минут", uz: "Kod 10 daqiqa amal qiladi", en: "Code valid for 10 minutes" })} title={tr({ ru: "Установите новый пароль", uz: "Yangi parol o‘rnating", en: "Set a new password" })} description={tr({ ru: `Введите код из письма для ${masked}.`, uz: `${masked} uchun xatdagi kodni kiriting.`, en: `Enter the code from the email sent to ${masked}.` })} />
             <input className="auth-password-manager-username" name="username" type="email" value={challengeEmail} readOnly autoComplete="username" tabIndex={-1} aria-hidden="true" />
-            <OtpField locale={locale} value={code} onChange={setCode} inputRef={otpInput} disabled={pending} />
-            <PasswordField locale={locale} id="reset-password" name="password" label={tr({ ru: "Новый пароль", uz: "Yangi parol", en: "New password" })} value={password} onChange={setPassword} autoComplete="new-password" describedBy="password-strength" disabled={pending} />
-            <PasswordStrength locale={locale} password={password} score={strength} />
-            <PasswordField locale={locale} id="reset-password-confirm" name="password-confirmation" label={tr({ ru: "Подтвердите новый пароль", uz: "Yangi parolni tasdiqlang", en: "Confirm new password" })} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" describedBy="reset-password-match" invalid={Boolean(confirmPassword) && !passwordsMatch} disabled={pending} />
-            {confirmPassword && <small id="reset-password-match" className={passwordsMatch ? "auth-valid" : "auth-field-error"}>{passwordsMatch ? tr({ ru: "Пароли совпадают", uz: "Parollar mos", en: "Passwords match" }) : tr({ ru: "Пароли не совпадают", uz: "Parollar mos emas", en: "Passwords do not match" })}</small>}
-            <SubmitButton pending={pending} disabled={code.length !== 6 || !passwordValid || !passwordsMatch} label={tr({ ru: "Обновить пароль", uz: "Parolni yangilash", en: "Update password" })} />
+            <OtpField locale={locale} value={code} onChange={setCode} inputRef={otpInput} disabled={pending} invalid={resetAttempted && code.length !== 6} />
+            <PasswordField locale={locale} id="reset-password" name="password" label={tr({ ru: "Новый пароль", uz: "Yangi parol", en: "New password" })} value={password} onChange={setPassword} inputRef={resetPasswordInput} autoComplete="new-password" describedBy="password-strength" invalid={resetPasswordInvalid} disabled={pending} />
+            <PasswordStrength locale={locale} password={password} score={strength} invalid={resetPasswordInvalid} />
+            <PasswordField locale={locale} id="reset-password-confirm" name="password-confirmation" label={tr({ ru: "Подтвердите новый пароль", uz: "Yangi parolni tasdiqlang", en: "Confirm new password" })} value={confirmPassword} onChange={setConfirmPassword} inputRef={resetConfirmationInput} autoComplete="new-password" describedBy={showResetConfirmation ? "reset-password-match" : undefined} invalid={showResetConfirmation && resetConfirmationInvalid} disabled={pending} />
+            {showResetConfirmation && <small id="reset-password-match" aria-live="polite" className={resetConfirmationInvalid ? "auth-field-error" : "auth-valid"}>{!confirmPassword ? tr({ ru: "Подтвердите новый пароль.", uz: "Yangi parolni tasdiqlang.", en: "Confirm your new password." }) : passwordsMatch ? tr({ ru: "Пароли совпадают", uz: "Parollar mos", en: "Passwords match" }) : tr({ ru: "Пароли не совпадают", uz: "Parollar mos emas", en: "Passwords do not match" })}</small>}
+            <SubmitButton pending={pending} label={tr({ ru: "Обновить пароль", uz: "Parolni yangilash", en: "Update password" })} />
             <ResendControl locale={locale} pending={pending} cooldown={cooldown} enabled={Boolean(turnstileToken)} onResend={() => void requestEmailCode("password_reset")} />
             {cooldown <= 0 && turnstileSiteKey && <TurnstileWidget siteKey={turnstileSiteKey} locale={locale} resetSignal={turnstileReset} onToken={setTurnstileToken} action="auth_password_reset_resend" />}
           </form>
@@ -1166,7 +1178,7 @@ function AuthTextField({
   );
 }
 
-function SubmitButton({ pending, disabled, label }: { pending: boolean; disabled: boolean; label: string }) {
+function SubmitButton({ pending, disabled = false, label }: { pending: boolean; disabled?: boolean; label: string }) {
   return <button className="auth-submit" disabled={pending || disabled} aria-busy={pending}>{pending ? <LoaderCircle className="spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}<span>{label}</span></button>;
 }
 
@@ -1174,20 +1186,28 @@ function BackButton({ onClick, label, disabled = false }: { onClick: () => void;
   return <button type="button" className="auth-back" onClick={onClick} disabled={disabled}><ArrowLeft aria-hidden="true" />{label}</button>;
 }
 
-function OtpField({ locale, value, onChange, inputRef, disabled = false }: { locale: Locale; value: string; onChange: (value: string) => void; inputRef: React.RefObject<HTMLInputElement | null>; disabled?: boolean }) {
-  return <label htmlFor="otp-code"><span>{copy(locale, { ru: "Шестизначный код", uz: "Olti xonali kod", en: "Six-digit code" })}</span><input ref={inputRef} id="otp-code" name="one-time-code" className="auth-code" value={value} onChange={(event) => onChange(event.target.value.replace(/\D/gu, "").slice(0, 6))} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} aria-describedby="otp-hint" disabled={disabled} /><small id="otp-hint" className="auth-hint">{copy(locale, { ru: "Никому не сообщайте этот код. Сотрудники JURO никогда его не запрашивают.", uz: "Bu kodni hech kimga bermang. JURO xodimlari uni hech qachon so‘ramaydi.", en: "Never share this code. JURO staff will never ask for it." })}</small></label>;
+function OtpField({ locale, value, onChange, inputRef, disabled = false, invalid = false }: { locale: Locale; value: string; onChange: (value: string) => void; inputRef: React.RefObject<HTMLInputElement | null>; disabled?: boolean; invalid?: boolean }) {
+  return <label htmlFor="otp-code">
+    <span>{copy(locale, { ru: "Шестизначный код", uz: "Olti xonali kod", en: "Six-digit code" })}</span>
+    <input ref={inputRef} id="otp-code" name="one-time-code" className="auth-code" value={value} onChange={(event) => onChange(event.target.value.replace(/\D/gu, "").slice(0, 6))} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} aria-describedby="otp-hint" aria-invalid={invalid || undefined} disabled={disabled} />
+    <small id="otp-hint" className={invalid ? "auth-field-error" : "auth-hint"} aria-live="polite">{invalid
+      ? copy(locale, { ru: "Введите все 6 цифр из письма.", uz: "Xatdagi 6 ta raqamni to‘liq kiriting.", en: "Enter all 6 digits from the email." })
+      : copy(locale, { ru: "Никому не сообщайте этот код. Сотрудники JURO никогда его не запрашивают.", uz: "Bu kodni hech kimga bermang. JURO xodimlari uni hech qachon so‘ramaydi.", en: "Never share this code. JURO staff will never ask for it." })}</small>
+  </label>;
 }
 
-function PasswordStrength({ locale, password, score }: { locale: Locale; password: string; score: number }) {
-  const tooLong = password.length > 256;
+function PasswordStrength({ locale, password, score, invalid = Boolean(password) && !score }: { locale: Locale; password: string; score: number; invalid?: boolean }) {
   const labels = [
-    copy(locale, { ru: "Минимум 8 символов", uz: "Kamida 8 ta belgi", en: "At least 8 characters" }),
+    copy(locale, { ru: `От ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, uz: `${PASSWORD_MIN_LENGTH}–${PASSWORD_MAX_LENGTH} ta belgi`, en: `${PASSWORD_MIN_LENGTH}–${PASSWORD_MAX_LENGTH} characters` }),
     copy(locale, { ru: "Слабый", uz: "Zaif", en: "Weak" }),
     copy(locale, { ru: "Приемлемый", uz: "Qoniqarli", en: "Fair" }),
     copy(locale, { ru: "Надёжный", uz: "Ishonchli", en: "Strong" }),
     copy(locale, { ru: "Очень надёжный", uz: "Juda ishonchli", en: "Very strong" }),
   ];
-  return <div className="auth-strength" id="password-strength" data-empty={!password} data-score={tooLong ? 0 : score}><span role="progressbar" aria-label={copy(locale, { ru: "Надёжность пароля", uz: "Parol ishonchliligi", en: "Password strength" })} aria-valuemin={0} aria-valuemax={4} aria-valuenow={tooLong ? 0 : score}><i /></span><small className={tooLong ? "auth-field-error" : undefined}>{tooLong ? copy(locale, { ru: "Пароль не должен превышать 256 символов — значение не было обрезано.", uz: "Parol 256 belgidan oshmasligi kerak — qiymat qisqartirilmadi.", en: "The password must not exceed 256 characters—the value was not truncated." }) : <>{password ? labels[score] : labels[0]}. {copy(locale, { ru: "Длинная фраза лучше сложного короткого пароля.", uz: "Uzun ibora murakkab qisqa paroldan yaxshiroq.", en: "A long passphrase is better than a short complex password." })}</>}</small></div>;
+  return <div className="auth-strength" id="password-strength" data-empty={!password} data-score={score}>
+    <span role="progressbar" aria-label={copy(locale, { ru: "Надёжность пароля", uz: "Parol ishonchliligi", en: "Password strength" })} aria-valuemin={0} aria-valuemax={4} aria-valuenow={score}><i /></span>
+    <small className={invalid ? "auth-field-error" : undefined} aria-live="polite">{score ? `${labels[score]}. ` : ""}{labels[0]}.</small>
+  </div>;
 }
 
 function AccountTypePicker({ locale, value, onChange, disabled = false }: { locale: Locale; value: AccountType; onChange: (value: AccountType) => void; disabled?: boolean }) {

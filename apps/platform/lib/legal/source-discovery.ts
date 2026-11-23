@@ -118,6 +118,7 @@ async function fetchBounded(
   url: string,
   accept: string,
   timeoutMs: number,
+  allowNotFound = false,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -133,9 +134,13 @@ async function fetchBounded(
     });
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel();
+      if (allowNotFound && url === LEX_ROBOTS_URL
+        && response.headers.get("location") === "https://lex.uz/Pages/404.aspx") {
+        return fetchBounded(fetchImpl, "https://lex.uz/Pages/404.aspx", accept, timeoutMs, true);
+      }
       throw new LegalSourceDiscoveryError("LEGAL_SOURCE_DISCOVERY_REDIRECT_REJECTED", false);
     }
-    if (!response.ok) {
+    if (!response.ok && !(allowNotFound && response.status === 404)) {
       await response.body?.cancel();
       throw new LegalSourceDiscoveryError(
         "LEGAL_SOURCE_DISCOVERY_UNAVAILABLE",
@@ -362,12 +367,15 @@ export async function discoverLexRssDocuments(options: {
     LEX_ROBOTS_URL,
     "text/plain, */*;q=0.1",
     timeoutMs,
+    true,
   );
-  if (contentType(robotsResponse) !== "text/plain") {
+  const hasRobots = robotsResponse.status !== 404;
+  if (hasRobots && contentType(robotsResponse) !== "text/plain") {
     await robotsResponse.body?.cancel();
     throw new LegalSourceDiscoveryError("LEGAL_SOURCE_DISCOVERY_CONTENT_TYPE_REJECTED", false);
   }
-  const robots = await readText(robotsResponse, MAX_BYTES);
+  if (!hasRobots) await robotsResponse.body?.cancel();
+  const robots = hasRobots ? await readText(robotsResponse, MAX_BYTES) : "";
   const crawlDelaySeconds = robotsCrawlDelaySeconds(robots);
   if (crawlDelaySeconds > MAX_CRAWL_DELAY_SECONDS) {
     throw new LegalSourceDiscoveryError("LEGAL_SOURCE_DISCOVERY_RATE_POLICY", false);

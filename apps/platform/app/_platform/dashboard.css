@@ -14,10 +14,11 @@
 .dashboard-command-intro > p { margin: 28px 0 8px; color: var(--muted); font-size: 15px; }
 .dashboard-command-intro > h1 { margin: 0; max-width: 720px; font-size: clamp(28px, 3vw, 40px); font-weight: 600; line-height: 1.2; letter-spacing: -.04em; text-wrap: balance; }
 .dashboard-command-form { display: grid; grid-template-columns: 44px 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 28px; padding: 16px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface-raised); color: var(--ink); }
-.dashboard-command-form:focus-within {
-  outline: 3px solid var(--focus-ring, #87631f);
-  outline-offset: 3px;
+.dashboard-command-form:has(> textarea:focus) {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
+.platform-shell .dashboard-command-form > textarea:focus-visible { outline: none; }
 .dashboard-command-form > svg { display: none; }
 .dashboard-command-form textarea { grid-column: 1/-1; width: 100%; min-height: 96px; max-height: 240px; padding: 8px; border: 0; outline: 0; resize: vertical; background: transparent; color: var(--ink); caret-color: var(--ink); -webkit-text-fill-color: var(--ink); font: inherit; font-size: 16px; line-height: 1.6; }
 .dashboard-command-form textarea::placeholder { color: var(--muted); opacity: 1; -webkit-text-fill-color: var(--muted); }

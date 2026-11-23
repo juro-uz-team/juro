@@ -1,8 +1,8 @@
 import { randomToken, sha256 } from "./crypto";
 import type { SecurityEventGuard } from "./security-events";
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from "./password-policy";
 
-export const PASSWORD_MIN_LENGTH = 8;
-export const PASSWORD_MAX_LENGTH = 256;
+export { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from "./password-policy";
 export const PASSWORD_PBKDF2_ITERATIONS = 600_000;
 const LEGACY_PASSWORD_PBKDF2_ITERATIONS = 100_000;
 

@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  dueLexMetadataRun,
   reconcileStaleLexMetadataMonitorRuns,
   runLexMetadataMonitor,
 } from "../lib/legal/metadata-monitor";
@@ -59,6 +60,7 @@ function createDb() {
       retryable integer NOT NULL,safe_summary text NOT NULL,occurred_at text NOT NULL
     );
     CREATE TABLE monitoring_preferences (workspace_id text,user_id text,locale text,channels_json text);
+    CREATE TABLE workspace_members (workspace_id text,user_id text,status text);
     CREATE TABLE notifications (id text PRIMARY KEY,workspace_id text,user_id text,document_id text,type text,title text,body text,read_at text,created_at text);
   `);
   sqlite.exec(`
@@ -81,15 +83,17 @@ test("Lex monitor stores only RSS metadata and never reaches the retired legal c
   const db = new D1(sqlite);
   const calls: string[] = [];
   const responses = [
-    new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain" } }),
+    new Response(null, { status: 302, headers: { location: "https://lex.uz/Pages/404.aspx" } }),
+    new Response("Not found", { status: 404 }),
     new Response("<rss><channel><item><title>Регистрация бизнеса</title><pubDate>Tue, 11 Aug 2026 10:00:00 GMT</pubDate><link>/ru/docs/8372154</link></item></channel></rss>", { headers: { "content-type": "application/rss+xml" } }),
   ];
-  const summary = await runLexMetadataMonitor({
+  const env = {
     APP_ENV: "staging",
     DB: db as unknown as D1Database,
     LEGAL_LEX_METADATA_MONITOR_ENABLED: "true",
     LEGAL_LEX_RSS_DISCOVERY_ENABLED: "true",
-  }, {
+  };
+  const options = {
     now: new Date("2026-08-12T12:00:00.000Z"),
     maxDocuments: 1,
     wait: async () => undefined,
@@ -99,7 +103,8 @@ test("Lex monitor stores only RSS metadata and never reaches the retired legal c
       if (!response) throw new Error("Unexpected source request");
       return response;
     },
-  });
+  };
+  const summary = await runLexMetadataMonitor(env, options);
   assert.deepEqual(summary, {
     status: "success",
     runId: summary.runId,
@@ -109,7 +114,7 @@ test("Lex monitor stores only RSS metadata and never reaches the retired legal c
     errors: 0,
   });
   assert.match(summary.runId ?? "", /^lexmeta_metadata_monitor_/);
-  assert.deepEqual(calls, ["https://lex.uz/robots.txt", "https://lex.uz/ru/rss"]);
+  assert.deepEqual(calls, ["https://lex.uz/robots.txt", "https://lex.uz/Pages/404.aspx", "https://lex.uz/ru/rss"]);
   assert.deepEqual({ ...sqlite.prepare(
     "SELECT canonical_url AS url,canonical_id AS id,act_title AS title,http_status AS status FROM legal_monitoring_metadata",
   ).get() as Record<string, unknown> }, {
@@ -120,6 +125,39 @@ test("Lex monitor stores only RSS metadata and never reaches the retired legal c
   });
   assert.equal((sqlite.prepare("SELECT count(*) AS count FROM legal_monitoring_change_events").get() as { count: number }).count, 1);
   assert.equal((sqlite.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name='legal_sources'").get() as { count: number }).count, 0);
+  sqlite.exec(`
+    INSERT INTO workspace_members VALUES ('workspace-a','reader','active'),('workspace-b','reader','active'),('workspace-c','reader','removed');
+    INSERT INTO monitoring_preferences VALUES ('workspace-a','reader','en','["in_app"]'),('workspace-b','reader','uz','["in_app"]'),('workspace-c','reader','ru','["in_app"]');
+  `);
+  responses.push(
+    new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain" } }),
+    new Response("<rss><channel><item><title>Updated act</title><link>/ru/docs/8372154</link></item></channel></rss>", { headers: { "content-type": "application/rss+xml" } }),
+  );
+  const updated = await runLexMetadataMonitor(env, { ...options, now: new Date("2026-08-13T12:00:00Z") });
+  assert.equal(updated.status, "success");
+  assert.equal(updated.changed, 1);
+  const notices = sqlite.prepare("SELECT workspace_id,title FROM notifications ORDER BY workspace_id").all();
+  assert.deepEqual(notices.map(row => [row.workspace_id, row.title]), [
+    ["workspace-a", "Lex.uz legislation update"],
+    ["workspace-b", "Lex.uz’da qonunchilik yangilanishi"],
+  ]);
+  sqlite.close();
+});
+
+test("Lex monitor checks daily and retries a failed check after an hour", async () => {
+  const sqlite = createDb();
+  const db = new D1(sqlite) as unknown as D1Database;
+  const env = { APP_ENV: "staging", DB: db };
+  const start = new Date("2026-08-12T10:00:00.000Z");
+  assert.equal(await dueLexMetadataRun(env, start), "metadata_monitor");
+  sqlite.exec(`INSERT INTO source_sync_runs VALUES
+    ('run','staging','lex','metadata_monitor','success','lock',1,1,0,1,0,
+     '2026-08-12T10:00:00.000Z','2026-08-12T10:00:00.000Z',NULL,'','')`);
+  assert.equal(await dueLexMetadataRun(env, new Date("2026-08-13T09:55:00Z")), null);
+  assert.equal(await dueLexMetadataRun(env, new Date("2026-08-13T10:00:00Z")), "metadata_monitor");
+  sqlite.exec("UPDATE source_sync_runs SET status='failed'");
+  assert.equal(await dueLexMetadataRun(env, new Date("2026-08-12T10:55:00Z")), null);
+  assert.equal(await dueLexMetadataRun(env, new Date("2026-08-12T11:00:00Z")), "metadata_retry");
   sqlite.close();
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated monitoring preferences are hydrated after the first browser render */
 
@@ -14,7 +14,6 @@ import {
   FileSearch,
   Gavel,
   LoaderCircle,
-  Mail,
   RefreshCw,
   Save,
   Scale,
@@ -26,7 +25,6 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
 import {
-  monitoringPreferencesAreInformationalOnly,
   normalizeMonitoringAudience,
   type MonitoringAudience,
 } from "../../lib/platform/monitoring-preferences";
@@ -108,55 +106,39 @@ type LegislationUpdate = {
 
 const copy = {
   ru: {
-    eyebrow: "JURO · Lex.uz metadata",
     title: "Мониторинг законодательства",
-    intro: "Выберите области права. JURO ежедневно сверяет официальные RSS-метаданные Lex.uz и показывает обнаруженные изменения без локальной копии текста НПА.",
-    settings: "Настройки мониторинга",
+    intro: "Последние записи из официальной RSS-ленты Lex.uz. Откройте акт в первоисточнике, чтобы проверить его содержание.",
+    deliveryNote: "При изменении уже известной записи приходит уведомление в рабочем пространстве. Темы, аудитория и частота сохраняются как предпочтения.",
+    runFailed: "Последняя проверка Lex.uz не удалась",
     preferences: "Предпочтения мониторинга",
-    preferencesHint: "Сохраняются только темы, аудитория и желаемая частота для текущего пространства.",
-    settingsHint: "Настройки сохраняются только для текущего пространства.",
-    preferenceOnlyNotice: "Пока Lex.uz недоступен или нет свежего запуска, настройки сохранены, но уведомления не отправляются.",
+    preferencesHint: "Настройки сохраняются для текущего пространства.",
     audience: "Кого затрагивают обновления",
     individual: "Физическое лицо",
     business: "Бизнес",
     topics: "Области права",
-    channels: "Каналы",
-    deliveryWhenActive: "Каналы доставки после включения мониторинга",
-    deliveryInactive: "Автоматическая доставка отключена",
-    inAppInactive: "Уведомления в приложении появятся только после включения мониторинга.",
-    emailInactive: "Email не будет отправляться, пока мониторинг не станет активен.",
-    inApp: "В приложении",
-    email: "Email",
-    emailUnavailable: "Email станет доступен после подключения почтовой инфраструктуры.",
     frequency: "Частота",
-    frequencyWhenActive: "Желаемая частота после включения доставки",
     immediate: "Немедленно",
     daily: "Ежедневно",
     weekly: "Еженедельно",
     documentConsent: "Разрешить предлагать проверку выбранных мной документов при релевантном изменении закона.",
     consentHint: "JURO не сканирует все документы автоматически. Каждая проверка требует ваших прав доступа и отдельного запуска.",
     save: "Сохранить настройки",
-    savePreferences: "Сохранить предпочтения",
     saved: "Настройки мониторинга сохранены.",
-    savedPreferenceOnly: "Предпочтения сохранены. Автоматическая доставка пока отключена.",
     integrationOff: "Lex.uz metadata-мониторинг сейчас отключён.",
     integrationPending: "Мониторинг Lex.uz включён, но свежий запуск ещё не завершён.",
-    integrationActive: "Последний запуск Lex.uz успешно получил официальные metadata.",
-    honestStatus: "JURO хранит только технические metadata: URL, идентификатор, дату и fingerprint. Полный текст НПА и редакционные очереди не используются.",
+    integrationActive: "Официальная лента Lex.uz доступна.",
     integrationAria: "Статус интеграции",
     controlledBeta: "Статус Lex.uz",
     fresh: "Есть свежий успешный запуск",
     stale: "Последняя сверка Lex.uz устарела",
-    unavailable: "Нет свежего результата Lex.uz",
-    coverage: "Лента показывает обнаруженные RSS-изменения Lex.uz; она не делает юридический вывод о содержании изменения.",
+    coverage: "Недавние записи и изменения в данных Lex.uz.",
     feed: "Обновления Lex.uz",
     empty: "Обнаруженных изменений Lex.uz пока нет",
-    emptyHint: "JURO не создаёт демонстрационную ленту и не подставляет вымышленные даты.",
+    emptyHint: "Здесь появятся записи, найденные при проверке ленты.",
     lastCheck: "Последняя проверка источников",
     lastRun: "Последний запуск Lex.uz",
-    found: "Найдено / обработано / ошибок",
     never: "ещё не выполнялась",
-    sources: "Проверено metadata",
+    sources: "Проверено записей",
     adopted: "Принят",
     effective: "Вступает в силу",
     changed: "Что изменилось",
@@ -173,55 +155,39 @@ const copy = {
     saveError: "Настройки не сохранены.",
   },
   uz: {
-    eyebrow: "JURO · Lex.uz metadata",
     title: "Qonunchilik monitoringi",
-    intro: "Huquq sohalarini tanlang. JURO har kuni Lex.uz rasmiy RSS metadata’larini tekshiradi va NPA matnining mahalliy nusxasisiz aniqlangan o‘zgarishlarni ko‘rsatadi.",
-    settings: "Monitoring sozlamalari",
+    intro: "Lex.uz rasmiy RSS lentasidagi so‘nggi yozuvlar. Hujjat mazmunini tekshirish uchun asl manbani oching.",
+    deliveryNote: "Avvalgi yozuv o‘zgarsa, ish makonida bildirishnoma chiqadi. Mavzular, auditoriya va tezlik afzallik sifatida saqlanadi.",
+    runFailed: "Lex.uz’ning oxirgi tekshiruvi muvaffaqiyatsiz tugadi",
     preferences: "Monitoring afzalliklari",
-    preferencesHint: "Faqat joriy makon uchun mavzular, auditoriya va kerakli tezlik sifatida saqlanadi.",
-    settingsHint: "Sozlamalar faqat joriy makon uchun saqlanadi.",
-    preferenceOnlyNotice: "Lex.uz mavjud bo‘lmaguncha yoki yangi ishga tushirish bo‘lmaguncha afzalliklar saqlanadi, lekin bildirishnomalar yuborilmaydi.",
+    preferencesHint: "Sozlamalar joriy makon uchun saqlanadi.",
     audience: "Yangilanishlar kimga taalluqli",
     individual: "Jismoniy shaxs",
     business: "Biznes",
     topics: "Huquq sohalari",
-    channels: "Kanallar",
-    deliveryWhenActive: "Monitoring faollashgandagi yetkazib berish kanallari",
-    deliveryInactive: "Avtomatik yetkazib berish o‘chirilgan",
-    inAppInactive: "Monitoring faollashmaguncha ilova ichida bildirishnomalar kelmaydi.",
-    emailInactive: "Monitoring faollashmaguncha email yuborilmaydi.",
-    inApp: "Ilova ichida",
-    email: "Email",
-    emailUnavailable: "Email pochta infratuzilmasi ulangandan keyin mavjud bo‘ladi.",
     frequency: "Tezlik",
-    frequencyWhenActive: "Yetkazib berish yoqilgandan keyingi kerakli tezlik",
     immediate: "Darhol",
     daily: "Har kuni",
     weekly: "Har hafta",
     documentConsent: "Qonundagi tegishli o‘zgarishda men tanlagan hujjatlarni tekshirishni taklif qilishga ruxsat berish.",
     consentHint: "JURO barcha hujjatlarni avtomatik skanerlamaydi. Har bir tekshiruv kirish huquqlaringiz va alohida ishga tushirishni talab qiladi.",
     save: "Sozlamalarni saqlash",
-    savePreferences: "Afzalliklarni saqlash",
     saved: "Monitoring sozlamalari saqlandi.",
-    savedPreferenceOnly: "Afzalliklar saqlandi. Avtomatik yetkazib berish hozir o‘chirilgan.",
     integrationOff: "Lex.uz metadata monitoringi hozir o‘chirilgan.",
     integrationPending: "Lex.uz monitoringi yoqilgan, ammo yangi ishga tushirish hali tugamagan.",
-    integrationActive: "Oxirgi Lex.uz ishga tushirilishi rasmiy metadata’larni muvaffaqiyatli oldi.",
-    honestStatus: "JURO faqat texnik metadata’larni saqlaydi: URL, identifikator, sana va fingerprint. NPA to‘liq matni va tahririy navbatlar ishlatilmaydi.",
+    integrationActive: "Lex.uz rasmiy lentasi mavjud.",
     integrationAria: "Integratsiya holati",
     controlledBeta: "Lex.uz holati",
     fresh: "Yangi muvaffaqiyatli ishga tushirish mavjud",
     stale: "Lex.uz oxirgi tekshiruvi eskirgan",
-    unavailable: "Lex.uz’ning yangi natijasi yo‘q",
-    coverage: "Lenta Lex.uz RSS orqali aniqlangan o‘zgarishlarni ko‘rsatadi; o‘zgarish mazmuni bo‘yicha huquqiy xulosa bermaydi.",
+    coverage: "Lex.uz’dagi so‘nggi yozuvlar va ma’lumot o‘zgarishlari.",
     feed: "Lex.uz yangilanishlari",
     empty: "Lex.uz’da aniqlangan o‘zgarishlar hozircha yo‘q",
-    emptyHint: "JURO namoyish lentasini yaratmaydi va soxta sanalarni qo‘ymaydi.",
+    emptyHint: "Lenta tekshiruvida topilgan yozuvlar shu yerda ko‘rinadi.",
     lastCheck: "Manbalar oxirgi tekshirilgan vaqt",
     lastRun: "Lex.uz oxirgi ishga tushirilishi",
-    found: "Topilgan / qayta ishlangan / xatolar",
     never: "hali bajarilmagan",
-    sources: "Tekshirilgan metadata",
+    sources: "Tekshirilgan yozuvlar",
     adopted: "Qabul qilingan",
     effective: "Kuchga kiradi",
     changed: "Nima o‘zgardi",
@@ -238,55 +204,39 @@ const copy = {
     saveError: "Sozlamalar saqlanmadi.",
   },
   en: {
-    eyebrow: "JURO · Lex.uz metadata",
     title: "Legislation monitoring",
-    intro: "Choose the areas of law that matter to you. JURO checks official Lex.uz RSS metadata every day and shows detected changes without storing a local copy of legislation.",
-    settings: "Monitoring settings",
+    intro: "Recent records from the official Lex.uz RSS feeds. Open the official act to review its contents.",
+    deliveryNote: "Changes to existing records appear in workspace notifications. Topics, audience and frequency are saved as preferences.",
+    runFailed: "The last Lex.uz check failed",
     preferences: "Monitoring preferences",
-    preferencesHint: "Only the selected topics, audience and preferred frequency are saved for this workspace.",
-    settingsHint: "Settings are saved only for the current workspace.",
-    preferenceOnlyNotice: "Your preferences are saved, but notifications are not sent while Lex.uz is unavailable or no recent monitoring run exists.",
+    preferencesHint: "Preferences are saved for this workspace.",
     audience: "Who the updates affect",
     individual: "Individual",
     business: "Business",
     topics: "Areas of law",
-    channels: "Channels",
-    deliveryWhenActive: "Delivery channels when monitoring is active",
-    deliveryInactive: "Automatic delivery is currently off",
-    inAppInactive: "In-app notifications will begin once monitoring is active.",
-    emailInactive: "Email will not be sent until monitoring is active.",
-    inApp: "In app",
-    email: "Email",
-    emailUnavailable: "Email will become available after the mail service is connected.",
     frequency: "Frequency",
-    frequencyWhenActive: "Preferred frequency once delivery is enabled",
     immediate: "Immediately",
     daily: "Daily",
     weekly: "Weekly",
     documentConsent: "Allow JURO to suggest checking documents I select when a relevant legal change is detected.",
     consentHint: "JURO does not scan all documents automatically. Each check requires your access rights and a separate action.",
     save: "Save settings",
-    savePreferences: "Save preferences",
     saved: "Monitoring settings saved.",
-    savedPreferenceOnly: "Preferences saved. Automatic delivery is currently off.",
     integrationOff: "Lex.uz metadata monitoring is currently off.",
     integrationPending: "Lex.uz monitoring is on, but a recent run has not completed yet.",
-    integrationActive: "The latest Lex.uz run successfully retrieved official metadata.",
-    honestStatus: "JURO stores technical metadata only: URL, identifier, date and fingerprint. It does not use local copies of legislation or editorial queues.",
+    integrationActive: "The official Lex.uz feed is available.",
     integrationAria: "Integration status",
     controlledBeta: "Lex.uz status",
     fresh: "Recent successful run available",
     stale: "The latest Lex.uz check is out of date",
-    unavailable: "No recent Lex.uz result",
-    coverage: "This feed shows changes detected in the official Lex.uz RSS feed. It does not make a legal finding about the substance of a change.",
+    coverage: "Recent Lex.uz records and changes to their metadata.",
     feed: "Lex.uz updates",
     empty: "No Lex.uz changes have been detected yet",
-    emptyHint: "JURO does not generate a demonstration feed or insert fabricated dates.",
+    emptyHint: "Records will appear here after the feed is checked.",
     lastCheck: "Last source check",
     lastRun: "Latest Lex.uz run",
-    found: "Found / processed / errors",
     never: "not run yet",
-    sources: "Verified metadata",
+    sources: "Records checked",
     adopted: "Adopted",
     effective: "Effective",
     changed: "What changed",
@@ -340,6 +290,7 @@ const defaultStatus: MonitoringStatus = {
 
 export function MonitoringClient({ locale, accountType }: { locale: PlatformLocale; accountType: AccountType }) {
   const t = copy[locale];
+  const workspaceId = usePlatformWorkspaceId();
   const [preference, setPreference] = useState<Preference>({
     audience: normalizeMonitoringAudience(accountType),
     topics: ["civil", "contract"],
@@ -353,12 +304,17 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setLoadFailed(false);
     setError("");
     try {
-      const response = await fetch(`/api/platform/monitoring?locale=${locale}`, { cache: "no-store" });
+      const response = await fetch(`/api/platform/monitoring?locale=${locale}`, {
+        cache: "no-store", headers: { "x-juro-workspace-id": workspaceId },
+      });
       const body = await response.json() as {
         preference?: Preference | null;
         updates?: LegislationUpdate[];
@@ -375,20 +331,16 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
       setUpdates(body.updates ?? []);
       setStatus(body.status ?? defaultStatus);
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
+      setLoadFailed(true);
+      setError(value instanceof Error ? value.message : t.loadError);
     } finally {
       setLoading(false);
     }
-  }, [locale, t.loadError]);
+  }, [locale, t.loadError, workspaceId]);
 
   useEffect(() => { void load(); }, [load]);
 
   const selectedTopics = useMemo(() => new Set(preference.topics), [preference.topics]);
-  const preferenceOnly = monitoringPreferencesAreInformationalOnly({
-    automaticPublication: status.automaticPublication,
-    controlledBeta: status.controlledBeta,
-    freshnessState: status.freshness.state,
-  });
   function toggleTopic(topic: Topic) {
     setPreference(current => ({
       ...current,
@@ -409,7 +361,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     try {
       const response = await fetch("/api/platform/monitoring", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ ...preference, locale }),
       });
       const body = await response.json() as { preference?: Preference; error?: string };
@@ -420,8 +372,7 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
           audience: normalizeMonitoringAudience(body.preference.audience),
         });
       }
-      setNotice(preferenceOnly ? t.savedPreferenceOnly : t.saved);
-      await load();
+      setNotice(t.saved);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -433,33 +384,32 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
     <section className="monitoring-workspace">
       <header>
         <Scale aria-hidden="true" />
-        <div><small>{t.eyebrow}</small><h1>{t.title}</h1><p>{t.intro}</p></div>
+        <div><h1>{t.title}</h1><p>{t.intro}</p></div>
       </header>
 
-      {error && <p className="monitoring-message error" role="alert"><CircleAlert />{error}<button onClick={() => void load()}><RefreshCw />{t.retry}</button></p>}
+      {error && <p className="monitoring-message error" role="alert"><CircleAlert aria-hidden="true" />{error}{loadFailed && <button type="button" onClick={() => void load()}><RefreshCw aria-hidden="true" />{t.retry}</button>}</p>}
       {notice && <p className="monitoring-message success" role="status"><CheckCircle2 />{notice}</p>}
 
-      <section className="monitoring-status" aria-label={t.integrationAria}>
+      {!loading && !loadFailed && <section className="monitoring-status" data-integration={status.integration} aria-label={t.integrationAria}>
         <div className="monitoring-status-copy">
-          {status.freshness.state === "fresh" ? <ShieldCheck aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />}
+          {status.integration === "active" ? <ShieldCheck aria-hidden="true" /> : <ShieldAlert aria-hidden="true" />}
           <div>
             <small>{t.controlledBeta}</small>
-            <strong>{status.freshness.state === "fresh" ? t.fresh : status.freshness.state === "stale" ? t.stale : t.unavailable}</strong>
-            <p>{status.integration === "disabled" ? t.integrationOff : status.integration === "active" ? t.integrationActive : t.integrationPending} {t.honestStatus}</p>
+            <strong>{status.integration === "disabled" ? t.integrationOff : status.integration === "active" ? t.fresh : status.lastRun?.status === "failed" ? t.runFailed : status.freshness.state === "stale" ? t.stale : t.integrationPending}</strong>
+            {status.integration === "active" && <p>{t.integrationActive}</p>}
           </div>
         </div>
         <dl>
           <div><dt>{t.lastCheck}</dt><dd>{status.lastCheckedAt ? formatDate(status.lastCheckedAt, locale, true) : t.never}</dd></div>
           <div><dt>{t.sources}</dt><dd>{status.verifiedSourceCount}</dd></div>
-          <div><dt>{t.lastRun}</dt><dd>{status.lastRun?.finishedAt ? formatDate(status.lastRun.finishedAt, locale, true) : t.never}</dd></div>
-          <div><dt>{t.found}</dt><dd>{status.lastRun ? `${status.lastRun.discoveredCount} / ${status.lastRun.fetchedCount} / ${status.lastRun.errorCount}` : "—"}</dd></div>
+          <div><dt>{t.lastRun}</dt><dd>{status.lastRun ? formatDate(status.lastRun.finishedAt ?? status.lastRun.startedAt, locale, true) : t.never}</dd></div>
         </dl>
-      </section>
+      </section>}
 
       <div className="monitoring-layout">
         <form className="monitoring-settings" onSubmit={save}>
-          <div className="monitoring-section-heading"><BellRing /><div><h2>{preferenceOnly ? t.preferences : t.settings}</h2><p>{preferenceOnly ? t.preferencesHint : t.settingsHint}</p></div></div>
-          {preferenceOnly && <p className="monitoring-preference-note" role="note">{t.preferenceOnlyNotice}</p>}
+          <div className="monitoring-section-heading"><BellRing aria-hidden="true" /><div><h2>{t.preferences}</h2><p>{t.preferencesHint}</p></div></div>
+          <p className="monitoring-preference-note">{t.deliveryNote}</p>
 
           <fieldset>
             <legend>{t.audience}</legend>
@@ -477,28 +427,20 @@ export function MonitoringClient({ locale, accountType }: { locale: PlatformLoca
           </fieldset>
 
           <fieldset>
-            <legend>{preferenceOnly ? t.deliveryWhenActive : t.channels}</legend>
-            {preferenceOnly && <p className="monitoring-field-hint">{t.deliveryInactive}</p>}
-            <div className="monitoring-channels">
-              <label className={preferenceOnly ? "disabled" : ""}><input type="checkbox" checked={!preferenceOnly} readOnly disabled={preferenceOnly} /><BellRing /><span><strong>{t.inApp}</strong>{preferenceOnly && <small>{t.inAppInactive}</small>}</span></label>
-              <label className={preferenceOnly || !status.emailConfigured ? "disabled" : ""}><input type="checkbox" checked={!preferenceOnly && preference.channels.includes("email")} disabled={preferenceOnly || !status.emailConfigured} onChange={event => setPreference(current => ({ ...current, channels: event.target.checked ? ["in_app", "email"] : ["in_app"] }))} /><Mail /><span><strong>{t.email}</strong>{preferenceOnly ? <small>{t.emailInactive}</small> : !status.emailConfigured && <small>{t.emailUnavailable}</small>}</span></label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>{preferenceOnly ? t.frequencyWhenActive : t.frequency}</legend>
+            <legend>{t.frequency}</legend>
             <div className="monitoring-segmented three">
               {(["immediate", "daily", "weekly"] as const).map(frequency => <label key={frequency} className={preference.frequency === frequency ? "selected" : ""}><input type="radio" name="frequency" value={frequency} checked={preference.frequency === frequency} onChange={() => setPreference(current => ({ ...current, frequency }))} /><CalendarClock />{t[frequency]}</label>)}
             </div>
           </fieldset>
 
           <label className="monitoring-consent"><input type="checkbox" checked={preference.documentImpactConsent} onChange={event => setPreference(current => ({ ...current, documentImpactConsent: event.target.checked }))} /><span><strong>{t.documentConsent}</strong><small>{t.consentHint}</small></span></label>
-          <button className="monitoring-save" disabled={saving || loading}>{saving ? <LoaderCircle className="spin" /> : <Save />}{preferenceOnly ? t.savePreferences : t.save}</button>
+          <button className="monitoring-save" disabled={saving || loading || loadFailed}>{saving ? <LoaderCircle className="spin" aria-hidden="true" /> : <Save aria-hidden="true" />}{t.save}</button>
         </form>
 
         <section className="monitoring-feed">
           <div className="monitoring-section-heading"><Gavel /><div><h2>{t.feed}</h2><p>{t.coverage}</p></div></div>
-          {loading ? <div className="monitoring-loading"><LoaderCircle className="spin" /><span>{t.loading}</span></div>
+          {loading ? <div className="monitoring-loading" role="status"><LoaderCircle className="spin" aria-hidden="true" /><span>{t.loading}</span></div>
+            : loadFailed ? null
             : updates.length ? <div className="monitoring-updates">{updates.map(update => <UpdateCard key={update.id} update={update} locale={locale} />)}</div>
               : <div className="monitoring-empty"><Scale /><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
         </section>
@@ -513,7 +455,7 @@ function UpdateCard({ update, locale }: { update: LegislationUpdate; locale: Pla
   return <article className="monitoring-update">
     <div className="monitoring-update-meta">
       {update.topics.map(topic => <span key={topic}>{topicLabels[topic as Topic]?.[locale] ?? topic}</span>)}
-      <time>{formatDate(update.publishedAt, locale)}</time>
+      <time dateTime={update.publishedAt}>{formatDate(update.publishedAt, locale)}</time>
     </div>
     <h3>{update.title}</h3>
     {update.summary && <p>{update.summary}</p>}

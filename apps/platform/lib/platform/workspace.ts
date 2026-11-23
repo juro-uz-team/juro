@@ -13,7 +13,7 @@ import {
   type WorkspaceRouteSource,
 } from "./workspace-route-access";
 import { requireWorkspaceContentEditor } from "./permissions";
-import { isLocale } from "./routing";
+import { isLocale, isWorkspaceId } from "./routing";
 
 export { workspaceForUserByIdInDatabase } from "./workspace-route-access";
 
@@ -145,8 +145,16 @@ export async function workspaceForUser(user: UserProfile): Promise<WorkspaceOpti
 }
 
 export async function workspaceForContentEditor(user: UserProfile, selectedWorkspaceId?: string | null): Promise<WorkspaceOption> {
-  const workspace = selectedWorkspaceId ? await workspaceForUserById(user.id, selectedWorkspaceId, {activate:false}) : await workspaceForUser(user);
-  if (!workspace) throw new ApiAuthError("Workspace unavailable",403);
+  const workspace = await requireSelectedWorkspace(user, selectedWorkspaceId);
   requireWorkspaceContentEditor(workspace.role);
+  return workspace;
+}
+
+export async function requireSelectedWorkspace(user: UserProfile, selectedWorkspaceId?: string | null): Promise<WorkspaceOption> {
+  if (!selectedWorkspaceId) return workspaceForUser(user);
+  const workspace = isWorkspaceId(selectedWorkspaceId)
+    ? await workspaceForUserById(user.id, selectedWorkspaceId, { activate: false })
+    : null;
+  if (!workspace) throw new ApiAuthError("Workspace unavailable", 403);
   return workspace;
 }

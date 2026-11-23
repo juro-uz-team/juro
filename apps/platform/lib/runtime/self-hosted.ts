@@ -54,11 +54,12 @@ export function getSelfHostedRuntime(): Runtime {
   const bucket = (name: string) => new LocalObjectStore(application.pool, root, name);
   const corpusRoot = resolve(process.env.CORPUS_OBJECT_STORAGE_PATH ?? root);
   const email = emailDeliveryConfiguration(process.env);
+  const lexMetadataEnabled = process.env.LEGAL_LEX_METADATA_MONITOR_ENABLED === "true" ? "true" : "false";
   const env = { ...process.env, APP_ENV: appEnvironment, ASYNC_RUNTIME_ENABLED: "true", JOB_SCHEMA_VERSION: "1",
     
     CRON_ENABLED: "true", LEGAL_LEX_INGESTION_ENABLED: "false", LEGAL_ADVICE_INGESTION_ENABLED: "false",
-    LEGAL_LEX_RSS_DISCOVERY_ENABLED: "false", LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED: "false",
-    LEGAL_LEX_METADATA_MONITOR_ENABLED: "false", LEGAL_DIRECT_RETRIEVAL_ENABLED: "true",
+    LEGAL_LEX_RSS_DISCOVERY_ENABLED: lexMetadataEnabled, LEGAL_ADVICE_SITEMAP_DISCOVERY_ENABLED: "false",
+    LEGAL_LEX_METADATA_MONITOR_ENABLED: lexMetadataEnabled, LEGAL_DIRECT_RETRIEVAL_ENABLED: "true",
     GUEST_AI_ENABLED: "true", LAWYER_PROFILE_DIRECTORY_ENABLED: "true",
     LEGAL_CORPUS_USER_UPLOAD_AUTO_TRUST: "false", PUBLIC_DOCUMENT_URL_IMPORT_ENABLED: "false",
     ACCOUNT_DELETION_PURGE_ENABLED: "true", PAYMENT_FOUNDATION_ENABLED: "false", PAYMENT_PRODUCTION_APPROVED: "false",

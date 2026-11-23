@@ -2,7 +2,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { dispatchOutbox } from "./platform-outbox";
 import {
   LEX_METADATA_DISCOVERY_CRON,
-  lexMetadataRetryDue,
+  dueLexMetadataRun,
   reconcileStaleLexMetadataMonitorRuns,
   runLexMetadataMonitor,
 } from "../lib/legal/metadata-monitor";
@@ -555,10 +555,13 @@ export async function handleScheduled(
     const taskReminders = await enqueueDueTaskReminders(env, now);
     const lexMetadataMonitorEnabled = (env as Record<string, unknown>).LEGAL_LEX_METADATA_MONITOR_ENABLED === "true";
     let lexMetadataStaleRuns = 0;
-    let lexMetadataRetry: Awaited<ReturnType<typeof runLexMetadataMonitor>> | null = null;
+    let lexMetadataRun: Awaited<ReturnType<typeof runLexMetadataMonitor>> | null = null;
     if (lexMetadataMonitorEnabled) {
       failureCode = "LEX_METADATA_MONITOR_RECONCILE_FAILED";
       lexMetadataStaleRuns = await reconcileStaleLexMetadataMonitorRuns(env, { now: new Date(now) });
+      failureCode = "LEX_METADATA_MONITOR_RUN_FAILED";
+      const runType = await dueLexMetadataRun(env, new Date(now));
+      if (runType) lexMetadataRun = await runLexMetadataMonitor(env, { now: new Date(now), runType, wait });
     }
     const directLexRetrievalEnabled = (env as Record<string, unknown>).LEGAL_DIRECT_RETRIEVAL_ENABLED === "true";
     const lexSourceStartedAt = Date.now();
@@ -591,16 +594,6 @@ export async function handleScheduled(
           evidenceKind: "synthetic_probe",
           startedAt: lexSourceStartedAt,
         });
-    }
-    if (lexMetadataMonitorEnabled) {
-      failureCode = "LEX_METADATA_MONITOR_RETRY_FAILED";
-      lexMetadataRetry = await lexMetadataRetryDue(env, new Date(now))
-        ? await runLexMetadataMonitor(env, {
-          now: new Date(now),
-          runType: "metadata_retry",
-          wait: (delayMs) => wait(delayMs),
-        })
-        : null;
     }
     failureCode = "OUTBOX_DISPATCH_FAILED";
     const summary = await dispatchOutbox(env, 100);
@@ -709,7 +702,7 @@ export async function handleScheduled(
       lexMetadataStaleRuns,
       lexSourceHealthState: lexSourceHealth.state,
       lexSourceHealthError: lexSourceHealth.alertCode,
-      lexMetadataRetryStatus: lexMetadataRetry?.status ?? "not_due",
+      lexMetadataRunStatus: lexMetadataRun?.status ?? "not_due",
       pendingRegistrationRetentionEligible: pendingRegistrationRetention.eligible,
       pendingRegistrationRetentionPurged: pendingRegistrationRetention.purged,
       pendingRegistrationRetentionStaleMarkersPurged: pendingRegistrationRetention.staleMarkersPurged,

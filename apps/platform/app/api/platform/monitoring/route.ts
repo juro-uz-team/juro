@@ -5,7 +5,7 @@ import {
   summarizeLexMetadataMonitoringFreshness,
 } from "../../../../lib/legal/monitoring-freshness";
 import type { PlatformLocale } from "../../../../lib/platform/routing";
-import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 
 const topics = new Set([
   "civil",
@@ -69,8 +69,8 @@ function response(body: unknown, status = 200) {
 }
 
 export const GET = withApiErrors(async function GET(request: Request) {
-  const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const user = await requireApiUser(request);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const locale = normalizeMonitoringLocale(new URL(request.url).searchParams.get("locale"));
   const t = monitoringCopy[locale];
   const db = requireD1();
@@ -116,7 +116,6 @@ export const GET = withApiErrors(async function GET(request: Request) {
     channels: parseJson<string[]>(String(rawPreference.channelsJson || "[]"), ["in_app"]),
     documentImpactConsent: Boolean(rawPreference.documentImpactConsent),
   } : null;
-  const selectedAudience = String(parsedPreference?.audience || "");
   const sourceStatusRows = sourceCheck.results.map((raw) => {
       const item = raw as Record<string, unknown>;
       return {
@@ -143,6 +142,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
     finishedAt: latestRunRow.finishedAt ? String(latestRunRow.finishedAt) : null,
     errorSummary: latestRunRow.errorSummary ? String(latestRunRow.errorSummary) : null,
   } : null;
+  const enabled = (env as Record<string, unknown>).LEGAL_LEX_METADATA_MONITOR_ENABLED === "true";
   return response({
     preference: parsedPreference,
     updates: updates.results
@@ -174,19 +174,15 @@ export const GET = withApiErrors(async function GET(request: Request) {
       .filter((item) => {
         try {
           const url = new URL(String(item.officialUrl));
-          const hasSafeSource = url.protocol === "https:" && (url.hostname === "lex.uz" || url.hostname === "www.lex.uz");
-          const matchesTopic = true; // RSS metadata does not infer a legal topic from an act title.
-          const matchesAudience = !selectedAudience || item.affectedAudiences.length === 0
-            || item.affectedAudiences.includes(selectedAudience);
-          return hasSafeSource && matchesTopic && matchesAudience;
+          return url.protocol === "https:" && (url.hostname === "lex.uz" || url.hostname === "www.lex.uz");
         } catch {
           return false;
         }
       }),
     status: {
-      integration: (env as Record<string, unknown>).LEGAL_LEX_METADATA_MONITOR_ENABLED !== "true"
+      integration: !enabled
         ? "disabled"
-        : freshness.state === "fresh" ? "active" : "degraded",
+        : freshness.state === "fresh" && run?.status === "success" ? "active" : "degraded",
       automaticPublication: true,
       controlledBeta: false,
       emailConfigured: Boolean(env.RESEND_API_KEY && env.EMAIL_FROM),
@@ -194,7 +190,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
       verifiedSourceCount: freshness.freshSourceCount,
       freshness,
       trustedSourceCount: freshness.trustedSourceCount,
-      lexIngestionEnabled: (env as Record<string, unknown>).LEGAL_LEX_METADATA_MONITOR_ENABLED === "true",
+      lexIngestionEnabled: enabled,
       lastRun: run,
     },
   });
@@ -202,8 +198,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
 
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
-  const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const user = await requireApiUser(request);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const body = await request.json().catch(() => null) as {
     audience?: string;
     topics?: string[];
@@ -214,17 +210,20 @@ export const POST = withApiErrors(async function POST(request: Request) {
   } | null;
   const locale = normalizeMonitoringLocale(body?.locale);
   const t = monitoringCopy[locale];
-  const selectedTopics = Array.from(new Set(body?.topics || [])).filter((item) => topics.has(item));
-  const selectedChannels = Array.from(new Set(body?.channels || [])).filter((item) => channels.has(item));
-  if (!body || !["individual", "business"].includes(body.audience || "") || !frequencies.has(body.frequency || "")) {
+  if (!body || !["individual", "business"].includes(body.audience || "") || !frequencies.has(body.frequency || "")
+    || (body.documentImpactConsent !== undefined && typeof body.documentImpactConsent !== "boolean")) {
     return response({ error: t.invalidPreference }, 400);
   }
-  if (!selectedTopics.length || selectedTopics.length !== (body.topics || []).length) {
+  if (!Array.isArray(body.topics) || !body.topics.length || body.topics.length > topics.size
+    || new Set(body.topics).size !== body.topics.length || !body.topics.every(item => topics.has(item))) {
     return response({ error: t.invalidTopics }, 400);
   }
-  if (!selectedChannels.includes("in_app") || selectedChannels.length !== (body.channels || []).length) {
+  if (!Array.isArray(body.channels) || !body.channels.includes("in_app") || body.channels.length > channels.size
+    || new Set(body.channels).size !== body.channels.length || !body.channels.every(item => channels.has(item))) {
     return response({ error: t.invalidChannels }, 400);
   }
+  const selectedTopics = body.topics;
+  const selectedChannels = body.channels;
   const env = runtimeEnv();
   if (selectedChannels.includes("email") && !(env.RESEND_API_KEY && env.EMAIL_FROM)) {
     return response({ error: t.emailUnavailable }, 409);

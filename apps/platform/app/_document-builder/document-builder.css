@@ -503,6 +503,8 @@
 .dbt-notification-list { display: grid; gap: 8px; }
 .dbt-notification-list article { padding: 13px; display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; background: var(--dbt-paper); border: 1px solid var(--dbt-line); border-radius: 10px; }
 .dbt-notification-list article.unread { border-left: 4px solid var(--dbt-gold); }
+.dbt-notification-list article > div { min-width: 0; overflow-wrap: anywhere; }
+.dbt-notification-list article > a, .dbt-notification-list article > button { min-height: 44px; }
 .dbt-notification-list article > span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: var(--dbt-subtle); color: var(--dbt-ink); }
 .dbt-notification-list h2 { margin: 0; color: var(--dbt-ink); font-size: 14px; }
 .dbt-notification-list p { margin: 3px 0; color: var(--dbt-muted); font-size: 11px; }

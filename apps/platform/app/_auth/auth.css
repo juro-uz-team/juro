@@ -479,9 +479,13 @@ html[data-theme="dark"] .auth-page .auth-card { background: var(--auth-paper); }
 
 .auth-strength small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
+
+.auth-strength .auth-field-error { color: var(--danger); }
+.auth-field input[aria-invalid="true"],
+.auth-code[aria-invalid="true"] { border-color: var(--danger); }
 
 .auth-password-manager-username {
   position: absolute !important;

@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from "./password-policy";
 
 const emailInput = z.string().trim().min(3).max(254);
 const localeInput = z.enum(["ru", "uz", "en"]).default("ru");
 const authLocaleInput = z.enum(["ru", "uz", "en"]).default("ru");
-const passwordInput = z.string().min(8).max(256);
+const passwordInput = z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH);
 const returnToInput = z.string().max(2048).optional();
 // Ordinary authentication is password-first. Public email-code endpoints are
 // limited to registration confirmation and password recovery; an internal
