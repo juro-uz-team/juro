@@ -11,7 +11,7 @@ const sources = new Set(["s1", "s2"]), requirements = new Set(["r"]);
 const answer = (issues: WrittenAnswer["issues"]): WrittenAnswer => ({ issues, summary: "Qualified rule.", summarySourceIds: ["s1"],
   assumptions: [], conditionalBranches: [], deadlines: [], risks: [], referenceNotes: [], requiredDocuments: [], clarificationQuestions: [], urgency: "normal" });
 
-test("incomplete research explicitly withdraws shown prose and saves the same explanation", () => {
+test("incomplete research withdraws the draft and saves practical guidance", () => {
   const writing = new IssueWriting("en");
   writing.commit([initial], sources, requirements);
   const revision = { ...initial, baseVersion: "1", reason: "An exception changes the earlier explanation." };
@@ -26,7 +26,8 @@ test("incomplete research explicitly withdraws shown prose and saves the same ex
   { question: "Synthetic", language: "en", format: "detailed", mode: "fast", actor: { tenantId: "t", userId: "u" },
     history: [], privateDocuments: [], submittedAt: Date.now(), deadlineMs: 30_000 }, { sources: [], legalDatabaseAsOf: "2026-01-01" });
   assert.equal(legalChatResponseSchema.safeParse(result).success, true);
-  assert.equal(result.referenceNotes!.at(-1)!.note, withdrawal.notices!.at(-1));
+  assert.equal(result.presentationKind, "practical_guidance");
+  assert.deepEqual(result.referenceNotes, []);
   assert.throws(() => writing.project(initial, [], sources), /ISSUE_WRITING_CLOSED/);
 });
 

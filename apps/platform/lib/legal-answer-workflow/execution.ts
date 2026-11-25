@@ -31,13 +31,14 @@ export function createAnswerExecution(input: {
   const runtime = createCorpusRuntime({ ...input.corpus, submittedAt: input.request.submittedAt,
     deadlineMs: input.request.deadlineMs, embed: embeddings.embed });
   const pending = new Set<Promise<unknown>>();
+  const complete: typeof model.complete = operation => {
+    const result = model.complete(operation);
+    pending.add(result);
+    void result.then(() => pending.delete(result), () => pending.delete(result));
+    return result;
+  };
   return {
-    model: { ...model, complete: (...args: Parameters<typeof model.complete>) => {
-      const operation = model.complete(...args);
-      pending.add(operation);
-      void operation.then(() => pending.delete(operation), () => pending.delete(operation));
-      return operation;
-    } },
+    model: { ...model, complete, recover: complete },
     async drain() { await Promise.allSettled([...pending, embeddings.drain()]); },
     corpus: runtime.corpus,
     async citations(evidence: readonly OfficialProvision[], signal: AbortSignal) {

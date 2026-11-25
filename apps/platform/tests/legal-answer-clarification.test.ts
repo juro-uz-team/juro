@@ -9,6 +9,7 @@ import { serializeLegalOutcome } from "../lib/legal-answer-workflow/serializatio
 import type { LegalRequest } from "../lib/legal-answer-workflow/contracts";
 import { createEvidenceCompactor } from "../lib/legal-answer-workflow/model-identities";
 import { ProviderResearchSession } from "../lib/legal-answer-workflow/provider-research-session";
+import { entryInstruction } from "../lib/legal-answer-workflow/prompts";
 
 test("facts-only clarification publishes focused questions without claiming a failed legal search", async () => {
   for (const language of ["en", "ru", "uz"] as const) {
@@ -29,8 +30,9 @@ test("facts-only clarification publishes focused questions without claiming a fa
     assert.equal(result.outcome.kind, "clarification_required");
     assert.equal(calls, 1);
     const response = serializeLegalOutcome(result.outcome, request, { sources: [], legalDatabaseAsOf: "2026-10-29" });
-    assert.equal(response.responseKind, "clarification_required");
-    assert.equal(response.presentationKind, "factual_clarification");
+    assert.equal(response.responseKind, "answer");
+    assert.equal(response.presentationKind, "practical_guidance");
+    assert.ok(response.summary.trim());
     assert.deepEqual(response.clarificationQuestions, ["What happened, and what outcome do you want?"]);
     assert.deepEqual(response.coverageGaps, []);
     assert.equal(response.failureReason, undefined);
@@ -106,4 +108,49 @@ test("source-miss clarification survives the native provider format without open
   assert.equal(wire.safeParse({ turn }).success, true);
   assert.equal(wire.safeParse({ turn: { ...turn, clarificationQuestions: [] } }).success, false);
   assert.deepEqual(compacted.restore(await prepared.restore({ turn })), turn);
+});
+
+for (const [language, question, topic, rule, nextStep, clarification] of [
+  ["ru", "я хочу открыть ooo что мне нужно сделать?", "Регистрация ООО",
+    "Подайте заявление на регистрацию ООО.", "Подготовьте сведения об учредителях.", "Сколько будет учредителей?"],
+  ["uz", "Yillik ta’tilga qanday chiqaman?", "Yillik mehnat ta’tili",
+    "Ta’til sanalarini ish beruvchi bilan kelishib oling.", "Ta’til jadvalini so‘rang.", "Bu birinchi ish yilingizmi?"],
+  ["en", "How do I get a copy of my birth certificate?", "Civil record copies",
+    "Contact the civil registry for a copy.", "Collect your birth record details.", "Where was the birth registered?"],
+] as const) test(`an unfinished answer salvages cited steps and optional facts for ${topic}`, async () => {
+  const request: LegalRequest = { question, language, format: "short", mode: "fast",
+    actor: { tenantId: "t", userId: "u" }, history: [], privateDocuments: [], submittedAt: Date.now(), deadlineMs: 30_000 };
+  let recoveries = 0;
+  const answer = await runCompleteReadFixture(request, {
+    model: {
+      complete: async ({ stage }) => stage === "interpret"
+        ? { complexity: "simple", needsClarification: false, requirements: [{ id: "r", question: topic }],
+          queries: [topic], scopes: [{ kind: "current" }], facts: [], clarificationQuestions: [] }
+        : { decision: "insufficient_evidence", content: null, actions: [], gaps: [{ requirementId: "r", description: "Internal detail." }] },
+      recover: async operation => {
+        recoveries++;
+        assert.match(entryInstruction, /never ask the user to confirm Uzbekistan/);
+        assert.match(operation.instruction, /never ask the user to confirm Uzbekistan/i);
+        assert.equal(operation.researchSession, undefined);
+        assert.match(JSON.stringify(operation.input), new RegExp(rule.replace(/[.*+?^$${}()|[\]\\]/g, "\\$&")));
+        return { result: { content: { summary: rule, summarySourceIds: ["rule"], issues: [{ title: topic, explanation: rule,
+          requirementIds: ["r"], sourceIds: ["rule"], actions: [{ title: nextStep, description: nextStep, sourceIds: ["rule"] }] }],
+          conditionalBranches: [], assumptions: [], risks: [], deadlines: [], requiredDocuments: [], referenceNotes: [],
+          clarificationQuestions: [clarification], urgency: "normal" } } };
+      },
+    },
+    corpus: { search: async () => ({ candidates: ["rule"], sparseAvailable: true, denseAvailable: true }),
+      resolve: async identity => ({ identity, snapshot: "revision", objectKey: identity, byteCount: Buffer.byteLength(rule),
+        sha256: createHash("sha256").update(rule).digest("hex"), sourceUrl: "https://lex.uz/docs/123",
+        privacyClass: "public_official_source", quarantined: false, canonicalizationConflict: false,
+        currentPointerVerified: true, temporalState: "current_supported" }),
+      get: async () => Buffer.from(rule) },
+    publication: { publish: async ({ outcome }) => ({ answerId: "saved", outcome }) },
+  });
+  assert.equal(recoveries, 1);
+  assert.equal(answer.outcome.kind, "answer");
+  assert.equal(answer.outcome.content.summary, rule);
+  assert.deepEqual(answer.outcome.content.clarificationQuestions, [clarification]);
+  assert.equal(answer.outcome.content.issues[0].actions[0].title, nextStep);
+  assert.deepEqual(answer.outcome.evidence.map(item => item.identity), ["rule"]);
 });

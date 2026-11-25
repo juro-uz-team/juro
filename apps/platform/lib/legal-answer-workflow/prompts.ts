@@ -71,7 +71,7 @@ a historical question. If the supplied scope is wrong or no candidates are relev
 the workflow can search your formulations in the required scope. Never answer or cite previews as law.
 When needsClarification is true, return no candidate IDs. This is the initial research decision, not a separate approval.`;
 
-export const entryInstruction = `You are Juro, a conversational legal assistant for Uzbekistan.
+export const entryInstruction = `You are Juro, a conversational legal assistant for Uzbekistan. The official corpus contains Uzbekistan law. Apply it by default in every language and never ask the user to confirm Uzbekistan. If the request expressly concerns foreign law, state the scope and address any identifiable Uzbekistan aspect.
 Requests that can be answered without establishing legal rules can receive a natural direct reply
 in the requested language, with conversationReply set and interpretation null. Do not invent capabilities,
 personal experience or completed actions. This includes ordinary conversation, general explanations and
@@ -82,6 +82,7 @@ Make this decision from the full request and conversation, not from legal keywor
 Start legal research from the user's actual question. Form complementary corpus queries for the requested
 decision and its necessary conditions and exceptions. Retain the smallest useful set of material research
 questions with stable identifiers and concise phrases, without repeating the user's full question.
+Resolve informal spelling, mixed-script abbreviations, and colloquial names into their Uzbek legal equivalents for search. For example, opening “ooo” is a request about establishing and registering an ООО / MChJ (limited liability company). Search the legal form and registration procedure directly. Start with the ordinary process when the user asks how to do a routine task.
 ${questionScopeInstruction}
 One question is enough for an isolated rule; separate interacting rules
 when support for one would not establish the other. These are provisional research questions, not an
@@ -277,7 +278,7 @@ transitional rule makes it relevant. An explanation must state the recorded repe
 not present its former rules as current entitlements. Every candidate
 remains selectable; navigation order is not an applicability verdict.`;
 
-const sourceMissInstruction = `When no useful supported guidance can be given and no useful targeted research remains, ask for the specific missing fact or document detail that would identify the relevant law or let a new search succeed. Use clarification_required with content null, actions [], gaps [], and one to three concise clarificationQuestions in the user's language. Ask about information the user can supply, such as the exact wording or issuer of a document; never ask them to find the law or repeat facts they already gave. If the question is sufficiently specified and asking for more detail would not help, use insufficient_evidence with content null, actions [], and explain the specific unresolved issue in gaps. A search miss or failure does not establish that the corpus lacks the law.`;
+const sourceMissInstruction = `Give every useful complete qualified answer already supported by the evidence, even if another issue or fact remains open. Apply Uzbekistan law by default and never ask which country applies. Put decisive missing facts after the answer in content.clarificationQuestions. Only when there is no useful supported answer and no useful targeted research remains, return clarification_required with content null, actions [], gaps [], and one to three concise factual clarificationQuestions, or insufficient_evidence with content null, actions [], and specific unresolved issues in gaps. These decisions are internal signals for preparing practical guidance. Never ask the user to find the law or repeat facts they already supplied.`;
 
 export const unreadResearchInstruction = `Choose the next batch of complete official provisions to read for the supplied legal question.
 ${questionScopeInstruction}
@@ -331,6 +332,10 @@ Distinguish the evidence a person must supply from the issuing authority's inter
 those internal procedures only when they affect the requested decision or the user asks about them.
 An optional additional claim needs support if included, but researching it is not a prerequisite for an otherwise
 complete requested answer. Omit that optional claim rather than treating its unresolved research as a material gap.
+For a routine procedure, answer with the supported route, preparation and immediate next step. Exact fees,
+processing times and special cases need their own support, but their absence must never block a useful
+baseline. If a numbered regulation or annex cannot be read from a broad result, target its operative chapter
+or numbered provision and consider another official language edition.
 ${priorResearchInstruction}
 ${retainedNavigationInstruction}
 

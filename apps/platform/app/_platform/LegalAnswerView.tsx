@@ -103,8 +103,8 @@ export function LegalAnswerView({
   const id = useId().replace(/:/gu, "");
   const copy = COPY[locale];
   const mode = deriveLegalEvidenceMode(result);
-  const incomplete = Boolean(result.coverageGaps?.length)
-    || (result.coverageStatus !== undefined && result.coverageStatus !== "good_coverage");
+  const incomplete = result.presentationKind !== "legal_answer" && (Boolean(result.coverageGaps?.length)
+    || (result.coverageStatus !== undefined && result.coverageStatus !== "good_coverage"));
   const rootClass = `legal-answer ${className}`.trim();
   const usesInternet = result.sources.some((source) => source.sourceOrigin === "web"
     || source.sourceOrigin === "live" || source.sourceClass === "SECONDARY_REFERENCE");
@@ -113,7 +113,9 @@ export function LegalAnswerView({
       ? "Javobda internet manbalaridan foydalanilgan" : "This answer uses internet sources"}
   </p>;
   const coverageGaps = (result.coverageGaps ?? []).length > 0 && <Section id={`${id}-gaps`}
-    title={locale === "ru" ? "Что ещё не подтверждено" : locale === "uz" ? "Hali tasdiqlanmagan jihatlar" : "What remains unverified"}>
+    title={result.presentationKind === "legal_answer"
+      ? locale === "ru" ? "Что уточнить перед следующим шагом" : locale === "uz" ? "Keyingi qadamdan oldin nimani aniqlash kerak" : "What to check before taking the next step"
+      : locale === "ru" ? "Что ещё не подтверждено" : locale === "uz" ? "Hali tasdiqlanmagan jihatlar" : "What remains unverified"}>
     <ul>{result.coverageGaps!.map((gap, index) => <li key={index}>{gap}</li>)}</ul>
   </Section>;
   const questions = result.clarificationQuestions.length > 0 && <section className="legal-answer__questions" aria-labelledby={`${id}-clarify`}>
@@ -122,6 +124,15 @@ export function LegalAnswerView({
       ? <button type="button" key={question} onClick={() => onQuestionSelect(question)}>{question}</button>
       : <p key={question}>{question}</p>)}</div>
   </section>;
+
+  if (result.presentationKind === "practical_guidance") {
+    return <article className={rootClass} data-answer-kind="practical-guidance">{toolbar}
+      <Section id={`${id}-guidance`} title={locale === "ru" ? "С чего начать" : locale === "uz" ? "Nimadan boshlash kerak" : "Where to start"}>
+        <Markdown result={result} locale={locale}>{result.summary}</Markdown>
+      </Section>
+      {questions}
+    </article>;
+  }
 
   if (result.responseKind === "clarification_required") {
     if (result.presentationKind === "factual_clarification") {

@@ -29,7 +29,8 @@ test("signed factual clarification persists questions and accounts once across s
     assert.equal(delivered.kind, "completed");
     if (delivered.kind !== "completed") throw new Error("Expected saved clarification");
     const response = legalChatResponseSchema.parse(delivered.response);
-    assert.equal(response.responseKind, "clarification_required");
+    assert.equal(response.responseKind, "answer");
+    assert.equal(response.presentationKind, "practical_guidance");
     assert.deepEqual(response.clarificationQuestions, questions);
     const saved = fixture.sqlite.prepare("SELECT structured_json FROM conversation_messages WHERE id=?").get(delivered.responseMessageId);
     assert.deepEqual(JSON.parse(String(saved?.structured_json)).clarificationQuestions, questions);

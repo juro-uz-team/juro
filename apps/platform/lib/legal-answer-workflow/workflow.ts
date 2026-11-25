@@ -15,6 +15,7 @@ import { RequestController, requestControlPolicy, type StopReason } from "./requ
 import { withResearchDiagnostics, emitResearchDiagnostic } from "./diagnostics";
 import { IssueWriting, issuedResearchTurn, issueUpdateSchema } from "./issue-writing";
 import { coverageRecordSchema } from "./research-workspace";
+import { recoverAnswer } from "./answer-recovery";
 
 const unavailableText = {
   en: {
@@ -33,6 +34,7 @@ const unavailableText = {
     write: "Mavjud materiallar va ajratilgan vaqt doirasida topilgan normalarga asoslangan to‘liq javobni tayyorlab bo‘lmadi.",
   },
 };
+const recoverableProviderFailure = /^(?:PROVIDER_(?:OUTPUT_|TOOL_|RESPONSE_|HTTP_FAILED|TRANSPORT_FAILED|DEADLINE)|ISSUE_)/u;
 
 /** One controller, workspace and native model session per request. */
 export async function runLegalAnswer(request: LegalRequest, ports: WorkflowPorts): Promise<PublishedAnswer> {
@@ -45,6 +47,11 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
   const lifetime = requestLifetime(request.submittedAt, request.deadlineMs, request.signal, request.deadlineMs,
     policy.compositionMs + policy.savingMs);
   const { signal, researchSignal, writingSignal } = lifetime;
+  // Keep a short composition attempt available if the research agent uses its
+  // full writing window. The original deadline and saving margin still apply.
+  const compositionSignal = ports.model.recover ? AbortSignal.any([writingSignal, AbortSignal.timeout(
+    Math.max(1, request.submittedAt + request.deadlineMs - Date.now() - policy.savingMs - Math.min(12_000, request.deadlineMs * 0.15)),
+  )]) : writingSignal;
   const controller = new RequestController(request.submittedAt + request.deadlineMs, request.onDiagnostic, request.deadlineMs);
   const workspace = new ResearchWorkspace();
   const issueWriting = new IssueWriting(request.language);
@@ -61,6 +68,11 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
     const result = await withinSignal(signal, () => ports.publication.publish({ request, outcome, signal }));
     controller.transition("complete"); return result;
   };
+  const recover = async (outcome: Parameters<typeof recoverAnswer>[3],
+    interpretation?: Parameters<typeof recoverAnswer>[4]) => {
+    signal.throwIfAborted();
+    return publish(await recoverAnswer(request, ports, writingSignal, outcome, interpretation));
+  };
   try {
     request.onProgress?.("interpreting");
     controller.providerStarted();
@@ -68,7 +80,14 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
       instruction: entryInstruction, input: { question: request.question, language: request.language, format: request.format,
         legalContextDate: request.legalContextDate, history: request.history, privateDocuments: request.privateDocuments,
         caseContext: request.caseContext, searchCapabilities: { resultWindowLimit: 50, continuationSupported: false, rankedPageExhaustsCorpus: false } },
-      schema: z.toJSONSchema(entrySchema), signal: researchSignal }));
+      schema: z.toJSONSchema(entrySchema), signal: researchSignal })).catch(error => {
+        signal.throwIfAborted();
+        if (ports.model.recover && (researchSignal.aborted || recoverableProviderFailure.test(error instanceof Error ? error.message : "")))
+          return null;
+        throw error;
+      });
+    if (raw === null && ports.model.recover)
+      return await recover({ kind: "clarification_required", checkedEvidence: [], clarificationQuestions: [] });
     const entry = entrySchema.parse(raw);
     if (entry.conversationReply !== null) {
       request.onBudgetSelected?.(15_000);
@@ -79,18 +98,18 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
     request.onBudgetSelected?.(Math.min(request.deadlineMs, interpretation.complexity === "simple" ? 15_000 : 30_000));
     if (request.legalContextDate && !interpretation.scopes.some(scope => scope.kind === "historical" && scope.at === request.legalContextDate))
       throw new Error("INTERPRETATION_DATE_MISMATCH");
-    if (!interpretation.queries.length) return await publish({ kind: "clarification_required", checkedEvidence: [],
+    if (!interpretation.queries.length) return await recover({ kind: "clarification_required", checkedEvidence: [],
       clarificationQuestions: interpretation.clarificationQuestions });
     interpretation.needsClarification = false;
     const unfinished = async (reason: StopReason, gaps?: ResearchTurn["gaps"]) => {
       controller.stop(reason);
       const withdrawal = issueWriting.withdrawIncomplete();
       if (withdrawal) request.onWriting?.(withdrawal);
-      return publish({ kind: "insufficient_evidence", researchIncomplete: true, checkedEvidence: workspace.active(),
+      return recover({ kind: "insufficient_evidence", researchIncomplete: true, checkedEvidence: workspace.active(),
         revisionNotes: issueWriting.correctionNotes(),
         gaps: gaps?.length ? gaps : interpretation.requirements.map(item => ({ requirementId: item.id, description: unavailableText[request.language][
           ["context_capacity", "context_repair_limit", "provider_budget", "provider_limit", "composition_deadline"].includes(reason) ? "write" : "research"] })),
-        clarificationQuestions: interpretation.clarificationQuestions });
+        clarificationQuestions: interpretation.clarificationQuestions }, interpretation);
     };
     request.onProgress?.("researching"); navigation.beginBatch();
     try {
@@ -98,7 +117,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
       if (!researchSignal.aborted) await corpus.reconcile(interpretation);
     }
     catch (error) { signal.throwIfAborted(); if (!researchSignal.aborted) throw error; controller.finishResearch(); }
-    while (!writingSignal.aborted && controller.providerCalls < maximumGenerationCalls) {
+    while (!compositionSignal.aborted && controller.providerCalls < maximumGenerationCalls) {
       signal.throwIfAborted();
       const evidence = workspace.active();
       const canResearch = controller.canAcquire(researchSignal, ports.model.capacity?.());
@@ -125,14 +144,14 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
             .map(section => [sectionIdentity(section, item), { candidateId: item.id,
               sectionPosition: section.position, title: section.title, scope: item.scope }] as const))).values()];
 
-        const sourceFiles = await sourceFilesForEvidence(evidence, ports.corpus, writingSignal);
+        const sourceFiles = await sourceFilesForEvidence(evidence, ports.corpus, compositionSignal);
         const sourceMetadata = request.onWriting && ports.citations
-          ? (await withinSignal(writingSignal, () => ports.citations!(inventory.all(), writingSignal))).map(citation => citation.source) : undefined;
+          ? (await withinSignal(compositionSignal, () => ports.citations!(inventory.all(), compositionSignal))).map(citation => citation.source) : undefined;
         const emitWriting = (draft: import("./writing-stream").WritingDraft) => request.onWriting?.({ ...draft,
           ...(sourceMetadata ? { sources: sourceMetadata } : {}) });
         const outputLanguage = { en: "English", ru: "Russian", uz: "Uzbek in Latin script" }[request.language];
         controller.providerStarted();
-        const raw = await withinSignal(writingSignal, () => ports.model.complete({ stage: "write", researchSession: true,
+        const raw = await withinSignal(compositionSignal, () => ports.model.complete({ stage: "write", researchSession: true,
           onWriting: request.onWriting ? draft => {
             if (draft.issueUpdate) {
               issueWriting.project(draft.issueUpdate, draft.blocks, new Set(evidence.map(item => item.identity)), draft.citations);
@@ -153,7 +172,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
             availableReferences: researchReferences(evidence, referenceReads), availableSections,
             retainedResults: canResearch ? navigation.catalog(new Set(discoveredCandidates.filter(item => selectedCandidates.has(JSON.stringify([item.identity, item.scope]))).map(item => item.id))) : [],
             ...modelResearchDiscovery(unreadCandidates, undefined, queryLabels), evidence: researchEvidence(evidence) },
-          schema: z.toJSONSchema(evidence.length ? researchTurnSchema : inventory.all().length ? unreadResearchTurnSchema : initialReadTurnSchema), signal: writingSignal }));
+          schema: z.toJSONSchema(evidence.length ? researchTurnSchema : inventory.all().length ? unreadResearchTurnSchema : initialReadTurnSchema), signal: compositionSignal }));
         const requirements = new Set(interpretation.requirements.map(item => item.id));
         if (ports.model.issueWriting && typeof raw === "object" && raw !== null && issuedResearchTurn in raw) {
           const parsed = z.object({ issueUpdates: z.array(issueUpdateSchema), coverageUpdates: z.array(coverageRecordSchema).optional() }).parse(raw);
@@ -176,8 +195,10 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
             ...(turn.gaps.length ? { gaps: turn.gaps } : {}) });
         }
         if (turn.decision === "clarification_required") {
-          if (issueWriting.published().some(item => item.content)) throw new Error("ISSUE_FINAL_RECONCILIATION");
-          return await publish({ kind: "clarification_required", checkedEvidence: [], clarificationQuestions: turn.clarificationQuestions! });
+          const withdrawal = issueWriting.withdrawIncomplete();
+          if (withdrawal) request.onWriting?.(withdrawal);
+          return await recover({ kind: "clarification_required", checkedEvidence: evidence,
+            clarificationQuestions: turn.clarificationQuestions! }, interpretation);
         }
         if (turn.decision !== "research") return await unfinished("research_unfinished", turn.gaps);
         if (!canResearch) return await unfinished("repeated_work");
@@ -208,7 +229,7 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         if (researchSignal.aborted || !canResearch || repeated) controller.finishResearch();
       } catch (error) {
         signal.throwIfAborted();
-        if (researchSignal.aborted && error === researchSignal.reason && !writingSignal.aborted) {
+        if (researchSignal.aborted && error === researchSignal.reason && !compositionSignal.aborted) {
           controller.finishResearch();
           continue;
         }
@@ -225,11 +246,13 @@ async function executeLegalAnswer(request: LegalRequest, ports: WorkflowPorts): 
         }
         if (code === "PROVIDER_REQUEST_BUDGET") { controller.capacityRejected(); return await unfinished("provider_budget"); }
         if (code === "PROVIDER_CALL_LIMIT") { controller.capacityRejected(); return await unfinished("provider_limit"); }
-        if (writingSignal.aborted) return await unfinished("composition_deadline");
+        if (compositionSignal.aborted) return await unfinished("composition_deadline");
+        if (ports.model.recover && recoverableProviderFailure.test(code))
+          return await unfinished("invalid_output");
         throw error;
       }
     }
-    return await unfinished(writingSignal.aborted ? "composition_deadline" : "provider_limit");
+    return await unfinished(compositionSignal.aborted ? "composition_deadline" : "provider_limit");
   } catch (error) {
     controller.stop(request.signal?.aborted ? "cancelled" : signal.aborted ? "deadline" : "provider_failure");
     throw error;

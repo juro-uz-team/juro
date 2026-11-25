@@ -11,7 +11,7 @@ import type { LegalRequest } from "./contracts";
 import { citationStatements } from "./citation-storage";
 import { requestLifetime, withinSignal } from "./lifetime";
 import { entryInstruction, unreadResearchInstruction, researchWritingInstruction } from "./prompts";
-import { serializeLegalOutcome } from "./serialization";
+import { publicationEvidence, serializeLegalOutcome } from "./serialization";
 import { runLegalAnswer } from "./workflow";
 
 const fieldsSchema = z.object({
@@ -66,16 +66,17 @@ export async function executeGuestAnswer(input: z.infer<typeof fieldsSchema> & {
     const execution = await withinSignal(signal, () => dependencies.createExecution({ request, runId: run.id, model: dependencies.model }));
     let delivery: LegalChatResponse | undefined;
     await runLegalAnswer(request, { ...execution, publication: { publish: async ({ outcome, request: settledRequest, signal: publicationSignal }) => {
-      const evidence = outcome.kind === "answer" ? outcome.evidence : outcome.checkedEvidence;
+      const evidence = publicationEvidence(outcome);
       const citations = await withinSignal(publicationSignal, () => execution.citations(evidence, publicationSignal));
       if (citations.length !== evidence.length || citations.some(citation =>
         !evidence.some(provision => isDeepStrictEqual(provision, citation.evidence)))) throw new Error("PUBLICATION_EVIDENCE_MISMATCH");
       const response = serializeLegalOutcome(outcome, request, { sources: citations.map(citation => citation.source),
         legalDatabaseAsOf: dependencies.legalDatabaseAsOf });
       const now = new Date().toISOString();
+      const responseKind = response.presentationKind === "practical_guidance" ? "clarification_required" : response.responseKind;
       const deadlineAt = input.submittedAt + settledRequest.deadlineMs;
       publicationSignal.throwIfAborted();
-      await completeGuestAiRun({ ...input, run, resultJson: JSON.stringify(response), responseKind: response.responseKind,
+      await completeGuestAiRun({ ...input, run, resultJson: JSON.stringify(response), responseKind,
         provider: "openai", model: dependencies.model, ...execution.usage(),
         additionalStatements: [
           ...citationStatements({ db: input.db, guestRunId: run.id, now, citations }),
@@ -85,7 +86,7 @@ export async function executeGuestAnswer(input: z.infer<typeof fieldsSchema> & {
               AND s.expires_at>? AND s.state=?
           ) THEN 1 ELSE json_extract('GUEST_PUBLICATION_FENCE_FAILED','$') END AS live`)
             .bind(deadlineAt, run.id, input.session.tokenHmac, input.session.tokenKeyVersion, now,
-              response.responseKind === "answer" ? "consumed" : "available"),
+              responseKind === "answer" ? "consumed" : "available"),
         ] });
       delivery = response;
       return { answerId: run.id, outcome };

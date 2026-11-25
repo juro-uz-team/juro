@@ -159,9 +159,9 @@ export class IssueWriting {
     this.closed = true;
     if (!this.snapshot().blocks.length) return null;
     const reason = {
-      en: "Research could not finish. The earlier explanations have been withdrawn because a complete, reconciled answer could not be verified.",
-      ru: "Исследование не удалось завершить. Предыдущие объяснения отозваны: полный и согласованный ответ не удалось проверить.",
-      uz: "Izlanishni yakunlab bo‘lmadi. To‘liq va o‘zaro muvofiq javobni tekshirib bo‘lmagani uchun avvalgi tushuntirishlar qaytarib olindi.",
+      en: "The earlier draft was withdrawn. The revised answer will appear here.",
+      ru: "Предварительный текст отозван. Здесь появится обновлённый ответ.",
+      uz: "Dastlabki matn qaytarib olindi. Yangilangan javob shu yerda chiqadi.",
     }[this.language];
     this.revision++; this.notices.push(reason);
     this.changes.push({ title: this.noticeTitle(), note: reason, sourceIds: [] });

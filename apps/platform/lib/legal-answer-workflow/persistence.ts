@@ -108,7 +108,8 @@ export async function persistSignedInAnswer(input: SignedPublication) {
     ...answerVoiceStatements({ ...input, conversationId, requestMessageId, now }),
     ...memoryStatements,
     ...completeAiRunStatements({ ...input, ...input.usage, conversationId, requestMessageId, responseMessageId,
-      provider: "openai", fallbackFromProvider: null, chargeable: input.response.responseKind === "answer",
+      provider: "openai", fallbackFromProvider: null,
+      chargeable: input.response.responseKind === "answer" && input.response.presentationKind !== "practical_guidance",
       legalDatabaseAsOf: input.response.legalDatabaseAsOf }),
     deadlineFence(),
   );

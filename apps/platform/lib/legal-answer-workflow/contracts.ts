@@ -217,10 +217,12 @@ export type LegalOutcome = {
   clarificationQuestions: string[];
 } | {
   kind: "clarification_required";
+  guidance?: string;
   checkedEvidence: OfficialProvision[];
   clarificationQuestions: string[];
 } | {
   kind: "insufficient_evidence";
+  guidance?: string;
   /** Research stopped without establishing that the trusted corpus lacks the law. */
   researchIncomplete?: boolean;
   revisionNotes?: WrittenAnswer["referenceNotes"];
@@ -235,6 +237,7 @@ export type WorkflowPorts = {
   /** Wait for cancelled provider operations to finish recording their reservations. */
   drain?(): Promise<void>;
   model: { issueWriting?: boolean; complete(operation: ModelOperation): Promise<unknown>;
+    recover?(operation: ModelOperation): Promise<unknown>;
     capacity?(): { remainingCalls: number; canReserveResearchAndComposition: boolean } };
   corpus: ProvisionObjects & {
     /** Optional ranked complete-provision hydration; zero leaves read selection to the agent. */

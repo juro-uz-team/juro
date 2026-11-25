@@ -6,10 +6,14 @@ export type AnswerPresentation = {
   sources: LegalChatResponse["sources"];
 };
 
+export function publicationEvidence(outcome: LegalOutcome) {
+  return outcome.kind === "answer" ? outcome.evidence : [];
+}
+
 /** The retained type is a serialized compatibility contract, imported without runtime validators. */
 export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalRequest,
   presentation: AnswerPresentation): LegalChatResponse {
-  const evidence = outcome.kind === "answer" ? outcome.evidence : outcome.checkedEvidence;
+  const evidence = publicationEvidence(outcome);
   const identities = new Set(presentation.sources.map(source => source.sourceId));
   if (identities.size !== presentation.sources.length || presentation.sources.length !== evidence.length
     || presentation.sources.some(source => !evidence.some(item =>
@@ -17,7 +21,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     throw new Error("CITATION_PRESENTATION_MISMATCH");
   }
   if (outcome.kind === "conversation") {
-    if (evidence.length) throw new Error("CONVERSATION_EVIDENCE_INVALID");
+    if (outcome.checkedEvidence.length) throw new Error("CONVERSATION_EVIDENCE_INVALID");
     return { responseKind: "answer",
       presentationKind: "conversation", summary: outcome.text, answer: outcome.text,
       confirmedFindings: [], actionPlan: [], conditionalBranches: [],
@@ -28,34 +32,21 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
       evidenceMode: "none", validationMethod: "programmatic", sourceValidationStatus: "unavailable" };
   }
   if (outcome.kind !== "answer") {
-    const clarification = outcome.kind === "clarification_required";
-    const summary = clarification ? {
-      en: "Please clarify the details below so I can address your legal question.",
-      ru: "Уточните детали ниже, чтобы я мог разобраться в вашем правовом вопросе.",
-      uz: "Huquqiy savolingizni ko‘rib chiqishim uchun quyidagi tafsilotlarni aniqlashtiring.",
-    }[request.language] : outcome.researchIncomplete ? {
-      en: "Research could not finish. This does not mean the applicable law is absent from the corpus.",
-      ru: "Исследование не удалось завершить. Это не означает, что применимые нормы отсутствуют в базе.",
-      uz: "Izlanishni yakunlab bo‘lmadi. Bu qo‘llaniladigan normalar bazada yo‘q degani emas.",
-    }[request.language] : {
-      en: "The applicable law could not be verified sufficiently to answer.",
-      ru: "Не удалось достаточно проверить применимое право для ответа.",
-      uz: "Javob berish uchun qo‘llaniladigan huquqni yetarlicha tekshirib bo‘lmadi.",
+    const summary = outcome.guidance ?? {
+      en: "Start by identifying the outcome you need and collecting the relevant documents and dates. Before filing or paying, check the current requirements for your situation with the responsible authority in Uzbekistan.",
+      ru: "Начните с того, какого результата вы хотите добиться, и соберите документы и даты по ситуации. Перед подачей заявления или оплатой уточните действующие требования для вашего случая в компетентном органе Узбекистана.",
+      uz: "Avval qanday natijaga erishmoqchi ekaningizni aniqlang va tegishli hujjatlar hamda sanalarni to‘plang. Ariza topshirish yoki to‘lov qilishdan oldin holatingizga tegishli amaldagi talablarni O‘zbekistondagi vakolatli idoradan aniqlang.",
     }[request.language];
-    return { responseKind: "clarification_required", summary, answer: summary,
-      ...(clarification ? { presentationKind: "factual_clarification" as const } : {}),
+    return { responseKind: "answer", presentationKind: "practical_guidance", summary, answer: summary,
       confirmedFindings: [], actionPlan: [], conditionalBranches: [],
       language: request.language, jurisdiction: "UZ", answerMode: request.format, reasoningMode: request.mode,
       clarificationQuestions: outcome.clarificationQuestions,
-      coverageGaps: outcome.kind === "insufficient_evidence" ? outcome.gaps.map(gap => gap.description) : [],
+      coverageGaps: [],
       assumptions: [], risks: [], deadlines: [], requiredDocuments: [],
-      referenceNotes: outcome.kind === "insufficient_evidence" ? outcome.revisionNotes ?? [] : [], urgency: "normal",
-      sources: structuredClone(presentation.sources), legalDatabaseAsOf: presentation.legalDatabaseAsOf,
+      referenceNotes: [], urgency: "normal",
+      sources: [], legalDatabaseAsOf: presentation.legalDatabaseAsOf,
       successOutlook: null, suggestedDocument: null, suggestLawyer: false,
-      evidenceMode: presentation.sources.length ? "official" : "none", validationMethod: "programmatic",
-      // An unfinished legal assessment does not establish a search/document outage.
-      // Keep its specific gaps visible instead of selecting legacy outage copy.
-      sourceValidationStatus: "unavailable",
+      evidenceMode: "none",
     };
   }
   const content = outcome.content;
@@ -67,7 +58,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     }),
   }));
   return {
-    responseKind: "answer", summary: content.summary, summarySourceIds: content.summarySourceIds,
+    responseKind: "answer", presentationKind: "legal_answer", summary: content.summary, summarySourceIds: content.summarySourceIds,
     answer: content.issues.map(issue => `${issue.title}\n${issue.explanation}`).join("\n\n"),
     confirmedFindings: content.issues.map(issue => ({ title: issue.title, explanation: issue.explanation,
       sourceIds: issue.sourceIds, requirementIds: issue.requirementIds })),

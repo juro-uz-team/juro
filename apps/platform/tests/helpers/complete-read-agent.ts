@@ -6,7 +6,7 @@ import type { Interpretation, LegalRequest, WorkflowPorts } from "../../lib/lega
  */
 export function runCompleteReadFixture(request: LegalRequest, ports: WorkflowPorts) {
   let interpretation: Interpretation;
-  return runLegalAnswer(request, { ...ports, model: { complete: async operation => {
+  return runLegalAnswer(request, { ...ports, model: { ...ports.model, complete: async operation => {
     if (operation.stage === "interpret") {
       const result = await ports.model.complete(operation);
       interpretation = result as Interpretation;

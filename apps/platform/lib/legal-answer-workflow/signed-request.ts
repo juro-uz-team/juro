@@ -10,7 +10,7 @@ import { loadAnswerContext } from "./history";
 import { requestLifetime, withinSignal } from "./lifetime";
 import { persistSignedInAnswer } from "./persistence";
 import { entryInstruction, unreadResearchInstruction, researchWritingInstruction } from "./prompts";
-import { serializeLegalOutcome } from "./serialization";
+import { publicationEvidence, serializeLegalOutcome } from "./serialization";
 import { runLegalAnswer } from "./workflow";
 import { loadPrivateAnswerDocuments } from "./private-documents";
 import type { ProvisionObjects } from "./evidence";
@@ -100,7 +100,7 @@ export async function executeSignedInAnswer(input: SignedRequest, dependencies: 
       runId: reservation.runId, model: dependencies.model }));
     let delivery: AiRunReplay | undefined;
     await runLegalAnswer(request, { ...execution, publication: { publish: async ({ outcome, request: settledRequest, signal: publicationSignal }) => {
-      const evidence = outcome.kind === "answer" ? outcome.evidence : outcome.checkedEvidence;
+      const evidence = publicationEvidence(outcome);
       const citations = await withinSignal(publicationSignal, () => execution.citations(evidence, publicationSignal));
       if (citations.length !== evidence.length || citations.some(citation =>
         !evidence.some(provision => isDeepStrictEqual(provision, citation.evidence)))) {

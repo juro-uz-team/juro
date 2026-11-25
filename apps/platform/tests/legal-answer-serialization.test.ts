@@ -32,13 +32,14 @@ test("serialization preserves issue/action relationships and authenticated citat
   assert.ok(!JSON.stringify(result).includes("Full source text."));
 });
 
-test("an unavailable result retains its separate localized presentation without an empty answer outline", () => {
+test("an unavailable result gives practical guidance before questions and keeps research diagnostics private", () => {
   const result = serializeLegalOutcome({ kind: "insufficient_evidence", checkedEvidence: [],
     gaps: [{ requirementId: "r", description: "Не найдено применимое правило." }], clarificationQuestions: ["Какова дата события?"] },
   { ...request, language: "ru" }, { sources: [], legalDatabaseAsOf: "2026-10-28" });
-  assert.equal(result.responseKind, "clarification_required");
-  assert.match(result.summary, /проверить/);
-  assert.deepEqual(result.coverageGaps, ["Не найдено применимое правило."]);
+  assert.equal(result.responseKind, "answer");
+  assert.equal(result.presentationKind, "practical_guidance");
+  assert.match(result.summary, /соберите документы и даты/);
+  assert.deepEqual(result.coverageGaps, []);
   assert.deepEqual(result.confirmedFindings, []);
   assert.deepEqual(result.actionPlan, []);
   assert.deepEqual(result.clarificationQuestions, ["Какова дата события?"]);
