@@ -385,7 +385,8 @@ test("streaming includes early issues and keeps issue formatting and source boun
   assert.equal(value.confirmedFindings[0].explanation, "The ordinary rule.\n\nIts exception.");
   const streamed = renderToStaticMarkup(createElement(LegalAnswerView, { result: value, locale: "en", streaming: true }));
   const saved = renderToStaticMarkup(createElement(LegalAnswerView, { result: value, locale: "en" }));
-  assert.equal(streamed.replace(' aria-busy="true"', '').split('</article>')[0], saved.split('<footer')[0].trimEnd());
+  assert.equal(streamed.replace(' aria-busy="true"', '').replace(/<\/article>$/u, ""),
+    saved.split('<footer')[0].replace(/<\/article>$/u, "").trimEnd());
   assert.match(streamed, /<strong>supported<\/strong>/);
   assert.doesNotMatch(streamed, /legal-answer__authority|legal-answer__citations/);
 });
@@ -438,5 +439,14 @@ test("streamed source bindings keep citations beside the same prose after comple
  const streamed=renderToStaticMarkup(createElement(LegalAnswerView,{result:value,locale:"en",streaming:true}));
  const final=renderToStaticMarkup(createElement(LegalAnswerView,{result:value,locale:"en"}));
  assert.match(streamed,/The employer cannot terminate during leave.[\s\S]*<a [^>]+>Art. 163/);
- assert.equal(streamed.replace(' aria-busy="true"','').split('</article>')[0],final.split('<footer')[0].trimEnd());
+ assert.equal(streamed.replace(' aria-busy="true"','').replace(/<\/article>$/u, ""),
+   final.split('<footer')[0].replace(/<\/article>$/u, "").trimEnd());
+});
+
+test("practical guidance is shown before follow-up questions", () => {
+  const value = result({ presentationKind: "practical_guidance", summary: "Gather the details of your birth record.",
+    clarificationQuestions: ["Where was the birth registered?"], sources: [] });
+  const html = renderToStaticMarkup(createElement(LegalAnswerView, { result: value, locale: "en" }));
+  assert.match(html, /Where to start[\s\S]*Gather the details[\s\S]*Where was the birth registered/);
+  assert.doesNotMatch(html, /unverified|could not finish|cannot yet be verified/i);
 });

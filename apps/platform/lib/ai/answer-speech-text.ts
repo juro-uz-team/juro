@@ -6,9 +6,12 @@ import type {PlatformLocale} from "../platform/routing";
 export function answerSpeechText(result:LegalAnswerViewResult,locale:PlatformLocale):string {
   const copy=legalAnswerCopy[locale],parts:string[]=[];
   const add=(...values:(string|undefined|null)[])=>{for(const value of values)if(value?.trim())parts.push(value);};
-  const gaps=()=>{if(result.coverageGaps?.length)add(locale==="ru"?"Что ещё не подтверждено":locale==="uz"?"Hali tasdiqlanmagan jihatlar":"What remains unverified",...result.coverageGaps);};
+  const gaps=()=>{if(result.coverageGaps?.length)add(result.presentationKind==="legal_answer"?copy.nextCheck:
+    locale==="ru"?"Что ещё не подтверждено":locale==="uz"?"Hali tasdiqlanmagan jihatlar":"What remains unverified",...result.coverageGaps);};
   const notes=()=>{if(result.referenceNotes?.length){add(copy.additional,copy.secondaryNote);for(const note of result.referenceNotes)add(note.title,note.note);}};
-  if(result.responseKind==="clarification_required"){
+  if(result.presentationKind==="practical_guidance"){
+    add(copy.guidance,result.summary);
+  }else if(result.responseKind==="clarification_required"){
     const interpretation=result.failureReason==="question_interpretation_unavailable",research=result.failureReason==="official_research_unavailable",verification=result.failureReason==="answer_verification_unavailable";
     add(copy.authority.none,copy.checked,copy.insufficient,interpretation?questionInterpretationFailureText(locale):research?officialResearchFailureText(locale):verification?answerVerificationFailureText(locale):result.answer);
     if(!verification)add(copy.checked,copy.checkedBody,...(!interpretation&&!research?[copy.missing]:[]));
@@ -44,7 +47,8 @@ export function answerSpeechText(result:LegalAnswerViewResult,locale:PlatformLoc
     notes();gaps();
   }
   if(result.clarificationQuestions.length)add(copy.clarify,...result.clarificationQuestions);
-  if(result.responseKind==="answer"&&result.coverageStatus&&result.coverageStatus!=="good_coverage")add(copy.partial);
+  if(result.responseKind==="answer"&&result.presentationKind!=="legal_answer"&&result.presentationKind!=="practical_guidance"
+    &&result.coverageStatus&&result.coverageStatus!=="good_coverage")add(copy.partial);
   return parts.join("\n\n").replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/gu,"$1").replace(/^[#>]+\s*/gmu,"").replace(/[*`]/gu,"");
 }
 

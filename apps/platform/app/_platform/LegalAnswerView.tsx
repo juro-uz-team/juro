@@ -114,7 +114,7 @@ export function LegalAnswerView({
   </p>;
   const coverageGaps = (result.coverageGaps ?? []).length > 0 && <Section id={`${id}-gaps`}
     title={result.presentationKind === "legal_answer"
-      ? locale === "ru" ? "Что уточнить перед следующим шагом" : locale === "uz" ? "Keyingi qadamdan oldin nimani aniqlash kerak" : "What to check before taking the next step"
+      ? copy.nextCheck
       : locale === "ru" ? "Что ещё не подтверждено" : locale === "uz" ? "Hali tasdiqlanmagan jihatlar" : "What remains unverified"}>
     <ul>{result.coverageGaps!.map((gap, index) => <li key={index}>{gap}</li>)}</ul>
   </Section>;
@@ -127,7 +127,7 @@ export function LegalAnswerView({
 
   if (result.presentationKind === "practical_guidance") {
     return <article className={rootClass} data-answer-kind="practical-guidance">{toolbar}
-      <Section id={`${id}-guidance`} title={locale === "ru" ? "С чего начать" : locale === "uz" ? "Nimadan boshlash kerak" : "Where to start"}>
+      <Section id={`${id}-guidance`} title={copy.guidance}>
         <Markdown result={result} locale={locale}>{result.summary}</Markdown>
       </Section>
       {questions}

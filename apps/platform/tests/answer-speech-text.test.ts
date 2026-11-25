@@ -12,6 +12,10 @@ test("speech follows interleaved legal issues and their actions",()=>{
  const text=answerSpeechText({...result,confirmedFindings:[...result.confirmedFindings,{title:"SECOND",explanation:"SECOND_RULE"}],actionPlan:[...result.actionPlan,{title:"SECOND_ACTION",description:"SECOND_STEPS"}],issues:[{findingIndex:1,actionIndices:[1]},{findingIndex:0,actionIndices:[0]}]},"en");
  assert(text.indexOf("SECOND_STEPS")<text.indexOf("FINDING"));assert.equal(text.split("SECOND_STEPS").length,2);
 });
+test("speech reads practical guidance before questions without announcing coverage",()=>{
+ const text=answerSpeechText({...result,presentationKind:"practical_guidance",coverageStatus:"no_coverage"},"en");
+ assert.equal(text,"Where to start\n\nSUMMARY\n\nWhat needs clarification\n\nQUESTION");
+});
 test("long narration is split without truncation or broken Unicode",()=>{
  const text=("Sentence with a legal condition. 🏠 ").repeat(400)+"Final clarification question.";
  const chunks=speechTextChunks(text);assert(chunks.length>1);assert.equal(chunks.join(""),text);assert(chunks.every(chunk=>chunk.length<=3500));assert(chunks.every(chunk=>!/[\uD800-\uDBFF]$/u.test(chunk)));

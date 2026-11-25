@@ -88,7 +88,7 @@ export function GuestAiClient({ locale }: { locale: PlatformLocale }) {
       },started,draft=>{if(!controller.signal.aborted)setWriting(draft);});
       if(controller.signal.aborted)return;
       retry.current=null;setResult(saved.result);setQuestion("");setMessage("");setState("ready");
-      if(saved.result.responseKind==="answer")setBootstrap(previous=>previous?{...previous,session:{state:"consumed",requestCount:previous.session?.requestCount??1,answerCount:1,expiresAt:previous.session?.expiresAt??""}}:previous);
+      if(saved.result.responseKind==="answer"&&saved.result.presentationKind!=="practical_guidance")setBootstrap(previous=>previous?{...previous,session:{state:"consumed",requestCount:previous.session?.requestCount??1,answerCount:1,expiresAt:previous.session?.expiresAt??""}}:previous);
       refreshSession(refreshed=>{setBootstrap(refreshed);setResult(refreshed.result);});
     } catch(error) {
       if(controller.signal.aborted)return;

@@ -53,6 +53,8 @@ type AnswerCopy = {
   prepare: string;
   additional: string;
   clarify: string;
+  guidance: string;
+  nextCheck: string;
   insufficient: string;
   checked: string;
   checkedBody: string;
@@ -77,6 +79,8 @@ export const legalAnswerCopy: Record<PlatformLocale, AnswerCopy> = {
     prepare: "Что подготовить",
     additional: "Дополнительные материалы",
     clarify: "Что нужно уточнить",
+    guidance: "С чего начать",
+    nextCheck: "Что уточнить перед следующим шагом",
     insufficient: "Пока нельзя подтвердить ответ",
     checked: "Что удалось проверить",
     checkedBody: "Доступных подтверждений недостаточно для полного правового вывода.",
@@ -105,6 +109,8 @@ export const legalAnswerCopy: Record<PlatformLocale, AnswerCopy> = {
     prepare: "Nimalarni tayyorlash kerak",
     additional: "Qo‘shimcha materiallar",
     clarify: "Nimani aniqlashtirish kerak",
+    guidance: "Nimadan boshlash kerak",
+    nextCheck: "Keyingi qadamdan oldin nimani aniqlash kerak",
     insufficient: "Javobni hozircha tasdiqlab bo‘lmaydi",
     checked: "Nimalar tekshirildi",
     checkedBody: "Mavjud tasdiqlar to‘liq huquqiy xulosa uchun yetarli emas.",
@@ -133,6 +139,8 @@ export const legalAnswerCopy: Record<PlatformLocale, AnswerCopy> = {
     prepare: "What to prepare",
     additional: "Additional materials",
     clarify: "What needs clarification",
+    guidance: "Where to start",
+    nextCheck: "What to check before taking the next step",
     insufficient: "The answer cannot yet be verified",
     checked: "What was checked",
     checkedBody: "The available evidence is insufficient for a complete legal conclusion.",
