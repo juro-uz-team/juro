@@ -1,6 +1,6 @@
 import { resolvedDocument } from "../../../../lib/document-builder/registry/published";
 import { requireChatGPTUser } from "../../../chatgpt-auth";
-import { getDocumentAccess, loadStoredDocument } from "../../../../lib/document-builder/permissions";
+import { getDocumentAccess, hasDocumentPermission, loadStoredDocument } from "../../../../lib/document-builder/permissions";
 import { notFound } from "next/navigation";
 import { getOrCreateUserProfile } from "../../../../lib/document-builder/storage/db";
 import { ConfigurableDocumentBuilder } from "../../_components/ConfigurableDocumentBuilder";
@@ -22,7 +22,7 @@ export default async function DocumentPage({ params, searchParams }: { params: P
     const shared = await loadStoredDocument(id, profile.id);
     if (!shared) notFound();
     const { id: documentId, title, revision, finalContent, signedFileId } = shared;
-    return <div className="dbt-root"><BuilderHeader user={user}/><SharedDocumentClient initial={{ id: documentId, title, revision, finalContent, signedFileId }}/></div>;
+    return <div className="dbt-root"><BuilderHeader user={user}/><SharedDocumentClient initial={{ id: documentId, title, revision, finalContent, signedFileId }} canPropose={hasDocumentPermission(access, "create_suggestion")}/></div>;
   }
   const configured = templateCode ? await resolvedDocument(templateCode, templateVersion ?? undefined) : undefined;
   if (configured) {

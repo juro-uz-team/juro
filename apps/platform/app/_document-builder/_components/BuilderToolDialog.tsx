@@ -4,13 +4,16 @@ import { X, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { PlatformLocale } from "../../../lib/platform/routing";
 
-export function BuilderToolDialog({ icon: Icon, label, locale, children }: {
+export function BuilderToolDialog({ icon: Icon, label, locale, children, requestOpen = false, onClosed }: {
   icon: LucideIcon;
   label: string;
   locale: PlatformLocale;
   children: (close: () => void) => ReactNode;
+  requestOpen?: boolean;
+  onClosed?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openedByButton, setOpen] = useState(false);
+  const open = openedByButton || requestOpen;
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -24,7 +27,9 @@ export function BuilderToolDialog({ icon: Icon, label, locale, children }: {
     </button>
     {open && <dialog ref={dialog} className="dbt-tool-dialog" aria-labelledby={titleId} onClose={() => {
       setOpen(false);
-      trigger.current?.focus();
+      onClosed?.();
+      const previous = document.activeElement;
+      if (!previous || previous === document.body || previous === dialog.current) trigger.current?.focus();
     }}>
       <header>
         <h2 id={titleId}><Icon size={20} aria-hidden="true" />{label}</h2>

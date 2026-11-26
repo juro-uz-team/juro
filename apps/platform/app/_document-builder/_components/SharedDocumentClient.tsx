@@ -15,7 +15,7 @@ import { DocumentPreview } from "./DocumentPreview";
 
 type SharedDocument = Pick<StoredDocument, "id" | "title" | "revision" | "finalContent" | "signedFileId">;
 
-export function SharedDocumentClient({ initial }: { initial: SharedDocument }) {
+export function SharedDocumentClient({ initial, canPropose }: { initial: SharedDocument; canPropose: boolean }) {
   const paths = builderNavigationPaths(usePathname());
   const locale = paths.locale ?? "ru";
   const copy = {
@@ -25,6 +25,7 @@ export function SharedDocumentClient({ initial }: { initial: SharedDocument }) {
   }[locale];
   const [document, setDocument] = useState<SharedDocument | null>(initial);
   const [error, setError] = useState("");
+  const [proposalText, setProposalText] = useState<string>();
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
       const { document: latest } = await apiFetch<{ document: SharedDocument }>(`/api/document-builder/documents/${initial.id}`, { signal, cache: "no-store" });
@@ -56,10 +57,11 @@ export function SharedDocumentClient({ initial }: { initial: SharedDocument }) {
       <WorkspaceTitle icon={<FileText />} title={document.title} />
       <div className="dbt-tool-strip">
         <CollaborationPanel documentId={document.id} accessRole="collaborator" finalText={document.finalContent} revision={document.revision}
-          signedFileId={document.signedFileId} locale={locale} onApplied={() => refresh()} />
+          signedFileId={document.signedFileId} locale={locale} onApplied={() => refresh()} proposalText={proposalText} onProposalClosed={() => setProposalText(undefined)} />
       </div>
       <div className="dbt-collaborator-document">
-        <DocumentPreview document={{ title: document.title, plainText: document.finalContent, paragraphs: paragraphsFromFinalText(document.finalContent) }} locale={locale} />
+        <DocumentPreview document={{ title: document.title, plainText: document.finalContent, paragraphs: paragraphsFromFinalText(document.finalContent) }} locale={locale}
+          onPropose={canPropose && !document.signedFileId ? setProposalText : undefined}/>
       </div>
     </>}
   </main>;

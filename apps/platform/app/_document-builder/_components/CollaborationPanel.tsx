@@ -61,10 +61,13 @@ type PanelProps = {
   locale?: PlatformLocale;
   beforeChange?: () => Promise<void>;
   onApplied: () => Promise<void>;
+  proposalText?: string;
+  onProposalClosed?: () => void;
 };
 
 export function CollaborationPanel({ locale = "ru", ...props }: PanelProps) {
-  return <BuilderToolDialog icon={Users} label={collaborationCopy[locale].title} locale={locale}>
+  return <BuilderToolDialog icon={Users} label={collaborationCopy[locale].title} locale={locale}
+    requestOpen={Boolean(props.proposalText)} onClosed={props.onProposalClosed}>
     {() => <CollaborationContent {...props} locale={locale} />}
   </BuilderToolDialog>;
 }
@@ -78,12 +81,18 @@ function CollaborationContent({
   locale = "ru",
   beforeChange,
   onApplied,
+  proposalText,
 }: PanelProps) {
   const copy = collaborationCopy[locale];
   const labels = panelCopy[locale];
+  const review = {
+    ru: { comment: "Новый комментарий", audience: "Виден участникам документа", before: "Исходный текст", after: "Предложенный текст", submitted: "Предложение отправлено на согласование.", sent: "Комментарий добавлен." },
+    uz: { comment: "Yangi izoh", audience: "Hujjat ishtirokchilariga ko‘rinadi", before: "Asl matn", after: "Taklif qilingan matn", submitted: "Taklif tasdiqlash uchun yuborildi.", sent: "Izoh qo‘shildi." },
+    en: { comment: "New comment", audience: "Visible to document participants", before: "Original text", after: "Proposed wording", submitted: "Change sent for review.", sent: "Comment added." },
+  }[locale];
   const endpoint = `/api/document-builder/documents/${documentId}/collaboration`;
   const [snapshot, setSnapshot] = useState<CollaborationState | null>(null);
-  const [view, setView] = useState<"people" | "comments" | "changes">(accessRole === "owner" || signedFileId ? "people" : "comments");
+  const [view, setView] = useState<"people" | "comments" | "changes">(proposalText ? "changes" : accessRole === "owner" || signedFileId ? "people" : "comments");
   const [edit, setEdit] = useState<{ text: string; revision: number }>();
   const [feedback, setFeedback] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -92,7 +101,7 @@ function CollaborationContent({
   const [partyNumber, setPartyNumber] = useState(2);
   const [inviteLink, setInviteLink] = useState("");
   const [comment, setComment] = useState("");
-  const [oldText, setOldText] = useState("");
+  const [oldText, setOldText] = useState(proposalText ?? "");
   const [newText, setNewText] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -194,18 +203,32 @@ function CollaborationContent({
       <p className="dbt-collab-context">{{ ru: "Обсуждайте этот документ с участниками.", uz: "Hujjatni ishtirokchilar bilan muhokama qiling.", en: "Discuss this document with its collaborators." }[locale]}</p>
       {allowed("add_comment") && <form className="dbt-comment-input" onSubmit={(event) => {
         event.preventDefault();
-        void act({ action: "comment", body: comment }).then(ok => { if (ok) setComment(""); });
+        void act({ action: "comment", body: comment }).then(ok => { if (ok) { setComment(""); setFeedback(review.sent); } });
       }}>
-        <textarea aria-label={copy.commentPlaceholder} rows={2} value={comment} onChange={(event) => setComment(event.target.value)} placeholder={copy.commentPlaceholder}/>
-        <button type="submit" className="dbt-tool-button primary" aria-label={copy.sendComment} disabled={busy || !comment.trim()}><Send size={17}/></button>
+        <label className="dbt-field"><span>{review.comment}</span>
+          <textarea aria-label={review.comment} rows={2} value={comment} onChange={(event) => setComment(event.target.value)} placeholder={copy.commentPlaceholder}/>
+        </label>
+        <div className="dbt-comment-compose-footer">
+          <small>{review.audience}</small>
+          <button type="submit" className="dbt-tool-button primary" disabled={busy || !comment.trim()}><Send size={16} aria-hidden="true"/>{copy.sendComment}</button>
+        </div>
       </form>}
       <div className="dbt-comments">
         {snapshot.comments.map(item => <article key={item.id}>
-          <strong>{item.authorName}</strong>
-          {item.threadStatus && <span className={`dbt-comment-status ${item.threadStatus}`}>{item.threadStatus === "resolved" ? copy.resolved : copy.openStatus}</span>}
+          <header className="dbt-comment-author">
+            <span className="dbt-comment-avatar" aria-hidden="true">{item.authorName.trim().split(/\s+/).slice(0, 2).map(name => Array.from(name)[0]).join("").toLocaleUpperCase()}</span>
+            <div><strong>{item.authorName}</strong>
+              <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString(builderIntlLocale(locale), { dateStyle: "medium", timeStyle: "short" })}</time>
+            </div>
+            {item.threadStatus && <span className={`dbt-comment-status ${item.threadStatus}`}>{item.threadStatus === "resolved" ? copy.resolved : copy.openStatus}</span>}
+          </header>
           <p>{item.body}</p>
-          <small>{new Date(item.createdAt).toLocaleString(builderIntlLocale(locale))}</small>
-          {allowed("resolve_comment") && item.threadId && <button type="button" disabled={busy} onClick={() => void act({ action: item.threadStatus === "resolved" ? "reopen_comment" : "resolve_comment", threadId: item.threadId })}>{item.threadStatus === "resolved" ? copy.reopen : copy.resolve}</button>}
+          {allowed("resolve_comment") && item.threadId && <footer className="dbt-review-actions">
+            <button type="button" className={`dbt-review-action ${item.threadStatus === "resolved" ? "" : "approve"}`} disabled={busy}
+              onClick={() => void act({ action: item.threadStatus === "resolved" ? "reopen_comment" : "resolve_comment", threadId: item.threadId })}>
+              {item.threadStatus !== "resolved" && <Check size={16} aria-hidden="true"/>}{item.threadStatus === "resolved" ? copy.reopen : copy.resolve}
+            </button>
+          </footer>}
         </article>)}
         {!snapshot.comments.length && <p className="dbt-empty-inline">{copy.noComments}</p>}
       </div>
@@ -222,26 +245,34 @@ function CollaborationContent({
           <button type="button" className="dbt-tool-button" disabled={stale} onClick={() => setEdit({ text: finalText, revision })}>{labels.latest}</button>
         </div> : <button type="submit" className="dbt-tool-button primary" disabled={busy || stale || !edit.text.trim() || edit.text === finalText}>{labels.save}</button>}
       </form> : <button type="button" className="dbt-tool-button" disabled={stale} onClick={() => setEdit({ text: finalText, revision })}><Pencil size={16}/>{labels.edit}</button>)}
-      {allowed("create_suggestion") && <details className="dbt-collab-suggestion">
+      {allowed("create_suggestion") && <details className="dbt-collab-suggestion" open={proposalText ? true : undefined}>
         <summary className="juro-disclosure-summary">{copy.proposeTitle}</summary>
         <form onSubmit={(event) => {
           event.preventDefault();
-          void act({ action: "proposal", oldText, newText }).then(ok => { if (ok) { setOldText(""); setNewText(""); } });
+          void act({ action: "proposal", oldText, newText }).then(ok => { if (ok) { setOldText(""); setNewText(""); setFeedback(review.submitted); } });
         }}>
           <label className="dbt-field"><span>{copy.original}</span><textarea rows={2} value={oldText} onChange={(event) => setOldText(event.target.value)}/></label>
-          <label className="dbt-field"><span>{copy.revision}</span><textarea rows={3} value={newText} onChange={(event) => setNewText(event.target.value)}/></label>
-          <button type="submit" className="dbt-tool-button primary" disabled={busy || !oldText.trim() || !newText.trim()}>{copy.propose}</button>
+          <label className="dbt-field"><span>{copy.revision}</span><textarea autoFocus={Boolean(proposalText)} rows={3} value={newText} onChange={(event) => setNewText(event.target.value)}/></label>
+          <button type="submit" className="dbt-tool-button primary" disabled={busy || !oldText.trim() || !newText.trim() || oldText.trim() === newText.trim()}>{copy.propose}</button>
         </form>
       </details>}
       <div className="dbt-proposals">
-        {snapshot.proposals.map(proposal => <article key={proposal.id}><div>
+        {snapshot.proposals.map(proposal => <article key={proposal.id}>
           <span className={`dbt-proposal-status ${proposal.status}`}>{proposal.status === "pending" ? copy.pending : proposal.status === "applied" ? copy.applied : copy.rejected}</span>
-          <p><del>{proposal.oldText}</del></p><p><ins>{proposal.newText}</ins></p>
-          <small>{copy.creator} · {proposal.ownerAccepted ? copy.accepted : copy.awaiting} / {copy.counterparty} · {proposal.collaboratorAccepted ? copy.counterpartyAccepted : copy.awaiting}</small>
-        </div>{proposal.status === "pending" && <div>
-          {allowed("accept_suggestion") && <button type="button" disabled={busy} onClick={() => void act({ action: "accept_proposal", proposalId: proposal.id })}><Check size={16}/>{copy.accept}</button>}
-          {allowed("reject_suggestion") && <button type="button" disabled={busy} onClick={() => void act({ action: "reject_proposal", proposalId: proposal.id })}><X size={16}/>{copy.reject}</button>}
-        </div>}</article>)}
+          <div className="dbt-proposal-diff">
+            <div><strong>{review.before}</strong><del>{proposal.oldText}</del></div>
+            <div><strong>{review.after}</strong><ins>{proposal.newText}</ins></div>
+          </div>
+          <div className="dbt-proposal-approvals">
+            <small>{proposal.ownerAccepted && <Check size={14} aria-hidden="true"/>}{copy.creator} · {proposal.ownerAccepted ? copy.accepted : copy.awaiting}</small>
+            <small>{proposal.collaboratorAccepted && <Check size={14} aria-hidden="true"/>}{copy.counterparty} · {proposal.collaboratorAccepted ? copy.counterpartyAccepted : copy.awaiting}</small>
+          </div>
+          {proposal.status === "pending" && <footer className="dbt-review-actions">
+            {allowed("accept_suggestion") && !(accessRole === "owner" ? proposal.ownerAccepted : proposal.collaboratorAccepted) &&
+              <button type="button" className="dbt-review-action approve" disabled={busy} onClick={() => void act({ action: "accept_proposal", proposalId: proposal.id })}><Check size={16} aria-hidden="true"/>{copy.accept}</button>}
+            {allowed("reject_suggestion") && <button type="button" className="dbt-review-action reject" disabled={busy} onClick={() => void act({ action: "reject_proposal", proposalId: proposal.id })}><X size={16} aria-hidden="true"/>{copy.reject}</button>}
+          </footer>}
+        </article>)}
         {!snapshot.proposals.length && <p className="dbt-empty-inline">{labels.noChanges}</p>}
       </div>
     </div>}

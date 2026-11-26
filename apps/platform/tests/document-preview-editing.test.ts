@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDefaultAnswers } from "../lib/document-builder/defaults";
 import { previewWithWording, refreshLinkedWording } from "../lib/document-builder/generation/preview-fields";
+import { proposalExcerpt } from "../lib/document-builder/generation/proposal-selection";
 import { SALARY_CLAIM } from "../lib/document-builder/registry/pilots";
 import { createQuestionnaireAnswers, renderConfiguredDocument } from "../lib/document-builder/registry/engine";
 import { renderReceipt } from "../lib/document-builder/templates/receipt";
+
+test("selection preserves the saved wording and skips ambiguous occurrences", () => {
+  const source = "Платёж до 10\u00a0декабря.\n\nУточнённая дата.";
+  assert.equal(proposalExcerpt(source, "10 декабря.\nУточнённая"), "10\u00a0декабря.\n\nУточнённая");
+  assert.equal(proposalExcerpt(source, "Платёж"), "Платёж");
+  assert.equal(proposalExcerpt("pay 10\tDecember or 10\nDecember", "10 December"), null);
+  assert.equal(proposalExcerpt("due 15 and due 15", "due 15"), null);
+  assert.equal(proposalExcerpt(source, "missing"), null);
+});
 
 test("configured preview attaches each identical blank to the actual template field", () => {
   for (const language of ["ru", "uz"] as const) {

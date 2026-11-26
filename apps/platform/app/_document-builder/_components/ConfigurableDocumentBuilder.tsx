@@ -123,6 +123,7 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const revisionRef = useRef(1);
   const [revision, setRevision] = useState(1);
   const [revisionConflict, setRevisionConflict] = useState(false);
+  const [proposalText, setProposalText] = useState<string>();
   const [finalText, setFinalText] = useState("");
   const [manuallyEdited, setManuallyEdited] = useState(false);
   const [mobilePreview, setMobilePreview] = useState(false);
@@ -267,7 +268,7 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     {initialUser && <div className="dbt-tool-strip">
       {documentId && <>
         {definition.collaboration.enabled && <CollaborationPanel documentId={documentId} accessRole="owner" finalText={visibleDocument.plainText} revision={revision} locale={uiLocale}
-          beforeChange={() => save(documentId)} onApplied={reloadDocument}/>}
+          beforeChange={() => save(documentId)} onApplied={reloadDocument} proposalText={proposalText} onProposalClosed={() => setProposalText(undefined)}/>}
         <BuilderAiDrafts id={documentId} locale={uiLocale} prepare={async () => { await save(documentId); return revisionRef.current; }} apply={text => { setFinalText(text); setManuallyEdited(true); }}/>
         <BuilderVersionHistory documentId={documentId} locale={uiLocale}
           onPrepare={async () => { await save(documentId); return { documentId, revision: revisionRef.current }; }}
@@ -296,5 +297,5 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
           return id;
         }}
       />}
-    </section><DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing}/></div>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
+    </section><DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing} onPropose={initialUser && documentId && definition.collaboration.enabled && definition.collaboration.allowSuggestions ? setProposalText : undefined}/></div>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing} onPropose={initialUser && documentId && definition.collaboration.enabled && definition.collaboration.allowSuggestions ? setProposalText : undefined} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
 }
