@@ -13,7 +13,7 @@ import {
   parseDocumentAnalysisResult,
 } from "../lib/document-analysis/schema";
 import { buildDocumentAnalysisProviderInput } from "../lib/document-analysis/input";
-import { documentCorpusCitation } from "../lib/document-analysis/corpus-sources";
+import { documentCorpusCitation, officialActIdentifier } from "../lib/document-analysis/corpus-sources";
 import {
   documentAnalysisMaxOutputTokens,
   documentAnalysisProviderMaxAttempts,
@@ -65,6 +65,12 @@ test("document research quotes an authenticated matching provision beyond the ac
     originalUrl: longCitation?.url, article: longCitation?.article,
     excerpt: longCitation?.excerpt, verifiedAt: "2026-01-01",
   }).success);
+});
+
+test("act numbers come from the verified publisher header", () => {
+  assert.equal(officialActIdentifier("О коммерческой тайне\n\nот 11.09.2014 г. № ЗРУ-374"), "ЗРУ-374");
+  assert.equal(officialActIdentifier("Tijorat siri to‘g‘risida\n\n№ O‘RQ-374"), "O‘RQ-374");
+  assert.equal(officialActIdentifier("Порядок\n\nСтатья 1\n\nСм. Закон № ЗРУ-374."), null);
 });
 
 const base = {

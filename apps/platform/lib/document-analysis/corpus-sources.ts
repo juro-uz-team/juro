@@ -96,7 +96,7 @@ export async function retrieveDocumentLegalSources(
       sources.push({
         id: "corpus-" + createHash("sha256").update(sourceKey).digest("hex"),
         actTitle: (provision.sourceTitle || provision.sourceUrl).slice(0, 500),
-        actIdentifier: null, officialUrl: citation.url, revisionDate: null, publishedAt: null,
+        actIdentifier: officialActIdentifier(provision.text), officialUrl: citation.url, revisionDate: null, publishedAt: null,
         lastCheckedAt: checkedAt, verifiedAt: checkedAt, locale: provision.sourceStructure?.anchor.language ?? locale,
         sourceType: "lex", status: "verified",
         verificationState: "verified", contentSha256: provision.sha256, article: citation.article,
@@ -119,6 +119,11 @@ export async function retrieveDocumentLegalSources(
   // checks. The legacy live-sync age threshold does not govern that corpus.
   if (asOf && freshness.status === "stale") freshness.status = "fresh";
   return { sources, freshness, legalDatabaseAsOf: freshness.asOf };
+}
+
+export function officialActIdentifier(text: string): string | null {
+  const header = text.split(/\n\s*\n/u, 2).join(" ").slice(0, 500);
+  return /№\s*((?:ЗРУ|ЗРЎ|ЎРҚ|УП|ПП|O[‘’ʻʼ']RQ|PF|PQ|LRU)\s*[-–]\s*\d{1,7})/iu.exec(header)?.[1] ?? null;
 }
 
 /** Search hits locate a passage. The quoted text always comes from the complete verified read. */

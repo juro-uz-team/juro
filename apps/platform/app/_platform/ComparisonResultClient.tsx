@@ -1,7 +1,9 @@
 "use client";
 
-import { DocumentCitationList } from "./DocumentCitationList";
+import { DocumentCitationLinks, DocumentCitationList, type DocumentCitation } from "./DocumentCitationList";
 import { reviewText } from "./document-review-localization";
+import { DocumentReportMetrics } from "./DocumentReportMetrics";
+import { DocumentTextDiff } from "./DocumentTextDiff";
 import { DocumentComparisonProgress } from "./DocumentToolProgress";
 
 import { WorkspaceTitle } from "./WorkspaceTitle";
@@ -32,7 +34,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 
 import { comparisonResultText, comparisonText } from "../../content/platform-ui";
@@ -142,6 +144,7 @@ export function ComparisonResultClient({
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("summary");
+  const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
   const [filters, setFilters] = useState(emptyFilters);
   const [section, setSection] = useState("");
   const [party, setParty] = useState("");
@@ -242,11 +245,6 @@ export function ComparisonResultClient({
       return true;
     });
   }, [detail, filters, party, section, tab]);
-
-  const sourcesById = useMemo(
-    () => new Map((detail?.sources ?? []).map((source) => [source.id, source])),
-    [detail],
-  );
 
   async function retry() {
     if (processing) return;
@@ -436,6 +434,7 @@ export function ComparisonResultClient({
         ? resultTabs.length - 1
         : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + resultTabs.length) % resultTabs.length;
     const next = resultTabs[nextIndex];
+    setSelectedCitation(null);
     setTab(next);
     document.getElementById(`comparison-tab-${next}`)?.focus();
   }
@@ -473,7 +472,20 @@ export function ComparisonResultClient({
   const summary = detail.summary!;
   const latestExports = new Map<"pdf" | "docx", ComparisonExport>();
   for (const item of detail.exports) if (!latestExports.has(item.format)) latestExports.set(item.format, item);
-  const safeSources = detail.sources.filter((source) => safeOfficialUrl(source.officialUrl));
+  const citations = new Map<string, DocumentCitation>(detail.sources.filter(source => safeOfficialUrl(source.officialUrl)).map(source => [source.id, {
+    id: source.id, title: source.actTitle, identifier: source.actIdentifier, article: source.article, url: source.officialUrl, excerpt: source.excerpt,
+    uses: [...new Set(detail.changes.filter(change => change.sourceIds.includes(source.id)).map(change =>
+      [change.afterLabel || change.beforeLabel, change.legalEffect || change.summary].filter(Boolean).join(" · ")))],
+  }]));
+  function openCitation(id: string) {
+    setSelectedCitation(id);
+    setTab("sources");
+  }
+  function renderCitationLinks(change: ComparisonChange) {
+    return change.sourceIds.some(id => citations.has(id))
+      ? <DocumentCitationLinks ids={change.sourceIds} citations={citations} locale={locale} onOpen={openCitation} />
+      : null;
+  }
   const compareAgain = detail.versionOneFileId && detail.versionTwoFileId
     ? `${base}/documents/comparisons?${new URLSearchParams({ first: "tool:" + detail.versionOneFileId, second: "tool:" + detail.versionTwoFileId })}`
     : null;
@@ -583,7 +595,7 @@ export function ComparisonResultClient({
             aria-selected={tab === item}
             tabIndex={tab === item ? 0 : -1}
             className={tab === item ? "active" : ""}
-            onClick={() => setTab(item)}
+            onClick={() => { setSelectedCitation(null); setTab(item); }}
             onKeyDown={(event) => moveTabFocus(event, item)}
           >
             {copy.tabs[item]}
@@ -593,9 +605,10 @@ export function ComparisonResultClient({
 
       <div id="comparison-result-panel" role="tabpanel" aria-labelledby={`comparison-tab-${tab}`} className="comparison-tab-panel">
         {tab === "summary" ? (
-          <SummaryView summary={summary} copy={copy} />
+          <SummaryView summary={summary} copy={copy} citationCount={citations.size}
+            citationLinks={citations.size > 0 && <DocumentCitationLinks ids={[...citations.keys()]} citations={citations} locale={locale} onOpen={openCitation} />} />
         ) : tab === "sources" ? (
-          <SourcesView sources={safeSources} copy={copy} locale={locale} summary={summary} compareAgain={compareAgain} />
+          <SourcesView citations={[...citations.values()]} selected={selectedCitation} copy={copy} locale={locale} summary={summary} compareAgain={compareAgain} />
         ) : (
           <div className="comparison-result-layout">
           {tab !== "side" && (
@@ -622,6 +635,7 @@ export function ComparisonResultClient({
                 setSyncScroll={setSyncScroll}
                 mobileVersion={mobileVersion}
                 setMobileVersion={setMobileVersion}
+                renderCitationLinks={renderCitationLinks}
               />
             ) : filteredChanges.length ? (
               <>
@@ -639,12 +653,12 @@ export function ComparisonResultClient({
                   useWindowScroll
                   increaseViewportBy={500}
                   itemContent={(_index, change) => tab === "redline"
-                    ? <RedlineRow change={change} copy={copy} />
+                    ? <RedlineRow change={change} copy={copy} citationLinks={renderCitationLinks(change)} />
                     : (
                       <ChangeCard
                         change={change}
                         copy={copy}
-                        source={change.sourceIds.map((id) => sourcesById.get(id)).find(Boolean)}
+                        citationLinks={renderCitationLinks(change)}
                         onReviewed={() => void markReviewed(change)}
                         onDecision={(decision) => void decideChange(change, decision)}
                         decisionSaving={decisionSavingId === change.id}
@@ -661,25 +675,19 @@ export function ComparisonResultClient({
   );
 }
 
-function SummaryView({
-  summary,
-  copy,
-}: {
-  summary: ComparisonSummary;
-  copy: ComparisonResultCopy;
+function SummaryView({ summary, copy, citationCount, citationLinks }: {
+  summary: ComparisonSummary; copy: ComparisonResultCopy; citationCount: number; citationLinks: ReactNode;
 }) {
-  const metrics = [
-    ["changes", summary.totalChanges],
-    ["material", summary.materialChanges],
-    ["increased", summary.riskIncreased],
-    ["decreased", summary.riskDecreased],
-    ["similarity", `${summary.similarityPercent}%`],
-  ] as const;
   return (
     <div className="comparison-summary">
-      <section className="comparison-metrics">
-        {metrics.map(([key, value]) => <article key={key} data-metric={key}><strong>{value}</strong><span>{copy.metrics[key]}</span></article>)}
-      </section>
+      <DocumentReportMetrics metrics={[
+        { label: copy.metrics.changes, value: summary.totalChanges },
+        { label: copy.metrics.material, value: summary.materialChanges, tone: "time" },
+        { label: copy.metrics.increased, value: summary.riskIncreased, tone: "risk" },
+        { label: copy.metrics.decreased, value: summary.riskDecreased, tone: "success" },
+        { label: copy.metrics.similarity, value: `${summary.similarityPercent}%` },
+        { label: copy.tabs.sources, value: citationCount, tone: "sources" },
+      ]} />
       <section className="comparison-summary-grid">
         <article>
           <span className={`comparison-risk risk-${summary.overallRisk}`}><Scale />{copy.overallRisk}: {copy.riskLabels[summary.overallRisk]}</span>
@@ -694,6 +702,7 @@ function SummaryView({
           ))}
         </article>
       </section>
+      {citationLinks && <section className="comparison-summary-sources"><h2>{copy.tabs.sources}</h2>{citationLinks}</section>}
     </div>
   );
 }
@@ -748,14 +757,14 @@ function FilterPanel({
 function ChangeCard({
   change,
   copy,
-  source,
+  citationLinks,
   onReviewed,
   onDecision,
   decisionSaving,
 }: {
   change: ComparisonChange;
   copy: ComparisonResultCopy;
-  source?: Source;
+  citationLinks: ReactNode;
   onReviewed: () => void;
   onDecision: (decision: ComparisonChange["reviewDecision"]) => void;
   decisionSaving: boolean;
@@ -777,10 +786,10 @@ function ChangeCard({
         <span className={`comparison-risk risk-${change.riskLevel}`}>{copy.riskLabels[change.riskLevel]}</span>
       </header>
       <p className="comparison-change-summary">{change.summary}</p>
-      <div className="comparison-before-after">
-        <section><strong>{copy.before}</strong><p>{change.beforeText || "—"}</p></section>
-        <section><strong>{copy.after}</strong><p>{change.afterText || "—"}</p></section>
-      </div>
+      <details className="comparison-change-evidence" open>
+        <summary className="juro-disclosure-summary">{copy.before} <span aria-hidden="true">→</span> {copy.after}</summary>
+        <DocumentTextDiff before={change.beforeText} after={change.afterText} beforeLabel={copy.before} afterLabel={copy.after} parts={change.wordDiff} />
+      </details>
       <dl className="comparison-legal-details">
         <div><dt>{copy.legalEffect}</dt><dd>{change.legalEffect}</dd></div>
         <div><dt>{copy.affectedParty}</dt><dd>{change.affectedParty}</dd></div>
@@ -793,9 +802,7 @@ function ChangeCard({
           <div aria-hidden="true"><i style={{ width: `${change.confidencePercent ?? 0}%` }} /></div>
           <strong>{change.confidencePercent === null ? "—" : `${change.confidencePercent}%`}</strong>
         </div>
-        {source && safeOfficialUrl(source.officialUrl) ? (
-          <a href={source.officialUrl} target="_blank" rel="noreferrer"><ExternalLink />{source.actTitle}</a>
-        ) : <span className="comparison-unverified"><ShieldAlert />{copy.sourceUnavailable}</span>}
+        {citationLinks || <span className="comparison-unverified"><ShieldAlert />{copy.sourceUnavailable}</span>}
         <div className="comparison-decision">
           <span aria-live="polite">
             {decisionSaving ? copy.decisionSaving : decisionStatus}
@@ -847,6 +854,7 @@ function SideBySide({
   setSyncScroll,
   mobileVersion,
   setMobileVersion,
+  renderCitationLinks,
 }: {
   changes: ComparisonChange[];
   detail: ComparisonDetail;
@@ -855,12 +863,14 @@ function SideBySide({
   setSyncScroll: (value: boolean) => void;
   mobileVersion: "one" | "two";
   setMobileVersion: (value: "one" | "two") => void;
+  renderCitationLinks: (change: ComparisonChange) => ReactNode;
 }) {
   const row = (change: ComparisonChange, version: "one" | "two") => (
     <article className={`comparison-document-row type-${change.changeType}`} data-version={version}>
       <span>{version === "one" ? (change.beforeLabel || "—") : (change.afterLabel || "—")}</span>
       <p>{version === "one" ? (change.beforeText || "—") : (change.afterText || "—")}</p>
       <small>{copy.changeLabels[change.changeType]}</small>
+      {version === (change.afterText ? "two" : "one") && renderCitationLinks(change)}
     </article>
   );
   return (
@@ -896,9 +906,11 @@ function SideBySide({
 function RedlineRow({
   change,
   copy,
+  citationLinks,
 }: {
   change: ComparisonChange;
   copy: ComparisonResultCopy;
+  citationLinks: ReactNode;
 }) {
   return (
     <article className="comparison-redline-row">
@@ -912,12 +924,13 @@ function RedlineRow({
           </mark>
         ))}
       </p>
+      {citationLinks}
     </article>
   );
 }
 
-function SourcesView({ sources, copy, locale, summary, compareAgain }: {
-  sources: Source[]; copy: ComparisonResultCopy; locale: PlatformLocale;
+function SourcesView({ citations, selected, copy, locale, summary, compareAgain }: {
+  citations: DocumentCitation[]; selected: string | null; copy: ComparisonResultCopy; locale: PlatformLocale;
   summary: ComparisonSummary; compareAgain: string | null;
 }) {
   const context = summary.legalResearchScope === "document" || summary.aiStatus === "not_required";
@@ -927,10 +940,7 @@ function SourcesView({ sources, copy, locale, summary, compareAgain }: {
       "Для совпадающих условий источники относятся к самому документу.",
       "Mos keladigan shartlar uchun manbalar hujjatning o‘ziga taalluqli.",
       "For matching terms, sources provide legal context for the document.")}</p>}</header>
-    {sources.length ? <DocumentCitationList locale={locale} citations={sources.map(source => ({
-      id: source.id, title: source.actTitle, identifier: source.actIdentifier, article: source.article,
-      url: source.officialUrl, excerpt: source.excerpt,
-    }))} /> : <div className="comparison-source-empty">
+    {citations.length ? <DocumentCitationList locale={locale} citations={citations} selected={selected} /> : <div className="comparison-source-empty">
       <ShieldAlert aria-hidden="true" />
       <div><strong>{copy.noSources}</strong><p>{!researched && context
         ? reviewText(locale, "В этом отчёте сравнивался текст. Повторите сравнение, чтобы найти источники по документу.", "Bu hisobotda matn solishtirilgan. Hujjat manbalarini topish uchun solishtirishni takrorlang.", "This report compared the text. Compare again to research sources for the document.")

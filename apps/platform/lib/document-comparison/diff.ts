@@ -117,7 +117,7 @@ function describeChange(before: string, after: string, locale: ComparisonLocale)
   };
 }
 
-function wordDiff(before: string | null, after: string | null): WordDiffPart[] {
+export function wordDiff(before: string | null, after: string | null): WordDiffPart[] {
   if (before === null) return after ? [{ value: after, kind: "added" }] : [];
   if (after === null) return [{ value: before, kind: "removed" }];
   const tokenize = (value: string) => value.match(/\s+|[\p{L}\p{N}]+|[^\s\p{L}\p{N}]+/gu) ?? [];

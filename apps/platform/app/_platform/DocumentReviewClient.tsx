@@ -1,6 +1,8 @@
 "use client";
 
-import { DocumentCitationList } from "./DocumentCitationList";
+import { DocumentCitationLinks, DocumentCitationList, type DocumentCitation } from "./DocumentCitationList";
+import { DocumentReportMetrics, type DocumentReportMetric } from "./DocumentReportMetrics";
+import { DocumentTextDiff } from "./DocumentTextDiff";
 import { DocumentToolProgress } from "./DocumentToolProgress";
 
 import { WorkspaceTitle } from "./WorkspaceTitle";
@@ -12,7 +14,7 @@ import { Select } from "../_components/Select";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, CircleAlert, Download, Eye, FileCheck2, FolderOpen, ChevronDown, ClipboardList, FileText, Link2, LoaderCircle, RefreshCw, Scale, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { platformApiError } from "../../content/platform-ui";
 import { importDocumentUrlForAnalysis, uploadDocumentForAnalysis } from "../../lib/document-analysis/client-upload";
 import { defaultDocumentAnalysisLocale, type SupportedDocumentAnalysisLocale } from "../../lib/document-analysis/language";
@@ -380,17 +382,30 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   const risks = [...(analysis.risks ?? [])];
   const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   risks.sort((a, b) => (rank[a.level] ?? 4) - (rank[b.level] ?? 4));
-  const metrics = [
-    [copy.risks, risks.length], [copy.obligations, summary?.obligations?.length ?? 0],
-    ...(result?.deadlines ? [[tools.deadlines, result.deadlines.length]] : []),
-    ...(result?.sources ? [[tools.sources, result.sources.length]] : []),
-  ];
   const [view, setView] = useState("overview");
+  const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
+  function openCitation(id: string) {
+    setSelectedCitation(id);
+    setView("sources");
+  }
   const [severity, setSeverity] = useState("");
   const filteredRisks = risks.filter(risk => !severity || risk.level === severity);
   const warnings = reviewWarnings(result?.extractionWarnings ?? [], locale);
   const questions = documentFollowUpQuestions(summary?.questions ?? []);
   const sources = result?.sources ?? [];
+  const missing = result?.missingClauses ?? [];
+  const citedFindings = [...risks, ...missing].filter(item => item.legalBasisSourceIds?.some(id => sources.some(source => source.sourceId === id)));
+  const citations = new Map<string, DocumentCitation>(sources.map(source => [source.sourceId, {
+    id: source.sourceId, title: source.actTitle, identifier: source.actIdentifier,
+    article: source.article, url: source.originalUrl, excerpt: source.excerpt,
+    uses: [...new Set(citedFindings.filter(item => item.legalBasisSourceIds?.includes(source.sourceId)).map(item => item.title))],
+  }]));
+  const metrics: DocumentReportMetric[] = [
+    { label: copy.risks, value: risks.length, tone: "risk" },
+    { label: copy.obligations, value: summary?.obligations?.length ?? 0 },
+    { label: tools.deadlines, value: result?.deadlines?.length ?? 0, tone: "time" },
+    { label: tools.sources, value: citations.size, tone: "sources" },
+  ];
   const quality = result?.overallQuality;
   const corpusAvailable = Boolean(result?.legalDatabaseAsOf && Number.isFinite(Date.parse(result.legalDatabaseAsOf)));
   const tabs = [
@@ -400,11 +415,11 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   ];
   return <div className="review-findings">
     <nav className="review-views" aria-label={copy.resultAria}>
-      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => setView(id)}>{label}</button>)}
+      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => { setSelectedCitation(null); setView(id); }}>{label}</button>)}
     </nav>
     <div className="review-view-content" id="review-active-view">
     {view === "overview" && <>
-    <dl className="review-metrics">{metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    <DocumentReportMetrics metrics={metrics} />
     {summary?.summary && <div className="review-overview" data-quality={Boolean(quality)}>
       <section className="review-overview-text"><h3>{copy.summary}</h3><ReviewProse text={summary.summary} locale={locale} /></section>
       {quality && <section className="review-quality">
@@ -414,7 +429,11 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
         <ReviewProse text={quality.explanation} locale={locale} />
       </section>}
     </div>}
-    <ListBlock title={tools.advice} items={result?.recommendations} kind="actions" />
+    <div className="review-next-steps" data-paired={!!(citedFindings.length && result?.recommendations?.length) || undefined}>
+      <ListBlock title={tools.advice} items={result?.recommendations} kind="actions" />
+      <ListBlock title={reviewText(locale, "Выводы со ссылками на закон", "Qonunga havola berilgan xulosalar", "Findings with legal sources")}
+        items={citedFindings.map(item => <><strong>{item.title}</strong><DocumentCitationLinks ids={item.legalBasisSourceIds} citations={citations} locale={locale} onOpen={openCitation} /></>)} kind="law" />
+    </div>
     <ListBlock title={tools.warnings} items={warnings} kind="warnings" />
     <p className="review-disclaimer"><CheckCircle2 />{copy.disclaimer}</p>
     {warnings.length > 0 && <ReviewAgain analysis={analysis} locale={locale} />}
@@ -441,8 +460,7 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
       {risk.recommendation && <div className="review-risk-advice"><strong>{tools.advice}</strong><ReviewProse text={risk.recommendation} locale={locale} /></div>}
       <footer className="review-risk-footer">
         {risk.confidencePercent != null && <small>{copy.confidence} · {risk.confidencePercent}%</small>}
-        {sources.filter(source => risk.legalBasisSourceIds?.includes(source.sourceId)).map(source =>
-          /^https:\/\//i.test(source.originalUrl) && <a key={source.sourceId} href={source.originalUrl} target="_blank" rel="noreferrer"><Link2 aria-hidden="true" />{[source.actTitle, source.article].filter(Boolean).join(" · ")}</a>)}
+        <DocumentCitationLinks ids={risk.legalBasisSourceIds} citations={citations} locale={locale} onOpen={openCitation} />
       </footer>
     </article>)}</div> : <p>{copy.noRisks}</p>}</section>}
     {view === "terms" && <>
@@ -450,24 +468,25 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
     <div className="review-summary-grid">
       <ListBlock title={copy.parties} items={summary?.parties} /><ListBlock title={copy.dates} items={summary?.dates} />
       <ListBlock title={copy.payments} items={summary?.payments} /><ListBlock title={copy.obligations} items={summary?.obligations} kind="obligations" />
-      <ListBlock title={tools.disputes} items={summary?.disputedTerms} /><ListBlock title={copy.missing} items={result?.missingClauses?.length ? result.missingClauses.map(item => `${item.title} — ${item.reason}`) : summary?.missingItems} />
+      <ListBlock title={tools.disputes} items={summary?.disputedTerms} />
+      <ListBlock title={copy.missing} items={missing.length ? missing.map(item => <>
+        <strong>{item.title}</strong><p>{item.reason}</p>
+        <DocumentCitationLinks ids={item.legalBasisSourceIds} citations={citations} locale={locale} onOpen={openCitation} />
+      </>) : summary?.missingItems} />
       <ListBlock title={reviewText(locale, "Что стоит уточнить", "Aniqlashtirish kerak", "What to verify")} items={questions} kind="questions" />
     </div>
     {summary?.extraction?.packageContext?.members.length ? <PackageContextView context={summary.extraction.packageContext} locale={locale} /> : null}
     </>}
     {view === "sources" && <section className="review-sources">
       <header><BookOpen aria-hidden="true" /><div><h3>{tools.sources}</h3>{corpusAvailable && <small>{reviewText(locale, "Дата среза корпуса", "Korpus holati sanasi", "Corpus snapshot date")} · {result?.legalDatabaseAsOf?.slice(0, 10)}</small>}</div></header>
-      {sources.length ? <DocumentCitationList locale={locale} citations={sources.map(source => ({
-        id: source.sourceId, title: source.actTitle, identifier: source.actIdentifier,
-        article: source.article, url: source.originalUrl, excerpt: source.excerpt,
-      }))} /> : <div className="review-source-empty">
+      {citations.size ? <DocumentCitationList locale={locale} selected={selectedCitation} citations={[...citations.values()]} /> : <div className="review-source-empty">
         <p>{corpusAvailable
           ? reviewText(locale, "В отчёте нет подтверждённых ссылок на применимые нормы.", "Hisobotda qo‘llanadigan normalarga tasdiqlangan havolalar yo‘q.", "This report has no confirmed citations to applicable law.")
           : reviewText(locale, "Во время проверки не удалось получить подтверждённые правовые источники.", "Tekshiruv vaqtida tasdiqlangan huquqiy manbalar olinmadi.", "The check could not retrieve verified legal sources.")}</p>
         <ReviewAgain analysis={analysis} locale={locale} />
       </div>}
     </section>}
-    {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} risks={risks} result={result} locale={locale} onAnalysisChanged={onChanged} />}
+    {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} risks={risks} result={result} citations={citations} onOpenCitation={openCitation} locale={locale} onAnalysisChanged={onChanged} />}
     </div>
   </div>;
 }
@@ -502,8 +521,9 @@ function reviewWarnings(warnings: string[], locale: PlatformLocale) {
   return [...new Set(labels.flatMap(label => label ? [reviewText(locale, label[0], label[1], label[2])] : []))];
 }
 
-function RevisionPanel({ analysisId, exports, risks, result, locale, onAnalysisChanged }: {
+function RevisionPanel({ analysisId, exports, risks, result, citations, onOpenCitation, locale, onAnalysisChanged }: {
   analysisId: string; exports: AnalysisExport[]; risks: Risk[]; result?: Partial<DocumentAnalysisResult>;
+  citations: ReadonlyMap<string, DocumentCitation>; onOpenCitation: (id: string) => void;
   locale: PlatformLocale; onAnalysisChanged: () => Promise<void>;
 }) {
   const copy = documentReviewCopy[locale];
@@ -661,11 +681,10 @@ function RevisionPanel({ analysisId, exports, risks, result, locale, onAnalysisC
   const editable = new Set(revisions.map(item => item.riskId));
   const manual = [
     ...risks.filter(risk => !editable.has(risk.id ?? "") && (risk.proposedWording || risk.recommendation))
-      .map(risk => ({ title: risk.title, wording: risk.proposedWording, note: risk.recommendation, clause: risk.clause })),
+      .map(risk => ({ title: risk.title, wording: risk.proposedWording, note: risk.recommendation, clause: risk.clause, before: risk.excerpt, sourceIds: risk.legalBasisSourceIds })),
     ...(result?.missingClauses ?? []).filter(item => item.proposedWording)
-      .map(item => ({ title: item.title, wording: item.proposedWording, note: item.reason, clause: null })),
+      .map(item => ({ title: item.title, wording: item.proposedWording, note: item.reason, clause: null, before: null, sourceIds: item.legalBasisSourceIds })),
   ];
-  const sources = new Map(result?.sources?.map(source => [source.sourceId, source]));
   const count = revisions.length + manual.length;
   return <section className="review-revisions" aria-labelledby={`revision-title-${analysisId}`}>
     <div className="review-revisions-heading">
@@ -694,13 +713,9 @@ function RevisionPanel({ analysisId, exports, risks, result, locale, onAnalysisC
           <span className="review-edit-status">{revisionStatusLabel(revision.status, locale)}</span>
         </summary>
         <div className="review-edit-body">
-        <div className="review-revision-diff"><div><small>{copy.originalText}</small><p>{revision.originalText}</p></div><div><small>{copy.proposedText}</small><p>{revision.proposedText}</p></div></div>
+        <DocumentTextDiff before={revision.originalText} after={revision.proposedText} beforeLabel={copy.originalText} afterLabel={copy.proposedText} />
         {revision.recommendation && <p><b>{copy.rationale}</b> {revision.recommendation}</p>}
-        {revision.legalBasisSourceIds.some(id => sources.has(id)) && <ul className="review-edit-sources" aria-label={copy.relatedSources}>{revision.legalBasisSourceIds.flatMap(id => {
-          const source = sources.get(id);
-          return source && /^https:\/\//.test(source.originalUrl)
-            ? [<li key={id}><a href={source.originalUrl} target="_blank" rel="noreferrer">{[source.actTitle, source.article].filter(Boolean).join(" · ")}</a></li>] : [];
-        })}</ul>}
+        <DocumentCitationLinks ids={revision.legalBasisSourceIds} citations={citations} locale={locale} onOpen={onOpenCitation} />
         {!terminal && <footer><label><input type="checkbox" checked={selected} disabled={revision.status !== "accepted" || busy} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...new Set([...current, revision.id])] : current.filter((id) => id !== revision.id))} /><span>{copy.includeSelected}</span></label><div><button type="button" disabled={busy} aria-busy={busy} aria-pressed={revision.status === "rejected"} className={revision.status === "rejected" ? "active" : ""} onClick={() => void decide(revision, "rejected")}>{busy ? <LoaderCircle className="spin" /> : <X />}{copy.reject}</button><button type="button" disabled={busy} aria-busy={busy} aria-pressed={revision.status === "accepted"} className={revision.status === "accepted" ? "active primary" : "primary"} onClick={() => void decide(revision, "accepted")}>{busy ? <LoaderCircle className="spin" /> : <Check />}{copy.accept}</button></div></footer>}
         </div></details>
       </article>;
@@ -714,8 +729,9 @@ function RevisionPanel({ analysisId, exports, risks, result, locale, onAnalysisC
             : reviewText(locale, "Рекомендация", "Tavsiya", "Recommendation")}</span>
         </summary>
         <div className="review-edit-body">
-          {item.wording && <div className="review-edit-wording"><strong>{copy.proposedText}</strong><ReviewProse text={item.wording} locale={locale} /></div>}
+          {item.wording && <DocumentTextDiff before={item.before} after={item.wording} beforeLabel={copy.originalText} afterLabel={copy.proposedText} />}
           {item.note && item.note !== item.wording && <ReviewProse text={item.note} locale={locale} />}
+          <DocumentCitationLinks ids={item.sourceIds} citations={citations} locale={locale} onOpen={onOpenCitation} />
         </div>
       </details>
     </article>)}</div>}
@@ -748,10 +764,10 @@ function descriptionWithoutRepeatedAdvice(description: string, recommendation?: 
   return advice && text.endsWith(advice) && text.length > advice.length ? text.slice(0, -advice.length).trimEnd() : text;
 }
 
-function ListBlock({ title, items, kind }: { title: string; items?: string[]; kind?: "actions" | "obligations" | "questions" | "warnings" }) {
+function ListBlock({ title, items, kind }: { title: string; items?: ReactNode[]; kind?: "actions" | "obligations" | "questions" | "warnings" | "law" }) {
   if (!items?.length) return null;
   const List = kind === "actions" || kind === "questions" ? "ol" : "ul";
-  const Icon = kind === "warnings" ? AlertTriangle : kind === "questions" ? CircleAlert : kind === "obligations" ? Scale : ClipboardList;
+  const Icon = kind === "law" ? BookOpen : kind === "warnings" ? AlertTriangle : kind === "questions" ? CircleAlert : kind === "obligations" ? Scale : ClipboardList;
   return <section className="review-list-block" data-kind={kind}>
     <h3><Icon aria-hidden="true" />{title}</h3>
     <List>{items.map((item, index) => <li key={index}>{item}</li>)}</List>

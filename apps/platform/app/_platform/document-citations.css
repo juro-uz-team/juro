@@ -1,5 +1,8 @@
 .document-citations { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
 .document-citation { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-subtle); }
+.document-citation { scroll-margin-top: calc(var(--platform-topbar-height, 76px) + 16px); }
+.document-citation[data-selected] { border-color: var(--border-accent); box-shadow: inset 3px 0 var(--brand-gold-text); }
+.document-citation:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .document-citation-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .document-citation-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--surface-selected); color: var(--brand-gold-text); }
 .document-citation-icon svg { width: 18px; }
@@ -11,6 +14,15 @@
 .document-citation-excerpt blockquote { display: grid; gap: .7em; margin: 0; padding: 4px 14px 14px; }
 .document-citation-excerpt blockquote p { max-width: 72ch; margin: 0; color: var(--text-primary); line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
 .document-citation-excerpt-title { font-weight: 700; }
+.document-citation-uses { display: grid; gap: 4px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
+.document-citation-uses ul { margin: 0; padding-inline-start: 1.2rem; list-style: disc; }
+.document-citation-links { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.document-citation-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; max-width: 100%; padding: 5px 10px; border: 1px solid var(--border-accent); border-radius: 8px; background: var(--surface-selected); color: var(--brand-gold-text); font-size: 13px; font-weight: 650; text-align: start; overflow-wrap: anywhere; }
+.document-citation-chip svg { width: 15px; height: 15px; flex: none; }
+@media (hover: hover) and (pointer: fine) {
+  .document-citation-chip:hover { background: var(--interactive-hover); }
+}
+.document-citation-chip:active { box-shadow: inset 0 1px 3px var(--shadow-color); }
 @media (max-width: 620px) {
   .document-citation-heading { grid-template-columns: auto minmax(0, 1fr); }
   .document-citation-heading a { grid-column: 2; justify-self: start; }
