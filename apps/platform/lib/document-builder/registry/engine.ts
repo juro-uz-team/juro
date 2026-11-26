@@ -112,14 +112,23 @@ function interpolate(
   language: BuilderLanguage,
   localItem?: Record<string, AnswerScalar>,
   localFields?: QuestionnaireField[],
-): string {
-  return template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) => {
-    const value = localItem && Object.prototype.hasOwnProperty.call(localItem, key) ? localItem[key] : getAnswer(answers, key);
-    return displayValue(definition, key, value, language, localFields);
-  });
+  row?: { group: string; index: number },
+): Pick<RenderedParagraph, "text" | "parts"> {
+  const parts: NonNullable<RenderedParagraph["parts"]> = [];
+  let end = 0;
+  for (const match of template.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)) {
+    const [, key] = match;
+    const useRow = Boolean(localItem && (Object.hasOwn(localItem, key) || localFields?.some(field => field.id === key)));
+    const value = useRow && localItem ? localItem[key] : getAnswer(answers, key);
+    if (match.index > end) parts.push({ text: template.slice(end, match.index) });
+    parts.push({ text: displayValue(definition, key, value, language, useRow ? localFields : undefined), field: { key, row: useRow ? row : undefined } });
+    end = match.index + match[0].length;
+  }
+  if (end < template.length) parts.push({ text: template.slice(end) });
+  return { text: parts.map(part => part.text).join(""), parts };
 }
 
-export function renderConfiguredDocument(definition: DocumentDefinition, answers: QuestionnaireAnswers, language: BuilderLanguage): { title: string; paragraphs: RenderedParagraph[]; plainText: string } {
+export function renderConfiguredDocument(definition: DocumentDefinition, answers: QuestionnaireAnswers, language: BuilderLanguage, includeFields = false): { title: string; paragraphs: RenderedParagraph[]; plainText: string } {
   const fields = allFields(definition);
   const paragraphs: RenderedParagraph[] = [];
   definition.generationSchema.paragraphs.forEach((paragraph) => {
@@ -130,15 +139,15 @@ export function renderConfiguredDocument(definition: DocumentDefinition, answers
       const group = fields.find((field) => field.id === paragraph.repeatFor);
       if (Array.isArray(items)) items.forEach((item, index) => {
         if (!item || typeof item !== "object") return;
-        paragraphs.push({ id: `${paragraph.id}-${index}`, kind: paragraph.kind, text: interpolate(text, definition, answers, language, item as Record<string, AnswerScalar>, group?.fields) });
+        paragraphs.push({ id: `${paragraph.id}-${index}`, kind: paragraph.kind, ...interpolate(text, definition, answers, language, item as Record<string, AnswerScalar>, group?.fields ?? group?.columns, { group: paragraph.repeatFor!, index }) });
       });
       return;
     }
-    paragraphs.push({ id: paragraph.id, kind: paragraph.kind, text: interpolate(text, definition, answers, language) });
+    paragraphs.push({ id: paragraph.id, kind: paragraph.kind, ...interpolate(text, definition, answers, language) });
   });
   return {
     title: language === "uz" ? definition.titleUz : definition.titleRu,
-    paragraphs,
+    paragraphs: includeFields ? paragraphs : paragraphs.map(({ parts: _parts, ...paragraph }) => paragraph),
     plainText: paragraphs.map((paragraph) => paragraph.text).join("\n\n"),
   };
 }

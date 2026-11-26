@@ -8,22 +8,21 @@ import { Select } from "../../_components/Select";
 /* eslint-disable react-hooks/set-state-in-effect -- drafts and saved documents intentionally hydrate after mount */
 
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, Download, Eye, FileCheck2, LoaderCircle, Info, LockKeyhole, PenLine, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, Eye, FileCheck2, LoaderCircle, Info, LockKeyhole, Plus, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { DocumentDefinition, QuestionnaireAnswers, QuestionnaireField, AnswerScalar } from "../../../lib/document-builder/registry";
 import { calculateQuestionnaireProgress, conditionMatches, createQuestionnaireAnswers, localize, renderConfiguredDocument, setAnswer, validateQuestionnaire, type BuilderLanguage } from "../../../lib/document-builder/registry/engine";
-import { paragraphsFromFinalText } from "../../../lib/document-builder/generation/paragraphs";
+import { previewWithWording, refreshLinkedWording } from "../../../lib/document-builder/generation/preview-fields";
 import type { GenericStoredDocument } from "../../../lib/document-builder/types";
 import { builderNavigationPaths } from "../../../lib/platform/builder-paths";
 import { DocumentLanguageControl } from "./DocumentLanguageControl";
 import { useOptionalPlatformWorkspaceId } from "../../_platform/PlatformRouteContext";
-import { DocumentPreview } from "./DocumentPreview";
+import { DocumentPreview, type PreviewEditing } from "./DocumentPreview";
 import { BuilderAnalysisLauncher } from "./BuilderAnalysisLauncher";
 import { BuilderVersionHistory } from "./BuilderVersionHistory";
-import { BuilderToolDialog } from "./BuilderToolDialog";
 import { BuilderRevisionNotice } from "./BuilderRevisionNotice";
-import { ManualEditor } from "./ManualEditor";
+import { configuredPreviewField } from "./preview-form-fields";
 import { CollaborationPanel } from "./CollaborationPanel";
 import type { BuilderUser } from "./BuilderHeader";
 import { apiFetch, ApiClientError, downloadAuthenticatedFile } from "./api-client";
@@ -36,9 +35,9 @@ type GenerationResult = { status: string; files: { docx: GeneratedFile; pdf: Gen
 type GuestDraft = { phase: Phase; language: BuilderLanguage; step: number; title: string; answers: QuestionnaireAnswers; finalText: string; manuallyEdited: boolean };
 
 const configurableCopy = {
-  ru: { add: "Добавить", entry: (index: number) => `Запись ${index}`, remove: "Удалить", noRows: "Записей пока нет.", required: "Обязательное поле", choose: "Выберите", signInToSave: "Войдите, чтобы сохранить документ.", saveError: "Не удалось сохранить документ.", draftError: "Не удалось создать черновик.", completeSection: "Заполните обязательные поля текущего раздела.", completeRequired: "Перед созданием заполните обязательные поля.", generateError: "Не удалось сформировать файлы.", downloadError: "Не удалось скачать файл.", loading: "Загружаем конструктор…", backCategory: "Назад к категории", documentLanguage: "Язык документа", languageNote: "Названия полей и текст документа показаны на выбранном языке.", minutes: "минут", publishedNote: "Шаблон формирует проект документа. В сложных ситуациях рекомендуется проверка юристом.", betaNote: "Бета-шаблон: юридический текст и узбекская редакция проходят проверку. Перед подачей или подписанием обязательно проверьте результат у юриста.", create: "Создать документ", ready: "Документ готов", readyDescription: "Файлы безопасно сохранены и готовы к скачиванию.", myDocuments: "Мои документы", category: "Категория", saving: "Сохраняем", saved: "Сохранено", temporary: "Временно в этой вкладке", closeMessage: "Закрыть сообщение", sections: "Разделы", step: (current: number, total: number) => `Шаг ${current} из ${total}`, editText: "Редактировать весь текст вручную", privacy: "Ответы пока сохраняются только в этой вкладке браузера. Войдите для серверного сохранения, редактирования текста и скачивания файлов.", back: "Назад", continue: "Продолжить", createFiles: "Создать документ и файлы", signInCreate: "Войти и создать", preview: "Предпросмотр" },
-  uz: { add: "Qo‘shish", entry: (index: number) => `Yozuv ${index}`, remove: "Olib tashlash", noRows: "Hozircha yozuvlar yo‘q.", required: "Majburiy maydon", choose: "Tanlang", signInToSave: "Saqlash uchun tizimga kiring.", saveError: "Hujjatni saqlab bo‘lmadi.", draftError: "Qoralama yaratilmadi.", completeSection: "Majburiy maydonlarni to‘ldiring.", completeRequired: "Hujjat yaratishdan oldin majburiy maydonlarni to‘ldiring.", generateError: "Fayllarni yaratib bo‘lmadi.", downloadError: "Faylni yuklab bo‘lmadi.", loading: "Konstruktor yuklanmoqda…", backCategory: "Toifaga qaytish", documentLanguage: "Hujjat tili", languageNote: "Maydon nomlari va hujjat matni tanlangan tilda ko‘rsatiladi.", minutes: "daqiqa", publishedNote: "Ushbu shablon hujjat loyihasini tayyorlaydi. Murakkab vaziyatlarda yurist tekshiruvi tavsiya etiladi.", betaNote: "Beta-shablon: huquqiy matn va o‘zbekcha tahrir tekshiruvdan o‘tmoqda. Natijani topshirish yoki imzolashdan oldin yuristga tekshirtiring.", create: "Hujjat yaratish", ready: "Hujjat tayyor", readyDescription: "Fayllar xavfsiz saqlandi va yuklab olishga tayyor.", myDocuments: "Mening hujjatlarim", category: "Toifa", saving: "Saqlanmoqda", saved: "Saqlandi", temporary: "Vaqtincha ushbu oynada", closeMessage: "Xabarni yopish", sections: "Bosqichlar", step: (current: number, total: number) => `Bosqich ${current}/${total}`, editText: "Hujjat matnini qo‘lda tahrirlash", privacy: "Javoblar hozir faqat ushbu brauzer oynasida saqlanadi. Serverda saqlash, matnni tahrirlash va fayllarni yuklab olish uchun tizimga kiring.", back: "Orqaga", continue: "Davom etish", createFiles: "Hujjat va fayllarni yaratish", signInCreate: "Kirish va yaratish", preview: "Ko‘rib chiqish" },
-  en: { add: "Add", entry: (index: number) => `Entry ${index}`, remove: "Remove", noRows: "No entries yet.", required: "Required field", choose: "Choose an option", signInToSave: "Sign in to save this document.", saveError: "We could not save the document.", draftError: "We could not create the draft.", completeSection: "Complete the required fields in this section.", completeRequired: "Complete all required fields before creating the document.", generateError: "We could not generate the files.", downloadError: "We could not download the file.", loading: "Loading document builder…", backCategory: "Back to category", documentLanguage: "Document language", languageNote: "Questionnaire labels and generated document content use the selected document language. The interface remains in English.", minutes: "minutes", publishedNote: "This template produces a draft document. A lawyer review is recommended for complex circumstances.", betaNote: "Beta template: the legal text and Uzbek edition are still under review. Ask a lawyer to review the result before filing or signing it.", create: "Create document", ready: "Document ready", readyDescription: "The files were saved securely and are ready to download.", myDocuments: "My documents", category: "Category", saving: "Saving", saved: "Saved", temporary: "Stored in this tab only", closeMessage: "Close message", sections: "Sections", step: (current: number, total: number) => `Step ${current} of ${total}`, editText: "Edit the full document text", privacy: "Your answers are currently stored only in this browser tab. Sign in to save them on the server, edit the full text and download files.", back: "Back", continue: "Continue", createFiles: "Create document and files", signInCreate: "Sign in and create", preview: "Preview" },
+  ru: { add: "Добавить", entry: (index: number) => `Запись ${index}`, remove: "Удалить", noRows: "Записей пока нет.", required: "Обязательное поле", choose: "Выберите", signInToSave: "Войдите, чтобы сохранить документ.", saveError: "Не удалось сохранить документ.", draftError: "Не удалось создать черновик.", completeSection: "Заполните обязательные поля текущего раздела.", completeRequired: "Перед созданием заполните обязательные поля.", generateError: "Не удалось сформировать файлы.", downloadError: "Не удалось скачать файл.", loading: "Загружаем конструктор…", backCategory: "Назад к категории", documentLanguage: "Язык документа", languageNote: "Названия полей и текст документа показаны на выбранном языке.", minutes: "минут", publishedNote: "Шаблон формирует проект документа. В сложных ситуациях рекомендуется проверка юристом.", betaNote: "Бета-шаблон: юридический текст и узбекская редакция проходят проверку. Перед подачей или подписанием обязательно проверьте результат у юриста.", create: "Создать документ", ready: "Документ готов", readyDescription: "Файлы безопасно сохранены и готовы к скачиванию.", myDocuments: "Мои документы", category: "Категория", saving: "Сохраняем", saved: "Сохранено", temporary: "Временно в этой вкладке", closeMessage: "Закрыть сообщение", sections: "Разделы", step: (current: number, total: number) => `Шаг ${current} из ${total}`, privacy: "Ответы пока сохраняются только в этой вкладке браузера. Войдите для серверного сохранения, редактирования текста и скачивания файлов.", back: "Назад", continue: "Продолжить", createFiles: "Создать документ и файлы", signInCreate: "Войти и создать", preview: "Предпросмотр" },
+  uz: { add: "Qo‘shish", entry: (index: number) => `Yozuv ${index}`, remove: "Olib tashlash", noRows: "Hozircha yozuvlar yo‘q.", required: "Majburiy maydon", choose: "Tanlang", signInToSave: "Saqlash uchun tizimga kiring.", saveError: "Hujjatni saqlab bo‘lmadi.", draftError: "Qoralama yaratilmadi.", completeSection: "Majburiy maydonlarni to‘ldiring.", completeRequired: "Hujjat yaratishdan oldin majburiy maydonlarni to‘ldiring.", generateError: "Fayllarni yaratib bo‘lmadi.", downloadError: "Faylni yuklab bo‘lmadi.", loading: "Konstruktor yuklanmoqda…", backCategory: "Toifaga qaytish", documentLanguage: "Hujjat tili", languageNote: "Maydon nomlari va hujjat matni tanlangan tilda ko‘rsatiladi.", minutes: "daqiqa", publishedNote: "Ushbu shablon hujjat loyihasini tayyorlaydi. Murakkab vaziyatlarda yurist tekshiruvi tavsiya etiladi.", betaNote: "Beta-shablon: huquqiy matn va o‘zbekcha tahrir tekshiruvdan o‘tmoqda. Natijani topshirish yoki imzolashdan oldin yuristga tekshirtiring.", create: "Hujjat yaratish", ready: "Hujjat tayyor", readyDescription: "Fayllar xavfsiz saqlandi va yuklab olishga tayyor.", myDocuments: "Mening hujjatlarim", category: "Toifa", saving: "Saqlanmoqda", saved: "Saqlandi", temporary: "Vaqtincha ushbu oynada", closeMessage: "Xabarni yopish", sections: "Bosqichlar", step: (current: number, total: number) => `Bosqich ${current}/${total}`, privacy: "Javoblar hozir faqat ushbu brauzer oynasida saqlanadi. Serverda saqlash, matnni tahrirlash va fayllarni yuklab olish uchun tizimga kiring.", back: "Orqaga", continue: "Davom etish", createFiles: "Hujjat va fayllarni yaratish", signInCreate: "Kirish va yaratish", preview: "Ko‘rib chiqish" },
+  en: { add: "Add", entry: (index: number) => `Entry ${index}`, remove: "Remove", noRows: "No entries yet.", required: "Required field", choose: "Choose an option", signInToSave: "Sign in to save this document.", saveError: "We could not save the document.", draftError: "We could not create the draft.", completeSection: "Complete the required fields in this section.", completeRequired: "Complete all required fields before creating the document.", generateError: "We could not generate the files.", downloadError: "We could not download the file.", loading: "Loading document builder…", backCategory: "Back to category", documentLanguage: "Document language", languageNote: "Questionnaire labels and generated document content use the selected document language. The interface remains in English.", minutes: "minutes", publishedNote: "This template produces a draft document. A lawyer review is recommended for complex circumstances.", betaNote: "Beta template: the legal text and Uzbek edition are still under review. Ask a lawyer to review the result before filing or signing it.", create: "Create document", ready: "Document ready", readyDescription: "The files were saved securely and are ready to download.", myDocuments: "My documents", category: "Category", saving: "Saving", saved: "Saved", temporary: "Stored in this tab only", closeMessage: "Close message", sections: "Sections", step: (current: number, total: number) => `Step ${current} of ${total}`, privacy: "Your answers are currently stored only in this browser tab. Sign in to save them on the server, edit the full text and download files.", back: "Back", continue: "Continue", createFiles: "Create document and files", signInCreate: "Sign in and create", preview: "Preview" },
 } as const;
 
 function languageFromBrowser(): BuilderLanguage {
@@ -136,8 +135,8 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const createPromise = useRef<Promise<string> | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const savedContent = useRef("");
-  const rendered = useMemo(() => renderConfiguredDocument(definition, answers, language), [definition, answers, language]);
-  const visibleDocument = useMemo(() => manuallyEdited ? { ...rendered, paragraphs: paragraphsFromFinalText(finalText), plainText: finalText } : rendered, [rendered, manuallyEdited, finalText]);
+  const rendered = useMemo(() => renderConfiguredDocument(definition, answers, language, true), [definition, answers, language]);
+  const visibleDocument = useMemo(() => manuallyEdited ? previewWithWording(rendered, finalText) : rendered, [rendered, manuallyEdited, finalText]);
   const progress = calculateQuestionnaireProgress(definition, answers);
   const currentStep = definition.questionnaire[step];
 
@@ -176,7 +175,6 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     setHydrated(true);
   }, [copy.draftError, definition, hydrate, initialDocumentId, initialUser, onlyLanguage, routeLocale, uiLocale]);
 
-  useEffect(() => { if (!finalText && rendered.plainText) setFinalText(rendered.plainText); }, [finalText, rendered.plainText]);
   useEffect(() => { if (!manuallyEdited) setFinalText(rendered.plainText); }, [rendered.plainText, manuallyEdited]);
   useEffect(() => {
     if (!hydrated || initialUser) return;
@@ -217,7 +215,30 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   useDebouncedEffect(() => { void save().catch(() => undefined); }, [answers, language, title, finalText, manuallyEdited, documentId], 700);
 
   const start = async () => { setPhase("builder"); if (initialUser) { try { await ensureDocument(); } catch (caught) { setError(builderError(uiLocale, caught, copy.draftError)); } } };
-  const update = (field: QuestionnaireField, value: unknown) => { setAnswers((current) => setAnswer(current, field.id, value as never)); setErrors((current) => { const next = { ...current }; delete next[field.id]; return next; }); };
+  const updateAnswers = (next: QuestionnaireAnswers, key: string) => {
+    const nextPreview = renderConfiguredDocument(definition, next, language, true);
+    setAnswers(next);
+    setFinalText(manuallyEdited ? refreshLinkedWording(finalText, rendered, nextPreview) : nextPreview.plainText);
+    setErrors(current => { const updated = { ...current }; delete updated[key]; return updated; });
+  };
+  const update = (field: QuestionnaireField, value: unknown) => updateAnswers(setAnswer(answers, field.id, value as never), field.id);
+  const previewEditing: PreviewEditing = {
+    field: ref => configuredPreviewField(definition, answers, language, ref, updateAnswers),
+    wording: initialUser ? (index, text) => {
+      const value = visibleDocument.paragraphs.map((paragraph, position) => position === index ? text : paragraph.text).join("\n\n");
+      setFinalText(value);
+      setManuallyEdited(value !== rendered.plainText);
+    } : undefined,
+    reset: () => {
+      const original = createQuestionnaireAnswers(definition);
+      setAnswers(original);
+      setTitle(defaultTitle(definition, language));
+      setFinalText(renderConfiguredDocument(definition, original, language).plainText);
+      setManuallyEdited(false);
+      setErrors({});
+      setStep(0);
+    },
+  };
   const goNext = () => {
     const validation = validateQuestionnaire(definition, answers); const currentIds = new Set(currentStep.fields.filter((field) => conditionMatches(field.condition, answers)).map((field) => field.id));
     const stepErrors = Object.fromEntries(Object.entries(validation).filter(([id]) => currentIds.has(id))); setErrors(stepErrors);
@@ -244,11 +265,6 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   return <div className="dbt-config-builder workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} /><header className="dbt-config-builder-head"><div><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={16}/>{copy.category}</Link><span>№ {definition.code}</span><span className={`dbt-save-indicator ${saveState}`}>{saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "saved" ? <><Save size={14}/>{copy.saved}</> : !initialUser ? copy.temporary : ""}</span></div>{languageControl}<div className="dbt-config-progress"><span style={{ "--progress": progress / 100 } as React.CSSProperties}/><b>{progress}%</b></div></header>
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span><button type="button" aria-label={copy.closeMessage} title={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
     {initialUser && <div className="dbt-tool-strip">
-      <BuilderToolDialog icon={PenLine} label={copy.editText} locale={uiLocale} paperEditor>
-        {() => <ManualEditor document={visibleDocument} value={visibleDocument.plainText} locale={uiLocale}
-          onChange={text => { setFinalText(text); setManuallyEdited(true); }}
-          onReset={() => { setFinalText(rendered.plainText); setManuallyEdited(false); }}/>}
-      </BuilderToolDialog>
       {documentId && <>
         {definition.collaboration.enabled && <CollaborationPanel documentId={documentId} accessRole="owner" finalText={visibleDocument.plainText} revision={revision} locale={uiLocale}
           beforeChange={() => save(documentId)} onApplied={reloadDocument}/>}
@@ -280,5 +296,5 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
           return id;
         }}
       />}
-    </section><DocumentPreview document={visibleDocument} locale={uiLocale}/></div>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
+    </section><DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing}/></div>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} editing={previewEditing} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
 }

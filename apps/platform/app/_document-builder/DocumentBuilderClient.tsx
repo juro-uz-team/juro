@@ -15,6 +15,7 @@ import { ArrowLeft, ArrowRight, Check, Eye, FileCheck2, LoaderCircle, LockKeyhol
 import { createDefaultAnswers, EXAMPLE_RU, EXAMPLE_UZ } from "../../lib/document-builder/defaults";
 import { amountToWords } from "../../lib/document-builder/money-to-words";
 import { paragraphsFromFinalText } from "../../lib/document-builder/generation/paragraphs";
+import { previewWithWording, refreshLinkedWording } from "../../lib/document-builder/generation/preview-fields";
 import { renderReceipt, suggestedDocumentTitle } from "../../lib/document-builder/templates/receipt";
 import type {
   ContactRecord,
@@ -27,11 +28,10 @@ import type {
 import { builderSteps, BuilderQuestionnaire } from "./_components/BuilderQuestionnaire";
 import { BuilderHeader, type BuilderUser } from "./_components/BuilderHeader";
 import { CollaborationPanel } from "./_components/CollaborationPanel";
-import { DocumentPreview } from "./_components/DocumentPreview";
+import { DocumentPreview, type PreviewEditing } from "./_components/DocumentPreview";
 import { FinalSuccess, type GeneratedFile } from "./_components/FinalSuccess";
-import { ManualEditor } from "./_components/ManualEditor";
+import { receiptPreviewField } from "./_components/preview-form-fields";
 import { apiFetch, ApiClientError, downloadAuthenticatedFile } from "./_components/api-client";
-import { BuilderToolDialog } from "./_components/BuilderToolDialog";
 import { BuilderRevisionNotice } from "./_components/BuilderRevisionNotice";
 import { useDebouncedEffect } from "./_hooks/useDebouncedEffect";
 import { useModalFocus } from "./_hooks/useModalFocus";
@@ -354,8 +354,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [finalText, setFinalText] = useState("");
   const [manuallyEdited, setManuallyEdited] = useState(false);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState("");
   const [mobilePreview, setMobilePreview] = useState(false);
@@ -380,9 +378,9 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const savedContent = useRef("");
   const [revisionConflict, setRevisionConflict] = useState(false);
 
-  const rendered = useMemo(() => renderReceipt(answers), [answers]);
+  const rendered = useMemo(() => renderReceipt(answers, true), [answers]);
   const autoText = rendered.plainText;
-  const visibleReceipt = useMemo(() => manuallyEdited ? printableReceipt(finalText, copy.document) : rendered, [copy.document, manuallyEdited, finalText, rendered]);
+  const visibleReceipt = useMemo(() => manuallyEdited ? previewWithWording(rendered, finalText) : rendered, [manuallyEdited, finalText, rendered]);
   const example = useMemo(() => renderReceipt(answers.language === "ru" ? EXAMPLE_RU : EXAMPLE_UZ), [answers.language]);
   const progress = calculateProgress(answers);
 
@@ -397,8 +395,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     setStatus(stored.status);
     setAccessRole(stored.accessRole ?? "owner");
     setPhase("builder");
-    setUndoStack([]);
-    setRedoStack([]);
   }, []);
 
   const reloadDocument = async () => {
@@ -582,7 +578,8 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
       const expectedWords = amountToWords(next.loanAmountNumeric, next.language, next.currency, next.includeCents);
       const normalized = !next.loanAmountWordsManuallyEdited ? { ...next, loanAmountWords: expectedWords } : next;
       setAnswers(normalized);
-      if (!manuallyEdited) setFinalText(renderReceipt(normalized).plainText);
+      const nextPreview = renderReceipt(normalized, true);
+      setFinalText(manuallyEdited ? refreshLinkedWording(finalText, rendered, nextPreview) : nextPreview.plainText);
     });
   };
 
@@ -609,25 +606,22 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
 
   const editFinalText = (value: string) => {
     runWithAgreementGuard(() => {
-      setUndoStack((stack) => [...stack.slice(-49), finalText]);
-      setRedoStack([]);
       setFinalText(value);
       setManuallyEdited(value !== autoText);
     });
   };
-  const undo = () => {
-    runWithAgreementGuard(() => {
-      const previous = undoStack.at(-1); if (previous === undefined) return;
-      setRedoStack((stack) => [...stack, finalText]); setUndoStack((stack) => stack.slice(0, -1)); setFinalText(previous); setManuallyEdited(previous !== autoText);
-    });
+  const previewEditing: PreviewEditing = {
+    field: ref => receiptPreviewField(answers, ref, uiLocale, changeAnswers),
+    wording: user ? (index, text) => editFinalText(visibleReceipt.paragraphs.map((paragraph, position) => position === index ? text : paragraph.text).join("\n\n")) : undefined,
+    reset: () => runWithAgreementGuard(() => {
+      const original = createDefaultAnswers(answers.language);
+      setAnswers(original);
+      setTitle(suggestedDocumentTitle(original));
+      setFinalText(renderReceipt(original).plainText);
+      setManuallyEdited(false);
+      setStep(0);
+    }),
   };
-  const redo = () => {
-    runWithAgreementGuard(() => {
-      const next = redoStack.at(-1); if (next === undefined) return;
-      setUndoStack((stack) => [...stack, finalText]); setRedoStack((stack) => stack.slice(0, -1)); setFinalText(next); setManuallyEdited(next !== autoText);
-    });
-  };
-  const resetText = () => runWithAgreementGuard(() => { setUndoStack((stack) => [...stack, finalText]); setRedoStack([]); setFinalText(autoText); setManuallyEdited(false); });
 
   const confirmDecision = () => {
     const decision = confirmationDecision;
@@ -752,9 +746,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     {initialConsultation && <div className="dbt-handoff-banner" role="status"><Sparkles size={18}/><span><strong>{initialConsultation.type === "ai" ? copy.aiCreated : copy.lawyerCreated}</strong><small>{copy.handoffDetail} {initialConsultation.requestId.slice(0, 8)}</small></span></div>}
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span>{!user && <button type="button" onClick={signIn}>{copy.signIn}</button>}<button type="button" aria-label={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
     <div className="dbt-tool-strip">
-      <BuilderToolDialog icon={PenLine} label={copy.showEditor} locale={uiLocale} paperEditor>
-        {() => <ManualEditor document={visibleReceipt} value={finalText || autoText} onChange={editFinalText} onUndo={undo} onRedo={redo} onReset={resetText} canUndo={undoStack.length > 0} canRedo={redoStack.length > 0} locked={!user} locale={uiLocale}/>}
-      </BuilderToolDialog>
       {documentId && user && <>
         <CollaborationPanel documentId={documentId} accessRole="owner" finalText={finalText || autoText} revision={revision} locale={uiLocale}
           beforeChange={() => persist(documentId)} onApplied={reloadDocument}/>
@@ -770,7 +761,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     <div className="dbt-progress"><div><span style={{ "--progress": progress / 100 } as CSSProperties}/></div><strong>{progress}%</strong></div>
     <nav className="dbt-steps" aria-label={copy.sections}>{builderSteps(uiLocale).map((label, index) => <button type="button" className={step === index ? "active" : index < step ? "visited" : ""} onClick={() => setStep(index)} key={label}><span>{index < step ? <Check size={15}/> : index + 1}</span><small>{label}</small></button>)}</nav>
     <button type="button" className="dbt-mobile-preview-button" onClick={() => setMobilePreview(true)}><Eye size={18}/>{copy.preview}</button>
-    <div className="dbt-workspace"><div className="dbt-form-column"><BuilderQuestionnaire answers={answers} onChange={changeAnswers} step={step} profile={profile} contacts={contacts} onSaveProfile={saveProfile} onUpdateContact={updateContact} locale={uiLocale}/><div className="dbt-form-nav"><button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={17}/>{copy.back}</button>{step < 4 ? <button type="button" className="primary" onClick={() => setStep(Math.min(4, step + 1))}>{copy.continue}<ArrowRight size={17}/></button> : <button type="button" className="primary" onClick={() => void generate()} disabled={generating}>{generating ? <><LoaderCircle className="spin" size={18}/>{copy.generating}</> : user ? <>{copy.createFiles}<FileCheck2 size={18}/></> : <>{copy.signInCreate}<LockKeyhole size={18}/></>}</button>}</div>{user && step === 4 && <Suspense fallback={<section className="dbt-builder-analysis" aria-busy="true"><p className="dbt-version-loading">{copy.toolsLoading}</p></section>}><BuilderAnalysisLauncher documentLocale={answers.language === "ru" ? "ru" : "uz"} uiLocale={uiLocale} reviewPath={paths.documentReview} onPrepare={async () => { const id = await createDraft(); await persist(id); return id; }}/></Suspense>}</div><DocumentPreview document={visibleReceipt} locale={uiLocale} mobileOpen={mobilePreview} onClose={() => setMobilePreview(false)}/></div>
+    <div className="dbt-workspace"><div className="dbt-form-column"><BuilderQuestionnaire answers={answers} onChange={changeAnswers} step={step} profile={profile} contacts={contacts} onSaveProfile={saveProfile} onUpdateContact={updateContact} locale={uiLocale}/><div className="dbt-form-nav"><button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={17}/>{copy.back}</button>{step < 4 ? <button type="button" className="primary" onClick={() => setStep(Math.min(4, step + 1))}>{copy.continue}<ArrowRight size={17}/></button> : <button type="button" className="primary" onClick={() => void generate()} disabled={generating}>{generating ? <><LoaderCircle className="spin" size={18}/>{copy.generating}</> : user ? <>{copy.createFiles}<FileCheck2 size={18}/></> : <>{copy.signInCreate}<LockKeyhole size={18}/></>}</button>}</div>{user && step === 4 && <Suspense fallback={<section className="dbt-builder-analysis" aria-busy="true"><p className="dbt-version-loading">{copy.toolsLoading}</p></section>}><BuilderAnalysisLauncher documentLocale={answers.language === "ru" ? "ru" : "uz"} uiLocale={uiLocale} reviewPath={paths.documentReview} onPrepare={async () => { const id = await createDraft(); await persist(id); return id; }}/></Suspense>}</div><DocumentPreview document={visibleReceipt} locale={uiLocale} editing={previewEditing} mobileOpen={mobilePreview} onClose={() => setMobilePreview(false)}/></div>
     {confirmationDecision && <div className="dbt-modal-backdrop" role="presentation" onMouseDown={closeConfirmation}><section ref={confirmationDialogRef} className="dbt-delete-choice dbt-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="builder-confirmation-title" aria-describedby="builder-confirmation-description" onMouseDown={(event) => event.stopPropagation()}><h2 id="builder-confirmation-title">{confirmationCopy[confirmationDecision.kind].title}</h2><p id="builder-confirmation-description">{confirmationCopy[confirmationDecision.kind].description}</p><button type="button" className="cancel" data-dialog-initial-focus onClick={closeConfirmation}>{confirmationCopy[confirmationDecision.kind].cancel}</button><button type="button" className="confirm" onClick={confirmDecision}>{confirmationCopy[confirmationDecision.kind].confirm}</button></section></div>}
   </div></div>;
 }

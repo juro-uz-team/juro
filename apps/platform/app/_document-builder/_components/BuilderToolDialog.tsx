@@ -4,11 +4,10 @@ import { X, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { PlatformLocale } from "../../../lib/platform/routing";
 
-export function BuilderToolDialog({ icon: Icon, label, locale, children, paperEditor = false }: {
+export function BuilderToolDialog({ icon: Icon, label, locale, children }: {
   icon: LucideIcon;
   label: string;
   locale: PlatformLocale;
-  paperEditor?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -23,7 +22,7 @@ export function BuilderToolDialog({ icon: Icon, label, locale, children, paperEd
     <button ref={trigger} type="button" className="dbt-tool-button" aria-haspopup="dialog" onClick={() => setOpen(true)}>
       <Icon size={17} aria-hidden="true" />{label}
     </button>
-    {open && <dialog ref={dialog} className={`dbt-tool-dialog${paperEditor ? " dbt-paper-dialog" : ""}`} aria-labelledby={titleId} onClose={() => {
+    {open && <dialog ref={dialog} className="dbt-tool-dialog" aria-labelledby={titleId} onClose={() => {
       setOpen(false);
       trigger.current?.focus();
     }}>

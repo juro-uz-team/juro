@@ -117,12 +117,16 @@ export interface ReceiptAnswers {
   accuracyConfirmed: boolean;
 }
 
+export type PreviewFieldRef = { key: string; row?: { group: string; index: number } };
+export type PreviewPart = { text: string; field?: PreviewFieldRef };
+
 export interface RenderedParagraph {
   id: string;
   text: string;
   kind: "title" | "subtitle" | "heading" | "body" | "list" | "signature" | "spacer";
   keepWithNext?: boolean;
   reviewMark?: "deleted" | "inserted";
+  parts?: PreviewPart[];
 }
 
 export interface RenderedReceipt {
