@@ -113,7 +113,7 @@ function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, lo
   // Historical migrations remain immutable; current fixtures include native additions.
   if (lastMigrationIndex === Number.POSITIVE_INFINITY) {
     projectControlCenter(sqlite);
-    sqlite.exec(readFileSync(new URL("../../postgres/0071-document-tool-inputs.sql", import.meta.url), "utf8"));
+    sqlite.exec(readFileSync(new URL("../../postgres/0071-document-tool-inputs.sql", import.meta.url), "utf8").replaceAll("app.", ""));
   }
   const d1 = {
     prepare(sql: string) {
