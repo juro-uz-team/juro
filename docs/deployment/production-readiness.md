@@ -2,9 +2,32 @@
 
 Assessment: **NOT READY for the full execution brief**
 
-Evidence cutoff: **2026-09-02 UZT**
+Evidence cutoff: **2026-09-02 16:56 UZT**
 
-Production is reachable and the owner-requested v101 mobile interaction-target increment is deployed from merge `498ab8944575134163cadcc6c74deeadd3a93fac`. Website Worker v13 `3ee7a1ae-888a-4c98-8f49-de73783e6b7e`, platform Worker version `9e7ff503-894e-4be1-a0dc-5ad413fc9ba8`, and public Sites v97 were active at the latest verification checkpoint. The public status snapshot generated at `2026-09-02T06:08:14.064Z` was operational with 8/8 components and 0 active incidents. A separate content-free 24-hour D1 history supports a bounded provider-recovery statement, but not an availability SLA. The full execution brief remains incomplete because authenticated Business, Lawyer, Pending Lawyer, Staff/Admin, state-changing, DNS-remediation, and other Definition-of-Done gates are still open.
+Production is reachable and the owner-requested v101 mobile interaction-target increment is deployed from merge `498ab8944575134163cadcc6c74deeadd3a93fac`. Website Worker v13 `3ee7a1ae-888a-4c98-8f49-de73783e6b7e`, platform Worker version `9e7ff503-894e-4be1-a0dc-5ad413fc9ba8`, and public Sites v97 were active at the latest verification checkpoint. The public status snapshot generated at `2026-09-02T11:56:13.706Z` was operational with 8/8 components, 0 active/recent incidents, and operational OpenAI plus Anthropic checks. Provider evidence was about 13 minutes old while OTP/email evidence was about 8.7 hours old, so this remains a checkpoint rather than an SLA. A separate content-free 24-hour D1 history supports a bounded provider-recovery statement, but not an availability SLA. The obsolete FTP DNS exposure is resolved, the authenticated Lawyer read-only shell is verified, the checked approved Lawyer session was denied Business and Admin surfaces, and all 78 public sitemap URLs passed both the actual 1536 px desktop crawl and a later 780-check Chrome structural matrix across the ten required widths from 320 through 1920 px. The full execution brief remains incomplete because positive authenticated Business, Pending Lawyer, Staff/Admin, state-changing Lawyer/client collaboration, authenticated responsive/accessibility matrices, and other Definition-of-Done gates are still open.
+
+## Current public-safe health receipt (2026-09-02)
+
+- `status.juro.uz/api/status` returned HTTP `200` with `generatedAt=2026-09-02T11:56:13.706Z`, operational 8/8, and zero active/recent incidents.
+- OpenAI was operational at `11:42:48Z` with 3,804 ms latency; Anthropic was operational at `11:42:59Z` with 10,129 ms latency. Neither exposed a safe error code.
+- D1, queues, private R2, DLQ, and document-builder evidence was refreshed between `11:52:11Z` and `11:55:49Z` and remained operational.
+- OTP/email evidence was materially older at about 8.7 hours. The receipt proves only the returned point-in-time state and does not establish sustained availability.
+
+## DNS retirement and authenticated Lawyer receipt (2026-09-02)
+
+- Deleted only Cloudflare record `4435f48bc863cc0ccaddd74a21791e5d`, exactly `A ftp.juro.uz → 95.46.96.77`, DNS-only, dashboard TTL Auto/public TTL 300, after the owner's exact action-time confirmation.
+- The dashboard row disappeared; `1.1.1.1`, `8.8.8.8`, and both authoritative nameservers returned NXDOMAIN. Apex MX, `mail` CNAME, and `send` MX/TXT matched the pre-change snapshot.
+- Public, app, lawyer, admin, and status endpoints returned final HTTP `200`. No unrelated DNS, runtime, database, secret, binding, payment, auth-policy, corpus/vector/embedding, or staging-capacity operation occurred.
+- A real Lawyer session completed 16 discovered protected routes on `lawyer.juro.uz` read-only. Fifteen role routes also passed at 390 × 844. There was no login fallback, 404, horizontal overflow, visible alert, or console error; protected settings loaders settled to one visible H1.
+- A forced reload still showed the approved Lawyer persona. A direct Business dashboard attempt returned to that Lawyer dashboard. A direct Admin-host attempt returned the generic protected-entry boundary on `app.juro.uz`, which required a staff role and MFA/TOTP confirmed within 15 minutes without enumerating role membership.
+- No private client, matter, message, document, or session content was read and no state-changing control was used. Lawyer mutations remain a separate gate.
+
+## Public ten-width responsive receipt (2026-09-02)
+
+- Isolated Google Chrome 152 navigated all 78 sitemap URLs at 320, 360, 375, 390, 430, 768, 1024, 1280, 1440, and 1920 CSS px.
+- Every route/viewport pair ultimately retained the requested URL and HTTP `200`, exactly one `main`, at least one visible H1, zero horizontal overflow, zero completed broken images, no localized not-found surface, and clean successful console/network state.
+- The high-rate pass produced 26 transport-only resets/QUIC failures. All affected pairs passed an isolated 26/26 recheck with QUIC disabled, so no responsive page defect was inferred from the transient transport errors.
+- This closes the requested public structural width list only. Authenticated feature pages, orientation change, zoom, assistive technology, soft keyboard, touch gestures, and visual pixel review remain separate gates.
 
 ## v101 mobile interaction-target production evidence (2026-09-02)
 
@@ -134,8 +157,8 @@ This is a P1 release-gate failure even though the staging host returns HTTP `200
 | Priority | Gap | Evidence | Required action |
 | --- | --- | --- | --- |
 | Excluded | Staging health/capacity | The retained historical staging evidence is stale/degraded and the owner explicitly excluded legislation database/corpus/capacity remediation | No action in this goal; do not use this row to block the permitted non-corpus work |
-| P1 | Cloudflare reports partial origin IP exposure; obsolete `ftp` record remains live | `ftp.juro.uz` points to `95.46.96.77`; port 21 times out, HTTP exposes an AlmaLinux test page, HTTPS hostname validation fails, and no code dependency was found | Sign in to Cloudflare DNS, capture the record ID/value, delete only this A record, then verify NXDOMAIN and all production/email routes; recreate the saved A record immediately if a dependency appears |
-| P1 | Authenticated role matrix incomplete | Authenticated individual read-only coverage exists; Business, Lawyer, Pending Lawyer, Staff/Admin, and state-changing flows remain open | Chrome QA with real authorized sessions and no fabricated identity |
+| Resolved | Obsolete `ftp` origin exposure | only the confirmed A record was deleted; recursive and authoritative DNS return NXDOMAIN; production/email checks passed | Keep absent; recreate the saved DNS-only A record only if a legitimate dependency is proven |
+| P1 | Authenticated role matrix incomplete | Authenticated Individual and Lawyer read-only coverage plus approved-Lawyer negative Business/Admin isolation exists; positive Business, Pending Lawyer, Staff/Admin, state-changing flows, and Lawyer/client mutations remain open | Chrome QA with real authorized sessions and controlled test data; no fabricated identity |
 | P2 | Production v118 behavior is not authenticated on staging | Main is normalized and the canonical staging host is Access-protected; staging release remains separate | Complete post-Access Client/Lawyer route QA only in a safe, non-corpus staging increment |
 
 ## Rollback protocol
@@ -156,7 +179,7 @@ This is a P1 release-gate failure even though the staging host returns HTTP `200
 
 ### DNS
 
-The only currently approved retirement candidate is `A ftp.juro.uz → 95.46.96.77`, DNS-only, TTL 300. Before deletion, capture the Cloudflare record ID and confirm those exact fields in the dashboard. Delete only that record; do not change apex, Worker hostnames, MX, TXT, `mail`, or `send` records. Verify that `ftp.juro.uz` no longer resolves, all public/app/lawyer/admin/status routes still pass, and Cloudflare Email Routing MX remains unchanged. If any legitimate dependency appears, recreate the saved DNS-only A record with TTL 300. The current blocker is Cloudflare DNS authentication/permission, not uncertainty about the observed network behavior.
+The approved retirement is complete: Cloudflare record `4435f48bc863cc0ccaddd74a21791e5d` (`A ftp.juro.uz → 95.46.96.77`, DNS-only, TTL Auto/public 300) was the only deleted record. Recursive and authoritative DNS return NXDOMAIN; public/app/lawyer/admin/status reachability and the saved email-DNS contract passed. If a legitimate dependency appears, recreate only the saved DNS-only A record and repeat the same route/email checks. There is no current DNS-authentication blocker.
 
 Provider reliability remains an ongoing monitoring duty. The v120 24-hour history closes the earlier point-in-time-only evidence gap for the observed recovery window; it does not establish an SLA or guarantee future availability.
 

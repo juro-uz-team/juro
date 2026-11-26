@@ -2,9 +2,76 @@
 
 Status: **living evidence report, not full Definition of Done**
 
-Evidence cutoff: **2026-09-02 UZT**
+Evidence cutoff: **2026-09-02 16:56 UZT**
 
-Scope in this report: deployed v101 mobile interaction-target evidence dated 2026-09-02, retained v121 production accessibility evidence, v120 read-only production operations evidence, retained v118 dashboard keyboard-focus evidence, retained v117 Individual touch-target evidence, unchanged public Sites v97 and website Worker v13, plus retained v116 responsive accessibility evidence. Older release evidence is retained as history. Legislation database, legal corpus, Lex.uz/Advice.uz ingestion, vectors, and staging-capacity remediation are excluded by owner instruction.
+Scope in this report: deployed v101 mobile interaction-target evidence dated 2026-09-02, the later bounded DNS-retirement and authenticated Lawyer receipts, a 78-route public production Chrome crawl at desktop and all ten required responsive widths, a native-Tab RU/UZ/EN public entry-page traversal, retained v121 production accessibility evidence, v120 read-only production operations evidence, retained v118 dashboard keyboard-focus evidence, retained v117 Individual touch-target evidence, unchanged public Sites v97 and website Worker v13, plus retained v116 responsive accessibility evidence. Older release evidence is retained as history. Legislation database, legal corpus, Lex.uz/Advice.uz ingestion, vectors, and staging-capacity remediation are excluded by owner instruction.
+
+## Current production health checkpoint (2026-09-02)
+
+| Area | Public-safe evidence | Result |
+| --- | --- | --- |
+| Status response | HTTP `200`; generated `2026-09-02T11:56:13.706Z` | PASS |
+| Overall | operational; 8/8 components; zero active or recent incidents | PASS AS POINT-IN-TIME EVIDENCE |
+| OpenAI | checked `2026-09-02T11:42:48.699Z`; 3,804 ms; no safe error code | OPERATIONAL |
+| Anthropic | checked `2026-09-02T11:42:59.226Z`; 10,129 ms; no safe error code | OPERATIONAL |
+| Fresh infrastructure evidence | D1 210 ms; queues 1,965 ms; private R2 3,148 ms; DLQ zero; checks between `11:52:11Z` and `11:55:49Z` | OPERATIONAL |
+| Freshness boundary | OTP/email evidence was about 8.7 hours old; provider evidence was about 13 minutes old | CHECKPOINT ONLY; NOT AN SLA |
+
+## Public full responsive Chrome matrix (2026-09-02)
+
+| Area | Evidence | Result |
+| --- | --- | --- |
+| Browser | isolated Google Chrome 152.0.7977.66; temporary profile removed after the run | PASS |
+| Sitemap scope | 78 production URLs: 26 RU + 26 UZ + 26 EN | CHECKED |
+| Required widths | 320, 360, 375, 390, 430, 768, 1024, 1280, 1440, and 1920 CSS px | 10/10 CHECKED |
+| Route/viewport scope | 78 URLs × 10 widths | 780 CHECKS |
+| Final page contract | requested URL and HTTP `200`; exactly one `main`; at least one visible H1 | 780/780 PASS AFTER TRANSIENT RECHECK |
+| Layout and assets | zero document-level horizontal overflow; zero completed broken images; no localized not-found surface | 780/780 PASS AFTER TRANSIENT RECHECK |
+| Console/network | clean on successful checks; the high-rate pass recorded 23 resets/QUIC errors at 768 px and three resets at 1024 px | 754 INITIAL PASS; 26 TRANSIENTS RETESTED |
+| Transient recheck | only the 26 affected route/viewport pairs, isolated lower-load Chrome with QUIC disabled | 26/26 PASS |
+| Evidence boundary | structural production evidence only; no claim for visual pixel equivalence, orientation change, touch gestures, soft keyboard, zoom, screen readers, or authenticated feature pages at every width | HONESTLY PARTIAL |
+
+## Public sitemap desktop Chrome validation (2026-09-02)
+
+| Area | Evidence | Result |
+| --- | --- | --- |
+| Sitemap scope | current production sitemap; 26 RU + 26 UZ + 26 EN URLs | 78/78 CHECKED |
+| Browser and viewport | real Chrome; actual 1536 px desktop viewport; sequential navigation to every URL | PASS FOR THIS VIEWPORT |
+| Route identity | final `location.href` matched the requested sitemap URL | 78/78 PASS |
+| Landmarks and headings | exactly one `main` and at least one visible H1 | 78/78 PASS |
+| Layout | document scroll width did not exceed the viewport by more than 1 CSS px | 78/78 PASS |
+| Images and error surface | no completed image with a zero natural width; no localized not-found text | 78/78 PASS |
+| Console | no warning/error entry after each route navigation and hydration wait | 78/78 PASS |
+| Evidence boundary | no claim for keyboard traversal on the remaining 75 sitemap URLs, zoom, screen readers, dialogs, form/error states, or visual pixel equivalence | HONESTLY PARTIAL |
+
+## Public entry-page native keyboard validation (2026-09-02)
+
+| Area | Evidence | Result |
+| --- | --- | --- |
+| Browser and viewport | real Chrome; 1536 × 770; native control-level `Tab` keypresses on `https://juro.uz/{ru,uz,en}` | CHECKED |
+| Traversal scope | RU 74, UZ 74, EN 71 detected focusable controls | 219 CONTROL POSITIONS CHECKED |
+| Order and wrap | every locale reached the document-body transition and wrapped to the first control; zero stuck positions | PASS FOR SEQUENCE |
+| Focus indicator | every real control matched `:focus-visible`; computed outline was `2.4px solid` gold; zero missing indicators | PASS FOR CHECKED CONTROLS |
+| Console | no warning/error entries after each locale traversal | PASS |
+| Harness limitation | focus advanced after the first viewport while automated `scrollY` remained `0`; 52 RU, 52 UZ, and 49 EN positions were therefore outside the unchanged viewport | NOT A PAGE FAILURE; VIEWPORT AUTO-SCROLL UNVERIFIED |
+| Evidence boundary | public entry pages only; does not prove post-fold automatic focus scrolling, feature workflows, dialogs, focus restoration, zoom, forced colors, text spacing, screen readers, or WCAG conformance | HONESTLY PARTIAL |
+
+## DNS retirement and authenticated Lawyer validation (2026-09-02)
+
+| Area | Evidence | Result |
+| --- | --- | --- |
+| Exact DNS target | Cloudflare record `4435f48bc863cc0ccaddd74a21791e5d`; A `ftp.juro.uz → 95.46.96.77`; DNS-only; TTL Auto/public 300 | PASS |
+| Cloudflare change | owner-confirmed deletion; exact row count became zero; no other record edited | PASS |
+| Recursive DNS | `1.1.1.1` and `8.8.8.8` returned NXDOMAIN | PASS |
+| Authoritative DNS | `tadeo.ns.cloudflare.com` and `tess.ns.cloudflare.com` returned NXDOMAIN | PASS |
+| Mail boundary | apex MX, `mail` CNAME, and `send` MX/TXT matched the pre-change snapshot | PASS FOR CONFIGURATION EQUALITY |
+| Production hosts | public, app, lawyer, admin, and status checks returned final HTTP `200` | PASS FOR REACHABILITY |
+| Lawyer desktop shell | real Lawyer session; 16 protected routes; no login fallback, 404, horizontal overflow, visible alert, or console error | PASS FOR READ-ONLY SHELL |
+| Lawyer mobile shell | 15 role routes at 390 × 844; no login fallback, 404, or horizontal overflow; settings loaders settled to visible H1 | PASS FOR RESPONSIVE READ-ONLY SHELL |
+| Approved Lawyer → Business isolation | after a forced reload confirmed the approved persona, `app.juro.uz/ru/business/dashboard` returned to `lawyer.juro.uz/ru/dashboard` | PASS FOR NEGATIVE ROLE BOUNDARY |
+| Approved Lawyer → Admin isolation | `admin.juro.uz/ru/dashboard` returned `app.juro.uz/ru/admin/console?reason=admin-session`; the generic screen required staff plus MFA/TOTP confirmed within 15 minutes and did not enumerate roles | PASS FOR NEGATIVE ROLE BOUNDARY |
+| Privacy boundary | no private client, matter, message, document, or session content read; no state-changing control used | PASS |
+| Change boundary | one confirmed DNS deletion; no runtime deploy, migration, database write, secret, payment, auth-policy, corpus/vector/embedding, or staging-capacity operation | PASS |
 
 ## v101 mobile interaction-target production validation (2026-09-02)
 
@@ -219,7 +286,7 @@ These are build-budget measurements, not field Core Web Vitals.
 
 ## Still unproven
 
-- state-changing authenticated journeys; full Business, Lawyer, Pending Lawyer, and Staff/Admin coverage;
+- state-changing authenticated journeys; full Business, Pending Lawyer, and Staff/Admin coverage; state-changing Lawyer/client collaboration;
 - full critical-scenario E2E with real authorized test sessions;
 - manual keyboard accessibility for all critical flows;
 - visual regression across every required viewport;
