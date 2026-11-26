@@ -197,7 +197,7 @@ export async function POST(request: Request, context: Context): Promise<Response
         db.prepare(`UPDATE document_current_content SET final_content=?, manually_edited=1, updated_at=?
           WHERE document_id=? AND changes()=1`).bind(text, now, id),
         db.prepare(`INSERT INTO document_revisions (id,document_id,revision,actor_user_id,source,changes_json,created_at)
-          SELECT ?,?,CAST(? AS BIGINT),?,'collaborator_edit','{}',? WHERE changes()=1`).bind(crypto.randomUUID(), id, body.revision + 1, user.id, now),
+          SELECT ?,?,CAST(? AS bigint),?,'collaborator_edit','{}',? WHERE changes()=1`).bind(crypto.randomUUID(), id, body.revision + 1, user.id, now),
       ]);
       if (!updated.meta.changes) return jsonResponse({ error: "Документ был изменён. Загрузите последнюю версию.", code: "REVISION_CONFLICT" }, { status: 409 });
       return jsonResponse({ applied: true });
