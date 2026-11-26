@@ -10,6 +10,21 @@ export function publicationEvidence(outcome: LegalOutcome) {
   return outcome.kind === "answer" ? outcome.evidence : [];
 }
 
+// shortcut: catches recurring research wording, use structured next checks if new variants recur.
+const researchStatus = [
+  /research (?:could not|did not|didn[’']t) (?:finish|complete)|\b(?:source|research) coverage\b|navigation data|(?:could not|unable to) (?:verify|confirm)[^.]*\b(?:available|retrieved|supplied) (?:sources|materials|evidence)\b/iu,
+  /исследование не удалось|из доступных (?:материалов|источников) (?:подтвердить|проверить) не удалось|не удалось подтвердить по (?:полному|найденному|доступному) тексту|навигационные данные|покрытие не (?:подтверждено|доказано)/iu,
+  /izlanishni yakunlab bo[l‘’'ʻ]|mavjud (?:manbalar|materiallar)[^.]*tasdiqlab bo[l‘’'ʻ]/iu,
+];
+const isResearchStatus = (text: string) => researchStatus.some(pattern => pattern.test(text));
+
+function publicSummary(text: string): string {
+  const clauses = text.split(/(?<=[.!?])\s+(?=\p{Lu})|;\s+/u);
+  const retained = clauses.filter(clause => !isResearchStatus(clause));
+  if (retained.length === clauses.length) return text;
+  return retained.map(clause => /[.!?]$/u.test(clause) ? clause : `${clause}.`).join(" ");
+}
+
 /** The retained type is a serialized compatibility contract, imported without runtime validators. */
 export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalRequest,
   presentation: AnswerPresentation): LegalChatResponse {
@@ -32,7 +47,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
       evidenceMode: "none", validationMethod: "programmatic", sourceValidationStatus: "unavailable" };
   }
   if (outcome.kind !== "answer") {
-    const summary = outcome.guidance ?? {
+    const summary = (outcome.guidance && publicSummary(outcome.guidance)) || {
       en: "Start by identifying the outcome you need and collecting the relevant documents and dates. Before filing or paying, check the current requirements for your situation with the responsible authority in Uzbekistan.",
       ru: "Начните с того, какого результата вы хотите добиться, и соберите документы и даты по ситуации. Перед подачей заявления или оплатой уточните действующие требования для вашего случая в компетентном органе Узбекистана.",
       uz: "Avval qanday natijaga erishmoqchi ekaningizni aniqlang va tegishli hujjatlar hamda sanalarni to‘plang. Ariza topshirish yoki to‘lov qilishdan oldin holatingizga tegishli amaldagi talablarni O‘zbekistondagi vakolatli idoradan aniqlang.",
@@ -50,6 +65,8 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     };
   }
   const content = outcome.content;
+  const summary = publicSummary(content.summary);
+  const coverageGaps = outcome.gaps?.map(gap => gap.description).filter(gap => !isResearchStatus(gap)) ?? [];
   const actionPlan: LegalChatResponse["actionPlan"] = [];
   const issues = content.issues.map((issue, findingIndex) => ({ findingIndex,
     actionIndices: issue.actions.map(action => {
@@ -58,7 +75,8 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     }),
   }));
   return {
-    responseKind: "answer", presentationKind: "legal_answer", summary: content.summary, summarySourceIds: content.summarySourceIds,
+    responseKind: "answer", presentationKind: "legal_answer",
+    summary: summary || content.issues[0].title, summarySourceIds: summary ? content.summarySourceIds : content.issues[0].sourceIds,
     answer: content.issues.map(issue => `${issue.title}\n${issue.explanation}`).join("\n\n"),
     confirmedFindings: content.issues.map(issue => ({ title: issue.title, explanation: issue.explanation,
       sourceIds: issue.sourceIds, requirementIds: issue.requirementIds })),
@@ -70,7 +88,7 @@ export function serializeLegalOutcome(outcome: LegalOutcome, request: LegalReque
     sources: structuredClone(presentation.sources), legalDatabaseAsOf: presentation.legalDatabaseAsOf,
     successOutlook: null, suggestedDocument: null, suggestLawyer: false,
     sourceAccessMode: "direct", evidenceMode: "official", validationMethod: "programmatic",
-    sourceValidationStatus: "validated", coverageGaps: outcome.gaps?.map(gap => gap.description) ?? [],
-    ...(outcome.gaps?.length ? { coverageStatus: "partial_coverage" as const } : {}),
+    sourceValidationStatus: "validated", coverageGaps,
+    ...(coverageGaps.length ? { coverageStatus: "partial_coverage" as const } : {}),
   };
 }

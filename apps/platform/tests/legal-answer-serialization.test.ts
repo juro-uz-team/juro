@@ -52,6 +52,20 @@ test("citation metadata cannot substitute a different source URL for authenticat
   ] }), /CITATION_PRESENTATION_MISMATCH/);
 });
 
+test("registration summary keeps useful guidance and leaves research status private", () => {
+  const result = serializeLegalOutcome({ ...outcome, content: { ...outcome.content,
+    summary: "Подготовьте решение об учреждении и устав; точные требования из доступных материалов подтвердить не удалось.",
+  }, gaps: [
+    { requirementId: "r", description: "Не удалось подтвердить по полному действующему тексту порядок подачи: найденные фрагменты — навигационные данные." },
+    { requirementId: "r", description: "Проверьте размер пошлины перед подачей." },
+  ] }, { ...request, language: "ru" }, { legalDatabaseAsOf: "2026-10-28",
+    sources: [{ sourceId: "rule", actTitle: "Artificial act", actIdentifier: null, article: "1", excerpt: null,
+      originalUrl: "https://lex.uz/docs/123#456", status: "current", effectiveDate: null, verifiedAt: "2026-10-28" }] });
+  assert.equal(result.summary, "Подготовьте решение об учреждении и устав.");
+  assert.deepEqual(result.summarySourceIds, ["rule"]);
+  assert.deepEqual(result.coverageGaps, ["Проверьте размер пошлины перед подачей."]);
+});
+
 test("conversational replies retain their plain presentation through serialization", () => {
   const result = serializeLegalOutcome({kind: "conversation", text: "Здравствуйте! Чем могу помочь?", checkedEvidence: [], clarificationQuestions: []},
     {...request, language: "ru"}, {sources: [], legalDatabaseAsOf: "2026-10-28"});
