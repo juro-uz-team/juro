@@ -275,6 +275,29 @@ export function enforceDocumentAnalysisSourceBoundary(
   return result;
 }
 
+export function groundDocumentAnalysisExcerpts(
+  result: DocumentAnalysisResult,
+  documentText: string,
+): DocumentAnalysisResult {
+  const risks = result.risks.flatMap(risk => {
+    const quote = risk.exactExcerpt;
+    if (quote === null || (quote.trim() && documentText.includes(quote))) return [risk];
+    if (!quote.trim()) return [];
+    const pattern = quote.trim().split(/\s+/u)
+      .map(word => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s+");
+    const original = new RegExp(pattern, "u").exec(documentText)?.[0];
+    return original && original.length <= 2_000 ? [{ ...risk, exactExcerpt: original }] : [];
+  });
+  if (risks.length === result.risks.length && risks.every((risk, index) => risk === result.risks[index])) return result;
+  return {
+    ...result,
+    risks,
+    extractionWarnings: risks.length === result.risks.length ? result.extractionWarnings
+      : [...new Set(["DOCUMENT_FINDINGS_WITHOUT_VERIFIED_QUOTES", ...result.extractionWarnings])].slice(0, 20),
+  };
+}
+
 export function enforceDocumentExcerptBoundary(
   result: DocumentAnalysisResult,
   documentText: string,

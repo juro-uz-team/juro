@@ -27,6 +27,7 @@ type AnalysisExportFormat = "json" | "pdf" | "docx";
 type AnalysisExportVariant = "analysis_report" | "corrected_clean" | "corrected_redline";
 type AnalysisExport = { id: string; status: string; format: AnalysisExportFormat; variant: AnalysisExportVariant; sourceVersionId: string | null; fileName: string; sizeBytes: number | null; errorCode: string | null; completedAt: string | null; createdAt: string };
 type Summary = {
+  mode?: string;
   summary?: string; parties?: string[]; dates?: string[]; obligations?: string[]; payments?: string[];
   disputedTerms?: string[]; missingItems?: string[]; questions?: string[]; disclaimer?: string;
   result?: Partial<DocumentAnalysisResult>;
@@ -34,7 +35,7 @@ type Summary = {
 };
 type Analysis = {
   id: string; status: string; progressStage?: string | null; errorCode?: string | null; retryExhausted?: boolean; createdAt?: string; updatedAt?: string;
-  fileId: string; fileName: string; mimeType: string; sizeBytes: number; caseId?: string | null; summary?: Summary | null; risks?: Risk[]; exports?: AnalysisExport[];
+  fileId: string; sourceAvailable?: boolean; fileName: string; mimeType: string; sizeBytes: number; caseId?: string | null; summary?: Summary | null; risks?: Risk[]; exports?: AnalysisExport[];
 };
 type AnalysisCaseOption = { id: string; title: string; status: string; updatedAt: string };
 type RevisionStatus = "pending" | "accepted" | "rejected" | "applied" | "stale" | "ambiguous";
@@ -75,11 +76,11 @@ export function DocumentReviewClient({ locale, publicUrlImportEnabled }: { local
   return <section className="review-workspace workspace-page">
     <WorkspaceTitle icon={<FileCheck2 />} title={tools.check} description={tools.checkHint}
       actions={<Link href={`${base}/documents`}><FolderOpen />{tools.library}</Link>} />
-    <SingleDocumentReview key={searchParams.toString()} locale={locale} source={searchParams.get("source")} initialCaseId={searchParams.get("caseId")} initialAnalysisId={searchParams.get("analysisId")} publicUrlImportEnabled={publicUrlImportEnabled} />
+    <SingleDocumentReview key={searchParams.toString()} locale={locale} source={searchParams.get("source")} initialMode={searchParams.get("mode") === "full" ? "full" : "quick"} initialCaseId={searchParams.get("caseId")} initialAnalysisId={searchParams.get("analysisId")} publicUrlImportEnabled={publicUrlImportEnabled} />
   </section>;
 }
 
-function SingleDocumentReview({ locale, source, initialCaseId, initialAnalysisId, publicUrlImportEnabled }: { locale: PlatformLocale; source: string | null; initialCaseId: string | null; initialAnalysisId: string | null; publicUrlImportEnabled: boolean }) {
+function SingleDocumentReview({ locale, source, initialMode, initialCaseId, initialAnalysisId, publicUrlImportEnabled }: { locale: PlatformLocale; source: string | null; initialMode: "quick" | "full"; initialCaseId: string | null; initialAnalysisId: string | null; publicUrlImportEnabled: boolean }) {
   const copy = documentReviewCopy[locale];
   const tools = documentTools[locale];
   const base = usePlatformBasePath();
@@ -93,7 +94,7 @@ function SingleDocumentReview({ locale, source, initialCaseId, initialAnalysisId
   const [selected, setSelected] = useState<Analysis | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [fromLibrary, setFromLibrary] = useState(false);
-  const [mode, setMode] = useState<"quick" | "full">("quick");
+  const [mode, setMode] = useState(initialMode);
   const selectLibraryFile = useCallback((file: File) => { setFile(file); setFromLibrary(true); }, []);
   const libraryFile = useDocumentToolFile(source, locale, selectLibraryFile);
   const [publicUrl, setPublicUrl] = useState("");
@@ -123,7 +124,8 @@ function SingleDocumentReview({ locale, source, initialCaseId, initialAnalysisId
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (!loading && initialAnalysisId && window.location.hash === "#review-report") reportRef.current?.scrollIntoView();
-  }, [initialAnalysisId, loading]);
+    if (source && window.location.hash === "#review-intake") document.getElementById("review-intake")?.scrollIntoView();
+  }, [initialAnalysisId, loading, source]);
   const exportPending = analyses.some(item => item.exports?.some(record => ["queued", "processing", "retrying"].includes(record.status)));
   const analysisPending = analyses.some((item) =>
     !hasRetryExhausted(item) && activeAnalysisStatuses.has(item.status)
@@ -195,7 +197,7 @@ function SingleDocumentReview({ locale, source, initialCaseId, initialAnalysisId
   return <>
     {(error || libraryFile.error) && <p className="review-message error" role="alert"><CircleAlert />{error || libraryFile.error}</p>}
     {notice && <p className="review-message success" role="status"><ShieldCheck />{notice}</p>}
-    <form className="review-intake" onSubmit={inputKind === "url" ? importUrl : upload}>
+    <form id="review-intake" className="review-intake" onSubmit={inputKind === "url" ? importUrl : upload}>
       <header><h2>{tools.intake}</h2>{publicUrlImportEnabled && <div className="review-source-switch">
         <button type="button" disabled={uploading} aria-pressed={inputKind === "file"} onClick={() => setInputKind("file")}><Upload />{tools.file}</button>
         <button type="button" disabled={uploading} aria-pressed={inputKind === "url"} onClick={() => setInputKind("url")}><Link2 />{tools.link}</button>
@@ -342,16 +344,24 @@ function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analys
       <small>{statusLabel(analysis.status, locale, retryExhausted)}</small>
       <h2>{analysis.fileName}</h2><span>{[summary?.result?.documentType, formatFileSize(analysis.sizeBytes, locale), analysis.updatedAt && new Date(analysis.updatedAt).toLocaleDateString(locale)].filter(Boolean).join(" · ")}</span>
     </div></div>
-    <details className="review-management"><summary>{tools.actions}<ChevronDown /></summary><div className="review-result-actions" aria-live="polite">{canOpen && <a href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{canOpen && formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div>
+    {canOpen && <details className="review-management"><summary><span><FileText aria-hidden="true" />{tools.actions}</span><ChevronDown aria-hidden="true" /></summary><div className="review-result-actions" aria-live="polite">{analysis.sourceAvailable && <a href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div>
     <div className="review-case-link"><label><span>{copy.case}</span><Select value={caseId} onChange={event => { setCaseId(event.target.value); setCaseMessage(""); }} disabled={caseBusy}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><button type="button" disabled={caseBusy || caseId === (analysis.caseId ?? "")} aria-busy={caseBusy} onClick={() => void saveCaseLink()}>{caseBusy ? <LoaderCircle className="spin" /> : <FileText />}{copy.saveCaseLink}</button><span role="status" aria-live="polite">{caseMessage}</span></div>
-    </details>
+    </details>}
     {exportError && <p className="review-message error" role="alert"><CircleAlert />{exportError}</p>}
     {analysisDeleteError && <p className="review-message error" role="alert"><CircleAlert />{analysisDeleteError}</p>}
     {exportNotice && <p className="review-message success" role="status"><ShieldCheck />{exportNotice}</p>}
     {analysis.status === "completed" ? <ReviewFindings analysis={analysis} locale={locale} onChanged={onChanged} /> :
       activeAnalysisStatuses.has(analysis.status) && !retryExhausted ?
         <DocumentToolProgress title={analysis.status === "quarantined" ? tools.stages[0] : state.heading} steps={tools.stages} current={currentStep} /> :
-        <div className="review-job" role="status"><div><AlertTriangle /><div><h3>{state.heading}</h3><p>{state.message}</p></div></div></div>}
+        <div className="review-job">
+          <div role="status"><AlertTriangle aria-hidden="true" /><div><h3>{state.heading}</h3><p>{state.message}</p></div></div>
+          {(analysis.status === "failed" || retryExhausted) && <div className="review-job-actions">
+            <ReviewAgain analysis={analysis} locale={locale} />
+            <button className="review-action" type="button" disabled={deletingAnalysis} onClick={() => void removeAnalysis()}>
+              {deletingAnalysis ? <LoaderCircle className="spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}{copy.deleteAnalysis}
+            </button>
+          </div>}
+        </div>}
   </article>;
 }
 
@@ -361,7 +371,6 @@ function formatFileSize(bytes: number, locale: PlatformLocale) {
 }
 
 function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; locale: PlatformLocale; onChanged: () => Promise<void> }) {
-  const base = usePlatformBasePath();
   const copy = documentReviewCopy[locale];
   const tools = documentTools[locale];
   const summary = analysis.summary;
@@ -390,12 +399,16 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
     {view === "overview" && <>
     <dl className="review-metrics">{metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     {summary?.summary && <section className="review-overview"><h3>{copy.summary}</h3><p>{summary.summary}</p>
-      {result?.overallQuality && <div className="review-quality"><strong>{tools.quality} · {result.overallQuality.score}/100</strong><meter aria-label={tools.quality} min={0} max={100} value={result.overallQuality.score} /><p>{result.overallQuality.explanation}</p></div>}
+      {result?.overallQuality && <div className="review-quality">
+        <div className="review-quality-heading"><strong>{tools.quality}</strong><span>{result.overallQuality.score}<small> / 100</small></span></div>
+        <meter aria-label={tools.quality} min={0} max={100} value={result.overallQuality.score} />
+        <p>{result.overallQuality.explanation}</p>
+      </div>}
     </section>}
     <ListBlock title={tools.advice} items={result?.recommendations} />
     <ListBlock title={tools.warnings} items={warnings} />
     <p className="review-disclaimer"><CheckCircle2 />{copy.disclaimer}</p>
-    {warnings.length > 0 && !analysis.mimeType.startsWith("text/markdown") && <Link href={`${base}/document-review?source=tool:${encodeURIComponent(analysis.fileId)}`}>{reviewText(locale, "Проверить снова", "Qayta tekshirish", "Check again")}</Link>}
+    {warnings.length > 0 && <ReviewAgain analysis={analysis} locale={locale} />}
     </>}
     {view === "risks" && <section>
       <label className="review-risk-filter"><span>{copy.risks}</span>
@@ -431,8 +444,22 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   </div>;
 }
 
+function ReviewAgain({ analysis, locale }: { analysis: Analysis; locale: PlatformLocale }) {
+  const base = usePlatformBasePath();
+  if (!analysis.sourceAvailable || analysis.mimeType.startsWith("text/markdown")) return null;
+  const params = new URLSearchParams({
+    source: `tool:${analysis.fileId}`,
+    mode: analysis.summary?.result?.mode ?? analysis.summary?.mode ?? "quick",
+    ...(analysis.caseId ? { caseId: analysis.caseId } : {}),
+  });
+  return <Link className="review-action review-action-primary" href={`${base}/document-review?${params}#review-intake`}>
+    <RefreshCw aria-hidden="true" />{reviewText(locale, "Проверить снова", "Qayta tekshirish", "Check again")}
+  </Link>;
+}
+
 function reviewWarnings(warnings: string[], locale: PlatformLocale) {
   const copy = {
+    DOCUMENT_FINDINGS_WITHOUT_VERIFIED_QUOTES: ["Некоторые замечания исключены, поскольку их цитаты не удалось сверить с документом.", "Ayrim topilmalar chiqarib tashlandi, chunki ularning iqtiboslari hujjat bilan tasdiqlanmadi.", "Some findings were omitted because their quotations could not be verified against the document."],
     DOCUMENT_QUICK_REPRESENTATIVE_SAMPLE: ["Быстрая проверка охватила выбранные фрагменты. Для проверки всего текста выберите полную проверку.", "Tezkor tekshiruv tanlangan qismlarni qamrab oldi. Butun matn uchun to‘liq tekshiruvni tanlang.", "Quick review covered selected passages. Choose full-text review to check the entire text."],
     DOCUMENT_LEGAL_RESEARCH_UNAVAILABLE: ["Поиск правовых норм не завершился. Вы можете повторить проверку.", "Huquqiy izlanish yakunlanmadi. Tekshiruvni takrorlashingiz mumkin.", "Legal research could not finish. You can run the check again."],
     LEGAL_DATABASE_STALE: ["Дата актуальности источников ограничивает правовые выводы.", "Manbalarning dolzarblik sanasi huquqiy xulosalarni cheklaydi.", "The sources’ currency limits the legal findings."],
@@ -705,6 +732,11 @@ function analysisState(status: string, errorCode: string | null, retryExhausted:
   }
   type StateCopy = { heading: string; message: string };
   const pdfFailures: Record<string, Record<PlatformLocale, StateCopy>> = {
+    DOCUMENT_ANALYSIS_INVALID_OUTPUT: {
+      ru: { heading: "Не удалось подтвердить результат проверки", message: "Запустите проверку заново с сохранённым файлом." },
+      uz: { heading: "Tekshiruv natijasini tasdiqlab bo‘lmadi", message: "Saqlangan fayl bilan tekshiruvni qayta boshlang." },
+      en: { heading: "The review result could not be verified", message: "Run the check again using the saved file." },
+    },
     OCR_PAGE_LIMIT_EXCEEDED: {
       ru: { heading: "Слишком много страниц", message: "Документ или пакет содержит более 500 известных страниц. Файл не передан AI; разделите его на части." },
       uz: { heading: "Sahifalar soni limitdan oshdi", message: "Hujjat yoki paketda 500 dan ortiq aniqlangan sahifa bor. Fayl AI ga yuborilmadi; uni qismlarga ajrating." },

@@ -71,7 +71,7 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 .review-library-link { min-height: 44px; color: var(--brand-gold-text); font-weight: 650; }
 .review-intake button svg, .review-library-link svg { width: 18px; height: 18px; }
 .review-settings .review-consent { grid-template-columns: auto 1fr; align-items: start; gap: 10px; line-height: 1.5; }
-.review-consent input { width: 18px; height: 18px; margin: 2px 0; accent-color: var(--brand-gold-text); }
+.review-consent input { margin: 2px 0; }
 .review-start { min-height: 46px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border-accent); background: var(--interactive-primary); color: var(--text-on-action); font: inherit; font-weight: 650; }
 .review-start:disabled { opacity: .55; }
 .review-link-source input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border-strong); background: var(--soft); color: var(--ink); border-radius: 8px; font: inherit; }
@@ -89,7 +89,8 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 .review-management { margin: 6px 0 20px; border-bottom: 1px solid var(--line); }
 .review-management summary { display: flex; min-height: 44px; align-items: center; justify-content: space-between; color: var(--text-secondary); cursor: pointer; }
 .review-management summary svg { width: 17px; }
-.review-management[open] summary svg { transform: rotate(180deg); }
+.review-management summary > span { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; }
+.review-management[open] summary > svg { transform: rotate(180deg); }
 .review-management .review-result-actions { justify-content: flex-start; }
 .review-management .review-export-action > button:only-child { width: auto; padding-inline: 12px; }
 .review-findings { display: grid; gap: 24px; }
@@ -101,8 +102,14 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 .review-metrics dd { margin: 0; color: var(--ink); font: 500 32px/1 Georgia, serif; font-variant-numeric: tabular-nums; }
 .review-overview { padding: clamp(16px, 2vw, 24px); border-inline-start: 3px solid var(--brand-gold-text); background: var(--soft); border-radius: 0 12px 12px 0; }
 .review-overview p { max-width: 85ch; margin-bottom: 0; }
-.review-quality { display: grid; gap: 5px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
-.review-quality meter { width: min(20rem, 100%); }
+.review-quality { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-raised); }
+.review-quality-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.review-quality-heading > span { color: var(--brand-gold-text); font: 700 24px/1.2 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.review-quality-heading small { color: var(--text-secondary); font-size: 13px; }
+.review-quality meter { display: block; appearance: none; width: 100%; height: 8px; border: 0; border-radius: 99px; background: var(--border-subtle); overflow: hidden; }
+.review-quality meter::-webkit-meter-bar { border: 0; border-radius: 99px; background: var(--border-subtle); }
+.review-quality meter::-webkit-meter-optimum-value { border-radius: 99px; background: var(--brand-gold-text); }
+.review-quality meter::-moz-meter-bar { border-radius: 99px; background: var(--brand-gold-text); }
 .review-quality p, .review-deadlines p { margin: 0; }
 .review-risks { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
 .review-risks article[data-level=critical] { border-left-color: var(--danger); }
@@ -119,7 +126,8 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 .review-deadlines small, .review-source-list small { display: block; color: var(--text-secondary); }
 .review-source-list a svg { width: 14px; margin-inline-start: 6px; }
 .review-job { display: grid; gap: 18px; padding: 20px; background: var(--soft); border-radius: 12px; }
-.review-job > div { display: flex; gap: 12px; align-items: flex-start; }
+.review-job > div { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.review-job > div:first-child { flex-wrap: nowrap; }
 .review-job > div > svg { flex: none; color: var(--brand-gold-text); }
 .review-job h3, .review-job p { margin: 0; }
 .review-job ol { display: grid; grid-template-columns: repeat(4, 1fr); list-style: none; gap: 6px; margin: 0; padding: 0; }
@@ -140,3 +148,36 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
 .review-views button[aria-pressed=true] { background: var(--surface-selected); color: var(--brand-gold-text); border-color: var(--border-accent); }
 .review-risk-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .review-result-pane { scroll-margin-top: calc(var(--platform-topbar-height, 76px) + 12px); }
+
+
+.review-intake { scroll-margin-top: calc(var(--platform-topbar-height, 76px) + 12px); }
+.review-action {
+  width: fit-content;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  text-decoration: none;
+  font: inherit;
+  font-weight: 650;
+}
+.review-action svg { width: 17px; height: 17px; }
+.review-action-primary { border-color: var(--border-accent); background: var(--interactive-primary); color: var(--text-on-action); }
+.review-start, .review-action, .review-views button, .review-management summary { transition: background-color 140ms ease, border-color 140ms ease; }
+.review-start:hover:not(:disabled), .review-action-primary:hover { background: var(--interactive-hover); }
+.review-action:not(.review-action-primary):hover:not(:disabled), .review-views button:hover, .review-management summary:hover { background: var(--surface-hover); }
+.review-start:active:not(:disabled), .review-action:active, .review-views button:active { border-color: var(--brand-gold-text); }
+.review-intake .review-consent {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  cursor: pointer;
+}
+.review-intake .review-consent:has(:checked) { border-color: var(--border-accent); }

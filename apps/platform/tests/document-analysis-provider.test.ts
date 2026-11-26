@@ -7,6 +7,7 @@ import {
   documentAnalysisJsonSchema,
   enforceDocumentAnalysisSourceBoundary,
   enforceDocumentExcerptBoundary,
+  groundDocumentAnalysisExcerpts,
   parseAnthropicDocumentAnalysisWireResult,
   parseDocumentAnalysisResult,
 } from "../lib/document-analysis/schema";
@@ -200,6 +201,17 @@ test("document analysis rejects excerpts not present in the uploaded document", 
     () => enforceDocumentExcerptBoundary(base, "Другой текст без цитаты."),
     /AI_DOCUMENT_EXCERPT_NOT_FOUND/,
   );
+});
+
+test("full reviews preserve verified findings when PDF layout or a model quote differs", () => {
+  const text = "Текст: срок определяется\nдополнительно.";
+  const result = groundDocumentAnalysisExcerpts({
+    ...base, mode: "full",
+    risks: [base.risks[0], { ...base.risks[0], exactExcerpt: "срок изменён самовольно" }],
+  }, text);
+  assert.deepEqual(result.risks.map(risk => risk.exactExcerpt), ["срок определяется\nдополнительно"]);
+  assert.ok(result.extractionWarnings.includes("DOCUMENT_FINDINGS_WITHOUT_VERIFIED_QUOTES"));
+  assert.equal(enforceDocumentExcerptBoundary(result, text), result);
 });
 
 test("document-analysis payload labels every user-controlled document field as untrusted data", () => {
@@ -752,16 +764,6 @@ test("Anthropic document failures carry bounded non-content output diagnostics",
       input: { payload_json: JSON.stringify(anthropicWireResult({ legalComplianceStatus: "verified" })) },
     }],
   }, "document_source_boundary");
-  await expectAnthropicDocumentFailure({
-    id: "msg_excerpt_boundary",
-    model: "claude-sonnet-4-6",
-    stop_reason: "tool_use",
-    content: [{
-      type: "tool_use",
-      name: "emit_result",
-      input: { payload_json: JSON.stringify(anthropicWireResult()) },
-    }],
-  }, "document_excerpt_boundary", "В синтетическом документе нет указанной цитаты.");
 });
 
 function anthropicWireResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {

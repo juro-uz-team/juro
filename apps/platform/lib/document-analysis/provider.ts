@@ -20,7 +20,7 @@ import {
   documentAnalysisAnthropicWireJsonSchema,
   documentAnalysisJsonSchema,
   enforceDocumentAnalysisSourceBoundary,
-  enforceDocumentExcerptBoundary,
+  groundDocumentAnalysisExcerpts,
   parseAnthropicDocumentAnalysisWireResult,
   parseDocumentAnalysisResult,
   type DocumentAnalysisResult,
@@ -351,17 +351,7 @@ function constrainResult(
       "document_source_boundary",
     );
   }
-  try {
-    data = enforceDocumentExcerptBoundary(data, input.extractedText);
-  } catch {
-    throw new AiUnavailableError(
-      "AI-проверка сослалась на отсутствующий в документе фрагмент.",
-      "INVALID_AI_OUTPUT",
-      false,
-      null,
-      "document_excerpt_boundary",
-    );
-  }
+  data = groundDocumentAnalysisExcerpts(data, input.extractedText);
   const sourceById = new Map(usableSources.map((source) => [source.id, source]));
   data = {
     ...data,

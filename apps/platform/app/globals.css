@@ -420,7 +420,41 @@ html[data-theme=dark] .ask-bar {
 /* Shared form states keep controls consistent across product pages. */
 .platform-shell :is(input,textarea,select,.juro-select) { font-family:inherit; }
 .platform-shell :is(input,textarea,select,.juro-select):focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
-.platform-shell input:is([type=checkbox],[type=radio]) { accent-color:var(--interactive-primary); width:20px; height:20px; flex-shrink:0; cursor:pointer; }
+/* Preserve native semantics and the OS control in forced-colors mode. */
+.platform-shell :is(button, label:has(> input:is([type=checkbox],[type=radio]):enabled)) { cursor: pointer; }
+.platform-shell :is(button:disabled, button[aria-disabled=true], input:is([type=checkbox],[type=radio]):disabled) { cursor: not-allowed; }
+@media (forced-colors: none) {
+  .platform-shell input:is([type=checkbox],[type=radio]) {
+    appearance: none;
+    box-sizing: border-box;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    border: 1px solid var(--control-border);
+    border-radius: 6px;
+    background: var(--control-background);
+    color: var(--surface-canvas);
+    vertical-align: middle;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .platform-shell input[type=radio] { border-radius: 50%; }
+  .platform-shell input:is([type=checkbox],[type=radio]):is(:checked,:indeterminate) { background: var(--brand-gold-text); border-color: var(--brand-gold-text); }
+  .platform-shell input:is([type=checkbox],[type=radio]):hover:enabled { border-color: var(--brand-gold-text); box-shadow: 0 0 0 3px var(--surface-selected); }
+  .platform-shell input:is([type=checkbox],[type=radio]):disabled { opacity: .55; cursor: not-allowed; }
+  .platform-shell input[type=checkbox]:checked::after {
+    content: "";
+    width: 5px;
+    height: 9px;
+    border: solid currentColor;
+    border-width: 0 2px 2px 0;
+    transform: translateY(-1px) rotate(45deg);
+  }
+  .platform-shell input[type=checkbox]:indeterminate::after { content: ""; width: 9px; height: 2px; background: currentColor; }
+  .platform-shell input[type=radio]:checked::after { content: ""; width: 7px; height: 7px; background: currentColor; border-radius: 50%; }
+}
 .platform-shell :is(input,textarea)::placeholder { color:var(--text-secondary); opacity:.8; }
 .platform-shell :is(input,textarea,select)[aria-invalid=true] { border-color:var(--status-danger); }
 @media(max-width:680px) { .platform-shell :is(input,textarea,select,.juro-select):not([type=checkbox]):not([type=radio]):not([type=hidden]) { font-size:16px; } }

@@ -22,7 +22,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
           AND job.workspace_id=a.workspace_id
           AND job.status='dead_lettered'
       ) THEN 1 ELSE 0 END AS retryExhausted,
-      f.id AS fileId,f.file_name AS fileName,f.mime_type AS mimeType,f.size_bytes AS sizeBytes,
+      f.id AS fileId,f.file_name AS fileName,f.kind AS fileKind,f.mime_type AS mimeType,f.size_bytes AS sizeBytes,
       (SELECT json_group_array(json_object('id',r.id,'level',r.level,'title',r.title,'description',r.description,'excerpt',r.excerpt,'confidencePercent',r.confidence_percent,'riskType',r.risk_type,'clause',r.clause,'page',r.page,'recommendation',r.recommendation,'proposedWording',r.proposed_wording,'legalBasisSourceIds',json(r.legal_basis_source_ids_json)))
        FROM document_risks r WHERE r.analysis_id=a.id) AS risksJson,
        (SELECT json_group_array(json_object('id',e.id,'status',e.status,'format',e.format,'variant',e.variant,'sourceVersionId',e.sourceVersionId,'fileName',e.fileName,'sizeBytes',e.sizeBytes,'errorCode',e.errorCode,'completedAt',e.completedAt,'createdAt',e.createdAt))
@@ -50,8 +50,8 @@ export const GET = withApiErrors(async function GET(request: Request) {
   return response({
     analyses: analysisRows.results.map(row => {
       const item = row as Record<string, unknown>;
-       const { summaryJson, risksJson, exportsJson, lawyerVerificationsJson, retryExhausted, ...publicItem } = item;
-       return { ...publicItem, retryExhausted: Number(retryExhausted) === 1, summary: parseJson(String(summaryJson || "{}"), null), risks: parseJson(String(risksJson || "[]"), []), exports: parseJson(String(exportsJson || "[]"), []), lawyerVerifications: parseJson(String(lawyerVerificationsJson || "[]"), []) };
+       const { summaryJson, risksJson, exportsJson, lawyerVerificationsJson, retryExhausted, fileKind, ...publicItem } = item;
+       return { ...publicItem, sourceAvailable: fileKind === "analysis_safe" || fileKind === "review_upload", retryExhausted: Number(retryExhausted) === 1, summary: parseJson(String(summaryJson || "{}"), null), risks: parseJson(String(risksJson || "[]"), []), exports: parseJson(String(exportsJson || "[]"), []), lawyerVerifications: parseJson(String(lawyerVerificationsJson || "[]"), []) };
     }),
     cases: caseRows.results,
   });
