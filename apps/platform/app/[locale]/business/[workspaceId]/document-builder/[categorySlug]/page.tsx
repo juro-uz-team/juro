@@ -11,5 +11,5 @@ export default async function BusinessCategoryPage({ params }: { params: Promise
   if (!isLocale(locale) || !isWorkspaceId(workspaceId)) notFound();
   const base = platformBasePath(locale, "business", workspaceId);
   await requireChatGPTUser(`${base}/document-builder/${encodeURIComponent(categorySlug)}`);
-  return <CategoryPage params={Promise.resolve({ categorySlug })} />;
+  return <CategoryPage workspaceId={workspaceId} params={Promise.resolve({ categorySlug })} />;
 }

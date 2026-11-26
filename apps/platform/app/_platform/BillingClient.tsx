@@ -11,7 +11,6 @@ import type { WorkspaceEntitlements } from "../../lib/billing/entitlements";
 import type { companyMemberUsage, workspaceUsage } from "../../lib/billing/usage";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
-import { WorkspaceTitle } from "./WorkspaceTitle";
 
 type BillingData = {
   workspace: { name: string; type: string; role: string };
@@ -19,11 +18,17 @@ type BillingData = {
   usage: Awaited<ReturnType<typeof workspaceUsage>>;
   members: Awaited<ReturnType<typeof companyMemberUsage>>;
   professional: { status: string } | null;
-  templateCounts: Record<string, Record<PlatformLocale, number>>;
+  subscription: { planCode: string; planNameRu: string | null; planNameUz: string | null; planNameEn: string | null } | null;
+  templateCounts: Record<string, { total: number; ru: number; uz: number }>;
   payments: { id: string; amountMinor: number; status: string; createdAt: string }[];
 };
 
 const icons = { free: Sparkles, starter: FileCheck2, advanced: Layers3, company: Building2, lawyer: BriefcaseBusiness };
+const legacyPlanNames = {
+  individual: { ru: "Индивидуальный", uz: "Individual tarif", en: "Individual" },
+  business: { ru: "Бизнес", uz: "Biznes", en: "Business" },
+  legal_team: { ru: "Юридическая команда", uz: "Yuridik jamoa", en: "Legal team" },
+} as const;
 
 export function BillingClient({ locale }: { locale: PlatformLocale; accountType: AccountType; workspaceId?: string }) {
   const workspaceId = usePlatformWorkspaceId();
@@ -40,7 +45,11 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   const active = terms?.readOnly ? undefined : subscriptionPlans.find(plan => plan.code === terms?.planCode);
   const displayedPlan = terms?.readOnly ? subscriptionPlans.find(plan => plan.code === "company") : active;
   const PlanIcon = displayedPlan ? icons[displayedPlan.code] : WalletCards;
-  const planName = displayedPlan?.name[locale] ?? text("Действующий тариф", "Amaldagi tarif", "Existing plan");
+  const legacyPlanName = terms && Object.hasOwn(legacyPlanNames, terms.planCode)
+    ? legacyPlanNames[terms.planCode as keyof typeof legacyPlanNames][locale] : undefined;
+  const savedPlan = data?.subscription?.planCode === terms?.planCode ? data?.subscription : null;
+  const savedPlanName = (locale === "ru" ? savedPlan?.planNameRu : locale === "uz" ? savedPlan?.planNameUz : savedPlan?.planNameEn)?.trim();
+  const planName = displayedPlan?.name[locale] ?? (savedPlanName || legacyPlanName);
   const answers = text("Ответы ИИ", "AI javoblari", "AI answers");
   const drafts = text("Подготовка документов", "Hujjat tayyorlash", "AI document drafts");
   const pages = text("Страницы анализа", "Tahlil sahifalari", "Analysis pages");
@@ -81,7 +90,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   ] as const;
 
   return <div className="workspace-page subscription-page">
-    <WorkspaceTitle icon={<WalletCards />} title={text("Тариф и оплата", "Tarif va to‘lov", "Plan and billing")} />
+    {!data && <h1 className="sr-only">{text("Тариф и оплата", "Tarif va to‘lov", "Plan and billing")}</h1>}
     {!load && <p role="status" className="billing-loading">{text("Загружаем данные пространства…", "Makon ma’lumotlari yuklanmoqda…", "Loading workspace usage…")}</p>}
     {load && !data && <div role="alert" className="billing-error">
       <CircleAlert aria-hidden="true" />
@@ -94,7 +103,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
           <span className="subscription-current-icon"><PlanIcon aria-hidden="true" /></span>
           <div>
             <p className="subscription-current-label">{terms.readOnly ? text("Истёкший тариф", "Muddati tugagan tarif", "Expired plan") : currentPlanLabel}</p>
-            <h2 id="active-plan">{planName}</h2>
+            <h1 id="active-plan">{planName}</h1>
             <p className="subscription-workspace">{data.workspace.name}</p>
           </div>
         </div>
@@ -137,6 +146,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
         {subscriptionPlans.map(plan => {
           const Icon = icons[plan.code];
           const selected = active?.code === plan.code;
+          const templates = data?.templateCounts[plan.code];
           const labels = [answers, drafts, pages, text("Страниц за запуск", "Bir tahlilda sahifalar", "Pages per run"), cases, storage, text("Размер файла", "Fayl hajmi", "Per file")];
           const quantities = [plan.limits.answers, plan.limits.drafts, plan.limits.pages, plan.limits.pagesPerRun,
             plan.limits.activeCases, byteLabel(plan.limits.storageBytes), byteLabel(plan.limits.fileBytes)];
@@ -154,9 +164,10 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
             <div className="subscription-card-body">
               <p className="subscription-card-benefit"><Check aria-hidden="true" />{plan.benefit[locale]}</p>
               <dl className="subscription-card-limits">{labels.map((label, index) => <div key={label}><dt>{label}</dt><dd>{quantities[index]}</dd></div>)}</dl>
-              {data && <dl className="subscription-card-templates"><div>
-                <dt><PanelsTopLeft aria-hidden="true" />{text("Шаблоны на русском", "O‘zbekcha andozalar", "English templates")}</dt>
-                <dd>{number.format(data.templateCounts[plan.code][locale])}</dd>
+              {templates && <dl className="subscription-card-templates"><div>
+                <dt><PanelsTopLeft aria-hidden="true" /><span>{text("Шаблоны", "Andozalar", "Templates")}
+                  <small>{text("Рус.", "Rus.", "RU")} {number.format(templates.ru)} · {text("Узб.", "O‘zb.", "UZ")} {number.format(templates.uz)}</small></span></dt>
+                <dd>{number.format(templates.total)}</dd>
               </div></dl>}
             </div>
           </article>;

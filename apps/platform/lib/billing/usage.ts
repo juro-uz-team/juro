@@ -4,7 +4,7 @@ import { workspaceEntitlements, type WorkspaceEntitlements } from "./entitlement
 export type UsageMetric = "drafts" | "pages";
 
 export class SubscriptionLimitError extends Error {
-  constructor(readonly code: "PLAN_LIMIT" | "PAGES_PER_RUN_LIMIT" | "WORKSPACE_TERM_EXPIRED" | "USAGE_CONFLICT") {
+  constructor(readonly code: "PLAN_LIMIT" | "PAGES_PER_RUN_LIMIT" | "WORKSPACE_TERM_EXPIRED" | "TEMPLATE_PLAN_UNAVAILABLE" | "USAGE_CONFLICT") {
     super(code);
   }
 }
@@ -16,6 +16,7 @@ export function subscriptionFailure(error: unknown) {
     SUBSCRIPTION_STORAGE_LIMIT: 409,
     SUBSCRIPTION_FILE_LIMIT: 413,
     WORKSPACE_TERM_EXPIRED: 403,
+    TEMPLATE_PLAN_UNAVAILABLE: 403,
     PAGES_PER_RUN_LIMIT: 422,
     PLAN_LIMIT: 429,
     USAGE_CONFLICT: 409,

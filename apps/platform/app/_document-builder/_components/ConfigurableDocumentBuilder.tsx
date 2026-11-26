@@ -16,6 +16,7 @@ import { calculateQuestionnaireProgress, conditionMatches, createQuestionnaireAn
 import type { GenericStoredDocument } from "../../../lib/document-builder/types";
 import { builderNavigationPaths } from "../../../lib/platform/builder-paths";
 import { DocumentLanguageControl } from "./DocumentLanguageControl";
+import { useOptionalPlatformWorkspaceId } from "../../_platform/PlatformRouteContext";
 import { DocumentPreview } from "./DocumentPreview";
 import { BuilderAnalysisLauncher } from "./BuilderAnalysisLauncher";
 import { BuilderVersionHistory } from "./BuilderVersionHistory";
@@ -80,9 +81,10 @@ function FieldControl({ field, language, uiLocale, value, error, onChange }: { f
   return <label className={`dbt-config-field ${error ? "invalid" : ""}`}><span>{label}{field.required && " *"}</span><input type={fieldInputType(field)} value={String(value ?? "")} inputMode={["pinfl", "tin", "money", "percent", "number"].includes(field.type) ? "numeric" : undefined} maxLength={field.validation?.maxLength} pattern={field.validation?.pattern} placeholder={field.placeholder ? localize(field.placeholder, language) : ""} onChange={(event) => onChange(field.type === "pinfl" ? event.target.value.replace(/[^0-9]/g, "").slice(0, 14) : event.target.value)}/>{help && <small>{help}</small>}{error && <em>{field.validation?.message ? localize(field.validation.message, language) : copy.required}</em>}</label>;
 }
 
-export function ConfigurableDocumentBuilder({ definition, initialUser, signInPath, initialDocumentId }: { definition: DocumentDefinition; initialUser: BuilderUser | null; signInPath: string; initialDocumentId?: string }) {
+export function ConfigurableDocumentBuilder({ definition, initialUser, signInPath, initialDocumentId, availableLanguages }: { definition: DocumentDefinition; initialUser: BuilderUser | null; signInPath: string; initialDocumentId?: string; availableLanguages?: readonly BuilderLanguage[] }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const selectedWorkspaceId = useOptionalPlatformWorkspaceId();
   const candidateWorkspaceId = pathname.split("/")[3];
   const workspaceId = candidateWorkspaceId?.startsWith("ws_") ? candidateWorkspaceId : undefined;
   const [company, setCompany] = useState<{ id: string; name: string }>();
@@ -109,7 +111,8 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const uiLocale = builderUiLocale(routeLocale);
   const copy = configurableCopy[uiLocale];
   const [phase, setPhase] = useState<Phase>(initialDocumentId ? "builder" : "intro");
-  const [language, setLanguage] = useState<BuilderLanguage>(() => defaultBuilderDocumentLanguage(paths.locale));
+  const onlyLanguage = availableLanguages?.length === 1 ? availableLanguages[0] : undefined;
+  const [language, setLanguage] = useState<BuilderLanguage>(() => onlyLanguage ?? defaultBuilderDocumentLanguage(paths.locale));
   const [answers, setAnswers] = useState<QuestionnaireAnswers>(() => createQuestionnaireAnswers(definition));
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState("");
@@ -142,13 +145,19 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
       apiFetch<{ document: GenericStoredDocument }>(`/api/document-builder/configured-documents/${initialDocumentId}`).then(({ document }) => hydrate(document)).catch((caught: Error) => setError(builderError(uiLocale, caught, copy.draftError))).finally(() => setHydrated(true));
       return;
     }
-    const preferred = routeLocale === "ru" || routeLocale === "uz" ? routeLocale : languageFromBrowser(); setLanguage(preferred); setTitle(defaultTitle(definition, preferred));
+    const preferred = onlyLanguage ?? (routeLocale === "ru" || routeLocale === "uz" ? routeLocale : languageFromBrowser()); setLanguage(preferred); setTitle(defaultTitle(definition, preferred));
     try {
       const raw = sessionStorage.getItem(draftKey(definition.code));
-      if (raw) { const guest = JSON.parse(raw) as GuestDraft; setPhase(guest.phase === "success" ? "builder" : guest.phase); setLanguage(guest.language); setStep(guest.step); setTitle(guest.title); setAnswers(guest.answers); setFinalText(guest.finalText); setManuallyEdited(Boolean(initialUser && guest.manuallyEdited)); }
+      if (raw) {
+        const guest = JSON.parse(raw) as GuestDraft;
+        setPhase(guest.phase === "success" ? "builder" : guest.phase); setStep(guest.step); setAnswers(guest.answers);
+        if (!onlyLanguage || guest.language === onlyLanguage) {
+          setLanguage(guest.language); setTitle(guest.title); setFinalText(guest.finalText); setManuallyEdited(Boolean(initialUser && guest.manuallyEdited));
+        }
+      }
     } catch { sessionStorage.removeItem(draftKey(definition.code)); }
     setHydrated(true);
-  }, [copy.draftError, definition, hydrate, initialDocumentId, initialUser, routeLocale, uiLocale]);
+  }, [copy.draftError, definition, hydrate, initialDocumentId, initialUser, onlyLanguage, routeLocale, uiLocale]);
 
   useEffect(() => { if (!finalText && rendered.plainText) setFinalText(rendered.plainText); }, [finalText, rendered.plainText]);
   useEffect(() => { if (!manuallyEdited) setFinalText(rendered.plainText); }, [rendered.plainText, manuallyEdited]);
@@ -163,9 +172,9 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     if (documentId) return documentId;
     if (!initialUser) throw new Error(copy.signInToSave);
     if (createPromise.current) return createPromise.current;
-    createPromise.current = apiFetch<{ document: GenericStoredDocument }>("/api/document-builder/configured-drafts", { method: "POST", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {}, body: JSON.stringify({ templateCode: definition.code, language, title: title || defaultTitle(definition, language), answers, finalContent: finalText, manuallyEdited, caseId, planStepId }) }).then(({ document }) => { hydrate(document); sessionStorage.removeItem(draftKey(definition.code)); router.replace(paths.document(document.id)); return document.id; }).finally(() => { createPromise.current = null; });
+    createPromise.current = apiFetch<{ document: GenericStoredDocument }>("/api/document-builder/configured-drafts", { method: "POST", headers: selectedWorkspaceId ? { "x-juro-workspace-id": selectedWorkspaceId } : {}, body: JSON.stringify({ templateCode: definition.code, language, title: title || defaultTitle(definition, language), answers, finalContent: finalText, manuallyEdited, caseId, planStepId }) }).then(({ document }) => { hydrate(document); sessionStorage.removeItem(draftKey(definition.code)); router.replace(paths.document(document.id)); return document.id; }).finally(() => { createPromise.current = null; });
     return createPromise.current;
-  }, [answers, caseId, copy.signInToSave, definition, documentId, finalText, hydrate, initialUser, language, manuallyEdited, paths, planStepId, router, title, workspaceId]);
+  }, [answers, caseId, copy.signInToSave, definition, documentId, finalText, hydrate, initialUser, language, manuallyEdited, paths, planStepId, router, title, selectedWorkspaceId]);
 
   const save = useCallback((targetDocumentId = documentId): Promise<void> => {
     if (!initialUser || !targetDocumentId || !hydrated) return Promise.resolve();
@@ -194,6 +203,7 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     setError(""); setStep((value) => Math.min(definition.questionnaire.length - 1, value + 1));
   };
   const changeLanguage = (next: BuilderLanguage) => { setLanguage(next); window.localStorage.setItem("juro-builder-language", next); if (!manuallyEdited) setFinalText(renderConfiguredDocument(definition, answers, next).plainText); };
+  const languageControl = !onlyLanguage && <DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/>;
   const generate = async () => {
     const validation = validateQuestionnaire(definition, answers); setErrors(validation);
     if (Object.keys(validation).length) { setError(copy.completeRequired); return; }
@@ -206,10 +216,10 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const download = async (file: GeneratedFile) => { try { await downloadAuthenticatedFile(file.url, file.name); window.location.assign(paths.documents); } catch (caught) { setError(builderError(uiLocale, caught, copy.downloadError)); } };
 
   if (!hydrated) return <div className="dbt-config-loading"><LoaderCircle size={28}/><p>{copy.loading}</p></div>;
-  if (phase === "intro") return <div className="dbt-config-intro workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} description={language === "uz" ? definition.descriptionUz : definition.descriptionRu} /><div className="dbt-template-toolbar"><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={17}/>{copy.backCategory}</Link><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/></div><section><span className="dbt-template-number">№ {definition.code} · v{definition.version}</span><div className="dbt-config-intro-meta"><span>{definition.estimatedMinutes} {copy.minutes}</span><span>DOCX · PDF</span></div><div className="dbt-legal-note"><Info size={19} aria-hidden="true"/><p>{definition.editorialStatus === "Published" ? copy.publishedNote : copy.betaNote}</p></div><button type="button" className="dbt-start-config" onClick={() => void start()}>{copy.create}<ArrowRight size={18}/></button></section><DocumentPreview document={rendered} locale={uiLocale}/></div>;
+  if (phase === "intro") return <div className="dbt-config-intro workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} description={language === "uz" ? definition.descriptionUz : definition.descriptionRu} /><div className="dbt-template-toolbar"><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={17}/>{copy.backCategory}</Link>{languageControl}</div><section><span className="dbt-template-number">№ {definition.code} · v{definition.version}</span><div className="dbt-config-intro-meta"><span>{definition.estimatedMinutes} {copy.minutes}</span><span>DOCX · PDF</span></div><div className="dbt-legal-note"><Info size={19} aria-hidden="true"/><p>{definition.editorialStatus === "Published" ? copy.publishedNote : copy.betaNote}</p></div><button type="button" className="dbt-start-config" onClick={() => void start()}>{copy.create}<ArrowRight size={18}/></button></section><DocumentPreview document={rendered} locale={uiLocale}/></div>;
   if (phase === "success" && files) return <div className="dbt-config-success"><FileCheck2 size={48}/><h1>{copy.ready}</h1><p>{copy.readyDescription}</p><div><button type="button" onClick={() => void download(files.docx)}><Download size={18}/>DOCX</button><button type="button" onClick={() => void download(files.pdf)}><Download size={18}/>PDF</button><button type="button" onClick={() => void download(files.zip)}><Download size={18}/>ZIP</button></div><Link href={paths.documents}>{copy.myDocuments}</Link></div>;
 
-  return <div className="dbt-config-builder workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} /><header className="dbt-config-builder-head"><div><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={16}/>{copy.category}</Link><span>№ {definition.code}</span><span className={`dbt-save-indicator ${saveState}`}>{saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "saved" ? <><Save size={14}/>{copy.saved}</> : !initialUser ? copy.temporary : ""}</span></div><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/><div className="dbt-config-progress"><span style={{ "--progress": progress / 100 } as React.CSSProperties}/><b>{progress}%</b></div></header>
+  return <div className="dbt-config-builder workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} /><header className="dbt-config-builder-head"><div><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={16}/>{copy.category}</Link><span>№ {definition.code}</span><span className={`dbt-save-indicator ${saveState}`}>{saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "saved" ? <><Save size={14}/>{copy.saved}</> : !initialUser ? copy.temporary : ""}</span></div>{languageControl}<div className="dbt-config-progress"><span style={{ "--progress": progress / 100 } as React.CSSProperties}/><b>{progress}%</b></div></header>
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span><button type="button" aria-label={copy.closeMessage} title={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
     <nav className="dbt-config-steps" aria-label={copy.sections}>{definition.questionnaire.map((item, index) => <button type="button" className={index === step ? "active" : index < step ? "done" : ""} onClick={() => setStep(index)} key={item.id}><span>{index < step ? <Check size={14}/> : index + 1}</span>{localize(item.title, language)}</button>)}</nav>
     <div className="dbt-config-layout"><section className="dbt-config-form"><div className="dbt-config-step-title"><span>{copy.step(step + 1, definition.questionnaire.length)}</span><h2>{localize(currentStep.title, language)}</h2>{currentStep.description && <p>{localize(currentStep.description, language)}</p>}</div><div className="dbt-config-fields">{currentStep.fields.filter((field) => conditionMatches(field.condition, answers)).map((field) => <div key={field.id} className={field.type === "company-name" ? "dbt-company-field" : "dbt-config-field-slot"}>

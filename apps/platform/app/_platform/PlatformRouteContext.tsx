@@ -30,7 +30,11 @@ export function usePlatformBasePath(): string {
 }
 
 export function usePlatformWorkspaceId(): string {
-  const value = useContext(PlatformWorkspaceIdContext);
+  const value = useOptionalPlatformWorkspaceId();
   if (!value) throw new Error("PLATFORM_WORKSPACE_CONTEXT_REQUIRED");
   return value;
+}
+
+export function useOptionalPlatformWorkspaceId(): string | null {
+  return useContext(PlatformWorkspaceIdContext);
 }

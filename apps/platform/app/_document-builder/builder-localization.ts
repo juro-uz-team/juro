@@ -30,6 +30,13 @@ export function builderError(
   error: unknown,
   fallback: string,
 ): string {
+  if (error instanceof Error && "code" in error && error.code === "TEMPLATE_PLAN_UNAVAILABLE") {
+    return builderText(locale, {
+      ru: "Этот шаблон недоступен на вашем тарифе.",
+      uz: "Bu andoza joriy tarifingizda mavjud emas.",
+      en: "This template is unavailable on your plan.",
+    });
+  }
   const message = error instanceof Error ? error.message : String(error ?? "");
   return platformApiError(builderUiLocale(locale), message, fallback);
 }

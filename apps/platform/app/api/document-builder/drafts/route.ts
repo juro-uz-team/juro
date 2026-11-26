@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
       autoContent: typeof body.autoContent === "string" ? body.autoContent : undefined,
       finalContent: typeof body.finalContent === "string" ? body.finalContent : undefined,
       manuallyEdited: Boolean(body.manuallyEdited),
-    });
+    }, request.headers.get("x-juro-workspace-id"));
     return jsonResponse({ document }, { status: 201 });
   } catch (error) {
     return apiError(error);

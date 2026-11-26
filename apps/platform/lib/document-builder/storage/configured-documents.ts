@@ -1,4 +1,4 @@
-import {assertTemplatePlan} from "../../control-center/template-access";
+import { assertTemplatePlan } from "../template-access";
 import { resolvedDocument } from "../registry/published";
 import type { DocumentDefinition, QuestionnaireAnswers } from "../registry";
 import { getCategory, getDocumentByCode } from "../registry";
@@ -7,7 +7,7 @@ import type { GenericStoredDocument, UserProfile } from "../types";
 import { getDocumentAccess } from "../permissions";
 import { ensureConfiguredTemplateSeed, isoNow, parseJson } from "./db";
 import { requireD1 } from "./runtime";
-import { workspaceForUser } from "../../platform/workspace";
+import { workspaceForContentEditor } from "../../platform/workspace";
 
 export interface CreateConfiguredDocumentInput {
   definition: DocumentDefinition;
@@ -77,8 +77,8 @@ export async function createConfiguredDocument(
   dependencies: CreateConfiguredDocumentDependencies = {},
 ): Promise<GenericStoredDocument> {
   const db = dependencies.db ?? requireD1();
-  const workspace = dependencies.workspace ?? await workspaceForUser(user);
-  await assertTemplatePlan(input.definition, workspace.id, db);
+  const workspace = dependencies.workspace ?? await workspaceForContentEditor(user);
+  await assertTemplatePlan(input.definition.code, input.language, workspace.id, db);
   await ensureConfiguredTemplateSeed(input.definition, db);
   const id = crypto.randomUUID();
   const now = isoNow();

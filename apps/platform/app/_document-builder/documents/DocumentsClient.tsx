@@ -12,6 +12,7 @@ import { Select } from "../../_components/Select";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useOptionalPlatformWorkspaceId } from "../../_platform/PlatformRouteContext";
 import { ArrowUpRight, FileDiff, X, Archive, ArchiveRestore, Copy, Download, Eye, FileCheck2, FilePlus2, Files, FolderArchive, Heart, Link2, LoaderCircle, MoreHorizontal, Pencil, Search, Star, Trash2, UploadCloud } from "lucide-react";
 import type { ChatGPTUser } from "../../chatgpt-auth";
 import type { DocumentRecord, FileRecord } from "../../../lib/document-builder/types";
@@ -42,6 +43,7 @@ export function DocumentsClient({
   embedded?: boolean;
 }) {
   const paths = builderNavigationPaths(usePathname());
+  const workspaceId = useOptionalPlatformWorkspaceId();
   const locale = builderUiLocale(paths.locale);
   const copy = workspaceCopy(locale).documents;
   const tools = documentTools[locale];
@@ -111,7 +113,7 @@ export function DocumentsClient({
     try {
       const params = new URLSearchParams({ folder, search: debouncedSearch, status, sort, page: String(requestedPage) });
       if (from) params.set("from", from);
-      const result = await apiFetch<{ documents: ListedDocument[]; cases: CaseOption[]; standaloneFiles: LibraryFile[]; total: number; entries: LibraryEntry[]; page: number; history: ToolHistory }>(`/api/document-builder/documents?${params}`);
+      const result = await apiFetch<{ documents: ListedDocument[]; cases: CaseOption[]; standaloneFiles: LibraryFile[]; total: number; entries: LibraryEntry[]; page: number; history: ToolHistory }>(`/api/document-builder/documents?${params}`, { headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {} });
       if (request !== latestLoad.current) return;
       setDocuments(result.documents); setCases(result.cases); setStandalone(result.standaloneFiles); setTotal(result.total);
       setEntries(result.entries); setHistory(result.history); setPage(result.page);
@@ -119,7 +121,7 @@ export function DocumentsClient({
     finally { if (request === latestLoad.current) setLoading(false); }
   // Locale changes remount this canonical route; only query controls must refresh the list in place.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, folder, from, sort, status, requestedPage]);
+  }, [debouncedSearch, folder, from, sort, status, requestedPage, workspaceId]);
   useEffect(() => { void load(); }, [load]);
   useDebouncedEffect(() => { setDebouncedSearch(search); }, [search], 350);
 
@@ -127,8 +129,13 @@ export function DocumentsClient({
     await apiFetch(`/api/document-builder/documents/${id}`, { method: "PATCH", body: JSON.stringify(body) }); setMenu(""); await load();
   };
   const duplicate = async (id: string) => {
-    const result = await apiFetch<{ document: DocumentRecord }>("/api/document-builder/documents", { method: "POST", body: JSON.stringify({ sourceDocumentId: id }) });
-    window.location.assign(paths.document(result.document.id));
+    try {
+      const result = await apiFetch<{ document: DocumentRecord }>("/api/document-builder/documents", { method: "POST", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {}, body: JSON.stringify({ sourceDocumentId: id }) });
+      window.location.assign(paths.document(result.document.id));
+    } catch (caught) {
+      setMenu("");
+      setError(builderError(locale, caught, loadError));
+    }
   };
   const removeDocument = async (document: DocumentRecord, policy?: "keep" | "delete") => {
     try {

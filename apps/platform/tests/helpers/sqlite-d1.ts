@@ -80,6 +80,7 @@ function statements(sql: string): string[] {
 
 export function projectControlCenter(sqlite: DatabaseSync): void {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS control_account_blocks(user_id TEXT PRIMARY KEY,reason TEXT,actor_email TEXT);
+    CREATE TABLE IF NOT EXISTS control_template_versions(code TEXT, version TEXT, definition TEXT, published_at TEXT);
     CREATE TABLE IF NOT EXISTS control_settings(key TEXT PRIMARY KEY,value TEXT);
     CREATE TABLE IF NOT EXISTS control_ai_versions(id TEXT PRIMARY KEY,version INTEGER,settings TEXT,system_instructions TEXT,created_at TEXT,applied_at TEXT);
     CREATE TABLE IF NOT EXISTS control_professional_documents(id TEXT PRIMARY KEY,profile_id TEXT,object_key TEXT);`);

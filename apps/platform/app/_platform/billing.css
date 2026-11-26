@@ -139,7 +139,7 @@
 html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payment-status.cancelled){color:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.demo-payment-status.succeeded,.demo-payment-status.paid_out){color:color-mix(in srgb,var(--success) 48%,white)}
 
 .subscription-page { display: grid; gap: clamp(20px, 3vw, 36px); container-type: inline-size; }
-.subscription-page :is(h2, h3, p, dl, dd) { margin: 0; }
+.subscription-page :is(h1, h2, h3, p, dl, dd) { margin: 0; }
 .subscription-page [data-tone] {
   --tone-ink: light-dark(var(--tone-deep), var(--tone-light));
   --tone-tint: color-mix(in srgb, var(--tone-color) 9%, var(--surface-raised));
@@ -194,7 +194,7 @@ html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payme
 }
 .subscription-current-icon svg { inline-size: 48%; block-size: auto; }
 .subscription-current-label { color: #ffdb98; font-size: .76rem; font-weight: 750; letter-spacing: .035em; }
-.subscription-current h2 {
+.subscription-current h1 {
   color: inherit;
   font: 500 clamp(1.6rem, 4cqi, 2.65rem) / 1.08 Georgia, serif;
   letter-spacing: -.035em;
@@ -347,6 +347,7 @@ html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payme
 .subscription-card dl dd, .subscription-extra-grid dd { color: var(--text-primary); font-size: .8rem; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .subscription-card .subscription-card-templates { margin-block-start: 5px; padding: 8px; border-radius: 8px; background: var(--tone-tint); }
 .subscription-card-templates dt { display: flex; align-items: center; gap: 5px; }
+.subscription-card-templates small { display: block; margin-block-start: 2px; font: inherit; }
 .subscription-card-templates svg { flex: none; inline-size: 13px; block-size: 13px; color: var(--tone-ink); }
 
 .subscription-page .subscription-extras { padding: clamp(12px, 2.1cqi, 24px); background: linear-gradient(145deg, var(--surface-brand), var(--surface-raised) 80%); }

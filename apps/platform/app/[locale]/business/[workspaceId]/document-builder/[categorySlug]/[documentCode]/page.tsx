@@ -11,5 +11,5 @@ export default async function BusinessConfiguredDocument({ params }: { params: P
   if (!isLocale(locale) || !isWorkspaceId(workspaceId)) notFound();
   const base = platformBasePath(locale, "business", workspaceId);
   await requireChatGPTUser(`${base}/document-builder/${encodeURIComponent(categorySlug)}/${encodeURIComponent(documentCode)}`);
-  return <ConfiguredDocumentPage params={Promise.resolve({ categorySlug, documentCode })} />;
+  return <ConfiguredDocumentPage workspaceId={workspaceId} params={Promise.resolve({ categorySlug, documentCode })} />;
 }

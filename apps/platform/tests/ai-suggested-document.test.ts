@@ -56,7 +56,7 @@ function structuredAnswer(templateCode: string | null = PUBLISHED_TEMPLATE.code)
 
 function seed(
   templateCode?: string | null,
-  options: { role?: string; caseId?: string | null } = {},
+  options: { role?: string; caseId?: string | null; paid?: boolean } = {},
 ) {
   const fixture = sqliteD1Fixture();
   fixture.sqlite.prepare("INSERT INTO workspaces (id,type,name,full_name,short_name,locale,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
@@ -65,6 +65,10 @@ function seed(
     .run(USER_ID, "ai-document@example.invalid", "AI Document User", "ru", "individual", WORKSPACE_ID, NOW, NOW);
   fixture.sqlite.prepare("INSERT INTO workspace_members (id,workspace_id,user_id,role,status,joined_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
     .run("member_ai_document", WORKSPACE_ID, USER_ID, options.role ?? "owner", "active", NOW, NOW, NOW);
+  if (options.paid) {
+    fixture.sqlite.prepare("INSERT INTO subscriptions (id,workspace_id,provider,plan_code,status,created_at,updated_at) VALUES ('fixture-plan',?,'internal','starter','active',?,?)")
+      .run(WORKSPACE_ID, NOW, NOW);
+  }
   if (options.caseId) {
     fixture.sqlite.prepare(`INSERT INTO cases
       (id,workspace_id,owner_user_id,account_type,locale,title,legal_area,status,current_revision,created_at,updated_at)
@@ -245,7 +249,7 @@ test("read-only members keep private AI drafts but cannot create case-linked dra
 test("answer prefill preserves whole qualified findings and citations only after explicit sensitive confirmation",async()=>{
   const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
   assert.ok(template);
-  const {sqlite,d1}=seed(template.code);
+  const {sqlite,d1}=seed(template.code, { paid: true });
   try {
     const answer={...structuredAnswer(template.code),confirmedFindings:[
       {title:'Qualified rule',explanation:'The rule applies only under condition A.',sourceIds:['law']},
@@ -270,7 +274,7 @@ test("answer prefill preserves whole qualified findings and citations only after
 test("answer prefill never drops unsupported or historical qualifications to offer a partial legal basis",async()=>{
   const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
   assert.ok(template);
-  const {sqlite,d1}=seed(template.code);
+  const {sqlite,d1}=seed(template.code, { paid: true });
   try {
     for(const variant of ['private','historical','missing','overflow']) {
       const answer={...structuredAnswer(template.code),confirmedFindings:Array.from({length:variant==='overflow'?16:2},(_,i)=>({
@@ -343,7 +347,7 @@ test("document handoff HTTP boundary uses the selected workspace and saved templ
 test("Cyrillic answer prefill respects the complete HTTP byte budget without truncating qualifications",async context=>{
   const template=DOCUMENT_REGISTRY.find(item=>item.status==='published'&&item.questionnaire.some(step=>step.fields.some(field=>field.id==='claim.legalGrounds')));
   assert.ok(template);
-  const {sqlite,d1}=seed(template.code);context.after(()=>sqlite.close());
+  const {sqlite,d1}=seed(template.code, { paid: true });context.after(()=>sqlite.close());
   const bindings={DB:d1,APP_ENV:'development',ALLOW_PLATFORM_AUTH_HEADERS:'true',IDENTITY_PROTECTION_MODE:'legacy'};
   const previous=Object.fromEntries(Object.keys(bindings).map(key=>[key,Reflect.get(env,key)]));
   Object.assign(env,bindings);context.after(()=>Object.assign(env,previous));

@@ -1,8 +1,9 @@
 import { renderReceipt, suggestedDocumentTitle } from "../templates/receipt";
+import { assertTemplatePlan } from "../template-access";
 import type { ReceiptAnswers, StoredDocument, UserProfile } from "../types";
 import { ensureTemplateSeed, isoNow } from "./db";
 import { requireD1 } from "./runtime";
-import { workspaceForUser } from "../../platform/workspace";
+import { workspaceForContentEditor } from "../../platform/workspace";
 
 export interface CreateDocumentInput {
   answers: ReceiptAnswers;
@@ -13,9 +14,10 @@ export interface CreateDocumentInput {
   status?: "Черновик" | "Готов";
 }
 
-export async function createStoredDocument(user: UserProfile, input: CreateDocumentInput): Promise<StoredDocument> {
+export async function createStoredDocument(user: UserProfile, input: CreateDocumentInput, workspaceId?: string | null): Promise<StoredDocument> {
   const db = requireD1();
-  const workspace = await workspaceForUser(user);
+  const workspace = await workspaceForContentEditor(user, workspaceId);
+  await assertTemplatePlan("0602001", input.answers.language === "uz-cyrl" ? "uz" : input.answers.language, workspace.id, db);
   await ensureTemplateSeed();
   const id = crypto.randomUUID();
   const now = isoNow();

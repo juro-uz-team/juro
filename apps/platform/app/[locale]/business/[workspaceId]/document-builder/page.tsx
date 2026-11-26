@@ -24,5 +24,5 @@ export default async function BusinessDocumentBuilder({ params }: { params: Prom
   const { locale, workspaceId } = await params;
   if (!isLocale(locale) || !isWorkspaceId(workspaceId)) notFound();
   await requireChatGPTUser(platformPath(locale, "business", "document-builder", workspaceId));
-  return <DocumentBuilderPage embedded signInPath={platformPath(locale, "business", "document-builder", workspaceId)} />;
+  return <DocumentBuilderPage embedded workspaceId={workspaceId} signInPath={platformPath(locale, "business", "document-builder", workspaceId)} />;
 }

@@ -24,10 +24,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type {
-  DocumentCategory,
-  DocumentLibraryItem,
-} from "../../../lib/document-builder/registry";
+import type { DocumentCategory } from "../../../lib/document-builder/registry";
+import type { WorkspaceLibraryItem } from "../../../lib/document-builder/template-access";
 import {
   localize,
   type BuilderLanguage,
@@ -51,8 +49,7 @@ const libraryCopy = {
     languageNote: "Интерфейс остаётся на русском. Названия шаблонов и анкета показаны на выбранном языке документа.",
     library: "Библиотека документов",
     description: "Создавайте документы пошагово на основе законодательства Узбекистана.",
-    registryTemplates: "шаблонов в реестре",
-    available: "доступны для заполнения",
+    available: "доступно шаблонов",
     workspace: "Работа с документами",
     receipt: "Конструктор расписки",
     receiptDetail: "Специализированная пошаговая форма",
@@ -88,8 +85,7 @@ const libraryCopy = {
     languageNote: "Interfeys o‘zbek tilida qoladi. Shablon nomlari va anketa tanlangan hujjat tilida ko‘rsatiladi.",
     library: "Hujjatlar kutubxonasi",
     description: "O‘zbekiston qonunchiligi asosida bosqichma-bosqich hujjat yarating.",
-    registryTemplates: "reyestrdagi shablon",
-    available: "foydalanish uchun ochiq",
+    available: "mavjud andoza",
     workspace: "Hujjatlar bilan ishlash",
     receipt: "Tilxat konstruktori",
     receiptDetail: "Maxsus bosqichma-bosqich shakl",
@@ -125,8 +121,7 @@ const libraryCopy = {
     languageNote: "The interface remains in English. Template titles, questionnaire fields and generated content use the selected document language.",
     library: "Document library",
     description: "Create documents step by step using templates prepared for Uzbekistan.",
-    registryTemplates: "templates in the registry",
-    available: "available to complete",
+    available: "templates available",
     workspace: "Document workspace",
     receipt: "Loan receipt builder",
     receiptDetail: "A dedicated step-by-step form",
@@ -166,7 +161,7 @@ function TemplateCard({
   uiLocale,
   paths,
 }: {
-  document: DocumentLibraryItem;
+  document: WorkspaceLibraryItem;
   language: BuilderLanguage;
   uiLocale: PlatformLocale;
   paths: BuilderNavigationPaths;
@@ -193,7 +188,7 @@ export function DocumentLibraryClient({
   signedIn = false,
 }: {
   categories: readonly DocumentCategory[];
-  documents: readonly DocumentLibraryItem[];
+  documents: readonly WorkspaceLibraryItem[];
   activeCategory?: DocumentCategory;
   signedIn?: boolean;
 }) {
@@ -222,33 +217,34 @@ export function DocumentLibraryClient({
     setLanguage(next);
     window.localStorage.setItem(LANGUAGE_KEY, next);
   };
-  const filtered = useMemo(() => documents.filter((document) => {
+  const localizedDocuments = useMemo(() => documents.filter(document => document.languages.includes(language)), [documents, language]);
+  const filtered = useMemo(() => localizedDocuments.filter((document) => {
     const value = `${document.titleRu} ${document.titleUz} ${document.descriptionRu} ${document.descriptionUz} ${document.code}`.toLocaleLowerCase();
     const statusMatches = status === "all" || (status === "verified" ? document.editorialStatus === "Published" : document.editorialStatus !== "Published");
     return value.includes(search.trim().toLocaleLowerCase()) && statusMatches;
-  }), [documents, search, status]);
-  const pagination = useWorkspacePagination(filtered.length, TEMPLATE_PAGE_SIZE, JSON.stringify([activeCategory?.slug, search, status]));
+  }), [localizedDocuments, search, status]);
+  const pagination = useWorkspacePagination(filtered.length, TEMPLATE_PAGE_SIZE, JSON.stringify([activeCategory?.slug, language, search, status]));
   const visible = filtered.slice(pagination.from, pagination.to);
-  const publishedCount = documents.filter((document) => document.status === "published").length;
-  const cards = (items: readonly DocumentLibraryItem[]) => items.map((document) => (
+  const cards = (items: readonly WorkspaceLibraryItem[]) => items.map((document) => (
     <TemplateCard document={document} language={language} uiLocale={uiLocale} paths={paths} key={document.code}/>
   ));
 
   return <div className="dbt-library-page workspace-page">
-    <WorkspaceTitle icon={<Library />} title={activeCategory ? localize(activeCategory.title, language) : copy.library} description={<><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p>{uiLocale === "en" && <small className="dbt-translation-note">{copy.languageNote}</small>}</>} actions={ <><div className="dbt-library-summary"><strong>{documents.length}</strong><span>{copy.registryTemplates}</span>{publishedCount !== documents.length && <small>{publishedCount} {copy.available}</small>}</div><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/></> } />
+    <WorkspaceTitle icon={<Library />} title={activeCategory ? localize(activeCategory.title, language) : copy.library} description={<><p>{activeCategory ? localize(activeCategory.description, language) : copy.description}</p>{uiLocale === "en" && <small className="dbt-translation-note">{copy.languageNote}</small>}</>} actions={ <><div className="dbt-library-summary"><strong>{localizedDocuments.length}</strong><span>{copy.available}</span></div><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/></> } />
     {!activeCategory && <section className="dbt-workspace-links" aria-label={copy.workspace}>
-      <Link href={paths.template("debt", "0602001")}><FilePenLine size={21}/><span><strong>{copy.receipt}</strong><small>{copy.receiptDetail}</small></span><ArrowRight size={18}/></Link>
+      {localizedDocuments.some(document => document.code === "0602001") && <Link href={paths.template("debt", "0602001")}><FilePenLine size={21}/><span><strong>{copy.receipt}</strong><small>{copy.receiptDetail}</small></span><ArrowRight size={18}/></Link>}
       <Link href={paths.documents}><FileCheck2 size={21}/><span><strong>{copy.myDocuments}</strong><small>{signedIn ? copy.signedInDocuments : copy.signInRequired}</small></span><ArrowRight size={18}/></Link>
       <Link href={paths.notifications}><Bell size={21}/><span><strong>{copy.invitations}</strong><small>{copy.invitationsDetail}</small></span><ArrowRight size={18}/></Link>
       <Link href={paths.contacts}><UsersRound size={21}/><span><strong>{copy.contacts}</strong><small>{copy.contactsDetail}</small></span><ArrowRight size={18}/></Link>
     </section>}
     {!activeCategory && <details className="dbt-library-disclosure"><summary className="juro-disclosure-summary">{copy.categories}</summary><nav className="dbt-category-grid" aria-label={copy.categories}>{categories.map((category) => {
-      const count = documents.filter((document) => document.categorySlug === category.slug).length;
+      const count = localizedDocuments.filter((document) => document.categorySlug === category.slug).length;
+      if (count === 0) return null;
       return <Link href={paths.category(category.slug)} key={category.slug}><span>{category.code}</span><div><h2>{localize(category.title, language)}</h2><p>{localize(category.description, language)}</p><small>{count} {copy.templateCount}</small></div><ArrowRight size={20}/></Link>;
     })}</nav></details>}
     {activeCategory && <div className="dbt-library-breadcrumb"><Link href={paths.library}>{copy.allCategories}</Link><span>/</span><b>{localize(activeCategory.title, language)}</b></div>}
     <div className="dbt-library-tools"><label><Search size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.search} aria-label={copy.searchLabel}/></label><Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label={copy.status}><option value="all">{copy.allStatuses}</option><option value="verified">{copy.verified}</option><option value="beta">{copy.beta}</option></Select></div>
-    {activeCategory && publishedCount > 0 && <details className="dbt-library-disclosure"><summary className="juro-disclosure-summary">{copy.popular}</summary><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></details>}
+    {activeCategory && filtered.some(document => document.popular) && <details className="dbt-library-disclosure"><summary className="juro-disclosure-summary">{copy.popular}</summary><div className="dbt-template-grid">{cards(filtered.filter((document) => document.popular))}</div></details>}
     <section className="dbt-all-templates"><div className="dbt-section-heading"><h2>{activeCategory ? copy.allDocuments : copy.registry}</h2><p className="dbt-result-count" role="status">{uiLocale === "ru" ? `Всего шаблонов · ${filtered.length}` : uiLocale === "uz" ? `Jami shablonlar · ${filtered.length}` : `Templates · ${filtered.length}`}</p></div><div className="dbt-template-grid">{cards(visible)}</div><WorkspacePagination locale={uiLocale} {...pagination} />{filtered.length === 0 && <div className="dbt-library-empty">{copy.empty}</div>}</section>
   </div>;
 }

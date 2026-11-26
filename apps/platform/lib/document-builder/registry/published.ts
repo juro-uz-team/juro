@@ -2,8 +2,8 @@ import {withStandardCollaboration} from "./collaboration";
 import { z } from "zod";
 import { database } from "../../storage/connection";
 import { DOCUMENT_REGISTRY, getDocumentByCode } from "./catalog";
-import { DOCUMENT_CATEGORIES } from "./categories";
-import type { DocumentDefinition, DocumentLibraryItem } from "./types";
+import type { DocumentDefinition } from "./types";
+import { requireD1 } from "../storage/runtime";
 const localized=z.object({ru:z.string().min(1).max(10000),uz:z.string().min(1).max(10000),"uz-cyrl":z.string().optional(),en:z.string().optional()});
 const condition=z.object({field:z.string().max(100),operator:z.enum(["equals","not-equals","includes","truthy","falsy","filled","empty"]),value:z.union([z.string(),z.number(),z.boolean()]).optional()});
 export function validateTemplate(input:unknown):DocumentDefinition {
@@ -15,15 +15,14 @@ export function validateTemplate(input:unknown):DocumentDefinition {
  for(const step of definition.questionnaire)fields(step.fields);
  return withStandardCollaboration(definition as unknown as DocumentDefinition);
 }
-export async function resolvedDocument(code:string,version?:string):Promise<DocumentDefinition|undefined>{
- const rows=await database().pool.query(`SELECT definition FROM control_template_versions WHERE code=$1 AND published_at IS NOT NULL ${version?"AND version=$2":""} ORDER BY published_at DESC LIMIT 1`,version?[code,version]:[code]);
- const definition=rows.rows[0]?.definition??getDocumentByCode(code);return definition?withStandardCollaboration(definition):undefined;
+export async function resolvedDocument(code: string, version?: string, db = requireD1()): Promise<DocumentDefinition | undefined> {
+  const row = await db.prepare(`SELECT definition FROM control_template_versions WHERE code=? AND published_at IS NOT NULL ${version ? "AND version=?" : ""} ORDER BY published_at DESC, version DESC LIMIT 1`)
+    .bind(...(version ? [code, version] : [code])).first<{ definition: DocumentDefinition | string }>();
+  const definition = typeof row?.definition === "string" ? JSON.parse(row.definition) as DocumentDefinition : row?.definition ?? getDocumentByCode(code);
+  return definition ? withStandardCollaboration(definition) : undefined;
 }
 export async function publishedDefinitions(): Promise<DocumentDefinition[]> {
- const rows=await database().pool.query("SELECT DISTINCT ON(code) definition FROM control_template_versions WHERE published_at IS NOT NULL ORDER BY code,published_at DESC");
+ const rows=await database().pool.query("SELECT DISTINCT ON(code) definition FROM control_template_versions WHERE published_at IS NOT NULL ORDER BY code,published_at DESC,version DESC");
  const documents=new Map(DOCUMENT_REGISTRY.map(d=>[d.code,d]));for(const row of rows.rows)documents.set(row.definition.code,row.definition);
  return [...documents.values()].filter(d=>d.status==="published");
-}
-export async function resolvedLibrary():Promise<DocumentLibraryItem[]>{
- return (await publishedDefinitions()).map(d=>({code:d.code,categorySlug:d.categorySlug,titleRu:d.titleRu,titleUz:d.titleUz,descriptionRu:d.descriptionRu,descriptionUz:d.descriptionUz,status:d.status,editorialStatus:d.editorialStatus,estimatedMinutes:d.estimatedMinutes,popular:d.popular}));
 }

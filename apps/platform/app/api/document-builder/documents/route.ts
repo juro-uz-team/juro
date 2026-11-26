@@ -4,7 +4,6 @@ import { assertSafeWrite, requireApiUser } from "../../../../lib/document-builde
 import { apiError, badRequest, jsonResponse } from "../../../../lib/document-builder/auth/responses";
 import { createStoredDocument } from "../../../../lib/document-builder/storage/documents";
 import { createConfiguredDocument } from "../../../../lib/document-builder/storage/configured-documents";
-import { getDocumentByCode } from "../../../../lib/document-builder/registry";
 import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import type { DocumentRecord, FileRecord, ReceiptAnswers } from "../../../../lib/document-builder/types";
 import type { QuestionnaireAnswers } from "../../../../lib/document-builder/registry";
@@ -13,7 +12,7 @@ import {
   documentListScope,
   type DocumentListFolder,
 } from "../../../../lib/document-builder/permissions/collaboration-policy";
-import { workspaceForUser } from "../../../../lib/platform/workspace";
+import { requireSelectedWorkspace, workspaceForContentEditor } from "../../../../lib/platform/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +44,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const user = await requireApiUser();
     const db = requireD1();
-    const workspace = await workspaceForUser(user);
+    const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
     const url = new URL(request.url);
     const requestedFolder = url.searchParams.get("folder") ?? "all";
     const folder: DocumentListFolder = [
@@ -148,17 +147,17 @@ export async function POST(request: Request): Promise<Response> {
   try {
     assertSafeWrite(request);
     const user = await requireApiUser();
-    const workspace = await workspaceForUser(user);
+    const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
     const body = await request.json() as { sourceDocumentId?: string };
     if (!body.sourceDocumentId) return badRequest("Не указан исходный документ.");
     const db = requireD1();
     const source = await db.prepare(
-      `SELECT d.title, d.template_code AS templateCode,d.template_version AS templateVersion, d.language, a.answers_json AS answersJson, c.auto_content AS autoContent,
+      `SELECT d.title, d.template_id AS templateId,d.template_code AS templateCode,d.template_version AS templateVersion, d.language, a.answers_json AS answersJson, c.auto_content AS autoContent,
        c.final_content AS finalContent, c.manually_edited AS manuallyEdited
        FROM documents d JOIN document_answers a ON a.document_id = d.id
        JOIN document_current_content c ON c.document_id = d.id
        WHERE d.id = ? AND d.owner_user_id = ? AND d.workspace_id = ? LIMIT 1`,
-    ).bind(body.sourceDocumentId, user.id, workspace.id).first<{ title: string; templateCode: string | null; templateVersion:string; language: string; answersJson: string; autoContent: string; finalContent: string; manuallyEdited: number }>();
+    ).bind(body.sourceDocumentId, user.id, workspace.id).first<{ title: string; templateId: string; templateCode: string | null; templateVersion:string; language: string; answersJson: string; autoContent: string; finalContent: string; manuallyEdited: number }>();
     if (!source) return jsonResponse({ error: "Документ не найден." }, { status: 404 });
     const definition = source.templateCode ? await resolvedDocument(source.templateCode,source.templateVersion) : undefined;
     if (definition) {
@@ -169,9 +168,10 @@ export async function POST(request: Request): Promise<Response> {
         title: `${source.title} — копия`,
         finalContent: source.finalContent,
         manuallyEdited: Boolean(source.manuallyEdited),
-      });
+      }, { workspace });
       return jsonResponse({ document }, { status: 201 });
     }
+    if (source.templateId !== "receipt-money-v1") return badRequest("Не удалось найти шаблон исходного документа.", "TEMPLATE_UNAVAILABLE");
     const answers = JSON.parse(source.answersJson) as ReceiptAnswers;
     const document = await createStoredDocument(user, {
       answers,
@@ -179,7 +179,7 @@ export async function POST(request: Request): Promise<Response> {
       autoContent: source.autoContent,
       finalContent: source.finalContent,
       manuallyEdited: Boolean(source.manuallyEdited),
-    });
+    }, workspace.id);
     return jsonResponse({ document }, { status: 201 });
   } catch (error) {
     return apiError(error);

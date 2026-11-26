@@ -15,7 +15,7 @@ import { requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 import { canManageTeam } from "../../../../lib/platform/permissions";
 import { companyMemberUsage, workspaceUsage } from "../../../../lib/billing/usage";
 import { publishedDefinitions } from "../../../../lib/document-builder/registry/published";
-import { templateAvailableOnPlan } from "../../../../lib/control-center/template-access";
+import { templatesOnPlan } from "../../../../lib/document-builder/template-access";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -31,9 +31,10 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const [records, entitlements] = await Promise.all([
     db.batch([
       db.prepare(
-        `SELECT id,provider,plan_code AS planCode,status,current_period_ends_at AS currentPeriodEndsAt,
-          cancel_at_period_end AS cancelAtPeriodEnd,created_at AS createdAt,updated_at AS updatedAt
-         FROM subscriptions WHERE workspace_id=? LIMIT 1`,
+        `SELECT s.id,s.provider,s.plan_code AS planCode,s.status,s.current_period_ends_at AS currentPeriodEndsAt,
+          s.cancel_at_period_end AS cancelAtPeriodEnd,s.created_at AS createdAt,s.updated_at AS updatedAt,
+          v.name_ru AS planNameRu,v.name_uz AS planNameUz,v.name_en AS planNameEn
+         FROM subscriptions s LEFT JOIN subscription_plan_versions v ON v.id=s.plan_version_id WHERE s.workspace_id=? LIMIT 1`,
       ).bind(workspace.id),
       db.prepare(
         `SELECT id,amount_minor AS amountMinor,currency,status,created_at AS createdAt
@@ -53,11 +54,11 @@ export const GET = withApiErrors(async function GET(request: Request) {
     publishedDefinitions(),
   ]);
   const templateCounts = Object.fromEntries(pricingConfig.plans.map(plan => {
-    const available = definitions.filter(definition => templateAvailableOnPlan(definition, plan.code));
+    const available = templatesOnPlan(definitions, plan.code);
     return [plan.code, {
-      ru: available.length, uz: available.length,
-      en: available.filter(definition => definition.generationSchema.paragraphs.every(paragraph =>
-        paragraph.kind === "spacer" || paragraph.text.en)).length,
+      total: available.length,
+      ru: available.filter(template => template.languages.includes("ru")).length,
+      uz: available.filter(template => template.languages.includes("uz")).length,
     }];
   }));
   return response({

@@ -3,6 +3,7 @@
 import { BuilderAiDrafts } from "./_components/BuilderAiDrafts";
 
 import { WorkspaceTitle } from "../_platform/WorkspaceTitle";
+import { useOptionalPlatformWorkspaceId } from "../_platform/PlatformRouteContext";
 import { BrandImage } from "../_components/BrandImage";
 
 /* eslint-disable react-hooks/set-state-in-effect -- persisted guest drafts and authenticated documents hydrate after mount */
@@ -335,6 +336,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   initialConsultation?: { type: "ai" | "lawyer"; requestId: string } | null;
 }) {
   const paths = builderNavigationPaths(usePathname());
+  const workspaceId = useOptionalPlatformWorkspaceId();
   const uiLocale = builderUiLocale(paths.locale);
   const copy = receiptBuilderCopy[uiLocale];
   const consultationCopy = copy.consultation;
@@ -474,6 +476,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     if (createPromise.current) return createPromise.current;
     createPromise.current = apiFetch<{ document: StoredDocument }>("/api/document-builder/drafts", {
       method: "POST",
+      headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {},
       body: JSON.stringify({ answers, title: title || suggestedDocumentTitle(answers), autoContent: autoText, finalContent: finalText || autoText, manuallyEdited }),
     }).then(({ document }) => {
       setDocumentId(document.id);
@@ -484,7 +487,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
       return document.id;
     }).finally(() => { createPromise.current = null; });
     return createPromise.current;
-  }, [documentId, user, answers, title, autoText, finalText, manuallyEdited]);
+  }, [documentId, user, answers, title, autoText, finalText, manuallyEdited, workspaceId]);
 
   useEffect(() => {
     if (hydrated && user && phase === "builder" && !documentId && !initialDocumentId) {

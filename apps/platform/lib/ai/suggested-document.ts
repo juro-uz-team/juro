@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { getDocumentByCode } from "../document-builder/registry";
+import { workspaceEntitlements } from "../billing/entitlements";
+import { resolvedDocument } from "../document-builder/registry/published";
+import { templateAvailableOnPlan, templateLanguages } from "../document-builder/template-access";
 import type { DocumentDefinition, QuestionnaireField } from "../document-builder/registry";
 import { createQuestionnaireAnswers, localize, setAnswer } from "../document-builder/registry/engine";
 import { createConfiguredDocument } from "../document-builder/storage/configured-documents";
@@ -103,14 +105,19 @@ async function storedSuggestion(input:SuggestedScope):Promise<StoredSuggestedDoc
   return row;
 }
 
-function suggestionContext(row:StoredSuggestedDocumentMessage):SuggestedContext{
+async function suggestionContext(row: StoredSuggestedDocumentMessage, input: SuggestedScope): Promise<SuggestedContext> {
   let result:ReturnType<typeof parseLegalChatResponse>;
   try{result=parseLegalChatResponse(JSON.parse(row.structuredJson??"null"));}
   catch{throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_INVALID");}
   const suggested=result.suggestedDocument;
   if(result.responseKind!=="answer"||!suggested?.templateCode)throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
-  const definition=getDocumentByCode(suggested.templateCode);
-  if(!definition||definition.status!=="published")throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
+  const [definition, terms] = await Promise.all([
+    resolvedDocument(suggested.templateCode, undefined, input.db), workspaceEntitlements(input.db, input.workspaceId),
+  ]);
+  const language = input.locale === "uz" ? "uz" : "ru";
+  if (!definition || terms.readOnly || !templateAvailableOnPlan(definition, terms.planCode) || !templateLanguages(definition).includes(language)) {
+    throw new AiSuggestedDocumentError("AI_SUGGESTED_DOCUMENT_UNAVAILABLE");
+  }
   return {definition,reason:suggested.reason,caseId:row.caseId,answer:result};
 }
 
@@ -120,7 +127,7 @@ function resolvedSuggestion(context:SuggestedContext,locale:AiOutputLocale){
 }
 
 export async function resolveAiSuggestedDocument(input:SuggestedScope){
-  return resolvedSuggestion(suggestionContext(await storedSuggestion(input)),input.locale);
+  return resolvedSuggestion(await suggestionContext(await storedSuggestion(input), input), input.locale);
 }
 
 function profileCandidate(field:QuestionnaireField,user:UserProfile,locale:AiOutputLocale):AiDocumentPrefillCandidate|null{
@@ -170,7 +177,8 @@ function answerLegalGrounds(answer:ReturnType<typeof parseLegalChatResponse>):st
 }
 
 export async function previewAiSuggestedDocument(input:Omit<SuggestedScope,"userId">&{user:UserProfile}):Promise<AiSuggestedDocumentPreview>{
-  return suggestedPreview(suggestionContext(await storedSuggestion({...input,userId:input.user.id})),input.user,input.locale,input.assistantMessageId);
+  const scope = { ...input, userId: input.user.id };
+  return suggestedPreview(await suggestionContext(await storedSuggestion(scope), scope), input.user, input.locale, input.assistantMessageId);
 }
 
 async function sha256(value:string):Promise<string>{
@@ -203,7 +211,7 @@ export async function createAiSuggestedDocumentDraft(input:Omit<SuggestedScope,"
     return {documentId:existing.documentId,replayed:true};
   };
   const existing=await replay();if(existing)return existing;
-  const context=suggestionContext(row),preview=suggestedPreview(context,input.user,input.locale,input.assistantMessageId);
+  const context=await suggestionContext(row,scope),preview=suggestedPreview(context,input.user,input.locale,input.assistantMessageId);
   if(preview.caseId){
     requireWorkspaceContentEditor(row.workspaceRole);
     const caseRow=await input.db.prepare("SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL")
