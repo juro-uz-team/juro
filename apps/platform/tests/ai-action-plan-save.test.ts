@@ -287,7 +287,7 @@ test("AI-plan route and chat require server-side ownership and explicit confirma
   assert.match(service, /member\.status='active' AND member\.role IN/);
   assert.match(route, /saveAiActionPlanToCase/);
   assert.match(service, /conversation\.workspace_id=\? AND conversation\.owner_user_id=\?/);
-  assert.match(service, /c\.id=\? AND c\.workspace_id=\? AND c\.archived_at IS NULL/);
+  assert.match(service, /c\.id=\? AND c\.workspace_id=\? AND case_visible_to\(c\.id,\?\) AND c\.archived_at IS NULL/);
   assert.match(service, /structuredJson/);
   assert.match(service, /ai_action_plan_confirmed/);
   assert.match(service, /ai_action_plan_appended/);

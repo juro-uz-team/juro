@@ -171,7 +171,7 @@ export function ModuleContent({
     );
   if (module === "cases")
     return <CasesClient locale={locale} accountType={accountType} />;
-  if (module === "team") return <TeamClient locale={locale} />;
+  if (module === "team") return <TeamClient key={workspaceId} locale={locale} />;
   if (module === "ai-chat") return <AiLawyerClient locale={locale} />;
   if (module === "billing")
     return (

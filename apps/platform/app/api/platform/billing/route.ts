@@ -1,6 +1,6 @@
 import { pricingConfig } from "../../../../config/pricing";
 import { parseJsonRequest } from "../../../../lib/auth/input";
-import { workspaceEntitlements } from "../../../../lib/billing/entitlements";
+import { aiAnswerCeilingQuery, effectiveAiAnswerLimit, workspaceEntitlements } from "../../../../lib/billing/entitlements";
 import { billingPlanSelectionSchema } from "../../../../lib/billing/input";
 import { billingErrorMessage } from "../../../../lib/billing/localization";
 import { paymentProviderStatus } from "../../../../lib/billing/provider";
@@ -44,7 +44,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
     workspaceEntitlements(db, workspace.id),
   ]);
   const [subscription, payments] = records;
-  const [usage, members, professional, definitions] = await Promise.all([
+  const [usage, members, professional, definitions, ceiling] = await Promise.all([
     workspaceUsage(db, workspace.id, user.id, entitlements),
     workspace.type === "business" && canManageTeam(workspace.role)
       ? companyMemberUsage(db, workspace.id, entitlements.periodStart) : [],
@@ -52,6 +52,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
       ? db.prepare("SELECT marketplace_status AS status FROM lawyer_profiles WHERE user_id=? LIMIT 1").bind(user.id).first()
       : null,
     publishedDefinitions(),
+    db.prepare(aiAnswerCeilingQuery).first<{ value: string }>(),
   ]);
   const templateCounts = Object.fromEntries(pricingConfig.plans.map(plan => {
     const available = templatesOnPlan(definitions, plan.code);
@@ -70,6 +71,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
     entitlements,
     workspace,
     usage,
+    answerLimit: effectiveAiAnswerLimit(entitlements.limits.answers, ceiling?.value),
     members,
     professional,
     templateCounts,

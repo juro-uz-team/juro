@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { platformApiError } from "../../content/platform-ui";
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { planAreaLabel, planStatusLabel, suggestedMatterTitle } from "../../lib/platform/plan-presentation";
 import {
   CASE_SECTIONS,
@@ -405,7 +406,7 @@ function localizedLifecycleError(code: string, locale: PlatformLocale) {
   if (code.includes("CASE_LIFECYCLE_INVALID")) return text(locale, "Это действие недоступно в текущем состоянии дела.", "Bu amal ishning joriy holatida mavjud emas.", "This action is unavailable in the matter's current state.");
   if (code.includes("CASE_LIFECYCLE_CONFLICT")) return text(locale, "Дело уже изменилось. Обновите страницу и повторите.", "Ish allaqachon o‘zgargan. Sahifani yangilab, qayta urinib ko‘ring.", "The matter has already changed. Refresh the page and try again.");
   if (code.includes("CASE_UNAVAILABLE")) return text(locale, "Дело не найдено в текущем пространстве.", "Ish joriy makonda topilmadi.", "The matter was not found in the current workspace.");
-  return text(locale, "Не удалось изменить состояние дела.", "Ish holatini o‘zgartirib bo‘lmadi.", "We could not change the matter status.");
+  return subscriptionFeedback(locale, code) ?? text(locale, "Не удалось изменить состояние дела.", "Ish holatini o‘zgartirib bo‘lmadi.", "We could not change the matter status.");
 }
 
 function roleLabel(role: string, locale: PlatformLocale) {

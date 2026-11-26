@@ -136,6 +136,7 @@ export async function practiceAi(
         instructionHash: hash(instructions),
         sourceVersionHash: hash(JSON.stringify(materials)),
         monthlyLimit: draftReserved ? null : entitlements.aiAnswerCyclesMonthly,
+        answerPeriod: entitlements,
         feature: draftReserved ? "practice_draft" : undefined,
       });
       if (reserved.kind !== "reserved")

@@ -9,6 +9,13 @@ import {
   workspaceInvitationRedirect,
 } from "../lib/platform/workspace-invitation";
 
+const originalPracticeEnabled = process.env.PRACTICE_ENABLED;
+test.before(() => { process.env.PRACTICE_ENABLED = "false"; });
+test.after(() => {
+  if (originalPracticeEnabled === undefined) delete process.env.PRACTICE_ENABLED;
+  else process.env.PRACTICE_ENABLED = originalPracticeEnabled;
+});
+
 class SqliteD1Statement {
   constructor(
     private readonly database: DatabaseSync,
@@ -267,13 +274,13 @@ test("concurrent acceptance has one winner and one durable grant", async () => {
   }
 });
 
-test("acceptance never downgrades an existing workspace owner", async () => {
+test("an existing workspace owner cannot claim an invitation for a different role", async () => {
   const { sqlite, d1 } = await invitationDatabase();
   try {
     insertInvitation(sqlite, { existingRole: "owner", invitationRole: "viewer" });
     assert.equal(
       await acceptWorkspaceInvitation(d1, acceptanceInput),
-      true,
+      false,
     );
     const membership = sqlite.prepare(`
       SELECT role,joined_at AS joinedAt FROM workspace_members
@@ -283,17 +290,8 @@ test("acceptance never downgrades an existing workspace owner", async () => {
       role: "owner",
       joinedAt: "2026-07-01T00:00:00.000Z",
     });
-    const metadata = JSON.parse((sqlite.prepare(`
-      SELECT metadata_json AS metadata FROM workspace_audit_events
-      WHERE action='invitation_accepted'
-    `).get() as { metadata: string }).metadata) as {
-      invitedRole: string;
-      effectiveRole: string;
-    };
-    assert.deepEqual(metadata, {
-      invitedRole: "viewer",
-      effectiveRole: "owner",
-    });
+    assert.equal(sqlite.prepare("SELECT accepted_at FROM workspace_invitations").get()?.accepted_at, null);
+    assert.equal(sqlite.prepare("SELECT count(*) AS total FROM workspace_audit_events WHERE action='invitation_accepted'").get()?.total, 0);
   } finally {
     sqlite.close();
   }

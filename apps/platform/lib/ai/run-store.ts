@@ -1,4 +1,4 @@
-import type { AnswerPeriod } from "../billing/entitlements";
+import { aiAnswerCeilingQuery, effectiveAiAnswerLimit, type AnswerPeriod } from "../billing/entitlements";
 import { AI_RESERVATION_TTL_MS } from "./reservation-policy";
 
 const CHAT_FEATURE = "legal_chat";
@@ -92,11 +92,9 @@ export async function reserveAiRun(input: ReserveInput): Promise<AiRunReservatio
   const { periodStart, periodEnd } = input.answerPeriod ?? monthlyPeriod(new Date());
   const pooled = input.answerPeriod?.pooled ?? false;
   const feature = input.feature ?? CHAT_FEATURE;
-  const configured=await input.db.prepare("SELECT value FROM control_settings WHERE key='ai.max_monthly_cycles'").first<{value:string}>();
-  const ceiling=configured?Number(JSON.parse(configured.value)):null;
+  const configured=await input.db.prepare(aiAnswerCeilingQuery).first<{value:string}>();
   const planLimit = input.monthlyLimit === undefined ? FREE_MONTHLY_CYCLES : input.monthlyLimit;
-  const limit = input.answerPeriod?.readOnly ? 0
-    : ceiling!==null&&Number.isInteger(ceiling)&&ceiling>0?Math.min(planLimit??ceiling,ceiling):planLimit;
+  const limit = input.answerPeriod?.readOnly ? 0 : effectiveAiAnswerLimit(planLimit, configured?.value);
   const results = await input.db.batch([
     ...(input.answerPeriod ? [input.db.prepare("SELECT pg_advisory_xact_lock(hashtextextended(?,0))")
       .bind(`answer-allowance:${input.workspaceId}:${pooled ? "" : input.userId}:${periodStart}`)] : []),

@@ -1,5 +1,5 @@
 import { withinSignal } from "./lifetime";
-import { subscriptionPeriod, type AnswerPeriod } from "../billing/entitlements";
+import { aiAnswerCeilingQuery, effectiveAiAnswerLimit, subscriptionPeriod, type AnswerPeriod } from "../billing/entitlements";
 
 /** Early HTTP admission only; the retained atomic reservation remains authoritative under concurrency. */
 export async function answerAllowanceAvailable(input: {
@@ -10,7 +10,7 @@ export async function answerAllowanceAvailable(input: {
   const scope = `legal-chat:${input.workspaceId}:${input.userId}`;
   const row = await withinSignal(input.signal, () => input.db.prepare(`SELECT
     EXISTS(SELECT 1 FROM idempotency_keys WHERE key=? AND scope=?) AS existing,
-    (SELECT value FROM control_settings WHERE key='ai.max_monthly_cycles') AS ceiling,
+    (${aiAnswerCeilingQuery}) AS ceiling,
     (SELECT COALESCE(SUM(units),0) FROM ai_usage_ledger WHERE workspace_id=? AND (?=1 OR user_id=?)
       AND feature='legal_chat' AND period_start=? AND status IN ('reserved','consumed')) AS used`)
     .bind(`${scope}:${input.idempotencyKey}`, scope, input.workspaceId, Number(input.answerPeriod?.pooled ?? false), input.userId, periodStart)
@@ -19,9 +19,7 @@ export async function answerAllowanceAvailable(input: {
   // An existing key must reach the hash/replay checks even when the allowance is now exhausted.
   if (row.existing) return true;
   if (input.answerPeriod?.readOnly) return false;
-  const ceiling = row.ceiling === null ? null : Number(JSON.parse(row.ceiling));
-  const limit = ceiling !== null && Number.isInteger(ceiling) && ceiling > 0
-    ? Math.min(input.monthlyLimit ?? ceiling, ceiling) : input.monthlyLimit;
+  const limit = effectiveAiAnswerLimit(input.monthlyLimit, row.ceiling);
   // PostgreSQL SUM(integer) returns bigint as decimal text; SQLite returns a number.
   const used = typeof row.used === "string" && /^\d+$/.test(row.used) ? Number(row.used) : row.used;
   if (typeof used !== "number" || !Number.isSafeInteger(used) || used < 0

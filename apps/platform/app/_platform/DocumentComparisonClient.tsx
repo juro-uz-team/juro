@@ -1,5 +1,6 @@
 "use client";
 
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { DocumentComparisonProgress } from "./DocumentToolProgress";
 
 import { Select } from "../_components/Select";
@@ -104,7 +105,7 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
   function subscriptionError(code?: string) {
     if (code === "PLAN_LIMIT") return t("Сравнение недоступно на текущем тарифе или лимит исчерпан.", "Joriy tarifda taqqoslash mavjud emas yoki limit tugagan.", "Comparison is unavailable on your plan or your allowance is exhausted.");
     if (code === "PAGES_PER_RUN_LIMIT") return t("Лимит страниц превышен. Выберите нужные фрагменты.", "Sahifa limiti oshdi. Kerakli parchalarni tanlang.", "The page limit was exceeded. Upload the portions you want to compare.");
-    return "";
+    return subscriptionFeedback(locale, code) ?? "";
   }
   const router = useRouter();
   const base = usePlatformBasePath();

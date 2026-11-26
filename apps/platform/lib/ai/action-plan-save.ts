@@ -1,4 +1,5 @@
 import { suggestedMatterTitle } from "../platform/plan-presentation";
+import { subscriptionFailure } from "../billing/usage";
 import { z } from "zod";
 import { parseLegalChatResponse } from "./legal-chat-schema";
 import { aiText } from "./localization";
@@ -146,11 +147,12 @@ export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<Save
     .bind(eventId,caseId,userId,target?"ai_action_plan_appended":"ai_action_plan_confirmed",JSON.stringify({assistantMessageId,planId,taskCount:answer.actionPlan.length}),now));
   statements.push(db.prepare("UPDATE cases SET current_revision=current_revision+?,updated_at=? WHERE id=? AND workspace_id=?").bind(target?1:0,now,caseId,workspaceId));
   try{await db.batch(statements);}
-  catch{
+  catch(error){
     // A concurrent identical confirmation can finish between the initial read
     // and the batch. Only a committed receipt permits a successful replay.
     const committed = await savedConfirmation(input,eventId);
     if(committed) return committed;
+    if (subscriptionFailure(error)) throw error;
     throw new AiActionPlanSaveError("AI_ACTION_PLAN_PERSISTENCE_FAILED");
   }
   return {caseId,planId,taskCount:answer.actionPlan.length,replay:false};

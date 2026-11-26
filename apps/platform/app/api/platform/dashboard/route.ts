@@ -29,7 +29,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const [counts, cases, documents, deadlines, consultations, notifications, analyses, comparisons] = await db.batch([
     db.prepare(
       `SELECT
-        (SELECT count(*) FROM cases WHERE workspace_id = ? AND case_visible_to(id,?) AND archived_at IS NULL) AS activeCases,
+        (SELECT count(*) FROM cases WHERE workspace_id = ? AND case_visible_to(id,?) AND archived_at IS NULL AND status <> 'completed') AS activeCases,
         (SELECT count(*) FROM documents d WHERE ${documentVisibility.sql} AND d.archived_at IS NULL) AS documents,
         (SELECT count(*) FROM consultation_bookings WHERE workspace_id = ? AND status NOT IN ('completed','cancelled')) AS consultations,
         (SELECT count(*) FROM notifications WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL AND ${notificationFilter.sql}) AS unreadNotifications`,

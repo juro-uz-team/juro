@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
 import { platformApiError } from "../../content/platform-ui";
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { caseDirectionsForAccount, caseScenariosForAccount, type CaseDirectionId } from "../../lib/platform/case-create";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
 import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
@@ -49,9 +50,9 @@ export function CaseCreateClient({ locale, accountType }: { locale: PlatformLoca
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ title, description, legalArea: selected, locale, accountType }),
       });
-      const body = await response.json() as { caseId?: string; error?: string };
+      const body = await response.json() as { caseId?: string; error?: string; code?: string };
       if (!response.ok || !body.caseId) {
-        throw new Error(platformApiError(locale, body.error, copy.createError));
+        throw new Error(subscriptionFeedback(locale, body.code) ?? platformApiError(locale, body.error, copy.createError));
       }
       router.replace(`${base}/cases/${encodeURIComponent(body.caseId)}`);
     } catch (value) {

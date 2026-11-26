@@ -347,7 +347,6 @@ html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payme
 .subscription-card dl dd, .subscription-extra-grid dd { color: var(--text-primary); font-size: .8rem; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .subscription-card .subscription-card-templates { margin-block-start: 5px; padding: 8px; border-radius: 8px; background: var(--tone-tint); }
 .subscription-card-templates dt { display: flex; align-items: center; gap: 5px; }
-.subscription-card-templates small { display: block; margin-block-start: 2px; font: inherit; }
 .subscription-card-templates svg { flex: none; inline-size: 13px; block-size: 13px; color: var(--tone-ink); }
 
 .subscription-page .subscription-extras { padding: clamp(12px, 2.1cqi, 24px); background: linear-gradient(145deg, var(--surface-brand), var(--surface-raised) 80%); }

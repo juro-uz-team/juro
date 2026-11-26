@@ -16,10 +16,11 @@ type BillingData = {
   workspace: { name: string; type: string; role: string };
   entitlements: WorkspaceEntitlements;
   usage: Awaited<ReturnType<typeof workspaceUsage>>;
+  answerLimit?: number;
   members: Awaited<ReturnType<typeof companyMemberUsage>>;
   professional: { status: string } | null;
   subscription: { planCode: string; planNameRu: string | null; planNameUz: string | null; planNameEn: string | null } | null;
-  templateCounts: Record<string, { total: number; ru: number; uz: number }>;
+  templateCounts: Record<string, { total: number }>;
   payments: { id: string; amountMinor: number; status: string; createdAt: string }[];
 };
 
@@ -37,6 +38,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   const [attempt, setAttempt] = useState(0);
   const text = (ru: string, uz: string, en: string) => ({ ru, uz, en })[locale];
   const number = new Intl.NumberFormat(({ ru: "ru-UZ", uz: "uz-UZ", en: "en-US" })[locale]);
+  const percentage = new Intl.NumberFormat(number.resolvedOptions().locale, { style: "percent", maximumFractionDigits: 1 });
   const date = new Intl.DateTimeFormat(number.resolvedOptions().locale, { dateStyle: "medium", timeZone: "Asia/Tashkent" });
   const money = (minor: number) => number.format(minor / 100) + " " + text("сум", "so‘m", "UZS");
   const load = result?.workspaceId === workspaceId ? result : undefined;
@@ -76,7 +78,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   }, [workspaceId, attempt]);
 
   const usage = data && terms ? [
-    ["answers", MessagesSquare, answers, data.usage.answers, terms.limits.answers, number.format],
+    ["answers", MessagesSquare, answers, data.usage.answers, data.answerLimit ?? terms.limits.answers, number.format],
     ["drafts", FileCheck2, drafts, data.usage.drafts, terms.limits.drafts, number.format],
     ["pages", FileChartColumn, pages, data.usage.pages, terms.limits.pages, number.format],
     ["cases", BriefcaseBusiness, cases, data.usage.cases, terms.limits.activeCases, number.format],
@@ -121,14 +123,13 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
         const showLimit = !terms.readOnly && (terms.version !== null || key === "answers") && limit > 0;
         const usedLabel = format(used);
         const limitLabel = format(limit);
-        const percentage = Math.round(used / limit * 100);
         return <div key={key} data-tone={key} data-limit={showLimit && used >= limit ? "reached" : undefined}>
           <dt><Icon aria-hidden="true" />{label}</dt>
           <dd>
             <div className="subscription-meter-value"><strong>{usedLabel}</strong>{showLimit && <span> / {limitLabel}</span>}</div>
             {showLimit && <div className="subscription-meter-track">
               <progress aria-label={label} aria-valuetext={text(`${usedLabel} из ${limitLabel}`, `${usedLabel} / ${limitLabel}`, `${usedLabel} of ${limitLabel}`)} max={limit} value={Math.min(used, limit)} />
-              <span aria-hidden="true">{number.format(percentage)}%</span>
+              <span aria-hidden="true">{percentage.format(used / limit)}</span>
             </div>}
           </dd>
         </div>;
@@ -165,8 +166,7 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
               <p className="subscription-card-benefit"><Check aria-hidden="true" />{plan.benefit[locale]}</p>
               <dl className="subscription-card-limits">{labels.map((label, index) => <div key={label}><dt>{label}</dt><dd>{quantities[index]}</dd></div>)}</dl>
               {templates && <dl className="subscription-card-templates"><div>
-                <dt><PanelsTopLeft aria-hidden="true" /><span>{text("Шаблоны", "Andozalar", "Templates")}
-                  <small>{text("Рус.", "Rus.", "RU")} {number.format(templates.ru)} · {text("Узб.", "O‘zb.", "UZ")} {number.format(templates.uz)}</small></span></dt>
+                <dt><PanelsTopLeft aria-hidden="true" />{text("Шаблоны", "Andozalar", "Templates")}</dt>
                 <dd>{number.format(templates.total)}</dd>
               </div></dl>}
             </div>

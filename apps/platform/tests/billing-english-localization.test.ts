@@ -11,11 +11,19 @@ import {
   sandboxAuthorizeSchema,
 } from "../lib/billing/input";
 import { billingErrorMessage } from "../lib/billing/localization";
-import { entitlementsForSubscription, subscriptionPeriod } from "../lib/billing/entitlements";
+import { effectiveAiAnswerLimit, entitlementsForSubscription, subscriptionPeriod } from "../lib/billing/entitlements";
 import { accountingPages } from "../lib/billing/usage";
 
 const requestId = "11111111-1111-4111-8111-111111111111";
 const planVersionId = "22222222-2222-4222-8222-222222222222";
+
+test("the operational answer ceiling may reduce but never raise the plan allowance", () => {
+  assert.equal(effectiveAiAnswerLimit(20, "10"), 10);
+  assert.equal(effectiveAiAnswerLimit(20, "100"), 20);
+  assert.equal(effectiveAiAnswerLimit(null, "10"), 10);
+  assert.equal(effectiveAiAnswerLimit(0, "10"), 0);
+  assert.equal(effectiveAiAnswerLimit(120, "invalid"), 120);
+});
 
 test("Company shares one monthly allowance anchored on the local activation day", () => {
   const anchor = "2027-01-31T08:00:00.000Z";

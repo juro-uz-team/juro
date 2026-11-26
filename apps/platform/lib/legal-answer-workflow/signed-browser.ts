@@ -4,7 +4,7 @@ import { readAiRunStatus } from "../ai/run-store";
 import { readSavedAnswerConversation } from "./saved-conversation";
 import { withinSignal } from "./lifetime";
 import { readAnswerPayload } from "./signed-http";
-import { subscriptionPeriod, type AnswerPeriod } from "../billing/entitlements";
+import { aiAnswerCeilingQuery, effectiveAiAnswerLimit, subscriptionPeriod, type AnswerPeriod } from "../billing/entitlements";
 
 type Actor = { db: D1Database; workspaceId: string; userId: string };
 type Configuration = {
@@ -91,15 +91,15 @@ export async function handleSignedAnswerBrowser(request: Request, configuration:
       const { periodStart, periodEnd } = settings.answerPeriod ?? subscriptionPeriod(new Date());
       const [page, usage, cases] = await Promise.all([
         listConversations(actor, query, signal),
-        withinSignal(signal, () => actor.db.prepare(`SELECT COALESCE(SUM(units),0) AS used FROM ai_usage_ledger
+        withinSignal(signal, () => actor.db.prepare(`SELECT COALESCE(SUM(units),0) AS used, (${aiAnswerCeilingQuery}) AS ceiling FROM ai_usage_ledger
           WHERE workspace_id=? AND (?=1 OR user_id=?) AND feature='legal_chat' AND period_start=? AND status IN ('reserved','consumed')`)
-          .bind(actor.workspaceId, Number(settings.answerPeriod?.pooled ?? false), actor.userId, periodStart).first<{used: number}>()),
+          .bind(actor.workspaceId, Number(settings.answerPeriod?.pooled ?? false), actor.userId, periodStart).first<{used: number; ceiling: string | null}>()),
         withinSignal(signal, () => actor.db.prepare(`SELECT id,title,status,updated_at AS updatedAt FROM cases
           WHERE workspace_id=? AND owner_user_id=? AND archived_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 100`)
           .bind(actor.workspaceId, actor.userId).all()),
       ]);
       result = { ...page, provider: settings.provider, usage: { used: Number(usage?.used ?? 0),
-        limit: settings.monthlyLimit, periodEnd }, cases: cases.results };
+        limit: effectiveAiAnswerLimit(settings.monthlyLimit, usage?.ceiling), periodEnd }, cases: cases.results };
     }
     await assertMembership(actor, signal);
     return Response.json(result, { headers });

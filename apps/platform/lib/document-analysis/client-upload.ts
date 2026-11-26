@@ -1,4 +1,5 @@
 import type { PlatformLocale } from "../platform/routing";
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { defaultDocumentAnalysisLocale, type SupportedDocumentAnalysisLocale } from "./language";
 
 export type SecureDocumentUploadResult = {
@@ -132,8 +133,8 @@ function putFileWithProgress(
     request.addEventListener("load", () => {
       if (request.status >= 200 && request.status < 300) return resolve();
       try {
-        const body = JSON.parse(request.responseText) as { error?: string };
-        reject(new Error(locale === "en" ? fallback : body.error || fallback));
+        const body = JSON.parse(request.responseText) as { error?: string; code?: string };
+        reject(new Error(subscriptionFeedback(locale, body.code) ?? (locale === "en" ? fallback : body.error || fallback)));
       } catch {
         reject(new Error(fallback));
       }
@@ -162,10 +163,10 @@ async function jsonRequest<T>(
   locale: PlatformLocale = "ru",
 ): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
-  const body = await response.json() as T & { error?: string };
+  const body = await response.json() as T & { error?: string; code?: string };
   if (!response.ok && !acceptedStatuses.includes(response.status)) {
     const fallback = uploadFailure(locale);
-    throw new Error(locale === "en" ? fallback : body.error || fallback);
+    throw new Error(subscriptionFeedback(locale, body.code) ?? (locale === "en" ? fallback : body.error || fallback));
   }
   return body;
 }

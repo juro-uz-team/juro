@@ -11,6 +11,7 @@ import { Select } from "../_components/Select";
 import { CircleAlert, LoaderCircle, MailPlus, ShieldCheck, Trash2, UserRound, UsersRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { platformApiError } from "../../content/platform-ui";
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { formatPlatformDate } from "../../lib/platform/date-time";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
@@ -85,8 +86,8 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
         headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ email, role, locale }),
       });
-      const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.inviteError));
+      const body = await response.json() as { error?: string; code?: string };
+      if (!response.ok) throw new Error(subscriptionFeedback(locale, body.code) ?? platformApiError(locale, body.error, copy.inviteError));
       setEmail("");
       setNotice(copy.invited);
       await load();
@@ -97,32 +98,40 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
     }
   }
 
-  async function changeRole(memberId: string, nextRole: string) {
+  async function updateMembership(path: string, method: "PATCH" | "DELETE", fallback: string, role?: string) {
     setError("");
-    const response = await fetch(`/api/platform/team/members/${encodeURIComponent(memberId)}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
-      body: JSON.stringify({ role: nextRole }),
-    });
-    const body = await response.json() as { error?: string };
-    if (!response.ok) { setError(platformApiError(locale, body.error, copy.roleError)); return; }
-    await load();
+    setNotice("");
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/platform/team/${path}`, {
+        method,
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
+        body: role ? JSON.stringify({ role }) : undefined,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string; code?: string };
+        setError(subscriptionFeedback(locale, body.code) ?? platformApiError(locale, body.error, fallback));
+        return;
+      }
+      await load();
+    } catch {
+      setError(fallback);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function removeMember(member: Member) {
-    const memberId = member.id;
+  function changeRole(memberId: string, nextRole: string) {
+    return updateMembership(`members/${encodeURIComponent(memberId)}`, "PATCH", copy.roleError, nextRole);
+  }
+
+  function removeMember(member: Member) {
     if (!window.confirm([copy.removeConfirm, member.fullName || member.email, data?.workspace?.name].filter(Boolean).join("\n"))) return;
-    const response = await fetch(`/api/platform/team/members/${encodeURIComponent(memberId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId } });
-    const body = await response.json() as { error?: string };
-    if (!response.ok) { setError(platformApiError(locale, body.error, copy.removeError)); return; }
-    await load();
+    void updateMembership(`members/${encodeURIComponent(member.id)}`, "DELETE", copy.removeError);
   }
 
-  async function revokeInvitation(invitationId: string) {
-    const response = await fetch(`/api/platform/team/invitations/${encodeURIComponent(invitationId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId } });
-    const body = await response.json() as { error?: string };
-    if (!response.ok) { setError(platformApiError(locale, body.error, copy.revokeError)); return; }
-    await load();
+  function revokeInvitation(invitationId: string) {
+    return updateMembership(`invitations/${encodeURIComponent(invitationId)}`, "DELETE", copy.revokeError);
   }
 
   async function assignResponsibility(event: FormEvent) {
@@ -169,11 +178,11 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} />
       </label>
       <div className="team-grid">
-        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{!members.length && <p className="team-empty">{t("Участники не найдены.", "A’zolar topilmadi.", "No matching members.")}</p>}{members.slice(memberPages.from, memberPages.to).map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canRemove(member) && !data?.readOnly ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{rolesForManager.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canRemove(member) && <button className="team-remove" onClick={() => void removeMember(member)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div><WorkspacePagination locale={locale} {...memberPages} /></article>
+        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{!members.length && <p className="team-empty">{t("Участники не найдены.", "A’zolar topilmadi.", "No matching members.")}</p>}{members.slice(memberPages.from, memberPages.to).map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canRemove(member) && !data?.readOnly ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} disabled={saving} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{rolesForManager.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canRemove(member) && <button className="team-remove" disabled={saving} onClick={() => removeMember(member)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div><WorkspacePagination locale={locale} {...memberPages} /></article>
         <article><div className="team-title"><h2>{copy.pending}</h2><span>{invitations.length ?? 0}</span></div>{invitations.length ? <div className="team-list">{invitations.slice(invitationPages.from, invitationPages.to).map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canInvite && invitation.email && (data?.currentRole === "owner" || invitation.role !== "admin") &&
           <button type="button" className="team-remove" disabled={saving} onClick={() => void sendInvitation(invitation.email!, invitation.role)}
             aria-label={t("Отправить ещё раз", "Qayta yuborish", "Resend invitation")}><MailPlus /></button>}
-          {canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}<WorkspacePagination locale={locale} {...invitationPages} /></article>
+          {canManage && <button className="team-remove" disabled={saving} onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}<WorkspacePagination locale={locale} {...invitationPages} /></article>
       </div>
       {canInvite && !!data?.unassignedCases.length && <form className="team-invite" onSubmit={assignResponsibility}>
         <div><UsersRound /><h2>{t("Дела без ответственного", "Mas’ulsiz ishlar", "Matters that need an owner")}</h2></div>

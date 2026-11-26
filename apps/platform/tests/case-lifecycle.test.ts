@@ -151,7 +151,7 @@ test("case lifecycle API and RU/UZ UI keep auth, CSRF, retry and archive restora
   const archive = readFileSync(new URL("../app/_platform/ArchiveClient.tsx", import.meta.url), "utf8");
   assert.match(route, /assertSafeWrite\(request\)/u);
   assert.match(route, /requireApiUser\(\)/u);
-  assert.match(route, /workspaceForContentEditor\(user\)/u);
+  assert.match(route, /workspaceForContentEditor\(user,\s*request\.headers\.get\("x-juro-workspace-id"\)\)/u);
   assert.match(route, /idempotency-key/u);
   assert.match(route, /executeCaseLifecycle/u);
   assert.match(archiveRoute, /action: "restore"/u);

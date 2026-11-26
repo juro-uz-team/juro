@@ -309,6 +309,6 @@ test("checkout routes and UI retain auth, CSRF, workspace, localization and feat
   assert.match(checkoutUi, /AUTO_RENEW/);
   assert.match(paymentUi, /sandbox-authorize/);
   assert.match(billingUi, /subscriptionPlans\.map/);
-  assert.match(billingUi, /Plan purchases and renewals are currently unavailable/);
+  assert.match(billingUi, /Purchases and renewals are currently unavailable/);
   assert.doesNotMatch(billingUi, /api\/checkout/);
 });

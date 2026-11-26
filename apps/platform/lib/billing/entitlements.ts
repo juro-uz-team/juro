@@ -21,6 +21,12 @@ export type WorkspaceEntitlements = {
 };
 
 export type AiAnswerCycleLimit = number | null;
+export const aiAnswerCeilingQuery = "SELECT value FROM control_settings WHERE key='ai.max_monthly_cycles'";
+
+export function effectiveAiAnswerLimit(plan: AiAnswerCycleLimit, ceiling: string | null | undefined): AiAnswerCycleLimit {
+  const maximum = ceiling ? Number(ceiling) : NaN;
+  return Number.isSafeInteger(maximum) && maximum > 0 ? Math.min(plan ?? maximum, maximum) : plan;
+}
 export type AnswerPeriod = Pick<WorkspaceEntitlements, "periodStart" | "periodEnd" | "pooled" | "readOnly">;
 
 type SubscriptionEvidence = {

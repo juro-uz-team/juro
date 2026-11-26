@@ -1,5 +1,6 @@
 "use client";
 
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { DocumentCitationLinks, DocumentCitationList, type DocumentCitation } from "./DocumentCitationList";
 import { DocumentReportMetrics, type DocumentReportMetric } from "./DocumentReportMetrics";
 import { DocumentTextDiff } from "./DocumentTextDiff";
@@ -1031,13 +1032,13 @@ function revisionError(code: string | undefined, fallback: string | undefined, l
   };
   const message = code ? messages[code] : undefined;
   const localFallback = reviewText(locale, "Действие не выполнено.", "Amal bajarilmadi.", "The action could not be completed.");
-  return message?.[locale] ?? platformApiError(locale, fallback, localFallback);
+  return subscriptionFeedback(locale, code) ?? message?.[locale] ?? platformApiError(locale, fallback, localFallback);
 }
 
 function exportRequestError(code: string | undefined, locale: PlatformLocale) {
   if (code === "ANALYSIS_EXPORT_NOT_READY") return reviewText(locale, "Экспорт доступен после завершения анализа.", "Eksport tahlil yakunlangandan keyin mavjud.", "Exports are available after analysis is complete.");
   if (code === "ANALYSIS_EXPORT_IDEMPOTENCY_CONFLICT") return reviewText(locale, "Запрос экспорта уже использован. Повторите действие.", "Eksport so‘rovi allaqachon ishlatilgan. Amalni takrorlang.", "This export request has already been used. Try the action again.");
-  return reviewText(locale, "Экспорт не создан.", "Eksport yaratilmadi.", "The export could not be created.");
+  return subscriptionFeedback(locale, code) ?? reviewText(locale, "Экспорт не создан.", "Eksport yaratilmadi.", "The export could not be created.");
 }
 
 function withoutKey(values: Record<string, string>, key: string): Record<string, string> {

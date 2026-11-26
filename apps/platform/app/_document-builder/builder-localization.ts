@@ -1,4 +1,5 @@
 import { platformApiError, platformLocaleValue } from "../../content/platform-localization";
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import type { BuilderLanguage } from "../../lib/document-builder/registry/engine";
 import type { PlatformLocale } from "../../lib/platform/routing";
 
@@ -30,13 +31,7 @@ export function builderError(
   error: unknown,
   fallback: string,
 ): string {
-  if (error instanceof Error && "code" in error && error.code === "TEMPLATE_PLAN_UNAVAILABLE") {
-    return builderText(locale, {
-      ru: "Этот шаблон недоступен на вашем тарифе.",
-      uz: "Bu andoza joriy tarifingizda mavjud emas.",
-      en: "This template is unavailable on your plan.",
-    });
-  }
+  const code = error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : undefined;
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return platformApiError(builderUiLocale(locale), message, fallback);
+  return subscriptionFeedback(builderUiLocale(locale), code) ?? platformApiError(builderUiLocale(locale), message, fallback);
 }

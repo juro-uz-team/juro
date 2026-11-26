@@ -115,9 +115,6 @@ export const POST = withApiErrors(async function POST(
   const locale = isLocale(comparison.locale) ? comparison.locale : requestedLocale;
   const terms = await workspaceEntitlements(db, workspace.id);
   if (!terms.documentComparison) throw new SubscriptionLimitError("PLAN_LIMIT");
-  if (comparison.status === "completed" || comparison.status === "completed_partial") {
-    return response({ comparison: { id: comparisonId, status: comparison.status, stage: comparison.stage } });
-  }
   let sourceFiles: [ComparisonFileRecord, ComparisonFileRecord];
   try {
     sourceFiles = await assertComparisonSourceFilesClean(db, {
@@ -138,6 +135,9 @@ export const POST = withApiErrors(async function POST(
       code,
       comparison: { id: comparisonId, status: "failed", stage: comparison.stage },
     }, 422);
+  }
+  if (comparison.status === "completed" || comparison.status === "completed_partial") {
+    return response({ comparison: { id: comparisonId, status: comparison.status, stage: comparison.stage } });
   }
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
   const lock = await db.prepare(

@@ -1,5 +1,6 @@
 "use client";
 
+import { subscriptionFeedback } from "../../content/subscription-feedback";
 import { suggestedMatterTitle } from "../../lib/platform/plan-presentation";
 import { conversationVersions } from "../../lib/ai/conversation-versions";
 import {Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover, ModalOverlay, Modal, Dialog, Heading} from "react-aria-components";
@@ -222,7 +223,10 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
     const headers=new Headers(options.headers);headers.set("x-juro-workspace-id",workspaceId);headers.set("x-juro-locale",locale);
     if(options.method&&options.method!=="GET"){headers.set("content-type","application/json");headers.set("x-juro-csrf","1");}
     const response=await fetch(url,{...options,headers,cache:"no-store"});
-    if(!response.ok)throw new Error(text("Не удалось выполнить действие. Повторите попытку.","Amal bajarilmadi. Qayta urinib ko‘ring.","The action could not be completed. Please retry."));
+    if(!response.ok) {
+      const body = await response.json().catch(() => ({})) as { code?: string };
+      throw new Error(text("Не удалось выполнить действие. Повторите попытку.","Amal bajarilmadi. Qayta urinib ko‘ring.","The action could not be completed. Please retry."), { cause: body.code });
+    }
     return await response.json() as T;
   },[workspaceId,locale,text]);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
@@ -388,8 +392,9 @@ export function AiLawyerClient({ locale }: { locale: PlatformLocale }) {
       });
       if(activeScope.current!==scope||currentMessage.current!==messageId)return;
       setPlanConfirmationOpen(false);router.push(`${basePath}/action-plan/${encodeURIComponent(saved.caseId)}?saved=1`);
-    }catch{
-      if(activeScope.current===scope&&currentMessage.current===messageId)setPlanError(text(
+    }catch(cause){
+      const code = cause instanceof Error && typeof cause.cause === "string" ? cause.cause : undefined;
+      if(activeScope.current===scope&&currentMessage.current===messageId)setPlanError(subscriptionFeedback(locale, code) ?? text(
         "Не удалось сохранить план. Повторите попытку: уже сохранённые задачи не будут созданы повторно.",
         "Rejani saqlab bo‘lmadi. Qayta urinib ko‘ring: saqlangan vazifalar takror yaratilmaydi.",
         "The plan could not be saved. Try again; tasks already saved will not be duplicated."));

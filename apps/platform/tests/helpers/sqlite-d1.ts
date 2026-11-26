@@ -91,6 +91,32 @@ export function projectControlCenter(sqlite: DatabaseSync): void {
   }
 }
 
+function projectCompanyCaseAccess(sqlite: DatabaseSync): void {
+  sqlite.exec(`CREATE TABLE company_case_participants (
+    case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL REFERENCES workspace_members(id) ON DELETE CASCADE,
+    PRIMARY KEY (case_id, member_id)
+  );
+  CREATE TRIGGER company_case_creator AFTER INSERT ON cases BEGIN
+    INSERT INTO company_case_participants(case_id,member_id)
+    SELECT NEW.id,m.id FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id
+    WHERE m.workspace_id=NEW.workspace_id AND w.type='business'
+      AND m.user_id=NEW.owner_user_id AND m.status='active';
+  END;
+  CREATE TRIGGER company_case_membership_ended AFTER UPDATE OF status ON workspace_members
+    WHEN OLD.status='active' AND NEW.status<>'active' BEGIN
+    DELETE FROM company_case_participants WHERE member_id=NEW.id;
+  END;`);
+  const visibility = sqlite.prepare(`SELECT EXISTS (
+    SELECT 1 FROM cases c JOIN workspaces w ON w.id=c.workspace_id
+    JOIN workspace_members m ON m.workspace_id=c.workspace_id AND m.user_id=? AND m.status='active'
+    WHERE c.id=? AND (w.type<>'business' OR EXISTS (
+      SELECT 1 FROM company_case_participants p WHERE p.case_id=c.id AND p.member_id=m.id
+    ))
+  ) AS visible`);
+  sqlite.function("case_visible_to", (caseId, userId) => Number(visibility.get(userId, caseId)?.visible ?? 0));
+}
+
 function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, localDocumentConversion = false): {
   sqlite: DatabaseSync;
   d1: D1Database;
@@ -114,6 +140,7 @@ function createSqliteD1Fixture(lastMigrationIndex = Number.POSITIVE_INFINITY, lo
   // Historical migrations remain immutable; current fixtures include native additions.
   if (lastMigrationIndex === Number.POSITIVE_INFINITY) {
     projectControlCenter(sqlite);
+    projectCompanyCaseAccess(sqlite);
     sqlite.exec(readFileSync(new URL("../../postgres/0071-document-tool-inputs.sql", import.meta.url), "utf8").replaceAll("app.", ""));
   }
   const d1 = {

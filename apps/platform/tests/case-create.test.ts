@@ -132,7 +132,7 @@ test("case API validates input, derives tenant context and atomically inserts a 
   assert.match(route, /assertSafeWrite\(request\)/);
   assert.match(route, /requireApiUser\(\)/);
   assert.match(route, /parseJsonRequest\(request,caseCreateInputSchema,4_096\)/);
-  assert.match(route, /workspaceForContentEditor\(user\)/);
+  assert.match(route, /workspaceForContentEditor\(user, request\.headers\.get\("x-juro-workspace-id"\)\)/);
   assert.match(route, /workspace\.type==="business"\?"business"/);
   assert.match(route, /caseScenarioMatchesAccount\(legalArea,accountType\)/);
   assert.match(route, /INSERT INTO action_plans[\s\S]*VALUES \(\?,\?,\?,\?,'in_progress',0,1,\?,\?\)/);
