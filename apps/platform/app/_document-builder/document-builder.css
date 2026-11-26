@@ -1093,15 +1093,24 @@
 .dbt-tool-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .dbt-tool-results a { display: inline-flex; gap: 6px; align-items: center; padding-inline: 8px; border: 1px solid var(--border-accent); border-radius: 8px; color: var(--brand-gold-text); font-size: 13px; }
 .dbt-tool-results svg { width: 16px; }
-@media (max-width: 920px) {
+@media (max-width: 1180px) {
   .dbt-library-root .dbt-docs-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); gap: 6px; }
   .dbt-library-root .dbt-folders { display: flex; overflow-x: auto; white-space: nowrap; padding: 3px; }
+  .dbt-library-root .dbt-tool-shelf small { display: none; }
+  .platform-shell .dbt-library-root .dbt-doc-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, .7fr) minmax(0, .85fr) minmax(0, .8fr);
+  }
+  .platform-shell .dbt-library-root .dbt-doc-filters > :is(.dbt-doc-search, .juro-date-field) { grid-column: auto; }
+  .dbt-library-root .dbt-doc-filters .juro-date-picker { min-width: 0; }
 }
 @media (max-width: 700px) {
   .dbt-library-root .dbt-tool-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dbt-library-root .dbt-tool-shelf > a { grid-template-columns: 1fr; gap: 5px; justify-items: start; }
-  .dbt-library-root .dbt-tool-shelf :is(small, a > svg) { display: none; }
+  .dbt-library-root .dbt-tool-shelf a > svg { display: none; }
   .dbt-library-root .dbt-tool-shelf strong { font-size: 13px; }
+  .platform-shell .dbt-library-root .dbt-doc-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .platform-shell .dbt-library-root .dbt-doc-filters > :is(.dbt-doc-search, .juro-date-field) { grid-column: 1 / -1; }
+  .dbt-library-root .dbt-doc-filters > .juro-date-field { grid-row: 3; }
 }
 @media (max-height: 660px) {
   .dbt-library-root .dbt-tool-shelf small { display: none; }
