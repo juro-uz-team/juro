@@ -12,6 +12,7 @@ import {
   parseDocumentAnalysisResult,
 } from "../lib/document-analysis/schema";
 import { buildDocumentAnalysisProviderInput } from "../lib/document-analysis/input";
+import { documentCorpusCitation } from "../lib/document-analysis/corpus-sources";
 import {
   documentAnalysisMaxOutputTokens,
   documentAnalysisProviderMaxAttempts,
@@ -27,6 +28,33 @@ import {
   safeAnthropicFailureReason,
 } from "../lib/document-builder/ai/anthropic";
 import { AiUnavailableError } from "../lib/document-builder/ai/openai";
+
+test("document research quotes an authenticated matching provision beyond the act header", () => {
+  const article = "Статья 4. Режим конфиденциальности";
+  const body = "Обладатель определяет перечень сведений, составляющих коммерческую тайну.";
+  const following = "Статья 5. Ответственность сторон";
+  const provision = {
+    sourceUrl: "https://lex.uz/docs/123",
+    text: [("Сведения об издании. ").repeat(110), article, body, following, "Отдельное правило."].join("\n\n"),
+    sourceStructure: {
+      navigationOnly: true as const, rangeKind: "document" as const, rangeTitle: null,
+      anchor: { position: "120", ordinal: 0, language: "ru" },
+      headings: [
+        { position: "125", ordinal: 1, language: "ru", text: article, hierarchy: [] },
+        { position: "129", ordinal: 3, language: "ru", text: following, hierarchy: [] },
+      ],
+    },
+  };
+  assert.deepEqual(documentCorpusCitation(provision, body), {
+    url: "https://lex.uz/docs/123#125", article: "4", excerpt: article + "\n\n" + body,
+  });
+  assert.equal(documentCorpusCitation(provision, "Unverified discovery text"), null);
+  assert.equal(documentCorpusCitation({
+    ...provision,
+    text: "Publisher header\n\n" + article + "\n\n" + body,
+    sourceStructure: { ...provision.sourceStructure, rangeKind: "article", rangeTitle: article },
+  })?.excerpt, article + "\n\n" + body);
+});
 
 const base = {
   documentType: "Договор оказания услуг",
