@@ -9,6 +9,7 @@ import { articleNumberFromHeading } from "../legal-answer-workflow/normalized-do
 import { corpusDatabase } from "../storage/connection";
 import { legalDatabaseFreshnessFromAsOf } from "../legal/verified-retrieval";
 import type { LegalSourceContext } from "../legal/source-context";
+import { DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT } from "./schema";
 
 type Owner = { id: string; workspaceId: string; userId: string };
 
@@ -132,7 +133,7 @@ export function documentCorpusCitation(
     const title = structure?.rangeTitle;
     const article = provision.articleNumber ?? articleNumberFromHeading(title ?? "") ?? null;
     const start = title ? Math.max(0, body.lastIndexOf(title)) : 0;
-    return { url: url.href, article, excerpt: body.slice(start, start + 1800) };
+    return { url: url.href, article, excerpt: body.slice(start, start + DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT) };
   }
   const phrase = hit?.trim().split(/\r?\n/u)[0]?.slice(0, 180);
   if (!phrase || phrase.length < 12) return null;
@@ -149,6 +150,6 @@ export function documentCorpusCitation(
   const end = structure?.headings.reduce((next, item) => {
     const index = body.indexOf(item.text, match + phrase.length);
     return index >= 0 ? Math.min(index, next) : next;
-  }, start + 1800) ?? start + 1800;
+  }, start + DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT) ?? start + DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT;
   return { url: url.href, article, excerpt: body.slice(start, end).trimEnd() };
 }

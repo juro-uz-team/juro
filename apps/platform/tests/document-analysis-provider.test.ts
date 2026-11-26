@@ -3,6 +3,7 @@ import test from "node:test";
 import { env } from "./helpers/runtime-env";
 import {
   documentAnalysisResultSchema,
+  documentAnalysisSourceSchema,
   documentAnalysisAnthropicWireJsonSchema,
   documentAnalysisJsonSchema,
   enforceDocumentAnalysisSourceBoundary,
@@ -54,6 +55,16 @@ test("document research quotes an authenticated matching provision beyond the ac
     text: "Publisher header\n\n" + article + "\n\n" + body,
     sourceStructure: { ...provision.sourceStructure, rangeKind: "article", rangeTitle: article },
   })?.excerpt, article + "\n\n" + body);
+  const longCitation = documentCorpusCitation({
+    ...provision,
+    text: ("Publisher header. ").repeat(120) + "\n\n" + article + "\n\n" + body.repeat(50),
+    sourceStructure: { ...provision.sourceStructure, rangeKind: "article", rangeTitle: article },
+  });
+  assert.ok(documentAnalysisSourceSchema.safeParse({
+    sourceId: "official", actTitle: "Fixture", actIdentifier: null,
+    originalUrl: longCitation?.url, article: longCitation?.article,
+    excerpt: longCitation?.excerpt, verifiedAt: "2026-01-01",
+  }).success);
 });
 
 const base = {

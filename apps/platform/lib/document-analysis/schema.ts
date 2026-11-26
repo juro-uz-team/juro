@@ -45,12 +45,14 @@ export const missingClauseSchema = z.object({
   legalBasisSourceIds: sourceIds,
 }).strict();
 
+export const DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT = 1_200;
+
 export const documentAnalysisSourceSchema = z.object({
   sourceId: z.string().min(1).max(160),
   actTitle: z.string().min(1).max(500),
   actIdentifier: z.string().max(240).nullable(),
   article: z.string().max(240).nullable(),
-  excerpt: z.string().max(1_200).nullable(),
+  excerpt: z.string().max(DOCUMENT_ANALYSIS_SOURCE_EXCERPT_LIMIT).nullable(),
   originalUrl: z.string().url().max(2_000),
   verifiedAt: z.string().min(1).max(64),
 }).strict();
