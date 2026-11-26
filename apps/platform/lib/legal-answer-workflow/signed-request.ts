@@ -18,6 +18,7 @@ import type { VerifiedAnswerVoice } from "./voice-input";
 import { answerFailureCode } from "./failure";
 import { loadCaseContext } from "./case-context";
 import type { IdentityKeyring } from "../auth/keyring";
+import type { AnswerPeriod } from "../billing/entitlements";
 
 type SignedRequest = {
   db: D1Database; workspaceId: string; userId: string; conversationId: string | null;
@@ -38,13 +39,14 @@ type SignedDependencies = {
   memoryKeyring?: IdentityKeyring;
   model: string; legalDatabaseAsOf: string; sourceVersionHash: string;
   monthlyLimit?: number | null;
+  answerPeriod?: AnswerPeriod;
   validateVoice?(input: { db: D1Database; workspaceId: string; userId: string;
     recordingId: string; question: string; signal: AbortSignal }): Promise<VerifiedAnswerVoice>;
   privateObjects: ProvisionObjects;
   createExecution(input: { request: LegalRequest; runId: string; model: string }): Promise<Execution>;
 };
 const requestFields = z.object({
-  question: z.string().trim().min(1).max(12_000), language: z.enum(["en", "ru", "uz"]),
+  question: z.string().trim().min(1).max(8_000), language: z.enum(["en", "ru", "uz"]),
   format: z.enum(["short", "detailed"]), mode: z.enum(["fast", "deep"]),
   legalContextDate: z.iso.date().optional(),
   voiceRecordingId: z.string().min(1).max(240).optional(),
@@ -87,6 +89,7 @@ export async function executeSignedInAnswer(input: SignedRequest, dependencies: 
       onBudgetSelected: input.onBudgetSelected, onProgress: input.onProgress, onWriting: input.onWriting, signal };
     reserved = await reserveAiRun({ ...input, requestHash: hash(fields), provider: "openai", model: dependencies.model,
       monthlyLimit: dependencies.monthlyLimit,
+      answerPeriod: dependencies.answerPeriod,
       answerMode: fields.format, reasoningMode: fields.mode, legalDatabaseAsOf: dependencies.legalDatabaseAsOf,
       instructionHash: hash([entryInstruction, unreadResearchInstruction, researchWritingInstruction]),
       sourceVersionHash: dependencies.sourceVersionHash });

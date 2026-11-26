@@ -34,6 +34,7 @@ export const lawyerAccessGrantSchema = z.object({
 
 export function localizedHandoffError(locale: PlatformLocale, code: string) {
   const messages: Record<string, string> = {
+    HANDOFF_PAYMENT_UNAVAILABLE: lawyerText(locale, "Оплата передачи дела пока недоступна.", "Ishni topshirish uchun to‘lov hozircha mavjud emas.", "Payment for case handoff is currently unavailable."),
     PLAN_LIMIT: lawyerText(locale, "Передача дела юристу недоступна на бесплатном плане.", "Ishni yuristga topshirish bepul rejada mavjud emas.", "Lawyer handoff is not available on the free plan."),
     CASE_UNAVAILABLE: lawyerText(locale, "Выбранное дело недоступно.", "Tanlangan ish mavjud emas.", "The selected case is unavailable."),
     LAWYER_UNAVAILABLE: lawyerText(locale, "Выбранный юрист сейчас недоступен.", "Tanlangan yurist hozir mavjud emas.", "The selected lawyer is currently unavailable."),

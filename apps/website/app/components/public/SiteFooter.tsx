@@ -18,7 +18,7 @@ export function SiteFooter({ initialLocale }: { initialLocale: PublicLanguage })
   return (
     <footer className={styles.footer} id="resources">
       <div className={styles.wrap}>
-        <div className={styles.anchors} aria-hidden="true"><span id="audiences" /><span id="pricing" /></div>
+        <div className={styles.anchors} aria-hidden="true"><span id="audiences" /></div>
         <div className={styles.closing} id="start" data-nosnippet="">
           <h2>{copy.closing}</h2>
           <a className={styles.primary} href={register}>{copy.start}<ArrowUpRight aria-hidden="true" size={19} /></a>

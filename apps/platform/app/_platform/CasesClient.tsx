@@ -5,7 +5,7 @@ import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePaginati
 
 import { Select } from "../_components/Select";
 
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, CircleAlert, LoaderCircle, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -39,10 +39,11 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
   const [error, setError] = useState("");
   const copy = casesCopy[locale];
   const base = usePlatformBasePath();
+  const workspaceId = usePlatformWorkspaceId();
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/platform/cases", { cache: "no-store" })
+    fetch("/api/platform/cases", { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } })
       .then(async (response) => {
         const body = await response.json() as { cases?: CaseItem[]; error?: string };
         if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.loadError));
@@ -51,7 +52,7 @@ export function CasesClient({ locale }: { locale: PlatformLocale; accountType: A
       .catch((value) => { if (!cancelled) setError(value instanceof Error ? value.message : String(value)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [copy.loadError, locale]);
+  }, [copy.loadError, locale, workspaceId]);
 
   const filtered = useMemo(() => items.filter((item) => {
     const matchesSearch = !query || `${item.title} ${item.description ?? ""} ${item.legalArea}`.toLocaleLowerCase().includes(query.toLocaleLowerCase());

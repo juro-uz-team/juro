@@ -1,3 +1,4 @@
+import type { AnswerPeriod } from "../billing/entitlements";
 import { AI_RESERVATION_TTL_MS } from "./reservation-policy";
 
 const CHAT_FEATURE = "legal_chat";
@@ -60,6 +61,8 @@ type ReserveInput = {
   sourceVersionHash: string;
   /** Null explicitly disables the cycle cap for local development. */
   monthlyLimit?: number | null;
+  answerPeriod?: AnswerPeriod;
+  feature?: "practice_draft";
 };
 
 export async function reserveAiRun(input: ReserveInput): Promise<AiRunReservation | AiRunReplay | AiRunPending | AiRunExpired | AiRunFailed> {
@@ -86,12 +89,17 @@ export async function reserveAiRun(input: ReserveInput): Promise<AiRunReservatio
   const runId = crypto.randomUUID();
   const ledgerId = crypto.randomUUID();
   const correlationId = crypto.randomUUID();
-  const { periodStart, periodEnd } = monthlyPeriod(new Date());
+  const { periodStart, periodEnd } = input.answerPeriod ?? monthlyPeriod(new Date());
+  const pooled = input.answerPeriod?.pooled ?? false;
+  const feature = input.feature ?? CHAT_FEATURE;
   const configured=await input.db.prepare("SELECT value FROM control_settings WHERE key='ai.max_monthly_cycles'").first<{value:string}>();
   const ceiling=configured?Number(JSON.parse(configured.value)):null;
   const planLimit = input.monthlyLimit === undefined ? FREE_MONTHLY_CYCLES : input.monthlyLimit;
-  const limit = ceiling!==null&&Number.isInteger(ceiling)&&ceiling>0?Math.min(planLimit??ceiling,ceiling):planLimit;
-  const [runResult, ledgerResult] = await input.db.batch([
+  const limit = input.answerPeriod?.readOnly ? 0
+    : ceiling!==null&&Number.isInteger(ceiling)&&ceiling>0?Math.min(planLimit??ceiling,ceiling):planLimit;
+  const results = await input.db.batch([
+    ...(input.answerPeriod ? [input.db.prepare("SELECT pg_advisory_xact_lock(hashtextextended(?,0))")
+      .bind(`answer-allowance:${input.workspaceId}:${pooled ? "" : input.userId}:${periodStart}`)] : []),
     input.db.prepare(
       `INSERT INTO ai_runs
         (id,workspace_id,user_id,conversation_id,request_message_id,response_message_id,idempotency_key,
@@ -113,14 +121,15 @@ export async function reserveAiRun(input: ReserveInput): Promise<AiRunReservatio
        SELECT ?,?,?,?,?,?,?,?,1,'reserved',?,?,0,0,0,NULL,NULL,NULL,?,?
        WHERE (? IS NULL OR
               (SELECT COALESCE(SUM(units),0) FROM ai_usage_ledger
-               WHERE workspace_id=? AND user_id=? AND feature=? AND period_start=?
+               WHERE workspace_id=? AND (?=1 OR user_id=?) AND feature=? AND period_start=?
                  AND status IN ('reserved','consumed')) < ?)`,
     ).bind(
-      ledgerId, input.workspaceId, input.userId, runId, input.idempotencyKey, CHAT_FEATURE,
+      ledgerId, input.workspaceId, input.userId, runId, input.idempotencyKey, feature,
       periodStart, periodEnd, input.provider, input.model, now, now,
-      limit, input.workspaceId, input.userId, CHAT_FEATURE, periodStart, limit,
+      limit, input.workspaceId, Number(pooled), input.userId, feature, periodStart, limit,
     ),
   ]);
+  const [runResult, ledgerResult] = results.slice(-2);
   if (!runResult.success) throw new Error("AI_RUN_RESERVATION_FAILED");
   if (!ledgerResult.success || (ledgerResult.meta.changes ?? 0) === 0) {
     await input.db.batch([

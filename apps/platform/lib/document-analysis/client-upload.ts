@@ -31,12 +31,12 @@ export async function uploadDocumentForAnalysis(
   workspaceId?: string,
   options?: { sourceDocumentId?: string; mode?: "quick" | "full" },
 ): Promise<SecureDocumentUploadResult> {
-  if (file.size <= 0 || file.size > 50 * 1024 * 1024) {
+  if (file.size <= 0 || file.size > 25_000_000) {
     throw new Error(locale === "ru"
-      ? "Размер файла должен быть от 1 байта до 50 МБ."
+      ? "Размер файла должен быть от 1 байта до 25 МБ."
       : locale === "uz"
-        ? "Fayl hajmi 1 baytdan 50 MB gacha bo‘lishi kerak."
-        : "The file size must be between 1 byte and 50 MB.");
+        ? "Fayl hajmi 1 baytdan 25 MB gacha bo‘lishi kerak."
+        : "The file size must be between 1 byte and 25 MB.");
   }
   onProgress?.({ phase: "hashing", loaded: 0, total: file.size });
   const sha256 = await fileSha256(file);

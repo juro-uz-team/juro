@@ -12,7 +12,7 @@ import {
   lawyerRequestMessageSchema,
 } from "../../../../../../lib/platform/lawyer-request-message";
 import type { PlatformLocale } from "../../../../../../lib/platform/routing";
-import { workspaceForUser } from "../../../../../../lib/platform/workspace";
+import { requireSelectedWorkspace } from "../../../../../../lib/platform/workspace";
 
 type Context = { params: Promise<{ requestId: string }> };
 type Participant = {
@@ -22,6 +22,7 @@ type Participant = {
   lawyerUserId: string;
   clientLocale: PlatformLocale;
   lawyerLocale: PlatformLocale;
+  intakeOnly: boolean;
   role: "client" | "lawyer";
 };
 
@@ -42,38 +43,44 @@ async function participantForRequest(
     `SELECT r.workspace_id AS workspaceId,r.case_id AS caseId,
       r.requester_user_id AS clientUserId,p.user_id AS lawyerUserId,
       CASE client.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS clientLocale,
-      CASE lawyer.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS lawyerLocale
+      CASE lawyer.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS lawyerLocale,
+      json_extract(r.requested_scope_json,'$.paidTransfer')='required' AS intakeOnly
      FROM lawyer_requests r JOIN lawyer_profiles p ON p.id=r.lawyer_profile_id
      JOIN user_profiles client ON client.id=r.requester_user_id
      JOIN user_profiles lawyer ON lawyer.id=p.user_id
-     WHERE r.id=? AND r.workspace_id=? AND r.requester_user_id=? LIMIT 1`,
-  ).bind(requestId, ownWorkspaceId, userId).first<Omit<Participant, "role">>();
+     WHERE r.id=? AND r.workspace_id=? AND r.requester_user_id=? AND case_visible_to(r.case_id,?)
+       AND (json_extract(r.requested_scope_json,'$.paidTransfer') IS DISTINCT FROM 'required' OR r.status='awaiting_user_consent') LIMIT 1`,
+  ).bind(requestId, ownWorkspaceId, userId, userId).first<Omit<Participant, "role">>();
   if (client) return { ...client, role: "client" };
   const lawyer = await db.prepare(
     `SELECT r.workspace_id AS workspaceId,r.case_id AS caseId,
       r.requester_user_id AS clientUserId,p.user_id AS lawyerUserId,
       CASE client.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS clientLocale,
-      CASE lawyer.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS lawyerLocale
+      CASE lawyer.locale WHEN 'uz' THEN 'uz' WHEN 'en' THEN 'en' ELSE 'ru' END AS lawyerLocale,
+      g.id IS NULL AS intakeOnly
      FROM lawyer_requests r
      JOIN lawyer_profiles p ON p.id=r.lawyer_profile_id AND p.user_id=?
      JOIN user_profiles client ON client.id=r.requester_user_id
      JOIN user_profiles lawyer ON lawyer.id=p.user_id
        AND p.status='public_approved' AND p.marketplace_status='public_approved'
-     JOIN lawyer_access_grants g ON g.lawyer_request_id=r.id AND g.case_id=r.case_id
+     LEFT JOIN lawyer_access_grants g ON g.lawyer_request_id=r.id AND g.case_id=r.case_id
        AND g.lawyer_user_id=? AND g.revoked_at IS NULL
        AND (g.expires_at IS NULL OR g.expires_at>?)
-     WHERE r.id=? LIMIT 1`,
+     WHERE r.id=? AND (g.id IS NOT NULL OR (
+       r.status='awaiting_user_consent' AND json_extract(r.requested_scope_json,'$.paidTransfer')='required'
+       AND case_visible_to(r.case_id,r.requester_user_id)
+     )) LIMIT 1`,
   ).bind(userId, userId, new Date().toISOString(), requestId)
     .first<Omit<Participant, "role">>();
   return lawyer ? { ...lawyer, role: "lawyer" } : null;
 }
 
 export const GET = withApiErrors(async function GET(
-  _request: Request,
+  request: Request,
   context: Context,
 ) {
   const user = await requireApiUser();
-  const ownWorkspace = await workspaceForUser(user);
+  const ownWorkspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const { requestId } = await context.params;
   const participant = await participantForRequest(
     user.id,
@@ -99,7 +106,8 @@ export const GET = withApiErrors(async function GET(
       `SELECT count(*) AS count FROM lawyer_request_messages
        WHERE lawyer_request_id=? AND author_user_id<>? AND read_at IS NULL`,
     ).bind(requestId, user.id).first<{ count: number }>(),
-    participant.role === "client"
+    participant.intakeOnly ? { results: [] }
+      : participant.role === "client"
       ? db.prepare(
         `SELECT id,title,status,updated_at AS updatedAt FROM documents
          WHERE owner_user_id=? AND workspace_id=? AND case_id=? AND archived_at IS NULL
@@ -116,6 +124,7 @@ export const GET = withApiErrors(async function GET(
     unreadCount: Number(unread?.count ?? 0),
     documents: documents.results,
     role: participant.role,
+    intakeOnly: participant.intakeOnly,
   });
 });
 
@@ -125,7 +134,7 @@ export const POST = withApiErrors(async function POST(
 ) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const ownWorkspace = await workspaceForUser(user);
+  const ownWorkspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const { requestId } = await context.params;
   const parsed = await parseJsonRequest(request, lawyerRequestMessageSchema, 8_192);
   const locale = parsed.ok ? parsed.data.locale : "ru";
@@ -148,6 +157,9 @@ export const POST = withApiErrors(async function POST(
   }
   const db = requireD1();
   const now = isoNow();
+  if (participant.intakeOnly && parsed.data.action !== "mark_read" && parsed.data.documentId) {
+    return response({ code: "DOCUMENT_UNAVAILABLE", error: lawyerRequestMessageError(locale, "DOCUMENT_UNAVAILABLE") }, 403);
+  }
 
   if (parsed.data.action === "mark_read") {
     const results = await db.batch([

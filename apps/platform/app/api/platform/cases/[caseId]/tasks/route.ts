@@ -2,7 +2,7 @@ import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../.
 import { isoNow, parseJson } from "../../../../../../lib/document-builder/storage/db";
 import { requireD1 } from "../../../../../../lib/document-builder/storage/runtime";
 import { taskStatusForPlanStep, taskStatusIsTerminal } from "../../../../../../lib/platform/task-status";
-import { workspaceForContentEditor, workspaceForUser } from "../../../../../../lib/platform/workspace";
+import { workspaceForContentEditor, requireSelectedWorkspace } from "../../../../../../lib/platform/workspace";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
@@ -15,24 +15,24 @@ function defaultReminderAt(dueAt: string, now: string): string {
 }
 
 export const GET = withApiErrors(async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ caseId: string }> },
 ) {
   const user = await requireApiUser();
   const { caseId } = await params;
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const [rows, comments] = await Promise.all([
     db.prepare(
-      "SELECT t.id,t.plan_step_id AS planStepId,t.title,t.description,t.status,t.source_date AS sourceDate,t.due_at AS dueAt,t.safe_due_at AS safeDueAt,t.calculation_method AS calculationMethod,t.deadline_type AS deadlineType,t.legal_basis AS legalBasis,t.deadline_confidence AS deadlineConfidence,t.deadline_evidence_json AS deadlineEvidenceJson,t.completed_at AS completedAt FROM tasks t WHERE t.case_id=? AND t.workspace_id=? ORDER BY t.due_at IS NULL,t.due_at,t.created_at",
-    ).bind(caseId, workspace.id).all(),
+      "SELECT t.id,t.plan_step_id AS planStepId,t.title,t.description,t.status,t.source_date AS sourceDate,t.due_at AS dueAt,t.safe_due_at AS safeDueAt,t.calculation_method AS calculationMethod,t.deadline_type AS deadlineType,t.legal_basis AS legalBasis,t.deadline_confidence AS deadlineConfidence,t.deadline_evidence_json AS deadlineEvidenceJson,t.completed_at AS completedAt FROM tasks t WHERE t.case_id=? AND t.workspace_id=? AND case_visible_to(t.case_id,?) ORDER BY t.due_at IS NULL,t.due_at,t.created_at",
+    ).bind(caseId, workspace.id, user.id).all(),
     db.prepare(
       `SELECT c.id,c.task_id AS taskId,c.body,c.created_at AS createdAt,u.full_name AS authorName
        FROM lawyer_task_comments c
-       JOIN tasks t ON t.id=c.task_id AND t.case_id=? AND t.workspace_id=?
+       JOIN tasks t ON t.id=c.task_id AND t.case_id=? AND t.workspace_id=? AND case_visible_to(t.case_id,?)
        JOIN user_profiles u ON u.id=c.author_user_id
        ORDER BY c.created_at ASC`,
-    ).bind(caseId, workspace.id).all(),
+    ).bind(caseId, workspace.id, user.id).all(),
   ]);
   const commentsByTask = new Map<string, Array<Record<string, unknown>>>();
   for (const comment of comments.results as Array<Record<string, unknown>>) {
@@ -58,9 +58,9 @@ export const POST = withApiErrors(async function POST(
   assertSafeWrite(request);
   const user = await requireApiUser();
   const { caseId } = await params;
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
-  const owned = await db.prepare("SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL LIMIT 1").bind(caseId, workspace.id).first();
+  const owned = await db.prepare("SELECT id FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL LIMIT 1").bind(caseId, workspace.id, user.id).first();
   if (!owned) return response({ error: "Дело недоступно.", code: "CASE_UNAVAILABLE" }, 404);
   const steps = await db.prepare("SELECT s.id,s.title,s.description,s.status,s.deadline_source_date AS sourceDate,s.due_at AS dueAt,s.safe_due_at AS safeDueAt,s.calculation_method AS calculationMethod,s.deadline_type AS deadlineType,s.deadline_legal_basis AS legalBasis,s.deadline_days_count AS deadlineDaysCount,s.deadline_include_source_date AS deadlineIncludeSourceDate,s.deadline_roll_rule AS deadlineRollRule,s.holiday_calendar_version AS holidayCalendarVersion,s.deadline_evidence_json AS deadlineEvidenceJson,s.deadline_confidence AS deadlineConfidence,p.id AS planId,p.current_revision AS planRevision FROM action_plan_steps s JOIN action_plans p ON p.id=s.plan_id WHERE p.case_id=? ORDER BY s.ordinal").bind(caseId).all<{
     id: string;
@@ -130,6 +130,6 @@ export const POST = withApiErrors(async function POST(
     )]
     : [];
   await db.batch([...statements, ...confirmationStatements]);
-  const count = await db.prepare("SELECT count(*) AS count FROM tasks WHERE case_id=? AND workspace_id=?").bind(caseId, workspace.id).first<{ count: number }>();
+  const count = await db.prepare("SELECT count(*) AS count FROM tasks WHERE case_id=? AND workspace_id=?").bind(caseId, workspace.id, user.id).first<{ count: number }>();
   return response({ ok: true, taskCount: count?.count ?? 0 }, 201);
 });

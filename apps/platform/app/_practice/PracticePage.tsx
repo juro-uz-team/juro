@@ -21,7 +21,7 @@ export async function renderPractice({
 }) {
   const user = await requireChatGPTUser("/practice");
   const profile = await getOrCreateUserProfile(user);
-  if (process.env.PRACTICE_ENABLED !== "true")
+  if (process.env.PRACTICE_ENABLED === "false")
     return (
       <div className="practice-invite">
         <h1>JURO Practice</h1>

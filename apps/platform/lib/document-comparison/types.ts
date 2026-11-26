@@ -91,6 +91,7 @@ export type AnalysisPackageContext = {
 };
 
 export type ExtractedDocument = {
+  accountingPages?: number;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -137,6 +138,7 @@ export type ComparisonChange = {
 };
 
 export type ComparisonSummary = {
+  reviewedPages?: { first: number; last: number; total: number }[];
   sources?: import("./storage").VerifiedLegalSource[];
   legalResearchScope?: "document" | "changes";
   totalChanges: number;

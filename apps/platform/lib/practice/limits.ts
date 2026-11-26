@@ -9,15 +9,15 @@ export async function withPracticeSeat<T>(
   userId: string,
   run: () => Promise<T>,
 ): Promise<T> {
-  if (process.env.PRACTICE_ENABLED !== "true") return run();
+  if (process.env.PRACTICE_ENABLED === "false") return run();
   return transaction(async (client) => {
     const invitation = (
       await client.query(
-        `SELECT workspace_id FROM workspace_invitations WHERE id=$1`,
+        `SELECT i.workspace_id,w.type FROM workspace_invitations i JOIN workspaces w ON w.id=i.workspace_id WHERE i.id=$1`,
         [invitationId],
       )
     ).rows[0];
-    if (!invitation) return run();
+    if (!invitation || invitation.type === "business") return run();
     await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, [
       `practice:${invitation.workspace_id}`,
     ]);

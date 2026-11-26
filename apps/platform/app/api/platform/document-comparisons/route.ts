@@ -1,3 +1,5 @@
+import { workspaceEntitlements } from "../../../../lib/billing/entitlements";
+import { SubscriptionLimitError } from "../../../../lib/billing/usage";
 import { getDocumentAccess } from "../../../../lib/document-builder/permissions";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../lib/document-builder/auth/api";
 import { isoNow } from "../../../../lib/document-builder/storage/db";
@@ -17,7 +19,7 @@ import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { ArchiveInspectionError } from "../../../../lib/document-analysis/archive-inspector";
 import type { ComparisonLocale } from "../../../../lib/document-comparison/types";
 import { isLocale } from "../../../../lib/platform/routing";
-import { workspaceForContentEditor, workspaceForUser } from "../../../../lib/platform/workspace";
+import { workspaceForContentEditor, requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 import { MULTIPART_OVERHEAD_BYTES, requiredContentLength } from "../../../../lib/request-body";
 
 type ExistingFile = {
@@ -132,9 +134,9 @@ async function prepareFile(input: {
   };
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const [comparisons, reusableFiles] = await db.batch([
     db.prepare(
@@ -163,7 +165,10 @@ export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
   let locale = requestLocale(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
+  if (!(await workspaceEntitlements(requireD1(), workspace.id)).documentComparison) {
+    throw new SubscriptionLimitError("PLAN_LIMIT");
+  }
   const bodyLength = requiredContentLength(request, (2 * MAX_FILE_SIZE) + MULTIPART_OVERHEAD_BYTES);
   if (!bodyLength.ok) {
     return response({

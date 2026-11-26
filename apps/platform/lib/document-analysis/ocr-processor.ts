@@ -1,3 +1,4 @@
+import { accountingPages } from "../billing/usage";
 import type { DocumentConverter, DocumentConversion } from "../runtime/document-converter";
 import {
   detectDocumentLanguage,
@@ -545,6 +546,8 @@ async function convertPackageLocally(
       text,
       sections,
       packageContext: buildAnalysisPackageContext(memberDocuments),
+      accountingPages: memberDocuments.reduce((total, member) => total +
+        accountingPages(member.text, member.pageCount ?? 0), 0),
     },
   };
 }

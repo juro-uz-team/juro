@@ -42,8 +42,8 @@ export const PATCH = withApiErrors(async function PATCH(
   const db = requireD1();
   const workspace = await workspaceForContentEditor(user);
   const owned = await db.prepare(
-    "SELECT s.plan_id AS planId,s.due_at AS dueAt,p.current_revision AS planRevision FROM action_plan_steps s JOIN action_plans p ON p.id=s.plan_id JOIN cases c ON c.id=p.case_id WHERE s.id=? AND c.id=? AND c.workspace_id=? LIMIT 1",
-  ).bind(stepId, caseId, workspace.id).first<{
+    "SELECT s.plan_id AS planId,s.due_at AS dueAt,p.current_revision AS planRevision FROM action_plan_steps s JOIN action_plans p ON p.id=s.plan_id JOIN cases c ON c.id=p.case_id WHERE s.id=? AND c.id=? AND c.workspace_id=? AND case_visible_to(c.id,?) LIMIT 1",
+  ).bind(stepId, caseId, workspace.id, user.id).first<{
     planId: string;
     dueAt: string | null;
     planRevision: number;

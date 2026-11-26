@@ -288,7 +288,7 @@ test("checkout routes and UI retain auth, CSRF, workspace, localization and feat
     readFile(new URL("../app/_platform/OrderPaymentClient.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/_platform/BillingClient.tsx", import.meta.url), "utf8"),
   ]);
-  for (const source of [createRoute, readRoute, confirmRoute, plansRoute]) {
+  for (const source of [createRoute, readRoute, confirmRoute]) {
     assert.match(source, /requireApiUser/);
     assert.match(source, /workspaceForUser/);
     assert.match(source, /paymentFoundationStatus/);
@@ -297,17 +297,18 @@ test("checkout routes and UI retain auth, CSRF, workspace, localization and feat
   assert.match(confirmRoute, /assertSafeWrite/);
   assert.match(confirmRoute, /sandboxEnabled/);
   assert.doesNotMatch(createRoute + confirmRoute, /providerPaymentId.*success|status:\s*["']paid["']/i);
-  for (const source of [checkoutUi, paymentUi, billingUi]) {
+  for (const source of [checkoutUi, paymentUi]) {
     assert.match(source, /type PlatformLocale/);
     assert.match(source, /en:\s*\{/);
     assert.match(source, /en-GB/);
     assert.match(source, /x-juro-csrf/);
   }
-  assert.match(plansRoute, /name_en AS nameEn/);
+  assert.match(plansRoute, /requireApiUser/);
+  assert.match(plansRoute, /Response\.json\(pricingConfig,/);
   assert.match(checkoutUi, /titleEn/);
   assert.match(checkoutUi, /AUTO_RENEW/);
   assert.match(paymentUi, /sandbox-authorize/);
-  assert.match(billingUi, /api\/subscriptions\/plans/);
-  assert.match(billingUi, /function paymentStatusLabel/);
-  assert.match(billingUi, /Демо: оплачено/);
+  assert.match(billingUi, /subscriptionPlans\.map/);
+  assert.match(billingUi, /Plan purchases and renewals are currently unavailable/);
+  assert.doesNotMatch(billingUi, /api\/checkout/);
 });

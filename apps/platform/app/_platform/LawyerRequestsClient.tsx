@@ -35,6 +35,7 @@ type AssignedRequest = {
   createdAt: string;
   conflictStatus?: string | null;
   accessGrantId?: string | null;
+  paidTransfer?: string | null;
   accessGrantedAt?: string | null;
   caseId?: string | null;
   caseTitle?: string | null;
@@ -397,7 +398,7 @@ export function LawyerRequestsClient({ locale }: { locale: PlatformLocale }) {
                     {text("Отметить работу завершённой", "Ishni yakunlangan deb belgilash", "Mark work as complete")}
                   </button>
                 )}
-              {item.accessGrantId && (
+              {(item.accessGrantId || (item.paidTransfer === "required" && item.status === "awaiting_user_consent")) && (
                 <LawyerRequestMessages requestId={item.id} locale={locale} />
               )}
               {item.reviewId && item.reviewOverallRating && (

@@ -1,25 +1,30 @@
-import { requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
+import { z } from "zod";
+import { parseJsonRequest } from "../../../../../../lib/auth/input";
+import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
 import { documentVisibilityScope } from "../../../../../../lib/document-builder/permissions/document-visibility";
 import { parseJson } from "../../../../../../lib/document-builder/storage/db";
 import { requireD1 } from "../../../../../../lib/document-builder/storage/runtime";
-import { workspaceForUser } from "../../../../../../lib/platform/workspace";
+import { canManageTeam } from "../../../../../../lib/platform/permissions";
+import { requireSelectedWorkspace, workspaceForContentEditor } from "../../../../../../lib/platform/workspace";
+import { workspaceEntitlements } from "../../../../../../lib/billing/entitlements";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 }
 
 export const GET = withApiErrors(async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ caseId: string }> },
 ) {
   const user = await requireApiUser();
   const { caseId } = await params;
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const owned = await db.prepare(
-    "SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL LIMIT 1",
-  ).bind(caseId, workspace.id).first<{ id: string }>();
+    "SELECT id,owner_user_id AS ownerUserId FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL LIMIT 1",
+  ).bind(caseId, workspace.id, user.id).first<{ id: string; ownerUserId: string }>();
   if (!owned) return response({ error: "Дело недоступно.", code: "CASE_UNAVAILABLE" }, 404);
+  const terms = await workspaceEntitlements(db, workspace.id);
   const documentVisibility = documentVisibilityScope(user.id, workspace.id);
   const eventDocumentId = "json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END, '$.documentId')";
 
@@ -114,9 +119,9 @@ export const GET = withApiErrors(async function GET(
         COALESCE(NULLIF(TRIM(p.full_name),''), CASE WHEN m.user_id=? THEN 'You' ELSE 'Workspace member' END) AS displayName
        FROM workspace_members m
        JOIN user_profiles p ON p.id=m.user_id
-       WHERE m.workspace_id=? AND m.status='active'
+       WHERE m.workspace_id=? AND m.status='active' AND case_visible_to(?,m.user_id)
        ORDER BY CASE WHEN m.role='owner' THEN 0 ELSE 1 END,m.joined_at,m.user_id`,
-    ).bind(user.id, workspace.id),
+    ).bind(user.id, workspace.id, caseId),
     db.prepare(
       `SELECT r.id,r.status,r.updated_at AS updatedAt,p.display_name AS lawyerName,
         g.id AS activeGrantId,g.created_at AS grantedAt,g.expires_at AS expiresAt
@@ -128,6 +133,10 @@ export const GET = withApiErrors(async function GET(
     ).bind(workspace.id, user.id, caseId),
   ]);
   return response({
+    ownerUserId: owned.ownerUserId,
+    canManageParticipants: workspace.type === "business" && !terms.readOnly && canManageTeam(workspace.role),
+    canComment: workspace.type === "business" && terms.planCode === "company"
+      && ["owner","admin","lawyer","employee"].includes(workspace.role),
     documents: documents.results,
     activity: events.results.map((event) => ({
       eventType: String((event as { eventType?: unknown }).eventType || "case_updated"),
@@ -148,4 +157,62 @@ export const GET = withApiErrors(async function GET(
     }),
     lawyerRequests: lawyerRequests.results,
   });
+});
+
+export const POST = withApiErrors(async function POST(
+  request: Request,
+  { params }: { params: Promise<{ caseId: string }> },
+) {
+  assertSafeWrite(request);
+  const user = await requireApiUser();
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
+  const db = requireD1();
+  if (workspace.type !== "business" || (await workspaceEntitlements(db, workspace.id)).planCode !== "company") {
+    return response({ code: "PLAN_LIMIT" }, 403);
+  }
+  const { caseId } = await params;
+  const input = await parseJsonRequest(request, z.object({ comment: z.string().trim().min(1).max(2_000) }).strict(), 12_000);
+  if (!input.ok) return response({ code: "INVALID_COMMENT" }, 400);
+  const result = await db.prepare(`INSERT INTO case_events(id,case_id,actor_user_id,event_type,metadata_json,created_at)
+    SELECT ?,id,?,'company_case_comment',?,? FROM cases
+    WHERE id=? AND workspace_id=? AND archived_at IS NULL AND case_visible_to(id,?)`)
+    .bind(crypto.randomUUID(),user.id,JSON.stringify({ comment: input.data.comment }),new Date().toISOString(),caseId,workspace.id,user.id).run();
+  return result.meta.changes ? response({ ok: true }, 201) : response({ code: "CASE_UNAVAILABLE" }, 404);
+});
+
+const participantChange = z.object({ userId: z.string().min(1).max(240), assigned: z.boolean() }).strict();
+
+export const PATCH = withApiErrors(async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ caseId: string }> },
+) {
+  assertSafeWrite(request);
+  const user = await requireApiUser();
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
+  if (workspace.type !== "business" || !canManageTeam(workspace.role)) return response({ code: "FORBIDDEN" }, 403);
+  const { caseId } = await params;
+  const input = await parseJsonRequest(request, participantChange, 1_024);
+  if (!input.ok) return response({ code: "INVALID_PARTICIPANT" }, 400);
+  const db = requireD1();
+  const { userId, assigned } = input.data;
+  if (user.id === userId) return response({ code: "INVALID_PARTICIPANT" }, 400);
+  const member = await db.prepare(`SELECT m.id FROM workspace_members m JOIN cases c ON c.workspace_id=m.workspace_id
+    WHERE c.id=? AND c.workspace_id=? AND m.user_id=? AND m.status='active'
+      AND c.owner_user_id<>m.user_id AND case_visible_to(c.id,?)`)
+    .bind(caseId, workspace.id, userId, user.id).first<{ id: string }>();
+  if (!member) return response({ code: "CASE_PARTICIPANT_UNAVAILABLE" }, 404);
+  const now = new Date().toISOString();
+  const [changed] = await db.batch([
+    assigned
+      ? db.prepare(`INSERT INTO company_case_participants(case_id,member_id)
+          SELECT ?,id FROM workspace_members WHERE id=? AND status='active'
+          AND case_visible_to(?,?) ON CONFLICT DO NOTHING`).bind(caseId, member.id, caseId, user.id)
+      : db.prepare(`DELETE FROM company_case_participants WHERE case_id=? AND member_id=?
+          AND case_visible_to(?,?)`).bind(caseId, member.id, caseId, user.id),
+    db.prepare(`INSERT INTO workspace_audit_events(id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at)
+      SELECT ?,?,?,'case',?,?,?,? WHERE changes()=1`)
+      .bind(crypto.randomUUID(), workspace.id, user.id, caseId, assigned ? "case_participant_assigned" : "case_participant_removed",
+        JSON.stringify({ userId }), now),
+  ]);
+  return response({ changed: changed.meta.changes === 1 });
 });

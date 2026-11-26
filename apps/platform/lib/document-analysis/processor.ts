@@ -41,6 +41,8 @@ import {
 } from "./revisions";
 import { scheduleTrustedUserDocumentIndexStatements } from "./user-document-vectors";
 import { resolveAiRuntimeSettings, type AiRuntimeSettings } from "../ai/runtime-settings";
+import { workspaceEntitlements } from "../billing/entitlements";
+import { accountingPages, reserveSubscriptionUsage, selectAccountingPages, settleSubscriptionUsage, SubscriptionLimitError } from "../billing/usage";
 
 export const DOCUMENT_ANALYSIS_INLINE_BYTE_LIMIT = 20 * 1024 * 1024;
 export { DOCUMENT_ANALYSIS_INLINE_TEXT_LIMIT } from "./limits";
@@ -82,6 +84,8 @@ type AnalysisRow = {
 const stagingSyntheticProbeConsentVersion = "synthetic-probe";
 
 type PersistedAnalysis = {
+  subscriptionAccounting?: boolean;
+  reviewedPages?: { first: number; last: number; total: number };
   sourceFreshness: LegalDatabaseFreshness;
   result: DocumentAnalysisResult;
   technical: {
@@ -380,7 +384,7 @@ export async function executeDocumentAnalysisJob(
   analysisId: string,
   workspaceId: string,
   dependencies: Partial<DocumentAnalysisProcessorDependencies> = {},
-): Promise<{ status: "completed" | "already_completed"; analysisId: string }> {
+): Promise<{ status: "completed" | "already_completed" | "awaiting_confirmation"; analysisId: string }> {
   const deps = { ...defaultDependencies, ...dependencies };
   const scopedEnv = withSequentialAnalysisSession(env);
   const row = await loadAnalysis(scopedEnv.DB, analysisId, workspaceId);
@@ -388,6 +392,7 @@ export async function executeDocumentAnalysisJob(
     throw new DocumentAnalysisProcessingError("DOCUMENT_ANALYSIS_NOT_FOUND", false);
   }
   if (row.status === "completed") return { status: "already_completed", analysisId };
+  if (row.status === "awaiting_confirmation") return { status: "awaiting_confirmation", analysisId };
 
   let persisted: PersistedAnalysis;
   if (row.status === "persisting") {
@@ -400,13 +405,27 @@ export async function executeDocumentAnalysisJob(
     if (Number(claimed.meta.changes ?? 0) !== 1 && row.status !== "processing") {
       throw new DocumentAnalysisProcessingError("DOCUMENT_ANALYSIS_FILE_UNSAFE", false);
     }
-    persisted = await analyzeObject(scopedEnv, row, deps);
+    const result = await analyzeObject(scopedEnv, row, deps);
+    if (!result) return { status: "awaiting_confirmation", analysisId };
+    persisted = result;
     await scopedEnv.DB.prepare(
       "UPDATE document_analyses SET status='persisting',summary_json=?,error_code=NULL,updated_at=? WHERE id=? AND workspace_id=? AND status='processing'",
     ).bind(JSON.stringify(persisted), new Date().toISOString(), analysisId, workspaceId).run();
   }
 
   try {
+    if (persisted.subscriptionAccounting) {
+      const membership = await scopedEnv.DB.prepare("SELECT 1 FROM workspace_members WHERE workspace_id=? AND user_id=? AND status='active'")
+        .bind(row.workspaceId, row.ownerUserId).first();
+      if (!membership) {
+        await scopedEnv.DB.batch([
+          scopedEnv.DB.prepare("UPDATE document_analyses SET status='failed',summary_json=NULL,error_code='ACCESS_REVOKED' WHERE id=? AND workspace_id=?")
+            .bind(row.analysisId,row.workspaceId),
+          settleSubscriptionUsage(scopedEnv.DB,{ workspaceId:row.workspaceId,userId:row.ownerUserId,metric:"pages",operationId:row.analysisId },false),
+        ]);
+        throw new DocumentAnalysisProcessingError("DOCUMENT_ANALYSIS_NOT_FOUND",false);
+      }
+    }
     await persistNormalizedAnalysis(scopedEnv, row, persisted);
     return { status: "completed", analysisId };
   } catch (error) {
@@ -422,8 +441,11 @@ async function analyzeObject(
   env: DocumentAnalysisProcessorEnv,
   row: AnalysisRow,
   deps: DocumentAnalysisProcessorDependencies,
-): Promise<PersistedAnalysis> {
+): Promise<PersistedAnalysis | null> {
   let diagnosticStage: DocumentAnalysisDiagnosticStage = "integrity";
+  const usage = { workspaceId: row.workspaceId, userId: row.ownerUserId, metric: "pages", operationId: row.analysisId } as const;
+  let reserved = false;
+  let reviewedPages: PersistedAnalysis["reviewedPages"];
   try {
     if (!row.sha256 || !/^[a-f0-9]{64}$/i.test(row.sha256)) {
       await setAnalysisState(env.DB, row, "failed", "DOCUMENT_ANALYSIS_INTEGRITY_FAILED");
@@ -436,6 +458,7 @@ async function analyzeObject(
       fileId: row.fileId,
       sourceSha256: row.sha256.toLowerCase(),
     });
+    const recognizedScan = !!extracted;
     if (!extracted) {
       if (row.sizeBytes > DOCUMENT_ANALYSIS_INLINE_BYTE_LIMIT) {
         if (row.mimeType === "application/zip") {
@@ -501,6 +524,39 @@ async function analyzeObject(
         throw error;
       }
     }
+    const request = parseRequestMetadata(row.summaryJson);
+    if (request.subscriptionAccounting) {
+      const terms = await workspaceEntitlements(env.DB, row.workspaceId);
+      if (terms.readOnly || (request.mode === "expert" && !terms.expertDocumentAnalysis)
+        || (request.mode === "full" && !terms.fullDocumentAnalysis)
+        || (extracted.packageContext && !terms.expertDocumentAnalysis)) {
+        throw new SubscriptionLimitError("PLAN_LIMIT");
+      }
+      const pages = extracted.accountingPages ?? accountingPages(extracted.text, recognizedScan ? extracted.pageCount ?? 0 : 0);
+      if (!pages) throw new ComparisonProcessingError("NO_READABLE_TEXT", "No readable document text.");
+      const selectable = !recognizedScan && !extracted.packageContext;
+      const quote = await env.DB.prepare(`SELECT pages,source_hash AS sourceHash,confirmed_at AS confirmedAt,first_page AS first,last_page AS last
+        FROM document_analysis_quotes WHERE analysis_id=?`).bind(row.analysisId)
+        .first<{ pages: number; sourceHash: string; confirmedAt: string | null; first: number | null; last: number | null }>();
+      if (!quote?.confirmedAt) {
+        await env.DB.batch([
+          env.DB.prepare(`INSERT INTO document_analysis_quotes(analysis_id,source_hash,pages,selectable)
+            VALUES (?,?,?,?::boolean) ON CONFLICT(analysis_id) DO NOTHING`).bind(row.analysisId, row.sha256, pages, selectable),
+          env.DB.prepare(`UPDATE document_analyses SET status='awaiting_confirmation',progress_stage='awaiting_confirmation',updated_at=?
+            WHERE id=? AND status='processing'`).bind(new Date().toISOString(), row.analysisId),
+        ]);
+        return null;
+      }
+      if (Number(quote.pages) !== pages || quote.sourceHash !== row.sha256) throw new SubscriptionLimitError("USAGE_CONFLICT");
+      const first = quote.first ?? 1, last = quote.last ?? pages;
+      if (!selectable && (first !== 1 || last !== pages)) throw new SubscriptionLimitError("USAGE_CONFLICT");
+      reviewedPages = { first, last, total: pages };
+      if (first > 1 || last < pages) {
+        extracted = { ...extracted, text: selectAccountingPages(extracted.text, first, last), sections: [] };
+      }
+      reserved = await reserveSubscriptionUsage({ ...usage, db: env.DB, units: last - first + 1,
+        requestHash: `${row.sha256}:${first}:${last}`, resume: true }) === "reserved";
+    }
     diagnosticStage = "version";
     await storeInitialAnalysisDocumentVersion(env, {
       analysisId: row.analysisId,
@@ -513,7 +569,6 @@ async function analyzeObject(
     diagnosticStage = "retrieval";
     await env.DB.prepare("UPDATE document_analyses SET progress_stage='researching' WHERE id=? AND workspace_id=? AND status='processing'")
       .bind(row.analysisId, row.workspaceId).run();
-    const request = parseRequestMetadata(row.summaryJson);
     const retrieval = await deps.retrieve(
       env.DB,
       extracted.text,
@@ -729,6 +784,8 @@ async function analyzeObject(
       );
     }
     return {
+      subscriptionAccounting: request.subscriptionAccounting,
+      reviewedPages,
       result: enforceDocumentAnalysisFreshness(boundedResult, retrieval.freshness),
       sourceFreshness: retrieval.freshness,
       technical: {
@@ -751,6 +808,11 @@ async function analyzeObject(
       },
     };
   } catch (error) {
+    if (reserved) await settleSubscriptionUsage(env.DB, usage, false).run();
+    if (error instanceof SubscriptionLimitError) {
+      await setAnalysisState(env.DB, row, "failed", error.code);
+      throw new DocumentAnalysisProcessingError("DOCUMENT_ANALYSIS_CAPACITY_REQUIRED", false);
+    }
     if (error instanceof DocumentAnalysisProcessingError) throw error;
     if (error instanceof OcrProcessingError) {
       const status = error.retryable ? "retrying" : "failed";
@@ -934,6 +996,9 @@ async function persistNormalizedAnalysis(
     db.prepare(
       "UPDATE document_analyses SET status='completed',summary_json=?,result_sha256=?,error_code=NULL,updated_at=? WHERE id=? AND workspace_id=? AND status='persisting'",
     ).bind(summaryJson, resultSha256, now, row.analysisId, row.workspaceId),
+    ...(persisted.subscriptionAccounting
+      ? [settleSubscriptionUsage(db, { workspaceId: row.workspaceId, userId: row.ownerUserId,
+        metric: "pages", operationId: row.analysisId }, true)] : []),
     ...scheduleTrustedUserDocumentIndexStatements(env, {
       analysisId: row.analysisId,
       documentVersionId: sourceVersion.id,
@@ -1047,12 +1112,14 @@ async function loadAnalysis(
 function parseRequestMetadata(value: string | null): {
   locale: "ru" | "uz";
   mode: "quick" | "full" | "expert";
+  subscriptionAccounting?: boolean;
 } {
   try {
     const parsed = JSON.parse(value || "{}") as Record<string, unknown>;
     return {
       locale: parsed.locale === "uz" ? "uz" : "ru",
       mode: parsed.mode === "full" || parsed.mode === "expert" ? parsed.mode : "quick",
+      subscriptionAccounting: parsed.subscriptionAccounting === true,
     };
   } catch {
     return { locale: "ru", mode: "quick" };
@@ -1093,6 +1160,7 @@ function legacyCompatibleSummary(persisted: PersistedAnalysis) {
   const result = persisted.result;
   return {
     summary: result.summary,
+    reviewedPages: persisted.reviewedPages,
     parties: result.parties.map((party) => `${party.name} — ${party.role}`),
     dates: result.dates,
     obligations: result.obligations.map((item) => `${item.party}: ${item.obligation}`),

@@ -9,7 +9,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { platformApiError } from "../../content/platform-ui";
 import { caseDirectionsForAccount, caseScenariosForAccount, type CaseDirectionId } from "../../lib/platform/case-create";
 import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 const caseCreateCopy = {
   ru: { createError: "Не удалось создать дело.", section: "Новое дело", title: "Соберите ситуацию в управляемое дело", description: "После создания JURO добавит проверяемый стартовый план. Никакие задачи не будут назначены без вашего подтверждения.", direction: "1. Выберите направление", situation: "2. Выберите ситуацию", searchLabel: "Поиск ситуации", search: "Поиск в выбранном направлении", lawyerReview: "Рекомендуется проверка юристом", noScenario: "Ситуация не найдена. Опишите её AI-юристу — JURO предложит подходящий план.", matterTitle: "Название дела", titlePlaceholder: "Например: возврат долга по расписке", brief: "Краткое описание", descriptionPlaceholder: "Что произошло, когда и какой результат вам нужен", note: "Дело и первая версия плана сохраняются вместе. При ошибке не будет создана частичная запись.", cancel: "Отмена", creating: "Создаём…", create: "Создать дело" },
@@ -20,6 +20,7 @@ const caseCreateCopy = {
 export function CaseCreateClient({ locale, accountType }: { locale: PlatformLocale; accountType: AccountType }) {
   const copy = caseCreateCopy[locale];
   const base = usePlatformBasePath();
+  const workspaceId = usePlatformWorkspaceId();
   const router = useRouter();
   const directions = caseDirectionsForAccount(accountType);
   const [direction, setDirection] = useState<CaseDirectionId>(directions[0]?.id ?? "employment");
@@ -45,7 +46,7 @@ export function CaseCreateClient({ locale, accountType }: { locale: PlatformLoca
     try {
       const response = await fetch("/api/platform/cases", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ title, description, legalArea: selected, locale, accountType }),
       });
       const body = await response.json() as { caseId?: string; error?: string };

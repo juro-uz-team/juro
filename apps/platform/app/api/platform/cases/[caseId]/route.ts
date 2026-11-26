@@ -29,7 +29,7 @@ export const PATCH = withApiErrors(async function PATCH(
   if (!parsed.ok) return response({ code: "INVALID_CASE_LIFECYCLE_INPUT" }, parsed.error === "payload_too_large" ? 413 : 400);
   const idempotency = caseLifecycleIdempotencyKeySchema.safeParse(request.headers.get("idempotency-key")?.trim() ?? "");
   if (!idempotency.success) return response({ code: "INVALID_IDEMPOTENCY_KEY" }, 400);
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   try {
     const result = await executeCaseLifecycle({
       db: requireD1(), caseId, workspaceId: workspace.id, actorUserId: user.id,

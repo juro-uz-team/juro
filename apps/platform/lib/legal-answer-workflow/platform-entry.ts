@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { legalAnswerDeadlineMs } from "./deadline";
 import { corpusDatabase } from "../storage/connection";
 import { requireD1, requireR2, runtimeEnv } from "../document-builder/storage/runtime";
-import { workspaceEntitlements, resolveAiAnswerCycleLimit } from "../billing/entitlements";
+import { workspaceEntitlements, resolveAiAnswerCycleLimit, type AnswerPeriod } from "../billing/entitlements";
 import { assertOperationalFeatureEnabled, operationalEnvironment, OperationalFeatureError,
   operationalFeatureMessage, operationalLocaleFromRequest } from "../operations/operational-feature-flags";
 import { runIndexedRetrieval } from "../runtime/indexed-retrieval";
@@ -93,13 +93,15 @@ export async function platformLegalAnswerPost(request: Request): Promise<Respons
   if (unavailable) return unavailable;
   const environment = operationalEnvironment(runtimeEnv().APP_ENV);
   let monthlyLimit: number | null | undefined;
+  let answerPeriod: AnswerPeriod | undefined;
   return handleSignedAnswerHttp(request, { publicOrigin: runtimeEnv().APP_URL ?? new URL(request.url).origin,
     submittedAt, deadlineMs: legalAnswerDeadlineMs,
     authenticate: authenticateSignedAnswer,
     async admit(actor, input, signal) {
       const entitlements = await runIndexedRetrieval(signal, () => workspaceEntitlements(actor.db, actor.workspaceId));
       monthlyLimit = resolveAiAnswerCycleLimit(environment, entitlements.aiAnswerCyclesMonthly);
-      if (await answerAllowanceAvailable({ ...actor, idempotencyKey: input.idempotencyKey, monthlyLimit, signal })) return null;
+      answerPeriod = entitlements;
+      if (await answerAllowanceAvailable({ ...actor, idempotencyKey: input.idempotencyKey, monthlyLimit, answerPeriod, signal })) return null;
       return Response.json({ code: "PLAN_LIMIT", error: "Monthly AI answer limit reached." },
         { status: 429, headers: { "cache-control": "no-store" } });
     },
@@ -112,7 +114,7 @@ export async function platformLegalAnswerPost(request: Request): Promise<Respons
         deadlineMs,
         memoryKeyring: memoryKeyring(runtimeEnv().IDENTITY_KEYRING),
         validateVoice: voice => validateAnswerVoice({ ...voice, keyring: voiceKeyring(process.env.IDENTITY_KEYRING) }),
-        monthlyLimit };
+        monthlyLimit, answerPeriod };
     },
   });
 }
@@ -182,7 +184,8 @@ export async function platformLegalAnswerBrowser(request: Request): Promise<Resp
       const entitlements = await withinSignal(signal, () => workspaceEntitlements(actor.db, actor.workspaceId));
       let config: Configuration | undefined;
       try { config = await withinSignal(signal, loadConfiguration); } catch { /* Saved history remains accessible. */ }
-      return { monthlyLimit: resolveAiAnswerCycleLimit(environment, entitlements.aiAnswerCyclesMonthly),
+      return { monthlyLimit: entitlements.readOnly ? 0 : resolveAiAnswerCycleLimit(environment, entitlements.aiAnswerCyclesMonthly),
+        answerPeriod: entitlements,
         provider: { configured: Boolean(config), provider: config ? "openai" : null,
           model: config?.models.fast ?? null, fallbackConfigured: false } };
     },

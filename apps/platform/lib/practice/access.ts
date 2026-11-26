@@ -27,7 +27,7 @@ export async function practiceActor(
   workspaceId: string,
   write = false,
 ): Promise<Actor> {
-  if (process.env.PRACTICE_ENABLED !== "true")
+  if (process.env.PRACTICE_ENABLED === "false")
     throw new PracticeError("MODULE_DISABLED", 503);
   // Enrollment and membership are read afresh, including every file and export.
   const config = (
@@ -61,7 +61,7 @@ export async function practiceActor(
   const subscription =
     (
       await client.query(
-        `SELECT plan_code AS "planCode",status,current_period_ends_at AS "currentPeriodEndsAt"
+        `SELECT plan_code AS "planCode",status,started_at AS "startedAt",current_period_ends_at AS "currentPeriodEndsAt"
     FROM subscriptions WHERE workspace_id=$1 LIMIT 1`,
         [workspaceId],
       )
@@ -69,7 +69,7 @@ export async function practiceActor(
   const entitlement = entitlementsForSubscription(subscription);
   // Only an explicitly recorded staff grant admits a pilot without a paid plan.
   const paid =
-    entitlement.planCode !== "free" && config.features.practice === true;
+    (entitlement.planCode === "lawyer" || entitlement.version === null) && config.features.practice === true;
   const pilot =
     config.pilot_until && new Date(config.pilot_until).getTime() > Date.now();
   const writable = Boolean(config.enabled && (paid || pilot));
@@ -181,7 +181,11 @@ export async function legacyPracticeAccessDenied(
   const exists = await database().pool.query(
     `SELECT 1 FROM user_profiles u
     JOIN practice_workspaces p ON p.workspace_id=coalesce($2,u.default_workspace_id)
-    WHERE u.id=$1 LIMIT 1`,
+    WHERE u.id=$1
+      AND (p.features->>'subscriptionWorkspace' IS DISTINCT FROM 'true'
+        OR EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id=p.workspace_id
+          AND m.status='active' AND (m.user_id<>u.id OR m.role<>'owner')))
+    LIMIT 1`,
     [userId, explicitWorkspace],
   );
   return exists.rowCount !== 0;

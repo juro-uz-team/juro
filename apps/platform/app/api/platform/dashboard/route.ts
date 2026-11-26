@@ -29,16 +29,16 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const [counts, cases, documents, deadlines, consultations, notifications, analyses, comparisons] = await db.batch([
     db.prepare(
       `SELECT
-        (SELECT count(*) FROM cases WHERE workspace_id = ? AND archived_at IS NULL) AS activeCases,
+        (SELECT count(*) FROM cases WHERE workspace_id = ? AND case_visible_to(id,?) AND archived_at IS NULL) AS activeCases,
         (SELECT count(*) FROM documents d WHERE ${documentVisibility.sql} AND d.archived_at IS NULL) AS documents,
         (SELECT count(*) FROM consultation_bookings WHERE workspace_id = ? AND status NOT IN ('completed','cancelled')) AS consultations,
         (SELECT count(*) FROM notifications WHERE user_id = ? AND workspace_id = ? AND read_at IS NULL AND ${notificationFilter.sql}) AS unreadNotifications`,
-    ).bind(workspace.id, ...documentVisibility.bindings, workspace.id, user.id, workspace.id, ...notificationFilter.bindings),
+    ).bind(workspace.id, user.id, ...documentVisibility.bindings, workspace.id, user.id, workspace.id, ...notificationFilter.bindings),
     db.prepare(
       `SELECT c.id,c.title,c.status,c.updated_at AS updatedAt,p.progress_percent AS progressPercent
        FROM cases c LEFT JOIN action_plans p ON p.case_id=c.id
-       WHERE c.workspace_id=? AND c.archived_at IS NULL ORDER BY c.updated_at DESC LIMIT 4`,
-    ).bind(workspace.id),
+       WHERE c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL ORDER BY c.updated_at DESC LIMIT 4`,
+    ).bind(workspace.id, user.id),
     db.prepare(
       `SELECT d.id,d.title,d.status,d.category,d.updated_at AS updatedAt
        FROM documents d
@@ -49,10 +49,10 @@ export const GET = withApiErrors(async function GET(request: Request) {
       `SELECT s.id,s.title,s.due_at AS dueAt,c.id AS caseId,c.title AS caseTitle
        FROM action_plan_steps s
        JOIN action_plans p ON p.id=s.plan_id JOIN cases c ON c.id=p.case_id
-       WHERE c.workspace_id=? AND c.archived_at IS NULL AND s.due_at IS NOT NULL
+       WHERE c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL AND s.due_at IS NOT NULL
          AND s.status NOT IN ('completed','cancelled')
        ORDER BY s.due_at LIMIT 5`,
-    ).bind(workspace.id),
+    ).bind(workspace.id, user.id),
     db.prepare(
       `SELECT b.id,b.status,s.starts_at AS startsAt,s.specialist_type AS specialistType
        FROM consultation_bookings b JOIN consultation_slots s ON s.id=b.slot_id

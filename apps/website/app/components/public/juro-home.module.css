@@ -591,3 +591,10 @@
 @media print {
   .footer { display: none; }
 }
+
+.planSection { display: grid; gap: 1rem; padding-block: clamp(2rem, 5vw, 4.5rem); scroll-margin-top: 5rem; }
+.planSection :is(h2, h3, p) { margin: 0; }
+.planGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,12rem),1fr)); gap: .85rem; padding: 0; margin: .6rem 0; list-style: none; }
+.planGrid li { display: grid; grid-template-rows: auto minmax(2.8em,1fr) auto auto; gap: .45rem; padding: 1rem; border: 1px solid currentColor; border-color: color-mix(in srgb,currentColor 18%,transparent); border-radius: .9rem; }
+.planGrid li strong { font-size: clamp(1.4rem,3vw,2rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.planGrid li span { font-size: .86rem; }

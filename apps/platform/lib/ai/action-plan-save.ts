@@ -88,7 +88,7 @@ export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<Save
   if(answer.responseKind!=="answer" || !answer.actionPlan.length) throw new AiActionPlanSaveError("AI_ACTION_PLAN_EMPTY");
   const target = input.targetCaseId ? await db.prepare(`SELECT c.id AS caseId,p.id AS planId,p.current_revision AS revision
     FROM cases c LEFT JOIN action_plans p ON p.case_id=c.id
-    WHERE c.id=? AND c.workspace_id=? AND c.archived_at IS NULL`).bind(input.targetCaseId,workspaceId)
+    WHERE c.id=? AND c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL`).bind(input.targetCaseId,workspaceId,userId)
     .first<{caseId:string;planId:string|null;revision:number|null}>() : null;
   if(input.targetCaseId && !target) throw new AiActionPlanSaveError("AI_ACTION_PLAN_CASE_NOT_FOUND");
   const caseId = target?.caseId ?? await planIdentity([eventId,"case"]);
@@ -112,8 +112,8 @@ export async function saveAiActionPlanToCase(input: PlanSaveScope): Promise<Save
       .bind(userId,assistantMessageId,message.structuredJson,workspaceId,userId),
   ];
   if(target){
-    statements.push(db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL)
-      THEN 1 ELSE json_extract('PLAN_CASE_UNAVAILABLE','$') END`).bind(caseId,workspaceId));
+    statements.push(db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL)
+      THEN 1 ELSE json_extract('PLAN_CASE_UNAVAILABLE','$') END`).bind(caseId,workspaceId,userId));
   }else{
     statements.push(db.prepare(`INSERT INTO cases(id,workspace_id,owner_user_id,account_type,locale,title,description,legal_area,status,current_revision,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,'ai_proposed','open',1,?,?)`).bind(caseId,workspaceId,userId,message.accountType,locale,title,answer.answer,now,now));

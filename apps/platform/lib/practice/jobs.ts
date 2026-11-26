@@ -9,7 +9,7 @@ import { sendEmailRequest } from "../runtime/email";
 
 /** Called by JURO's existing five-minute job loop, never by a new scheduler. */
 export async function runPracticeJobs() {
-  if (process.env.PRACTICE_ENABLED !== "true") return;
+  if (process.env.PRACTICE_ENABLED === "false") return;
   await transaction(async (client) => {
     const lock = (
       await client.query(

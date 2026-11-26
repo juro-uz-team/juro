@@ -4,6 +4,7 @@ import { readAiRunStatus } from "../ai/run-store";
 import { readSavedAnswerConversation } from "./saved-conversation";
 import { withinSignal } from "./lifetime";
 import { readAnswerPayload } from "./signed-http";
+import { subscriptionPeriod, type AnswerPeriod } from "../billing/entitlements";
 
 type Actor = { db: D1Database; workspaceId: string; userId: string };
 type Configuration = {
@@ -12,6 +13,7 @@ type Configuration = {
   settings(actor: Actor, signal: AbortSignal): Promise<{
     provider: { configured: boolean; provider: string | null; model: string | null; fallbackConfigured: boolean };
     monthlyLimit: number | null;
+    answerPeriod?: AnswerPeriod;
   }>;
 };
 const headers = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -85,13 +87,13 @@ export async function handleSignedAnswerBrowser(request: Request, configuration:
     else if (query.conversationId) result = await readSavedAnswerConversation({ ...actor, ...query,
       conversationId: query.conversationId, signal });
     else {
-      const now = new Date(), periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-      const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
-      const [page, settings, usage, cases] = await Promise.all([
-        listConversations(actor, query, signal), configuration.settings(actor, signal),
+      const settings = await configuration.settings(actor, signal);
+      const { periodStart, periodEnd } = settings.answerPeriod ?? subscriptionPeriod(new Date());
+      const [page, usage, cases] = await Promise.all([
+        listConversations(actor, query, signal),
         withinSignal(signal, () => actor.db.prepare(`SELECT COALESCE(SUM(units),0) AS used FROM ai_usage_ledger
-          WHERE workspace_id=? AND user_id=? AND feature='legal_chat' AND period_start=? AND status IN ('reserved','consumed')`)
-          .bind(actor.workspaceId, actor.userId, periodStart).first<{used: number}>()),
+          WHERE workspace_id=? AND (?=1 OR user_id=?) AND feature='legal_chat' AND period_start=? AND status IN ('reserved','consumed')`)
+          .bind(actor.workspaceId, Number(settings.answerPeriod?.pooled ?? false), actor.userId, periodStart).first<{used: number}>()),
         withinSignal(signal, () => actor.db.prepare(`SELECT id,title,status,updated_at AS updatedAt FROM cases
           WHERE workspace_id=? AND owner_user_id=? AND archived_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT 100`)
           .bind(actor.workspaceId, actor.userId).all()),

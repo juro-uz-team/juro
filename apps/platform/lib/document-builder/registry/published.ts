@@ -19,8 +19,11 @@ export async function resolvedDocument(code:string,version?:string):Promise<Docu
  const rows=await database().pool.query(`SELECT definition FROM control_template_versions WHERE code=$1 AND published_at IS NOT NULL ${version?"AND version=$2":""} ORDER BY published_at DESC LIMIT 1`,version?[code,version]:[code]);
  const definition=rows.rows[0]?.definition??getDocumentByCode(code);return definition?withStandardCollaboration(definition):undefined;
 }
-export async function resolvedLibrary():Promise<DocumentLibraryItem[]>{
+export async function publishedDefinitions(): Promise<DocumentDefinition[]> {
  const rows=await database().pool.query("SELECT DISTINCT ON(code) definition FROM control_template_versions WHERE published_at IS NOT NULL ORDER BY code,published_at DESC");
  const documents=new Map(DOCUMENT_REGISTRY.map(d=>[d.code,d]));for(const row of rows.rows)documents.set(row.definition.code,row.definition);
- return [...documents.values()].filter(d=>d.status==="published").map(d=>({code:d.code,categorySlug:d.categorySlug,titleRu:d.titleRu,titleUz:d.titleUz,descriptionRu:d.descriptionRu,descriptionUz:d.descriptionUz,status:d.status,editorialStatus:d.editorialStatus,estimatedMinutes:d.estimatedMinutes,popular:d.popular}));
+ return [...documents.values()].filter(d=>d.status==="published");
+}
+export async function resolvedLibrary():Promise<DocumentLibraryItem[]>{
+ return (await publishedDefinitions()).map(d=>({code:d.code,categorySlug:d.categorySlug,titleRu:d.titleRu,titleUz:d.titleUz,descriptionRu:d.descriptionRu,descriptionUz:d.descriptionUz,status:d.status,editorialStatus:d.editorialStatus,estimatedMinutes:d.estimatedMinutes,popular:d.popular}));
 }

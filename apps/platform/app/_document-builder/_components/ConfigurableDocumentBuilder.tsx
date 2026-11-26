@@ -1,5 +1,6 @@
 "use client";
 
+import { BuilderAiDrafts } from "./BuilderAiDrafts";
 import { WorkspaceTitle } from "../../_platform/WorkspaceTitle";
 import { DateTimePicker } from "../../_components/ProfileControls";
 import { Select } from "../../_components/Select";
@@ -82,6 +83,21 @@ function FieldControl({ field, language, uiLocale, value, error, onChange }: { f
 export function ConfigurableDocumentBuilder({ definition, initialUser, signInPath, initialDocumentId }: { definition: DocumentDefinition; initialUser: BuilderUser | null; signInPath: string; initialDocumentId?: string }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const candidateWorkspaceId = pathname.split("/")[3];
+  const workspaceId = candidateWorkspaceId?.startsWith("ws_") ? candidateWorkspaceId : undefined;
+  const [company, setCompany] = useState<{ id: string; name: string }>();
+  useEffect(() => {
+    if (!workspaceId || !initialUser) return;
+    const controller = new AbortController();
+    void fetch("/api/platform/workspaces", { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return;
+        const body = await response.json() as { workspaces: { id: string; name: string; type: string }[] };
+        const selected = body.workspaces.find(workspace => workspace.id === workspaceId && workspace.type === "business");
+        if (!controller.signal.aborted) setCompany(selected);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [initialUser, workspaceId]);
   const router = useRouter();
   const caseId = searchParams.get("caseId") ?? undefined;
   const planStepId = searchParams.get("stepId") ?? undefined;
@@ -147,9 +163,9 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     if (documentId) return documentId;
     if (!initialUser) throw new Error(copy.signInToSave);
     if (createPromise.current) return createPromise.current;
-    createPromise.current = apiFetch<{ document: GenericStoredDocument }>("/api/document-builder/configured-drafts", { method: "POST", body: JSON.stringify({ templateCode: definition.code, language, title: title || defaultTitle(definition, language), answers, finalContent: finalText, manuallyEdited, caseId, planStepId }) }).then(({ document }) => { hydrate(document); sessionStorage.removeItem(draftKey(definition.code)); router.replace(paths.document(document.id)); return document.id; }).finally(() => { createPromise.current = null; });
+    createPromise.current = apiFetch<{ document: GenericStoredDocument }>("/api/document-builder/configured-drafts", { method: "POST", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {}, body: JSON.stringify({ templateCode: definition.code, language, title: title || defaultTitle(definition, language), answers, finalContent: finalText, manuallyEdited, caseId, planStepId }) }).then(({ document }) => { hydrate(document); sessionStorage.removeItem(draftKey(definition.code)); router.replace(paths.document(document.id)); return document.id; }).finally(() => { createPromise.current = null; });
     return createPromise.current;
-  }, [answers, caseId, copy.signInToSave, definition, documentId, finalText, hydrate, initialUser, language, manuallyEdited, paths, planStepId, router, title]);
+  }, [answers, caseId, copy.signInToSave, definition, documentId, finalText, hydrate, initialUser, language, manuallyEdited, paths, planStepId, router, title, workspaceId]);
 
   const save = useCallback((targetDocumentId = documentId): Promise<void> => {
     if (!initialUser || !targetDocumentId || !hydrated) return Promise.resolve();
@@ -196,8 +212,15 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   return <div className="dbt-config-builder workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} /><header className="dbt-config-builder-head"><div><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={16}/>{copy.category}</Link><span>№ {definition.code}</span><span className={`dbt-save-indicator ${saveState}`}>{saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "saved" ? <><Save size={14}/>{copy.saved}</> : !initialUser ? copy.temporary : ""}</span></div><DocumentLanguageControl language={language} locale={uiLocale} onChange={changeLanguage}/><div className="dbt-config-progress"><span style={{ "--progress": progress / 100 } as React.CSSProperties}/><b>{progress}%</b></div></header>
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span><button type="button" aria-label={copy.closeMessage} title={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
     <nav className="dbt-config-steps" aria-label={copy.sections}>{definition.questionnaire.map((item, index) => <button type="button" className={index === step ? "active" : index < step ? "done" : ""} onClick={() => setStep(index)} key={item.id}><span>{index < step ? <Check size={14}/> : index + 1}</span>{localize(item.title, language)}</button>)}</nav>
-    <div className="dbt-config-layout"><section className="dbt-config-form"><div className="dbt-config-step-title"><span>{copy.step(step + 1, definition.questionnaire.length)}</span><h2>{localize(currentStep.title, language)}</h2>{currentStep.description && <p>{localize(currentStep.description, language)}</p>}</div><div className="dbt-config-fields">{currentStep.fields.filter((field) => conditionMatches(field.condition, answers)).map((field) => <FieldControl key={field.id} field={field} language={language} uiLocale={uiLocale} value={answers[field.id]} error={errors[field.id] ?? ""} onChange={(value) => update(field, value)}/>)}</div>
+    <div className="dbt-config-layout"><section className="dbt-config-form"><div className="dbt-config-step-title"><span>{copy.step(step + 1, definition.questionnaire.length)}</span><h2>{localize(currentStep.title, language)}</h2>{currentStep.description && <p>{localize(currentStep.description, language)}</p>}</div><div className="dbt-config-fields">{currentStep.fields.filter((field) => conditionMatches(field.condition, answers)).map((field) => <div key={field.id} className={field.type === "company-name" ? "dbt-company-field" : "dbt-config-field-slot"}>
+        <FieldControl field={field} language={language} uiLocale={uiLocale} value={answers[field.id]} error={errors[field.id] ?? ""} onChange={value => update(field, value)} />
+        {field.type === "company-name" && company && company.id === workspaceId && <button type="button"
+          className="dbt-company-fill" onClick={() => update(field, company.name)}>
+          {({ ru: "Подставить название компании", uz: "Kompaniya nomini qo‘yish", en: "Use company name" })[uiLocale]} · {company.name}
+        </button>}
+      </div>)}</div>
       {initialUser && <details className="dbt-config-editor"><summary className="juro-disclosure-summary">{copy.editText}</summary><p>{copy.editTextDescription}</p><textarea rows={18} value={finalText} onChange={(event) => { setFinalText(event.target.value); setManuallyEdited(true); }}/><button type="button" onClick={() => { setFinalText(rendered.plainText); setManuallyEdited(false); }}><RotateCcw size={16}/>{copy.restoreText}</button></details>}
+      {documentId && initialUser && <BuilderAiDrafts id={documentId} locale={uiLocale} apply={text => { setFinalText(text); setManuallyEdited(true); }} />}
       {!initialUser && <div className="dbt-privacy-note"><LockKeyhole size={18}/><p>{copy.privacy}</p></div>}
       <div className="dbt-config-navigation"><button type="button" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}><ArrowLeft size={17}/>{copy.back}</button>{step < definition.questionnaire.length - 1 ? <button type="button" className="primary" onClick={goNext}>{copy.continue}<ArrowRight size={17}/></button> : <button type="button" className="primary" disabled={generating} onClick={() => void generate()}>{generating ? <LoaderCircle size={17}/> : <FileCheck2 size={17}/>} {initialUser ? copy.createFiles : copy.signInCreate}</button>}</div>
       {initialUser && step === definition.questionnaire.length - 1 && <BuilderAnalysisLauncher

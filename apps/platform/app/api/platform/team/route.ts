@@ -1,4 +1,6 @@
 import { normalizeEmail, randomToken, sha256 } from "../../../../lib/auth/crypto";
+import { z } from "zod";
+import { parseJsonRequest } from "../../../../lib/auth/input";
 import {
   prepareEncryptedIdentityEvidence,
   resolveEncryptedIdentityEvidence,
@@ -15,8 +17,9 @@ import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import { canManageTeam, isWorkspaceRole, requireTeamManager } from "../../../../lib/platform/permissions";
 import { isLocale, type PlatformLocale } from "../../../../lib/platform/routing";
-import { workspaceForUser, workspaceForUserById } from "../../../../lib/platform/workspace";
+import { requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 import { sendEmailRequest } from "../../../../lib/runtime/email";
+import { workspaceEntitlements } from "../../../../lib/billing/entitlements";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITABLE_ROLES = new Set(["admin", "lawyer", "employee", "viewer", "external", "assistant", "accountant"]);
@@ -110,9 +113,9 @@ function renderInvitationEmail(locale: PlatformLocale, email: string, inviteUrl:
   return { subject: copy.subject, html, text };
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const [workspaceRow, members] = await db.batch([
     db.prepare("SELECT id,name,full_name AS fullName,short_name AS shortName,type,locale FROM workspaces WHERE id=? LIMIT 1").bind(workspace.id),
@@ -194,9 +197,53 @@ export const GET = withApiErrors(async function GET() {
   return response({
     workspace: workspaceRow.results[0] ?? null,
     currentRole: workspace.role,
+    currentUserId: user.id,
+    readOnly: (await workspaceEntitlements(db, workspace.id)).readOnly,
+    unassignedCases: workspace.type === "business" && canManageTeam(workspace.role)
+      ? (await db.prepare(`SELECT c.id,c.title FROM cases c WHERE c.workspace_id=? AND c.archived_at IS NULL
+          AND c.status<>'completed' AND NOT EXISTS (
+            SELECT 1 FROM workspace_members m WHERE m.workspace_id=c.workspace_id AND m.user_id=c.owner_user_id AND m.status='active'
+          ) ORDER BY c.updated_at DESC`).bind(workspace.id).all()).results : [],
     members: resolvedMembers,
     invitations: resolvedInvitations,
   });
+});
+
+export const PATCH = withApiErrors(async function PATCH(request: Request) {
+  assertSafeWrite(request);
+  const user = await requireApiUser();
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
+  requireTeamManager(workspace.role);
+  const db = requireD1();
+  if (workspace.type !== "business" || (await workspaceEntitlements(db, workspace.id)).readOnly) {
+    return response({ code: "REASSIGNMENT_UNAVAILABLE" }, 403);
+  }
+  const parsed = await parseJsonRequest(request, z.object({
+    caseId: z.string().min(1).max(240), memberId: z.string().min(1).max(240),
+  }).strict(), 2_048);
+  if (!parsed.ok) return response({ code: "INVALID_INPUT" }, 400);
+  const { caseId, memberId } = parsed.data;
+  const now = isoNow();
+  const result = await db.prepare(`WITH target AS (
+    SELECT m.id,m.user_id,c.owner_user_id FROM workspace_members m JOIN cases c ON c.workspace_id=m.workspace_id
+    WHERE m.id=? AND c.id=? AND c.workspace_id=? AND m.status='active' AND m.role IN ('owner','admin','employee','lawyer')
+      AND c.archived_at IS NULL AND c.status<>'completed' AND NOT EXISTS (
+        SELECT 1 FROM workspace_members old WHERE old.workspace_id=c.workspace_id AND old.user_id=c.owner_user_id AND old.status='active'
+      )
+  ), moved AS (
+    UPDATE cases c SET owner_user_id=target.user_id,updated_at=? FROM target
+    WHERE c.id=? AND c.owner_user_id=target.owner_user_id
+    RETURNING target.id,target.user_id,target.owner_user_id
+  ), granted AS (
+    INSERT INTO company_case_participants(case_id,member_id) SELECT ?,id FROM moved ON CONFLICT DO NOTHING
+  ), tasks_moved AS (
+    UPDATE tasks t SET owner_user_id=moved.user_id,updated_at=? FROM moved
+    WHERE t.case_id=? AND t.workspace_id=? AND t.owner_user_id=moved.owner_user_id AND t.status NOT IN ('completed','cancelled')
+  )
+  INSERT INTO workspace_audit_events(id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at)
+  SELECT ?,?,?,'case',?,'case_responsibility_reassigned',json_object('userId',user_id),? FROM moved`)
+    .bind(memberId,caseId,workspace.id,now,caseId,caseId,now,caseId,workspace.id,crypto.randomUUID(),workspace.id,user.id,caseId,now).run();
+  return result.meta.changes ? response({ ok: true }) : response({ code: "REASSIGNMENT_CONFLICT" }, 409);
 });
 
 export const POST = withApiErrors(async function POST(request: Request) {
@@ -205,11 +252,13 @@ export const POST = withApiErrors(async function POST(request: Request) {
   const env = runtimeEnv();
 
   const body = await request.json().catch(() => null) as { email?: string; role?: string; locale?: string; workspaceId?: string } | null;
-  const workspace = body?.workspaceId
-    ? await workspaceForUserById(user.id, body.workspaceId)
-    : await workspaceForUser(user);
-  if (!workspace) return response({ code: "WORKSPACE_ACCESS_DENIED" }, 403);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id") ?? body?.workspaceId);
   requireTeamManager(workspace.role);
+  const terms = await workspaceEntitlements(requireD1(), workspace.id);
+  if (terms.readOnly) {
+    return response({ code: "WORKSPACE_TERM_EXPIRED" }, 403);
+  }
+  if (terms.planCode === "lawyer") return response({ code: "SINGLE_PRACTITIONER" }, 403);
   const email = normalizeEmail(body?.email ?? "");
   const role = body?.role;
   const locale: PlatformLocale = isLocale(body?.locale ?? "") ? body!.locale as PlatformLocale : "ru";
@@ -220,7 +269,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
   if (!EMAIL_RE.test(email) || email.length > 254) {
     return response({ error: copy.invalidEmail }, 400);
   }
-  if (!isWorkspaceRole(role) || !INVITABLE_ROLES.has(role)) {
+  if (!isWorkspaceRole(role) || !INVITABLE_ROLES.has(role) || (role === "admin" && workspace.role !== "owner")) {
     return response({ error: copy.invalidRole }, 400);
   }
   if (role === "assistant" || role === "accountant") {

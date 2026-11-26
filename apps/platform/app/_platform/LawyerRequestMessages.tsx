@@ -15,7 +15,7 @@ import {
 import { lawyerDocumentStatus, lawyerIntlLocale, lawyerText } from "../../lib/platform/lawyer-localization";
 import { lawyerRequestMessageError } from "../../lib/platform/lawyer-request-message";
 import type { PlatformLocale } from "../../lib/platform/routing";
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 type Message = {
   id: string;
@@ -47,8 +47,10 @@ export function LawyerRequestMessages({
     [locale],
   );
   const base = usePlatformBasePath();
+  const workspaceId = usePlatformWorkspaceId();
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<DocumentOption[]>([]);
+  const [intakeOnly, setIntakeOnly] = useState(false);
   const [role, setRole] = useState<"client" | "lawyer">("client");
   const [body, setBody] = useState("");
   const [documentId, setDocumentId] = useState("");
@@ -59,11 +61,12 @@ export function LawyerRequestMessages({
     setError("");
     const response = await fetch(
       `/api/platform/lawyer-requests/${encodeURIComponent(requestId)}/messages`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } },
     );
     const payload = await response.json() as {
       messages?: Message[];
       documents?: DocumentOption[];
+      intakeOnly?: boolean;
       unreadCount?: number;
       role?: "client" | "lawyer";
     };
@@ -73,12 +76,13 @@ export function LawyerRequestMessages({
     setRole(nextRole);
     setMessages(nextMessages);
     setDocuments(payload.documents || []);
+    setIntakeOnly(!!payload.intakeOnly);
     if ((payload.unreadCount ?? 0) > 0) {
       const readResponse = await fetch(
         `/api/platform/lawyer-requests/${encodeURIComponent(requestId)}/messages`,
         {
           method: "POST",
-          headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+          headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
           body: JSON.stringify({ action: "mark_read", locale }),
         },
       );
@@ -92,7 +96,7 @@ export function LawyerRequestMessages({
         ? message
         : { ...message, readAt, attachmentStatus: message.documentId ? "viewed" : null }));
     }
-  }, [locale, requestId, text]);
+  }, [locale, requestId, text, workspaceId]);
 
   useEffect(() => {
     void load().catch((value) =>
@@ -109,7 +113,7 @@ export function LawyerRequestMessages({
         `/api/platform/lawyer-requests/${encodeURIComponent(requestId)}/messages`,
         {
           method: "POST",
-          headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+          headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
           body: JSON.stringify({
             action: "send",
             body: body.trim(),
@@ -196,7 +200,7 @@ export function LawyerRequestMessages({
             onChange={(event) => setBody(event.target.value)}
           />
         </label>
-        <label>
+        {!intakeOnly && <label>
           {text("Прикрепить свой документ", "O‘z hujjatingizni biriktiring", "Attach one of your documents")}
           <Select value={documentId} onChange={(event) => setDocumentId(event.target.value)}>
             <option value="">{text("Без документа", "Hujjatsiz", "No document")}</option>
@@ -206,7 +210,7 @@ export function LawyerRequestMessages({
               </option>
             ))}
           </Select>
-        </label>
+        </label>}
         <button type="submit" disabled={busy || (!body.trim() && !documentId)}>
           {busy ? <LoaderCircle className="spin" /> : <Send aria-hidden="true" />}
           {text("Отправить", "Yuborish", "Send")}

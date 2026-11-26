@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sanitizeFileName } from "../document-builder/storage/file-validation";
 
-export const DOCUMENT_ANALYSIS_MAX_FILE_SIZE = 50 * 1024 * 1024;
+export const DOCUMENT_ANALYSIS_MAX_FILE_SIZE = 25_000_000;
 export const DOCUMENT_ANALYSIS_MAX_FILES = 20;
 export const DOCUMENT_ANALYSIS_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
 export const DOCUMENT_ANALYSIS_ABANDONED_AFTER_MS = 24 * 60 * 60 * 1_000;
@@ -228,7 +228,7 @@ export async function initializeDocumentAnalysisUpload(input: {
          input.workspaceId,
          input.userId,
          fileId,
-         JSON.stringify({ mode: input.intent.mode, locale: input.intent.locale }),
+         JSON.stringify({ mode: input.intent.mode, locale: input.intent.locale, subscriptionAccounting: true }),
          abandonedAfter,
          now,
          now,

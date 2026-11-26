@@ -1117,3 +1117,13 @@
   .platform-shell .dbt-library-root { overflow-y: auto; }
   .dbt-library-root .dbt-documents-page { min-height: 420px; }
 }
+
+.dbt-ai-draft-fields { display: grid; gap: .75rem; margin-block: .75rem; }
+.dbt-ai-draft-fields label { display: grid; gap: .35rem; }
+.dbt-ai-draft-fields label:has(input[type="checkbox"]) { display: flex; align-items: center; }
+.dbt-ai-draft-fields input[type="number"] { width: 7rem; min-height: 2.5rem; }
+.dbt-ai-draft-fields button { justify-self: start; min-height: 2.75rem; }
+
+.dbt-config-field-slot { display: contents; }
+.dbt-company-field { min-width: 0; display: grid; align-content: start; gap: .3rem; }
+.dbt-company-fill { justify-self: start; color: var(--text-secondary); text-align: start; padding: .55rem; }

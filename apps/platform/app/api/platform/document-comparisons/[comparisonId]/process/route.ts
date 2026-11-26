@@ -8,7 +8,7 @@ import { isoNow } from "../../../../../../lib/document-builder/storage/db";
 import { getPrivateObject, putPrivateObject } from "../../../../../../lib/document-builder/storage/files";
 import { requireD1 } from "../../../../../../lib/document-builder/storage/runtime";
 import { compareDocuments, summarizeChanges } from "../../../../../../lib/document-comparison/diff";
-import { extractDocument } from "../../../../../../lib/document-comparison/extract";
+import { extractDocument, structureDocument } from "../../../../../../lib/document-comparison/extract";
 import { enrichComparisonChanges } from "../../../../../../lib/document-comparison/legal-analysis";
 import {
   comparisonProcessingErrorMessage,
@@ -27,6 +27,8 @@ import { ComparisonProcessingError, type ComparisonChange, type ComparisonLocale
 import { ArchiveInspectionError, verifyArchiveBytes } from "../../../../../../lib/document-analysis/archive-inspector";
 import { workspaceForContentEditor } from "../../../../../../lib/platform/workspace";
 import { isLocale } from "../../../../../../lib/platform/routing";
+import { workspaceEntitlements } from "../../../../../../lib/billing/entitlements";
+import { accountingPages, reserveSubscriptionUsage, selectAccountingPages, settleSubscriptionUsage, SubscriptionLimitError } from "../../../../../../lib/billing/usage";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -101,7 +103,7 @@ export const POST = withApiErrors(async function POST(
   assertSafeWrite(request);
   const requestedLocale = authLocaleFromRequest(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const { comparisonId } = await context.params;
   const db = requireD1();
   const comparison = await comparisonForUser(db, comparisonId, workspace.id, user.id);
@@ -111,6 +113,11 @@ export const POST = withApiErrors(async function POST(
     }, 404);
   }
   const locale = isLocale(comparison.locale) ? comparison.locale : requestedLocale;
+  const terms = await workspaceEntitlements(db, workspace.id);
+  if (!terms.documentComparison) throw new SubscriptionLimitError("PLAN_LIMIT");
+  if (comparison.status === "completed" || comparison.status === "completed_partial") {
+    return response({ comparison: { id: comparisonId, status: comparison.status, stage: comparison.stage } });
+  }
   let sourceFiles: [ComparisonFileRecord, ComparisonFileRecord];
   try {
     sourceFiles = await assertComparisonSourceFilesClean(db, {
@@ -132,7 +139,6 @@ export const POST = withApiErrors(async function POST(
       comparison: { id: comparisonId, status: "failed", stage: comparison.stage },
     }, 422);
   }
-  if (comparison.status === "completed") return response({ comparison: { id: comparisonId, status: comparison.status, stage: comparison.stage } });
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
   const lock = await db.prepare(
     `UPDATE document_comparisons SET status='processing',error_code=NULL,updated_at=?
@@ -145,6 +151,8 @@ export const POST = withApiErrors(async function POST(
     }, 409);
   }
 
+  const usage = { workspaceId: workspace.id, userId: user.id, metric: "pages", operationId: comparisonId } as const;
+  let reserved = false;
   try {
     const [versionOneFile, versionTwoFile] = sourceFiles;
     let versionOne = await loadExtractedDocument(comparison.versionOneJsonKey);
@@ -175,6 +183,30 @@ export const POST = withApiErrors(async function POST(
       ).bind(versionTwoJsonKey, isoNow(), comparisonId, workspace.id).run();
     }
 
+    const totals = [accountingPages(versionOne.text), accountingPages(versionTwo.text)] as const;
+    const supplied = request.headers.get("x-juro-page-range");
+    const selection = supplied?.match(/^(\d{1,4})-(\d{1,4}),(\d{1,4})-(\d{1,4})$/);
+    const ranges = selection ? [[Number(selection[1]), Number(selection[2])], [Number(selection[3]), Number(selection[4])]]
+      : [[1, totals[0]], [1, totals[1]]];
+    if (supplied && !selection || ranges.some(([first, last], index) => first < 1 || last < first || last > totals[index])) {
+      throw new SubscriptionLimitError("USAGE_CONFLICT");
+    }
+    const pages = ranges.reduce((sum, [first, last]) => sum + last - first + 1, 0);
+    if (request.headers.get("x-juro-confirm-pages") !== String(pages)) {
+      await db.prepare(`UPDATE document_comparisons SET status='uploaded',updated_at=?
+        WHERE id=? AND workspace_id=? AND status='processing'`).bind(isoNow(), comparisonId, workspace.id).run();
+      return response({ code: "COMPARISON_CONFIRMATION_REQUIRED", pages, totals, comparison: { id: comparisonId, status: "uploaded", stage: "uploaded" } }, 428);
+    }
+    if (terms.version !== null && pages > terms.limits.pagesPerRun) throw new SubscriptionLimitError("PAGES_PER_RUN_LIMIT");
+    reserved = await reserveSubscriptionUsage({ ...usage, units: pages,
+      requestHash: `${versionOneFile.sha256}:${versionTwoFile.sha256}:${JSON.stringify(ranges)}`, resume: true }) === "reserved";
+    const portions = [versionOne, versionTwo].map((version, index) => {
+      const [first, last] = ranges[index];
+      if (first === 1 && last === totals[index]) return version;
+      const text = selectAccountingPages(version.text, first, last);
+      return { ...version, text, sections: structureDocument(text) };
+    });
+    [versionOne, versionTwo] = portions as [typeof versionOne, typeof versionTwo];
     await updateStage(db, comparisonId, workspace.id, "structuring");
     await updateStage(db, comparisonId, workspace.id, "diffing");
     let result = compareDocuments(versionOne, versionTwo, locale);
@@ -231,12 +263,14 @@ export const POST = withApiErrors(async function POST(
     const summary = summarizeChanges(result.changes, result.summary.similarityPercent, isoNow());
     summary.aiStatus = aiStatus;
     summary.model = model;
+    summary.reviewedPages = ranges.map(([first, last], index) => ({ first, last, total: totals[index] }));
     summary.legalResearchScope = changed.length ? "changes" : "document";
     summary.sources = legalSources.filter(source => citedIds.has(source.id));
     summary.sourceStatus = summary.sources.length
       ? (changed.length && result.changes.every((change) => change.riskLevel === "information" || change.sourceIds.length) ? "verified" : "partial")
       : "unverified";
     result = { ...result, summary };
+    await workspaceForContentEditor(user, workspace.id);
     await storeChanges(db, comparisonId, result.changes);
     const completedStatus = aiStatus === "completed" || aiStatus === "not_required" ? "completed" : "completed_partial";
     await db.batch([
@@ -249,6 +283,7 @@ export const POST = withApiErrors(async function POST(
         completedStatus, JSON.stringify(summary), summary.similarityPercent, summary.overallRisk,
         aiStatus, model ? "openai" : null, model, isoNow(), comparisonId, workspace.id,
       ),
+      settleSubscriptionUsage(db, usage, true),
       db.prepare(
         `INSERT INTO workspace_audit_events
          (id,workspace_id,actor_user_id,entity_type,entity_id,action,metadata_json,created_at)
@@ -262,6 +297,12 @@ export const POST = withApiErrors(async function POST(
     ]);
     return response({ comparison: { id: comparisonId, status: completedStatus, stage: "completed", summary } });
   } catch (error) {
+    if (reserved) await settleSubscriptionUsage(db, usage, false).run();
+    if (error instanceof SubscriptionLimitError) {
+      await db.prepare("UPDATE document_comparisons SET status='uploaded',updated_at=? WHERE id=? AND workspace_id=?")
+        .bind(isoNow(), comparisonId, workspace.id).run();
+      throw error;
+    }
     const code = error instanceof ComparisonProcessingError ? error.code : "COMPARISON_PROCESSING_FAILED";
     await db.prepare(
       "UPDATE document_comparisons SET status='failed',error_code=?,updated_at=? WHERE id=? AND workspace_id=?",

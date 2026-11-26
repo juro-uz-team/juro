@@ -3,7 +3,7 @@ import {
   type ArchiveInspectionOptions,
 } from "../../document-analysis/archive-inspector";
 
-export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+export const MAX_FILE_SIZE = 25_000_000;
 export const DOCX_UPLOAD_LIMITS = {
   timeoutMs: 8_000,
   maxEntries: 500,
@@ -25,7 +25,7 @@ export function sanitizeFileName(input: string): string {
 
 export function validateUpload(file: File, signedPdfOnly = false): string | null {
   if (file.size <= 0) return "Файл пуст.";
-  if (file.size > MAX_FILE_SIZE) return "Размер файла превышает 10 МБ.";
+  if (file.size > MAX_FILE_SIZE) return "Размер файла превышает 25 МБ.";
   const extension = file.name.split(".").pop()?.toLocaleLowerCase() ?? "";
   const allowed = ALLOWED_ATTACHMENT_TYPES.get(file.type);
   if (!allowed || !allowed.includes(extension)) return "Формат, MIME-тип или расширение файла не поддерживается.";

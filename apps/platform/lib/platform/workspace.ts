@@ -14,6 +14,8 @@ import {
 } from "./workspace-route-access";
 import { requireWorkspaceContentEditor } from "./permissions";
 import { isLocale, isWorkspaceId } from "./routing";
+import { workspaceEntitlements } from "../billing/entitlements";
+import { SubscriptionLimitError } from "../billing/usage";
 
 export { workspaceForUserByIdInDatabase } from "./workspace-route-access";
 
@@ -147,6 +149,9 @@ export async function workspaceForUser(user: UserProfile): Promise<WorkspaceOpti
 export async function workspaceForContentEditor(user: UserProfile, selectedWorkspaceId?: string | null): Promise<WorkspaceOption> {
   const workspace = await requireSelectedWorkspace(user, selectedWorkspaceId);
   requireWorkspaceContentEditor(workspace.role);
+  if (workspace.type === "business" && (await workspaceEntitlements(requireD1(), workspace.id)).readOnly) {
+    throw new SubscriptionLimitError("WORKSPACE_TERM_EXPIRED");
+  }
   return workspace;
 }
 

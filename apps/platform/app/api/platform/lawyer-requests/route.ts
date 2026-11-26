@@ -4,21 +4,22 @@ import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../lib/
 import { isoNow } from "../../../../lib/document-builder/storage/db";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import { lawyerRequestSchema, localizedHandoffError } from "../../../../lib/platform/lawyer-request";
-import { workspaceForContentEditor, workspaceForUser } from "../../../../lib/platform/workspace";
+import { workspaceForContentEditor, requireSelectedWorkspace } from "../../../../lib/platform/workspace";
 import { assertOperationalFeatureEnabled, operationalEnvironment, OperationalFeatureError, operationalFeatureMessage } from "../../../../lib/operations/operational-feature-flags";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "private, no-store", pragma: "no-cache" } });
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
-  const workspace = await workspaceForUser(user);
+  const workspace = await requireSelectedWorkspace(user, request.headers.get("x-juro-workspace-id"));
   const db = requireD1();
   const results = await db.prepare(
     `SELECT r.id,r.case_id AS caseId,r.lawyer_profile_id AS lawyerProfileId,r.status,r.anonymized_summary AS anonymizedSummary,
       r.created_at AS createdAt,r.updated_at AS updatedAt,p.display_name AS lawyerName,
       json_extract(r.requested_scope_json,'$.serviceCode') AS serviceCode,
+      json_extract(r.requested_scope_json,'$.paidTransfer') AS paidTransfer,
       json_extract(r.requested_scope_json,'$.preferredFormat') AS preferredFormat,
       json_extract(r.requested_scope_json,'$.proposedStartsAt') AS proposedStartsAt,
       c.status AS conflictStatus,g.id AS activeGrantId,g.created_at AS grantedAt,
@@ -40,7 +41,7 @@ export const GET = withApiErrors(async function GET() {
 export const POST = withApiErrors(async function POST(request: Request) {
   assertSafeWrite(request);
   const user = await requireApiUser();
-  const workspace = await workspaceForContentEditor(user);
+  const workspace = await workspaceForContentEditor(user, request.headers.get("x-juro-workspace-id"));
   const parsed = await parseJsonRequest(request, lawyerRequestSchema, 4_096);
   const locale = parsed.ok ? parsed.data.locale : "ru";
   if (!parsed.ok) {
@@ -60,8 +61,8 @@ export const POST = withApiErrors(async function POST(request: Request) {
   }
 
   const caseRow = await db.prepare(
-    "SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL LIMIT 1",
-  ).bind(parsed.data.caseId, workspace.id).first();
+    "SELECT id FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL LIMIT 1",
+  ).bind(parsed.data.caseId, workspace.id, user.id).first();
   if (!caseRow) {
     return response({ code: "CASE_UNAVAILABLE", error: localizedHandoffError(locale, "CASE_UNAVAILABLE") }, 404);
   }
@@ -86,6 +87,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
     ).bind(requestId, workspace.id, parsed.data.caseId, user.id, lawyer?.id ?? null, status, parsed.data.anonymizedSummary, JSON.stringify({
       scope: "case",
       consentVersion: "2026-07-31",
+      paidTransfer: "required",
       serviceCode: parsed.data.serviceCode ?? null,
       preferredFormat: parsed.data.preferredFormat ?? null,
       proposedStartsAt: parsed.data.proposedStartsAt ?? null,

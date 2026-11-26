@@ -62,13 +62,13 @@ export const GET = withApiErrors(async function GET() {
       `SELECT e.id,'case' AS source,'case' AS entityType,e.case_id AS entityId,e.event_type AS action,
         e.metadata_json AS metadataJson,e.actor_user_id AS actorUserId,e.created_at AS createdAt
        FROM case_events e JOIN cases c ON c.id=e.case_id
-       WHERE c.workspace_id=?
+       WHERE c.workspace_id=? AND case_visible_to(c.id,?)
          AND (${eventDocumentId} IS NULL OR EXISTS (
            SELECT 1 FROM documents d
            WHERE d.id=${eventDocumentId} AND ${documentVisibility.sql}
          ))
        ORDER BY e.created_at DESC LIMIT 150`,
-    ).bind(workspace.id, ...documentVisibility.bindings),
+    ).bind(workspace.id, user.id, ...documentVisibility.bindings),
   ]);
   const events = [...audit.results, ...documents.results, ...cases.results]
     .sort((left, right) => String((right as Record<string, unknown>).createdAt).localeCompare(String((left as Record<string, unknown>).createdAt)))

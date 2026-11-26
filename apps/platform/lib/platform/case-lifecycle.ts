@@ -81,12 +81,12 @@ function canonicalEvent(value: {
   return JSON.stringify(value);
 }
 
-async function currentCase(db: D1Database, caseId: string, workspaceId: string): Promise<CaseRow | null> {
+async function currentCase(db: D1Database, caseId: string, workspaceId: string, actorUserId: string): Promise<CaseRow | null> {
   return db.prepare(
     `SELECT id,workspace_id AS workspaceId,status,archived_at AS archivedAt,
       completed_at AS completedAt,lifecycle_revision AS lifecycleRevision
-     FROM cases WHERE id=? AND workspace_id=? LIMIT 1`,
-  ).bind(caseId, workspaceId).first<CaseRow>();
+     FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) LIMIT 1`,
+  ).bind(caseId, workspaceId, actorUserId).first<CaseRow>();
 }
 
 async function existingEvent(db: D1Database, caseId: string, idempotencyKey: string): Promise<StoredEvent | null> {
@@ -121,7 +121,7 @@ export async function executeCaseLifecycle(input: {
   idempotencyKey: string;
   now?: string;
 }): Promise<CaseLifecycleResult> {
-  const current = await currentCase(input.db, input.caseId, input.workspaceId);
+  const current = await currentCase(input.db, input.caseId, input.workspaceId, input.actorUserId);
   if (!current) throw new CaseLifecycleError("CASE_UNAVAILABLE");
 
   const replay = await existingEvent(input.db, input.caseId, input.idempotencyKey);
@@ -176,13 +176,13 @@ export async function executeCaseLifecycle(input: {
   } catch {
     const concurrentReplay = await existingEvent(input.db, input.caseId, input.idempotencyKey);
     if (concurrentReplay && concurrentReplay.action === input.action && concurrentReplay.actorUserId === input.actorUserId) {
-      const latest = await currentCase(input.db, input.caseId, input.workspaceId);
+      const latest = await currentCase(input.db, input.caseId, input.workspaceId, input.actorUserId);
       if (!latest) throw new CaseLifecycleError("CASE_UNAVAILABLE");
       return replayResult(input.caseId, concurrentReplay, latest);
     }
     throw new CaseLifecycleError("CASE_LIFECYCLE_CONFLICT");
   }
-  const updated = await currentCase(input.db, input.caseId, input.workspaceId);
+  const updated = await currentCase(input.db, input.caseId, input.workspaceId, input.actorUserId);
   if (!updated || updated.lifecycleRevision !== event.lifecycleRevision) {
     throw new CaseLifecycleError("CASE_LIFECYCLE_CONFLICT");
   }

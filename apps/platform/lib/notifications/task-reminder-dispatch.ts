@@ -140,7 +140,7 @@ export async function executeTaskReminderNotification(
          t.status AS taskStatus,
          c.locale AS locale,
          c.archived_at AS caseArchivedAt,
-         wm.status AS memberStatus
+         CASE WHEN case_visible_to(c.id,t.owner_user_id) THEN wm.status END AS memberStatus
        FROM task_reminders tr
        JOIN tasks t ON t.id=tr.task_id
        JOIN cases c ON c.id=t.case_id AND c.workspace_id=t.workspace_id

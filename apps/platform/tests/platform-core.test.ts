@@ -179,15 +179,12 @@ test("action plan step updates accept only bounded calendar data", () => {
 });
 test("workspace entitlements fail closed without current paid evidence", () => {
   const now = new Date("2026-07-30T12:00:00.000Z");
-  assert.deepEqual(entitlementsForSubscription(null, now), {
-    planCode: "free",
-    subscriptionStatus: null,
-    aiAnswerCyclesMonthly: 20,
-    lawyerHandoff: false,
-    fullDocumentAnalysis: false,
-    expertDocumentAnalysis: false,
-    documentComparison: false,
-  });
+  const free = entitlementsForSubscription(null, now);
+  assert.equal(free.planCode, "free");
+  assert.equal(free.aiAnswerCyclesMonthly, 20);
+  assert.equal(free.lawyerHandoff, true);
+  assert.equal(free.fullDocumentAnalysis, false);
+  assert.equal(free.documentComparison, false);
   const active = entitlementsForSubscription({
     planCode: "individual",
     status: "active",
@@ -202,7 +199,7 @@ test("workspace entitlements fail closed without current paid evidence", () => {
     { planCode: "individual", status: "active", currentPeriodEndsAt: "2026-07-01T00:00:00.000Z" },
     { planCode: "unknown", status: "active", currentPeriodEndsAt: null },
   ]) {
-    assert.equal(entitlementsForSubscription(evidence, now).lawyerHandoff, false);
+    assert.equal(entitlementsForSubscription(evidence, now).planCode, "free");
   }
 });
 
@@ -975,16 +972,19 @@ test("workspace role permissions deny management and writes by default", () => {
   assert.ok(!canEditWorkspaceContent("unexpected"));
 });
 
-test("pricing is centralized, bilingual and retains explicit non-fiction placeholders", () => {
+test("the localized catalogue preserves the published plan prices and keeps checkout disabled", () => {
   assert.equal(pricingConfig.currency, "UZS");
-  assert.equal(pricingConfig.freeStart.priceMinor, 0);
-  assert.deepEqual(pricingConfig.plans.map((plan) => plan.code), ["individual", "business", "legal_team"]);
+  assert.equal(pricingConfig.checkoutAvailable, false);
+  assert.deepEqual(pricingConfig.plans.map((plan) => [plan.code, plan.priceMinor]), [
+    ["free", 0], ["starter", 4_990_000], ["advanced", 7_990_000], ["company", 15_000_000], ["lawyer", 5_500_000],
+  ]);
   for (const plan of pricingConfig.plans) {
     assert.ok(plan.name.ru.length > 2);
     assert.ok(plan.name.uz.length > 2);
-    assert.match(plan.priceLabel, /\{PRICE_/);
-    assert.ok(plan.features.ru.length >= 3);
-    assert.equal(plan.features.ru.length, plan.features.uz.length);
+    assert.ok(plan.benefit.ru && plan.benefit.uz && plan.benefit.en);
+  }
+  for (const metric of Object.keys(pricingConfig.plans[0].limits) as Array<keyof typeof pricingConfig.plans[0]["limits"]>) {
+    assert.ok(pricingConfig.plans[0].limits[metric] < pricingConfig.plans[1].limits[metric]);
   }
 });
 
@@ -1152,8 +1152,8 @@ test("billing exposes only the gated Payment foundation and never treats credent
   assert.match(provider, /checkoutAvailable: false/);
   assert.match(foundation, /PAYMENT_PRODUCTION_APPROVED/);
   assert.match(foundation, /sandboxEnabled: false/);
-  assert.match(client, /disabled=\{!data\.provider\.enabled/);
-  assert.match(client, /api\/checkout\/create/);
+  assert.match(client, /Plan purchases and renewals are currently unavailable/);
+  assert.doesNotMatch(client, /api\/checkout\/create/);
   assert.match(createRoute, /paymentFoundationStatus/);
   assert.doesNotMatch(client, /data\.provider\.configured/);
   assert.doesNotMatch(client + createRoute, /providerPaymentId.*success|status:\s*["']paid["']/i);
@@ -1281,8 +1281,8 @@ test("case-detail routes remain tenant-scoped and do not render the workspace-wi
     readFile(new URL("../app/[locale]/business/[workspaceId]/cases/[caseId]/page.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(api, /new URL\(request\.url\)\.searchParams\.get\("caseId"\)/);
-  assert.match(api, /WHERE c\.workspace_id=\?\$\{caseScope\}/);
-  assert.match(api, /bind\(workspace\.id,caseId\)/);
+  assert.match(api, /WHERE c\.workspace_id=\? AND case_visible_to\(c\.id,\?\)\$\{caseScope\}/);
+  assert.match(api, /bind\(user\.id,workspace\.id,user\.id,caseId\)/);
   assert.match(client, /api\/platform\/cases\?caseId=\$\{encodeURIComponent\(caseId\)\}/);
   assert.match(client, /api\/platform\/cases\/\$\{encodeURIComponent\(caseId\)\}\/tasks/);
   assert.match(personalPage, /CaseWorkspaceClient locale=\{locale\} caseId=\{caseId\}/);
@@ -1316,7 +1316,7 @@ test("lawyer handoff keeps conflict review anonymized and access explicitly cons
     readFile(new URL("../app/api/platform/lawyer-requests/[requestId]/access-grant/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(requestRoute, /workspaceEntitlements\(db, workspace\.id\)/);
-  assert.match(requestRoute, /WHERE id=\? AND workspace_id=\? AND archived_at IS NULL/);
+  assert.match(requestRoute, /WHERE id=\? AND workspace_id=\? AND case_visible_to\(id,\?\) AND archived_at IS NULL/);
   assert.match(requestRoute, /anonymized_summary/);
   assert.match(requestRoute, /serviceCode: parsed\.data\.serviceCode/);
   assert.match(requestRoute, /json_extract\(r\.requested_scope_json,'\$\.preferredFormat'\)/);
@@ -1375,7 +1375,7 @@ test("workspace content mutations require an editor role at the route boundary",
     "../app/api/platform/document-comparisons/[comparisonId]/route.ts",
     "../app/api/platform/document-comparisons/[comparisonId]/process/route.ts",
   ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
-  for (const route of routes) assert.match(route, /workspaceForContentEditor\(user\)/);
+  for (const route of routes) assert.match(route, /workspaceForContentEditor\(user[),]/);
   const workspace = await readFile(new URL("../lib/platform/workspace.ts", import.meta.url), "utf8");
   const permissions = await readFile(new URL("../lib/platform/permissions.ts", import.meta.url), "utf8");
   assert.match(workspace, /requireWorkspaceContentEditor\(workspace\.role\)/);
@@ -1542,7 +1542,7 @@ test("confirmed action-plan changes are validated, scoped, and saved as one vers
 
 test("action-plan task confirmation is tenant-scoped and idempotent per plan revision", async () => {
   const route = await readFile(new URL("../app/api/platform/cases/[caseId]/tasks/route.ts", import.meta.url), "utf8");
-  assert.match(route, /WHERE id=\? AND workspace_id=\? AND archived_at IS NULL/);
+  assert.match(route, /WHERE id=\? AND workspace_id=\? AND case_visible_to\(id,\?\) AND archived_at IS NULL/);
   assert.match(route, /p\.id AS planId,p\.current_revision AS planRevision/);
   assert.match(route, /INSERT OR IGNORE INTO tasks/);
   assert.match(route, /INSERT OR IGNORE INTO case_events/);
@@ -1575,7 +1575,7 @@ test("case workspace documents and activity are tenant-scoped", async () => {
     readFile(new URL("../app/_platform/CaseWorkspaceClient.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(route, /requireApiUser\(\)/);
-  assert.match(route, /workspaceForUser\(user\)/);
+  assert.match(route, /requireSelectedWorkspace\(user, request\.headers\.get\("x-juro-workspace-id"\)\)/);
   assert.match(route, /workspace_id=\?/);
   assert.match(route, /case_id=\?/);
   assert.match(route, /cache-control": "private, no-store/);

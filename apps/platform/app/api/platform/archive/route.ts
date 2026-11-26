@@ -26,7 +26,7 @@ export const GET = withApiErrors(async function GET() {
        WHERE ${documentVisibility.sql} AND d.status='Архив'
        ORDER BY d.archived_at DESC`,
     ).bind(user.id, ...documentVisibility.bindings),
-    db.prepare("SELECT id,title,legal_area AS legalArea,status,archived_at AS archivedAt,updated_at AS updatedAt FROM cases WHERE workspace_id=? AND archived_at IS NOT NULL ORDER BY archived_at DESC").bind(workspace.id),
+    db.prepare("SELECT id,title,legal_area AS legalArea,status,archived_at AS archivedAt,updated_at AS updatedAt FROM cases WHERE workspace_id=? AND case_visible_to(id,?) AND archived_at IS NOT NULL ORDER BY archived_at DESC").bind(workspace.id,user.id),
   ]);
   return response({ documents: documents.results, cases: cases.results });
 });

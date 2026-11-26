@@ -57,11 +57,11 @@ export const GET = withApiErrors(async function GET(request: Request) {
   const [cases, documents, conversations, comparisons, tasks, analyses, templates, lawyers, sources] = await db.batch([
     db.prepare(
       `SELECT id,title,description AS subtitle,updated_at AS updatedAt
-       FROM cases WHERE workspace_id=? AND archived_at IS NULL
+       FROM cases WHERE workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL
          AND (?=0 OR title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'
            OR title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')
        ORDER BY updated_at DESC LIMIT 18`,
-    ).bind(workspace.id, searchFlag, like, like, fuzzyLike, fuzzyLike),
+    ).bind(workspace.id, user.id, searchFlag, like, like, fuzzyLike, fuzzyLike),
     db.prepare(
       `SELECT d.id,d.title,d.category AS subtitle,d.updated_at AS updatedAt
        FROM documents d WHERE ${documentVisibility.sql} AND d.archived_at IS NULL

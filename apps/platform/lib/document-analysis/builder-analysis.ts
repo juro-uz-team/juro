@@ -120,6 +120,7 @@ export async function startBuilderDocumentAnalysis(input: {
     mode: input.mode,
     locale: input.locale,
     source: "document_builder",
+    subscriptionAccounting: true,
     builderDocumentId: document.id,
     builderDocumentRevision: Number(document.revision),
   });

@@ -31,6 +31,7 @@ type CaseOption = { id: string; title: string };
 type HandoffRequest = {
   id: string;
   caseId: string;
+  paidTransfer?: string | boolean | null;
   status: string;
   createdAt: string;
   lawyerName?: string | null;
@@ -122,9 +123,9 @@ export function LawyerHandoffClient({
       consultationResponse,
       lawyerResponse,
     ] = await Promise.all([
-      fetch("/api/platform/lawyer-requests", { cache: "no-store" }),
-      fetch("/api/platform/cases", { cache: "no-store" }),
-      fetch("/api/platform/consultations", { cache: "no-store" }),
+      fetch("/api/platform/lawyer-requests", { cache: "no-store", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {} }),
+      fetch("/api/platform/cases", { cache: "no-store", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {} }),
+      fetch("/api/platform/consultations", { cache: "no-store", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {} }),
       fetch("/api/platform/lawyers", { cache: "no-store" }),
     ]);
     const requestBody = (await requestResponse.json()) as {
@@ -160,7 +161,7 @@ export function LawyerHandoffClient({
       directory.some((lawyer) => lawyer.id === selectedLawyerId)
     )
       setLawyerProfileId(selectedLawyerId);
-  }, [selectedLawyerId, text]);
+  }, [selectedLawyerId, text, workspaceId]);
 
   useEffect(() => {
     void load().catch((value) =>
@@ -177,7 +178,7 @@ export function LawyerHandoffClient({
     try {
       const response = await fetch("/api/platform/lawyer-requests", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", ...(workspaceId ? { "x-juro-workspace-id": workspaceId } : {}) },
         body: JSON.stringify({
           caseId,
           lawyerProfileId: lawyerProfileId || undefined,
@@ -220,7 +221,7 @@ export function LawyerHandoffClient({
         `/api/platform/lawyer-requests/${encodeURIComponent(item.id)}/offer`,
         {
           method: "PATCH",
-          headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+          headers: { "content-type": "application/json", "x-juro-csrf": "1", ...(workspaceId ? { "x-juro-workspace-id": workspaceId } : {}) },
           body: JSON.stringify({ decision, locale }),
         },
       );
@@ -251,7 +252,7 @@ export function LawyerHandoffClient({
         `/api/platform/lawyer-requests/${encodeURIComponent(item.id)}/access-grant`,
         {
           method: action === "grant" ? "POST" : "DELETE",
-          headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+          headers: { "content-type": "application/json", "x-juro-csrf": "1", ...(workspaceId ? { "x-juro-workspace-id": workspaceId } : {}) },
           ...(action === "grant"
             ? { body: JSON.stringify({ consent: true, locale }) }
             : {}),
@@ -561,7 +562,10 @@ export function LawyerHandoffClient({
                 <span>{formatLabel(item.preferredFormat, locale)}</span>
                 {item.proposedStartsAt && <time dateTime={item.proposedStartsAt}>{formatRequestDate(item.proposedStartsAt, locale)}</time>}
               </div>
-              {item.status === "awaiting_user_consent" && (
+              {item.status === "awaiting_user_consent" && item.paidTransfer === "required" && (
+                <HandoffPreview id={item.id} locale={locale} workspaceId={workspaceId} />
+              )}
+              {item.status === "awaiting_user_consent" && item.paidTransfer !== "required" && (
                 <div className="lawyer-access-action">
                   <label className="consult-consent">
                     <input
@@ -661,7 +665,7 @@ export function LawyerHandoffClient({
                   </button>
                 </div>
               )}
-              {item.activeGrantId && (
+              {(item.activeGrantId || (item.paidTransfer === "required" && item.status === "awaiting_user_consent")) && (
                 <LawyerRequestMessages requestId={item.id} locale={locale} />
               )}
               {item.status === "completed" && (
@@ -683,6 +687,34 @@ function offerLabel(status: string | null | undefined, locale: PlatformLocale) {
   };
   const value = labels[status || ""];
   return value ? lawyerText(locale, value[0], value[1], value[2]) : status || "";
+}
+
+function HandoffPreview({ id, locale, workspaceId }: { id: string; locale: PlatformLocale; workspaceId?: string }) {
+  const [opened, setOpened] = useState(false);
+  const [preview, setPreview] = useState<{ lawyer: string; documents: { id: string; title: string }[] }>();
+  const [failed, setFailed] = useState(false);
+  const t = (ru: string, uz: string, en: string) => lawyerText(locale, ru, uz, en);
+  useEffect(() => {
+    if (!opened) return;
+    const abort = new AbortController();
+    void fetch(`/api/platform/lawyer-requests/${encodeURIComponent(id)}/access-grant`, {
+      cache: "no-store", headers: workspaceId ? { "x-juro-workspace-id": workspaceId } : {}, signal: abort.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error();
+      if (!abort.signal.aborted) setPreview(await response.json());
+    }).catch(() => { if (!abort.signal.aborted) setFailed(true); });
+    return () => abort.abort();
+  }, [id, opened, workspaceId]);
+  return <details className="lawyer-access-action" onToggle={event => setOpened(event.currentTarget.open)}>
+    <summary className="juro-disclosure-summary">{t("Передача дела · 10 000 сум", "Ishni topshirish · 10 000 so‘m", "Case handoff · 10,000 UZS")}</summary>
+    <p>{t("Оплата пока недоступна. Доступ к файлам закрыт.", "To‘lov hozircha mavjud emas. Fayllarga ruxsat berilmagan.", "Payment is currently unavailable. The files are private.")}</p>
+    {failed ? <p role="alert">{t("Не удалось загрузить материалы.", "Materiallarni yuklab bo‘lmadi.", "We could not load the materials.")}</p> :
+      preview ? <><strong>{preview.lawyer}</strong><fieldset>
+        <legend>{t("Документы для будущей передачи", "Topshirish mumkin bo‘lgan hujjatlar", "Documents available to share")}</legend>
+        {preview.documents.map(document => <label key={document.id}><input type="checkbox" /> {document.title}</label>)}
+        {!preview.documents.length && <p>{t("К делу не прикреплены документы.", "Ishga hujjatlar biriktirilmagan.", "This matter has no attached documents.")}</p>}
+      </fieldset></> : <p role="status">{t("Загружаем документы…", "Hujjatlar yuklanmoqda…", "Loading documents…")}</p>}
+  </details>;
 }
 
 function handoffStatus(status: string, locale: PlatformLocale) {

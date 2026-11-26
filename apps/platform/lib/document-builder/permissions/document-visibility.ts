@@ -19,6 +19,7 @@ export function documentVisibilityScope(
   return {
     sql: `(
       d.workspace_id = ?
+      AND (d.case_id IS NULL OR case_visible_to(d.case_id, ?))
       AND (
         d.owner_user_id = ?
         OR EXISTS (
@@ -101,6 +102,7 @@ export function documentVisibilityScope(
     )`,
     bindings: [
       activeWorkspaceId,
+      userId,
       userId,
       userId,
       now,

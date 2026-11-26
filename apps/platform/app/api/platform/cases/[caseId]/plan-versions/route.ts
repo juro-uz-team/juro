@@ -16,8 +16,8 @@ export const GET = withApiErrors(async function GET(
   const db = requireD1();
 
   const plan = await db.prepare(
-    "SELECT p.id,p.current_revision AS currentRevision FROM action_plans p JOIN cases c ON c.id=p.case_id WHERE c.id=? AND c.workspace_id=? AND c.archived_at IS NULL LIMIT 1",
-  ).bind(caseId, workspace.id).first<{ id: string; currentRevision: number }>();
+    "SELECT p.id,p.current_revision AS currentRevision FROM action_plans p JOIN cases c ON c.id=p.case_id WHERE c.id=? AND c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL LIMIT 1",
+  ).bind(caseId, workspace.id, user.id).first<{ id: string; currentRevision: number }>();
   if (!plan) {
     return Response.json({ error: "Дело или план недоступны.", code: "CASE_PLAN_UNAVAILABLE" }, {
       status: 404,

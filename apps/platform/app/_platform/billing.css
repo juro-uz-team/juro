@@ -137,3 +137,48 @@
 @media(max-width:600px){.demo-payments-workspace{padding:18px 14px}.demo-payments-workspace>header>svg{display:none}.demo-payments-workspace header h1{font-size:32px}.demo-payment-history>article{grid-template-columns:1fr}.demo-payment-status{width:max-content}}
 @media(prefers-reduced-motion:reduce){.demo-payment-back,.demo-payment-flows button,.demo-payment-actions button{transition:none}}
 html[data-theme=dark] :is(.billing-error,.demo-payment-status.failed,.demo-payment-status.cancelled){color:color-mix(in srgb,var(--danger) 48%,white)}html[data-theme=dark] :is(.demo-payment-status.succeeded,.demo-payment-status.paid_out){color:color-mix(in srgb,var(--success) 48%,white)}
+
+.subscription-page { display: grid; gap: 1.5rem; container-type: inline-size; }
+.subscription-page h2, .subscription-page h3, .subscription-page p, .subscription-page dl, .subscription-page dd { margin: 0; }
+.subscription-summary, .subscription-card, .subscription-extras, .subscription-details {
+  min-width: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+.subscription-summary { padding: clamp(1rem, 3vw, 2rem); display: grid; gap: 1.4rem; }
+.subscription-summary-heading { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.subscription-summary-heading h2 { font-size: clamp(1.65rem, 3vw, 2.4rem); }
+.subscription-summary-heading p { color: var(--text-secondary); }
+.subscription-summary-heading a { display: block; padding-block: .45rem; }
+.subscription-meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 1rem; }
+.subscription-meters > div { border-radius: .75rem; background: var(--soft); padding: .9rem; }
+.subscription-meters dd { margin-top: .35rem; font-variant-numeric: tabular-nums; }
+.subscription-meters progress { accent-color: var(--brand-gold-text); width: 100%; height: .55rem; }
+.subscription-notice { padding: .85rem 1rem; background: var(--soft); color: var(--text-secondary); border-radius: .75rem; }
+.subscription-notice button { margin-inline-start: 1rem; }
+.subscription-catalogue, .subscription-extras { display: grid; gap: 1rem; }
+.subscription-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .85rem; }
+.subscription-card { --plan-accent: #718298; display: flex; flex-direction: column; gap: .6rem; padding: 1.05rem; }
+.subscription-card[data-plan="starter"] { --plan-accent: #447aab; }
+.subscription-card[data-plan="advanced"] { --plan-accent: #7467b7; }
+.subscription-card[data-plan="company"] { --plan-accent: #2d897f; }
+.subscription-card[data-plan="lawyer"] { --plan-accent: #a7763d; }
+.subscription-card.selected { outline: 2px solid var(--plan-accent); outline-offset: -2px; }
+.subscription-card header { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.subscription-card header svg { box-sizing: content-box; width: 1.3rem; height: 1.3rem; padding: .6rem; border-radius: .65rem; background: color-mix(in srgb, var(--plan-accent) 22%, var(--surface-raised)); }
+.subscription-card header span { font-size: .78rem; font-weight: 650; }
+.subscription-card strong { font-size: 1.55rem; line-height: 1; letter-spacing: -.035em; white-space: nowrap; }
+.subscription-card p, .subscription-card small, .subscription-card dl { color: var(--text-secondary); }
+.subscription-card p, .subscription-card dl { font-size: .875rem; }
+.subscription-card dl { margin-top: auto; padding-top: .4rem; }
+.subscription-card dl div, .subscription-extras dl div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+  border-top: 1px solid var(--line); padding-block: .55rem;
+}
+.subscription-card dd, .subscription-extras dd { color: var(--text-primary); font-weight: 650; white-space: nowrap; }
+.subscription-extras, .subscription-details { padding: 1rem; }
+.subscription-details { overflow-x: auto; }
+.subscription-details summary { cursor: pointer; padding: .35rem 0; font-weight: 650; }
+.subscription-details table { border-collapse: collapse; margin-top: .75rem; width: 100%; text-align: start; }
+.subscription-details :is(th, td) { padding: .5rem .65rem; border-bottom: 1px solid var(--line); text-align: start; }

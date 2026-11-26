@@ -128,7 +128,7 @@ export async function practiceHttp(request: Request, segments: string[]) {
         2048,
       );
       return transaction(async (client) => {
-        if (process.env.PRACTICE_ENABLED !== "true")
+        if (process.env.PRACTICE_ENABLED === "false")
           throw new PracticeError("MODULE_DISABLED", 503);
         const verified = (
           await client.query(

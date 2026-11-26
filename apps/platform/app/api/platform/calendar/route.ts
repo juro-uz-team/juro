@@ -47,7 +47,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
     JOIN action_plans p ON p.id=s.plan_id
     JOIN cases c ON c.id=p.case_id
     LEFT JOIN tasks t ON t.plan_step_id=s.id AND t.case_id=c.id AND t.workspace_id=c.workspace_id
-    WHERE c.workspace_id=?
+    WHERE c.workspace_id=? AND case_visible_to(c.id,?)
       AND c.archived_at IS NULL
       AND s.due_at IS NOT NULL
       AND s.due_at>=? AND s.due_at<?
@@ -55,7 +55,7 @@ export const GET = withApiErrors(async function GET(request: Request) {
       AND (t.id IS NULL OR t.status NOT IN ('completed','cancelled'))
     ORDER BY s.due_at ASC,c.title ASC,s.ordinal ASC`,
       )
-      .bind(workspace.id, range.from, range.to)
+      .bind(workspace.id, user.id, range.from, range.to)
       .all(),
     db
       .prepare(

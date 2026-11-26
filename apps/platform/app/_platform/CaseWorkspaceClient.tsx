@@ -33,7 +33,7 @@ import {
   type CaseSection,
   type PlatformLocale,
 } from "../../lib/platform/routing";
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 type Step = { id: string; title: string; status: string; dueAt?: string | null };
 type CaseRecord = { sourceConversationId?: string | null; id: string; title: string; description?: string | null; legalArea: string; status: string; nextDeadlineAt?: string | null; archivedAt?: string | null; completedAt?: string | null; lifecycleRevision?: number; progressPercent?: number; steps?: Step[] };
@@ -59,6 +59,9 @@ type CaseWorkspaceData = {
   participants?: CaseParticipant[];
   lawyerRequests?: CaseLawyerRequest[];
   error?: string;
+  canManageParticipants?: boolean;
+  canComment?: boolean;
+  ownerUserId?: string;
 };
 
 
@@ -84,6 +87,8 @@ export function CaseWorkspaceClient({
 }) {
   const router = useRouter();
   const base = usePlatformBasePath();
+  const workspaceId = usePlatformWorkspaceId();
+  const [reload, setReload] = useState(0);
   const caseBase = `${base}/cases/${encodeURIComponent(caseId)}`;
   const [item, setItem] = useState<CaseRecord | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -97,9 +102,9 @@ export function CaseWorkspaceClient({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch(`/api/platform/cases?caseId=${encodeURIComponent(caseId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { cases?: CaseRecord[]; error?: string }; if (!response.ok) throw new Error(body.error || "CASE_UNAVAILABLE"); return body.cases?.[0] ?? null; }),
-      fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/tasks`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { tasks?: Task[]; error?: string }; if (!response.ok) throw new Error(body.error || "TASKS_UNAVAILABLE"); return body.tasks ?? []; }),
-      fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/workspace`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as CaseWorkspaceData; if (!response.ok) throw new Error(body.error || "CASE_WORKSPACE_UNAVAILABLE"); return body; }),
+      fetch(`/api/platform/cases?caseId=${encodeURIComponent(caseId)}`, { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } }).then(async (response) => { const body = await response.json() as { cases?: CaseRecord[]; error?: string }; if (!response.ok) throw new Error(body.error || "CASE_UNAVAILABLE"); return body.cases?.[0] ?? null; }),
+      fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/tasks`, { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } }).then(async (response) => { const body = await response.json() as { tasks?: Task[]; error?: string }; if (!response.ok) throw new Error(body.error || "TASKS_UNAVAILABLE"); return body.tasks ?? []; }),
+      fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/workspace`, { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } }).then(async (response) => { const body = await response.json() as CaseWorkspaceData; if (!response.ok) throw new Error(body.error || "CASE_WORKSPACE_UNAVAILABLE"); return body; }),
     ]).then(([record, caseTasks, data]) => {
       if (!cancelled) {
         setItem(record);
@@ -112,7 +117,7 @@ export function CaseWorkspaceClient({
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [caseId]);
+  }, [caseId, reload, workspaceId]);
 
   if (loading) return <div className="case-workspace-loading" aria-live="polite"><LoaderCircle />{text(locale, "Загружаем дело…", "Ish yuklanmoqda…", "Loading matter…")}</div>;
   if (error || !item) return <section className="case-workspace-empty"><CircleAlert /><h1>{text(locale, "Дело недоступно", "Ish mavjud emas", "Matter unavailable")}</h1><p>{text(locale, "Оно не найдено в текущем пространстве или доступ к нему изменён.", "U joriy makonda topilmadi yoki unga kirish o‘zgardi.", "It was not found in the current workspace, or your access has changed.")}</p><Link href={`${base}/cases`}>{text(locale, "К списку дел", "Ishlar ro‘yxatiga", "Back to matters")}</Link></section>;
@@ -138,7 +143,7 @@ export function CaseWorkspaceClient({
     try {
       const response = await fetch(`/api/platform/cases/${encodeURIComponent(caseId)}`, {
         method: "PATCH",
-        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey, "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey, "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ action }),
       });
       const body = await response.json() as { status?: string; archivedAt?: string | null; completedAt?: string | null; lifecycleRevision?: number; error?: string; code?: string };
@@ -166,8 +171,104 @@ export function CaseWorkspaceClient({
       <details className="case-more-sections" open={!["overview","plan","calendar","documents","chat"].includes(section)}><summary className="juro-disclosure-summary">{text(locale,"Ещё","Yana","More")}</summary><div>{CASE_SECTIONS.filter(name=>!["overview","plan","calendar","documents","chat"].includes(name)).map(name=><Link key={name} href={`${caseBase}/${name}`} aria-current={section===name?"page":undefined}>{sectionLabel(name,locale)}</Link>)}</div></details>
     </nav>
     {(item.description || item.sourceConversationId) && <details className="case-context"><summary className="juro-disclosure-summary">{text(locale,"О деле и исходный ответ","Ish haqida va asl javob","Matter background and original answer")}</summary>{item.description && <p>{item.description}</p>}{item.sourceConversationId && <Link href={`${base}/ai-chat?conversationId=${encodeURIComponent(item.sourceConversationId)}`}>{text(locale,"Открыть исходный ответ JURO","JURO asl javobini ochish","Open the original JURO answer")}</Link>}</details>}
+    {(section === "participants" || section === "access") && workspaceData.canManageParticipants &&
+      <CaseAssignments caseId={caseId} workspaceId={workspaceId} assigned={workspaceData.participants ?? []}
+        ownerId={workspaceData.ownerUserId} locale={locale} refresh={() => setReload(value => value + 1)} />}
+    {section === "activity" && (workspaceData.canComment || workspaceData.activity?.some(event => event.eventType === "company_case_comment")) &&
+      <CaseDiscussion caseId={caseId} workspaceId={workspaceId} events={workspaceData.activity ?? []}
+        canComment={!!workspaceData.canComment} locale={locale} refresh={() => setReload(value => value + 1)} />}
     <CaseSectionPanel section={section} locale={locale} base={base} item={item} tasks={tasks} data={workspaceData} />
   </section>;
+}
+
+function CaseDiscussion({ caseId, workspaceId, events, canComment, locale, refresh }: {
+  caseId: string; workspaceId: string; events: CaseActivity[]; canComment: boolean;
+  locale: PlatformLocale; refresh: () => void;
+}) {
+  const [comment, setComment] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(false);
+  const t = (ru: string, uz: string, en: string) => text(locale, ru, uz, en);
+  async function send() {
+    setSending(true);
+    setError(false);
+    try {
+      const response = await fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/workspace`, {
+        method: "POST", headers: { "x-juro-workspace-id": workspaceId, "x-juro-csrf": "1", "content-type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      if (!response.ok) throw new Error();
+      setComment("");
+      refresh();
+    } catch { setError(true); }
+    finally { setSending(false); }
+  }
+  return <section className="case-workspace-tab-panel">
+    <PanelHeading icon={MessageSquareText} title={t("Обсуждение дела", "Ish muhokamasi", "Matter discussion")} />
+    <ol className="case-workspace-task-comments">{events.filter(event => event.eventType === "company_case_comment")
+      .map((event, index) => <li key={`${event.createdAt}:${index}`}><div>
+        <p>{String(event.metadata.comment ?? "")}</p><time dateTime={event.createdAt}>{date(event.createdAt, locale)}</time>
+      </div></li>)}</ol>
+    {error && <p role="alert">{t("Комментарий не отправлен.", "Izoh yuborilmadi.", "The comment could not be posted.")}</p>}
+    {canComment && <form onSubmit={event => { event.preventDefault(); void send(); }}>
+      <label>{t("Комментарий", "Izoh", "Comment")}<textarea value={comment} onChange={event => setComment(event.target.value)} maxLength={2000} rows={3} /></label>
+      <button type="submit" disabled={sending || !comment.trim()}>{t("Отправить", "Yuborish", "Post comment")}</button>
+    </form>}
+  </section>;
+}
+
+function CaseAssignments({ caseId, workspaceId, assigned, ownerId, locale, refresh }: {
+  caseId: string; workspaceId: string; assigned: CaseParticipant[]; ownerId?: string;
+  locale: PlatformLocale; refresh: () => void;
+}) {
+  const [choices, setChoices] = useState<{ userId: string; name: string }[]>();
+  const [selection, setSelection] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const t = (ru: string, uz: string, en: string) => text(locale, ru, uz, en);
+  const unavailable = t("Не удалось изменить доступ.", "Ruxsatni o‘zgartirib bo‘lmadi.", "We could not change matter access.");
+  async function open() {
+    if (choices || busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/platform/team", { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } });
+      if (!response.ok) throw new Error();
+      const { members } = await response.json() as { members: { userId: string; fullName: string | null; email: string }[] };
+      setChoices(members.map(member => ({ userId: member.userId, name: member.fullName || member.email })));
+    } catch { setError(unavailable); }
+    finally { setBusy(false); }
+  }
+  async function change(userId: string, next: boolean) {
+    setError("");
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/platform/cases/${encodeURIComponent(caseId)}/workspace`, {
+        method: "PATCH", headers: { "x-juro-workspace-id": workspaceId, "x-juro-csrf": "1", "content-type": "application/json" },
+        body: JSON.stringify({ userId, assigned: next }),
+      });
+      if (!response.ok) throw new Error();
+      setSelection("");
+      refresh();
+    } catch { setError(unavailable); }
+    finally { setBusy(false); }
+  }
+  return <details className="case-context" onToggle={event => { if (event.currentTarget.open) void open(); }}>
+    <summary className="juro-disclosure-summary">{t("Назначить участников", "Ishtirokchilarni tayinlash", "Manage participants")}</summary>
+    {error && <p role="alert">{error}</p>}
+    {choices && <div className="case-workspace-actions">
+      <select aria-label={t("Участник команды", "Jamoa a’zosi", "Team member")} value={selection} onChange={event => setSelection(event.target.value)}>
+        <option value="">{t("Выберите участника", "A’zoni tanlang", "Choose a member")}</option>
+        {choices.filter(choice => !assigned.some(member => member.userId === choice.userId)).map(choice =>
+          <option key={choice.userId} value={choice.userId}>{choice.name}</option>)}
+      </select>
+      <button type="button" disabled={!selection || busy} onClick={() => void change(selection, true)}>{t("Назначить", "Tayinlash", "Assign")}</button>
+    </div>}
+    <ul>{assigned.filter(member => !member.currentUser && member.userId !== ownerId).map(member => <li key={member.userId}>
+      <button type="button" disabled={busy} onClick={() => void change(member.userId, false)}>
+        {t(`Отозвать доступ · ${member.displayName}`, `Ruxsatni bekor qilish · ${member.displayName}`, `Remove access · ${member.displayName}`)}
+      </button>
+    </li>)}</ul>
+  </details>;
 }
 
 function CaseSectionPanel({ section, locale, base, item, tasks, data }: { section: CaseSection; locale: PlatformLocale; base: string; item: CaseRecord; tasks: Task[]; data: CaseWorkspaceData }) {
@@ -181,9 +282,9 @@ function CaseSectionPanel({ section, locale, base, item, tasks, data }: { sectio
     ...(data.comparisons ?? []).map((comparison) => ({ id: `comparison:${comparison.id}`, title: text(locale, "Сравнение версий документа", "Hujjat nusxalarini taqqoslash", "Document version comparison"), meta: `${statusLabel(comparison.status, locale)}${comparison.overallRisk ? ` · ${riskLabel(comparison.overallRisk, locale)}` : ""} · ${date(comparison.updatedAt, locale)}`, href: `${base}/documents/comparisons/${encodeURIComponent(comparison.id)}` })),
   ]} action={<Link href={`${base}/document-review?caseId=${encodeURIComponent(item.id)}`}>{text(locale, "Анализировать документ", "Hujjatni tahlil qilish", "Analyze document")}<ArrowUpRight /></Link>} />;
   if (section === "sources") return <CaseSourcesPanel locale={locale} sources={data.sources ?? []} initialBookmarks={data.bookmarks ?? []} />;
-  if (section === "participants") return <SimpleList icon={UsersRound} title={text(locale, "Участники пространства", "Makon ishtirokchilari", "Workspace members")} empty={text(locale, "Активных участников нет.", "Faol ishtirokchilar yo‘q.", "No active members.")} note={text(locale, "Сейчас доступ к делу наследуется от активного workspace. Отдельные временные права юриста показаны в разделе «Доступ».", "Hozir ishga kirish faol workspace orqali meros bo‘ladi. Yuristning alohida vaqtinchalik huquqlari «Ruxsat» bo‘limida ko‘rsatiladi.", "Matter access currently inherits from the active workspace. Separate temporary lawyer permissions appear under Access.")} items={(data.participants ?? []).map((participant) => ({ id: participant.userId, title: participant.currentUser ? `${participant.displayName} · ${text(locale, "вы", "siz", "you")}` : participant.displayName, meta: `${roleLabel(participant.role, locale)} · ${date(participant.joinedAt, locale)}` }))} />;
+  if (section === "participants") return <SimpleList icon={UsersRound} title={text(locale, "Участники дела", "Ish ishtirokchilari", "Matter participants")} empty={text(locale, "Активных участников нет.", "Faol ishtirokchilar yo‘q.", "No active members.")} note={text(locale, "Назначенные участники могут открыть это дело.", "Tayinlangan ishtirokchilar ishni ochishi mumkin.", "Assigned participants can open this matter.")} items={(data.participants ?? []).map((participant) => ({ id: participant.userId, title: participant.currentUser ? `${participant.displayName} · ${text(locale, "вы", "siz", "you")}` : participant.displayName, meta: `${roleLabel(participant.role, locale)} · ${date(participant.joinedAt, locale)}` }))} />;
   if (section === "lawyer") return <SimpleList icon={Scale} title={text(locale, "Живой юрист", "Jonli yurist", "Lawyer")} empty={text(locale, "По этому делу ещё нет заявки юристу.", "Bu ish bo‘yicha yuristga so‘rov yo‘q.", "No lawyer request has been made for this matter yet.")} items={(data.lawyerRequests ?? []).map((request) => ({ id: request.id, title: request.lawyerName || text(locale, "Назначение юриста ожидается", "Yurist tayinlanishi kutilmoqda", "Awaiting lawyer assignment"), meta: `${statusLabel(request.status, locale)} · ${date(request.updatedAt, locale)}`, trailing: request.activeGrantId ? text(locale, "Доступ активен", "Ruxsat faol", "Access active") : undefined }))} action={<Link href={`${base}/lawyers?caseId=${encodeURIComponent(item.id)}`}>{text(locale, "Выбрать юриста", "Yurist tanlash", "Choose a lawyer")}<ArrowUpRight /></Link>} />;
-  if (section === "access") return <section className="case-workspace-tab-panel"><PanelHeading icon={ShieldCheck} title={text(locale, "Доступ к делу", "Ishga ruxsat", "Matter access")} /><p className="case-workspace-note">{text(locale, "Базовый доступ имеют активные участники текущего workspace. Временный доступ юриста выдаётся только после отдельного подтверждения и может быть отозван.", "Asosiy ruxsat joriy workspace faol ishtirokchilariga beriladi. Yuristga vaqtinchalik ruxsat faqat alohida tasdiqdan keyin beriladi va bekor qilinishi mumkin.", "Active members of the current workspace have standard access. Temporary lawyer access requires separate confirmation and can be revoked.")}</p><div className="case-access-grid"><SimpleListContent items={(data.participants ?? []).map((participant) => ({ id: participant.userId, title: participant.currentUser ? `${participant.displayName} · ${text(locale, "вы", "siz", "you")}` : participant.displayName, meta: `${roleLabel(participant.role, locale)} · ${text(locale, "доступ через workspace", "workspace orqali ruxsat", "access via workspace")}` }))} empty={text(locale, "Активных участников нет.", "Faol ishtirokchilar yo‘q.", "No active members.")} /><SimpleListContent items={(data.lawyerRequests ?? []).filter((request) => request.activeGrantId).map((request) => ({ id: request.id, title: request.lawyerName || text(locale, "Назначенный юрист", "Tayinlangan yurist", "Assigned lawyer"), meta: `${text(locale, "Предоставлен", "Berilgan", "Granted")}: ${date(request.grantedAt, locale)}`, trailing: request.expiresAt ? `${text(locale, "до", "gacha", "until")} ${date(request.expiresAt, locale)}` : text(locale, "до отзыва", "bekor qilinguncha", "until revoked") }))} empty={text(locale, "Активного доступа юриста нет.", "Yuristning faol ruxsati yo‘q.", "No active lawyer access.")} /></div></section>;
+  if (section === "access") return <section className="case-workspace-tab-panel"><PanelHeading icon={ShieldCheck} title={text(locale, "Доступ к делу", "Ishga ruxsat", "Matter access")} /><p className="case-workspace-note">{text(locale, "Дело доступно назначенным участникам. Доступ приглашённого юриста можно отозвать.", "Ish tayinlangan a’zolarga ochiq. Taklif qilingan yurist ruxsatini bekor qilish mumkin.", "Assigned members can open this matter. You can revoke a lawyer’s separately granted access.")}</p><div className="case-access-grid"><SimpleListContent items={(data.participants ?? []).map((participant) => ({ id: participant.userId, title: participant.currentUser ? `${participant.displayName} · ${text(locale, "вы", "siz", "you")}` : participant.displayName, meta: `${roleLabel(participant.role, locale)} · ${text(locale, "доступ через workspace", "workspace orqali ruxsat", "access via workspace")}` }))} empty={text(locale, "Активных участников нет.", "Faol ishtirokchilar yo‘q.", "No active members.")} /><SimpleListContent items={(data.lawyerRequests ?? []).filter((request) => request.activeGrantId).map((request) => ({ id: request.id, title: request.lawyerName || text(locale, "Назначенный юрист", "Tayinlangan yurist", "Assigned lawyer"), meta: `${text(locale, "Предоставлен", "Berilgan", "Granted")}: ${date(request.grantedAt, locale)}`, trailing: request.expiresAt ? `${text(locale, "до", "gacha", "until")} ${date(request.expiresAt, locale)}` : text(locale, "до отзыва", "bekor qilinguncha", "until revoked") }))} empty={text(locale, "Активного доступа юриста нет.", "Yuristning faol ruxsati yo‘q.", "No active lawyer access.")} /></div></section>;
   return <SimpleList icon={History} title={text(locale, "Активность дела", "Ish faolligi", "Matter activity")} empty={text(locale, "Событий пока нет.", "Hozircha hodisalar yo‘q.", "No events yet.")} items={(data.activity ?? []).map((event, index) => ({ id: `${event.createdAt}-${index}`, title: activityLabel(event.eventType, locale), meta: date(event.createdAt, locale) }))} />;
 }
 

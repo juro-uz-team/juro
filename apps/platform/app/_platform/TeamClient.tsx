@@ -1,6 +1,7 @@
 "use client";
 
 import { WorkspacePagination, useWorkspacePagination } from "./WorkspacePagination";
+import { usePlatformWorkspaceId } from "./PlatformRouteContext";
 import { WorkspaceTitle } from "./WorkspaceTitle";
 
 import { Select } from "../_components/Select";
@@ -18,8 +19,11 @@ type Invitation = { id: string; email: string | null; role: string; expiresAt: s
 type TeamData = {
   workspace: { id: string; name: string; type: string; locale: string } | null;
   currentRole: string;
+  currentUserId: string;
+  readOnly: boolean;
   members: Member[];
   invitations: Invitation[];
+  unassignedCases: { id: string; title: string }[];
 };
 
 const roles = ["admin", "lawyer", "employee", "viewer", "external"] as const;
@@ -32,6 +36,7 @@ const teamCopy = {
 
 export function TeamClient({ locale }: { locale: PlatformLocale }) {
   const copy = teamCopy[locale];
+  const workspaceId = usePlatformWorkspaceId();
   const [data, setData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,12 +44,20 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
   const [notice, setNotice] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<(typeof roles)[number]>("employee");
+  const [query, setQuery] = useState("");
+  const [reassignment, setReassignment] = useState({ caseId: "", memberId: "" });
   const canManage = data?.currentRole === "owner" || data?.currentRole === "admin";
+
+  const canInvite = canManage && !data?.readOnly;
+  const rolesForManager = roles.filter(item => data?.currentRole === "owner" || item !== "admin");
+  const canRemove = (member: Member) => canManage && member.role !== "owner" && member.userId !== data?.currentUserId
+    && (member.role !== "admin" || data?.currentRole === "owner");
+  const t = (ru: string, uz: string, en: string) => ({ ru, uz, en })[locale];
 
   const load = useCallback(async () => {
     setError("");
     try {
-      const response = await fetch("/api/platform/team", { cache: "no-store" });
+      const response = await fetch("/api/platform/team", { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } });
       const body = await response.json() as TeamData & { error?: string };
       if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.loadError));
       setData(body);
@@ -53,19 +66,23 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
     } finally {
       setLoading(false);
     }
-  }, [copy.loadError, locale]);
+  }, [copy.loadError, locale, workspaceId]);
 
   useEffect(() => { void load(); }, [load]);
 
   async function invite(event: FormEvent) {
     event.preventDefault();
+    await sendInvitation(email, role);
+  }
+
+  async function sendInvitation(email: string, role: string) {
     setSaving(true);
     setError("");
     setNotice("");
     try {
       const response = await fetch("/api/platform/team", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
         body: JSON.stringify({ email, role, locale }),
       });
       const body = await response.json() as { error?: string };
@@ -84,7 +101,7 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
     setError("");
     const response = await fetch(`/api/platform/team/members/${encodeURIComponent(memberId)}`, {
       method: "PATCH",
-      headers: { "content-type": "application/json", "x-juro-csrf": "1" },
+      headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
       body: JSON.stringify({ role: nextRole }),
     });
     const body = await response.json() as { error?: string };
@@ -92,41 +109,89 @@ export function TeamClient({ locale }: { locale: PlatformLocale }) {
     await load();
   }
 
-  async function removeMember(memberId: string) {
-    if (!window.confirm(copy.removeConfirm)) return;
-    const response = await fetch(`/api/platform/team/members/${encodeURIComponent(memberId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1" } });
+  async function removeMember(member: Member) {
+    const memberId = member.id;
+    if (!window.confirm([copy.removeConfirm, member.fullName || member.email, data?.workspace?.name].filter(Boolean).join("\n"))) return;
+    const response = await fetch(`/api/platform/team/members/${encodeURIComponent(memberId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId } });
     const body = await response.json() as { error?: string };
     if (!response.ok) { setError(platformApiError(locale, body.error, copy.removeError)); return; }
     await load();
   }
 
   async function revokeInvitation(invitationId: string) {
-    const response = await fetch(`/api/platform/team/invitations/${encodeURIComponent(invitationId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1" } });
+    const response = await fetch(`/api/platform/team/invitations/${encodeURIComponent(invitationId)}`, { method: "DELETE", headers: { "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId } });
     const body = await response.json() as { error?: string };
     if (!response.ok) { setError(platformApiError(locale, body.error, copy.revokeError)); return; }
     await load();
   }
 
-  const memberPages = useWorkspacePagination(data?.members.length ?? 0, 6);
-  const invitationPages = useWorkspacePagination(data?.invitations.length ?? 0, 6);
+  async function assignResponsibility(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/platform/team", {
+        method: "PATCH", headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
+        body: JSON.stringify(reassignment),
+      });
+      if (!response.ok) throw new Error();
+      setReassignment({ caseId: "", memberId: "" });
+      setNotice(t("Ответственный обновлён.", "Mas’ul yangilandi.", "Responsibility reassigned."));
+      await load();
+    } catch {
+      setError(t("Не удалось назначить ответственного.", "Mas’ulni tayinlab bo‘lmadi.", "We could not reassign the matter."));
+    } finally { setSaving(false); }
+  }
+
+  const filter = query.trim().toLocaleLowerCase();
+  const members = (data?.members ?? []).filter(member => [member.fullName, member.email, roleLabel(member.role, locale)]
+    .some(value => value?.toLocaleLowerCase().includes(filter)));
+  const invitations = (data?.invitations ?? []).filter(invitation => [invitation.email, roleLabel(invitation.role, locale)]
+    .some(value => value?.toLocaleLowerCase().includes(filter)));
+  const memberPages = useWorkspacePagination(members.length, 8, filter);
+  const invitationPages = useWorkspacePagination(invitations.length, 8, filter);
   if (loading && !data) return <div className="team-loading"><LoaderCircle className="spin" /></div>;
   return (
     <section className="team-workspace workspace-page">
-      <WorkspaceTitle icon={<UsersRound />} title={data?.workspace?.name || copy.workspace} description={copy.description} />
+      <WorkspaceTitle icon={<UsersRound />} title={data?.workspace?.name || copy.workspace} description={data?.workspace?.type === "business" ? t("Без ограничения числа участников", "A’zolar soni cheklanmagan", "Unlimited members") : undefined} />
       {error && <p className="team-message error" role="alert"><CircleAlert />{error}</p>}
       {notice && <p className="team-message success" role="status"><ShieldCheck />{notice}</p>}
-      {canManage && (
+      {data?.readOnly && <p className="team-message">{t("Срок тарифа истёк. Можно отозвать доступ и приглашения.", "Tarif tugadi. Ruxsat va takliflarni bekor qilish mumkin.", "The term ended. You can still revoke access and invitations.")}</p>}
+      {canInvite && (
         <form className="team-invite" onSubmit={invite}>
-          <div><MailPlus /><div><h2>{copy.invite}</h2><p>{copy.inviteDescription}</p></div></div>
+          <div><MailPlus /><div><h2>{copy.invite}</h2><p>{t("Участник примет приглашение по электронной почте.", "A’zo taklifni elektron pochta orqali qabul qiladi.", "The recipient accepts by email.")}</p></div></div>
           <label><span>Email</span><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@company.uz" /></label>
-          <label><span>{copy.role}</span><Select value={role} onChange={(event) => setRole(event.target.value as typeof role)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select></label>
+          <label><span>{copy.role}</span><Select value={role} onChange={(event) => setRole(event.target.value as typeof role)}>{rolesForManager.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select></label>
           <button disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <MailPlus />}{copy.send}</button>
         </form>
       )}
+      <label className="team-search"><span>{t("Поиск по команде", "Jamoada qidirish", "Search team")}</span>
+        <input type="search" value={query} onChange={event => setQuery(event.target.value)} />
+      </label>
       <div className="team-grid">
-        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{data?.members.slice(memberPages.from, memberPages.to).map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canManage && member.role !== "owner" ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{roles.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canManage && member.role !== "owner" && <button className="team-remove" onClick={() => void removeMember(member.id)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div><WorkspacePagination locale={locale} {...memberPages} /></article>
-        <article><div className="team-title"><h2>{copy.pending}</h2><span>{data?.invitations.length ?? 0}</span></div>{data?.invitations.length ? <div className="team-list">{data.invitations.slice(invitationPages.from, invitationPages.to).map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}<WorkspacePagination locale={locale} {...invitationPages} /></article>
+        <article><div className="team-title"><h2>{copy.members}</h2><span>{data?.members.length ?? 0}</span></div><div className="team-list">{!members.length && <p className="team-empty">{t("Участники не найдены.", "A’zolar topilmadi.", "No matching members.")}</p>}{members.slice(memberPages.from, memberPages.to).map((member) => <div key={member.id}><span className="team-avatar"><UserRound /></span><div><strong>{member.fullName || member.email}</strong><small>{member.email}</small></div>{canRemove(member) && !data?.readOnly ? <Select aria-label={`${copy.role}: ${member.fullName || member.email}`} value={member.role} onChange={(event) => void changeRole(member.id, event.target.value)}>{rolesForManager.map((item) => <option key={item} value={item}>{roleLabel(item, locale)}</option>)}</Select> : <span className="team-role">{roleLabel(member.role, locale)}</span>}{canRemove(member) && <button className="team-remove" onClick={() => void removeMember(member)} aria-label={copy.remove}><Trash2 /></button>}</div>)}</div><WorkspacePagination locale={locale} {...memberPages} /></article>
+        <article><div className="team-title"><h2>{copy.pending}</h2><span>{invitations.length ?? 0}</span></div>{invitations.length ? <div className="team-list">{invitations.slice(invitationPages.from, invitationPages.to).map((invitation) => <div key={invitation.id}><span className="team-avatar"><MailPlus /></span><div><strong>{invitation.email || copy.hiddenEmail}</strong><small>{roleLabel(invitation.role, locale)} · {formatDate(invitation.expiresAt, locale)}</small></div>{canInvite && invitation.email && (data?.currentRole === "owner" || invitation.role !== "admin") &&
+          <button type="button" className="team-remove" disabled={saving} onClick={() => void sendInvitation(invitation.email!, invitation.role)}
+            aria-label={t("Отправить ещё раз", "Qayta yuborish", "Resend invitation")}><MailPlus /></button>}
+          {canManage && <button className="team-remove" onClick={() => void revokeInvitation(invitation.id)} aria-label={copy.revoke}><Trash2 /></button>}</div>)}</div> : <p className="team-empty">{copy.noInvitations}</p>}<WorkspacePagination locale={locale} {...invitationPages} /></article>
       </div>
+      {canInvite && !!data?.unassignedCases.length && <form className="team-invite" onSubmit={assignResponsibility}>
+        <div><UsersRound /><h2>{t("Дела без ответственного", "Mas’ulsiz ishlar", "Matters that need an owner")}</h2></div>
+        <label>{t("Дело", "Ish", "Matter")}<Select required value={reassignment.caseId}
+          onChange={event => setReassignment({ ...reassignment, caseId: event.target.value })}>
+          <option value="">{t("Выберите дело", "Ishni tanlang", "Choose a matter")}</option>
+          {data.unassignedCases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </Select></label>
+        <label>{t("Ответственный", "Mas’ul", "Responsible team member")}<Select required value={reassignment.memberId}
+          onChange={event => setReassignment({ ...reassignment, memberId: event.target.value })}>
+          <option value="">{t("Выберите участника", "A’zoni tanlang", "Choose a team member")}</option>
+          {data.members.filter(member => ["owner","admin","employee","lawyer"].includes(member.role)).map(member =>
+            <option key={member.id} value={member.id}>{member.fullName || member.email}</option>)}
+        </Select></label>
+        <button type="submit" disabled={saving || !reassignment.caseId || !reassignment.memberId}>
+          {t("Назначить", "Tayinlash", "Assign responsibility")}
+        </button>
+      </form>}
     </section>
   );
 }

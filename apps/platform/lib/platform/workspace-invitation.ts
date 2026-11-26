@@ -77,6 +77,8 @@ async function acceptWorkspaceInvitationRecord(
          AND acceptance_claim_id IS NULL
          AND revoked_at IS NULL
          AND expires_at>?
+         AND NOT EXISTS (SELECT 1 FROM workspace_members m
+           WHERE m.workspace_id=workspace_invitations.workspace_id AND m.user_id=? AND m.status='active')
        RETURNING id`,
     ).bind(
       input.now,
@@ -88,6 +90,7 @@ async function acceptWorkspaceInvitationRecord(
       input.expectedEmailLookupHash,
       input.expectedEmailLookupKeyVersion,
       input.now,
+      input.userId,
     ),
     db.prepare(
       `INSERT INTO workspace_members

@@ -105,6 +105,13 @@ export async function getDocumentAccess(documentId: string, userId: string): Pro
     FROM documents d WHERE d.id = ? LIMIT 1`,
   ).bind(documentId).first<DocumentRow>();
   if (!row) return null;
+  if (row.workspaceId) {
+    const member = await db.prepare(`SELECT m.status,w.type FROM workspace_members m
+      JOIN workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=? AND m.user_id=?`)
+      .bind(row.workspaceId,userId).first<{ status: string; type: string }>();
+    if (member?.type === "business" && (member.status !== "active" || (row.caseId &&
+      !(await db.prepare("SELECT 1 WHERE case_visible_to(?,?)").bind(row.caseId,userId).first())))) return null;
+  }
   if (row.ownerUserId === userId) {
     const activeWorkspaceId = await ensureDefaultWorkspace(userId);
     if (!isActiveWorkspaceDocumentOwner({

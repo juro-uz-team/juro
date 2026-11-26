@@ -20,7 +20,7 @@ import { importDocumentUrlForAnalysis, uploadDocumentForAnalysis } from "../../l
 import { defaultDocumentAnalysisLocale, type SupportedDocumentAnalysisLocale } from "../../lib/document-analysis/language";
 import type { AnalysisPackageContext, AnalysisPackageMemberRole, AnalysisPackageRelationshipKind } from "../../lib/document-comparison/types";
 import type { PlatformLocale } from "../../lib/platform/routing";
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 import { documentTools, useDocumentToolFile } from "./document-tools";
 import { documentFollowUpQuestions } from "../../lib/document-analysis/follow-up";
 import type { DocumentAnalysisResult } from "../../lib/document-analysis/schema";
@@ -31,6 +31,7 @@ type AnalysisExportFormat = "json" | "pdf" | "docx";
 type AnalysisExportVariant = "analysis_report" | "corrected_clean" | "corrected_redline";
 type AnalysisExport = { id: string; status: string; format: AnalysisExportFormat; variant: AnalysisExportVariant; sourceVersionId: string | null; fileName: string; sizeBytes: number | null; errorCode: string | null; completedAt: string | null; createdAt: string };
 type Summary = {
+  reviewedPages?: { first: number; last: number; total: number };
   mode?: string;
   summary?: string; parties?: string[]; dates?: string[]; obligations?: string[]; payments?: string[];
   disputedTerms?: string[]; missingItems?: string[]; questions?: string[]; disclaimer?: string;
@@ -38,6 +39,8 @@ type Summary = {
   extraction?: { packageContext?: AnalysisPackageContext | null };
 };
 type Analysis = {
+  quotePages?: number | null;
+  quoteSelectable?: boolean;
   id: string; status: string; progressStage?: string | null; errorCode?: string | null; retryExhausted?: boolean; createdAt?: string; updatedAt?: string;
   fileId: string; sourceAvailable?: boolean; fileName: string; mimeType: string; sizeBytes: number; caseId?: string | null; summary?: Summary | null; risks?: Risk[]; exports?: AnalysisExport[];
 };
@@ -88,6 +91,7 @@ function SingleDocumentReview({ locale, source, initialMode, initialCaseId, init
   const copy = documentReviewCopy[locale];
   const tools = documentTools[locale];
   const base = usePlatformBasePath();
+  const workspaceId = usePlatformWorkspaceId();
   const reportRef = useRef<HTMLElement>(null);
   const [inputKind, setInputKind] = useState<"file" | "url">("file");
   const [analysisLocale, setAnalysisLocale] = useState<SupportedDocumentAnalysisLocale>(() => defaultDocumentAnalysisLocale(locale));
@@ -111,7 +115,7 @@ function SingleDocumentReview({ locale, source, initialMode, initialCaseId, init
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch(initialAnalysisId ? `/api/platform/document-review?analysisId=${encodeURIComponent(initialAnalysisId)}` : "/api/platform/document-review", { cache: "no-store" });
+      const response = await fetch(initialAnalysisId ? `/api/platform/document-review?analysisId=${encodeURIComponent(initialAnalysisId)}` : "/api/platform/document-review", { cache: "no-store", headers: { "x-juro-workspace-id": workspaceId } });
       const body = await response.json() as { analyses?: Analysis[]; cases?: AnalysisCaseOption[]; error?: string };
       if (!response.ok) throw new Error(platformApiError(locale, body.error, copy.loadError));
       const nextAnalyses = body.analyses ?? [];
@@ -124,7 +128,7 @@ function SingleDocumentReview({ locale, source, initialMode, initialCaseId, init
         : (nextAnalyses.find(item => item.id === initialAnalysisId) ?? nextAnalyses[0] ?? null));
     } catch (value) { setError(value instanceof Error ? value.message : String(value)); }
     finally { setLoading(false); }
-  }, [copy.loadError, initialAnalysisId, initialCaseId, locale]);
+  }, [copy.loadError, initialAnalysisId, initialCaseId, locale, workspaceId]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     if (!loading && initialAnalysisId && window.location.hash === "#review-report") reportRef.current?.scrollIntoView();
@@ -148,7 +152,7 @@ function SingleDocumentReview({ locale, source, initialMode, initialCaseId, init
     setError("");
     setNotice("");
     try {
-      const body = await uploadDocumentForAnalysis(file, locale, setUploadProgress, uploadCaseId || null, analysisLocale, undefined, { mode,
+      const body = await uploadDocumentForAnalysis(file, locale, setUploadProgress, uploadCaseId || null, analysisLocale, workspaceId, { mode,
         sourceDocumentId: fromLibrary && source?.startsWith("doc:") ? source.slice(4) : undefined });
       setNotice(platformApiError(locale, body.message, body.analysis.status === "completed" ? copy.completed : tools.queued));
       setFile(null);
@@ -249,6 +253,29 @@ function SingleDocumentReview({ locale, source, initialMode, initialCaseId, init
 }
 
 function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analysis; cases: AnalysisCaseOption[]; locale: PlatformLocale; onChanged: () => Promise<void> }) {
+  const workspaceId = usePlatformWorkspaceId();
+  const [confirming, setConfirming] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+  const [range, setRange] = useState<{ first: number; last: number } | null>(null);
+  const chargedPages = range ? Math.max(0, range.last - range.first + 1) : analysis.quotePages ?? 0;
+  async function confirmAnalysis() {
+    setConfirming(true);
+    setQuoteError("");
+    try {
+      const response = await fetch(`/api/platform/document-analysis/${encodeURIComponent(analysis.id)}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-juro-csrf": "1", "x-juro-workspace-id": workspaceId },
+        body: JSON.stringify({ pages: analysis.quotePages, ...range }),
+      });
+      const body = await response.json() as { code?: string };
+      if (!response.ok) throw new Error(body.code);
+      await onChanged();
+    } catch (error) {
+      setQuoteError(error instanceof Error && ["PLAN_LIMIT", "PAGES_PER_RUN_LIMIT"].includes(error.message)
+        ? reviewText(locale, "Документ превышает доступный лимит. Загрузите только нужный фрагмент.", "Hujjat limitdan oshdi. Faqat kerakli parchani yuklang.", "This document exceeds your allowance. Upload the portion you want to review.")
+        : reviewText(locale, "Не удалось запустить анализ.", "Tahlilni boshlab bo‘lmadi.", "We could not start analysis."));
+    } finally { setConfirming(false); }
+  }
   const copy = documentReviewCopy[locale];
   const summary = analysis.summary;
   const tools = documentTools[locale];
@@ -354,7 +381,24 @@ function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analys
     {exportError && <p className="review-message error" role="alert"><CircleAlert />{exportError}</p>}
     {analysisDeleteError && <p className="review-message error" role="alert"><CircleAlert />{analysisDeleteError}</p>}
     {exportNotice && <p className="review-message success" role="status"><ShieldCheck />{exportNotice}</p>}
-    {analysis.status === "completed" ? <ReviewFindings analysis={analysis} locale={locale} onChanged={onChanged} /> :
+    {analysis.status === "awaiting_confirmation" && analysis.quotePages ? <div className="review-job">
+      <p>{reviewText(locale, `Анализ использует ${chargedPages} стр.`, `Tahlil uchun ${chargedPages} sahifa sarflanadi.`, `This analysis uses ${chargedPages} pages.`)}</p>
+      {analysis.quoteSelectable && analysis.quotePages > 1 && <div className="review-job-actions">
+        <label>{reviewText(locale, "С учётной страницы", "Hisob sahifasidan", "First accounting page")}
+          <input type="number" min={1} max={analysis.quotePages} value={range?.first ?? 1}
+            onChange={event => setRange({ first: Number(event.target.value), last: range?.last ?? analysis.quotePages! })} />
+        </label>
+        <label>{reviewText(locale, "По учётную страницу", "Hisob sahifasigacha", "Last accounting page")}
+          <input type="number" min={range?.first ?? 1} max={analysis.quotePages} value={range?.last ?? analysis.quotePages}
+            onChange={event => setRange({ first: range?.first ?? 1, last: Number(event.target.value) })} />
+        </label>
+      </div>}
+      {quoteError && <p role="alert">{quoteError}</p>}
+      <button type="button" className="review-action" disabled={confirming || !chargedPages ||
+        !!range && (range.first < 1 || range.last > analysis.quotePages)} onClick={() => void confirmAnalysis()}>
+        {reviewText(locale, "Подтвердить и начать", "Tasdiqlash va boshlash", "Confirm and analyze")}
+      </button>
+    </div> : analysis.status === "completed" ? <ReviewFindings analysis={analysis} locale={locale} onChanged={onChanged} /> :
       activeAnalysisStatuses.has(analysis.status) && !retryExhausted ?
         <DocumentToolProgress title={analysis.status === "quarantined" ? tools.stages[0] : state.heading} steps={tools.stages} current={currentStep} /> :
         <div className="review-job">
@@ -420,6 +464,12 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
     ...(risks.some(risk => risk.proposedWording || risk.recommendation) || result?.missingClauses?.some(item => item.proposedWording) ? [["edits", copy.revisionsTitle]] : []),
   ];
   return <div className="review-findings">
+    {summary?.reviewedPages && <p className="review-message">
+      {reviewText(locale,
+        `Учётные страницы ${summary.reviewedPages.first}–${summary.reviewedPages.last} из ${summary.reviewedPages.total}`,
+        `Hisob sahifalari: ${summary.reviewedPages.total} tadan ${summary.reviewedPages.first}–${summary.reviewedPages.last}`,
+        `Accounting pages ${summary.reviewedPages.first}–${summary.reviewedPages.last} of ${summary.reviewedPages.total}`)}
+    </p>}
     <nav className="review-views" aria-label={copy.resultAria}>
       {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => selectView(id)}>{label}</button>)}
     </nav>

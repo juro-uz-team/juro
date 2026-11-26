@@ -37,8 +37,8 @@ export const PATCH = withApiErrors(async function PATCH(
   const db = requireD1();
   const workspace = await workspaceForContentEditor(user);
   const plan = await db.prepare(
-    "SELECT p.id,p.current_revision AS currentRevision FROM action_plans p JOIN cases c ON c.id=p.case_id WHERE c.id=? AND c.workspace_id=? AND c.archived_at IS NULL LIMIT 1",
-  ).bind(caseId, workspace.id).first<{ id: string; currentRevision: number }>();
+    "SELECT p.id,p.current_revision AS currentRevision FROM action_plans p JOIN cases c ON c.id=p.case_id WHERE c.id=? AND c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL LIMIT 1",
+  ).bind(caseId, workspace.id, user.id).first<{ id: string; currentRevision: number }>();
   if (!plan) return response({ error: "Дело или план недоступны.", code: "CASE_PLAN_UNAVAILABLE" }, 404);
   if (plan.currentRevision !== parsed.data.revision) {
     return response({ error: "План изменён в другой сессии.", code: "VERSION_CONFLICT" }, 409);

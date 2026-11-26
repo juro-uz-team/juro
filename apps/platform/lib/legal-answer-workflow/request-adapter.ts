@@ -5,7 +5,7 @@ import { ensureSavedConversationBranches } from "./legacy-history";
 
 const identifier = z.string().trim().min(1).max(240);
 const payloadSchema = z.object({
-  question: z.string().trim().max(12_000).optional(),
+  question: z.string().trim().max(8_000).optional(),
   locale: z.enum(["en", "ru", "uz"]), answerMode: z.enum(["short", "detailed"]).default("detailed"),
   reasoningMode: z.enum(["fast", "deep"]).default("fast"),
   idempotencyKey: identifier, conversationId: identifier.nullish(), sourceMessageId: identifier.nullish(),

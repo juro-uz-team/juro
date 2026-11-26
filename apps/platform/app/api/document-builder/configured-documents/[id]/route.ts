@@ -1,4 +1,4 @@
-import {assertTemplatePlan} from "../../../../../lib/control-center/template-access";
+import { workspaceForContentEditor } from "../../../../../lib/platform/workspace";
 import { resolvedDocument } from "../../../../../lib/document-builder/registry/published";
 import { assertSafeWrite, requireApiUser } from "../../../../../lib/document-builder/auth/api";
 import { apiError, badRequest, forbidden, jsonResponse, notFound } from "../../../../../lib/document-builder/auth/responses";
@@ -50,7 +50,7 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     }
     const definition = await resolvedDocument(current.templateCode,current.templateVersion);
     if (!definition) return badRequest("Конфигурация шаблона не найдена.", "TEMPLATE_NOT_FOUND");
-    await assertTemplatePlan(definition,user.id);
+    if (access.workspaceId) await workspaceForContentEditor(user, access.workspaceId);
     const rendered = renderConfiguredDocument(definition, parsed.data.answers, parsed.data.language);
     const now = isoNow();
     const nextRevision = current.revision + 1;

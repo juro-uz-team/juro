@@ -4,7 +4,7 @@ import { DocumentComparisonProgress } from "./DocumentToolProgress";
 
 import { Select } from "../_components/Select";
 
-import { usePlatformBasePath } from "./PlatformRouteContext";
+import { usePlatformBasePath, usePlatformWorkspaceId } from "./PlatformRouteContext";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated comparison lists are hydrated after mount */
 
@@ -79,6 +79,33 @@ export function DocumentComparisonClient({ locale }: { locale: PlatformLocale })
 
 function ComparisonForm({ locale, firstSource, secondSource }: { locale: PlatformLocale; firstSource: string | null; secondSource: string | null }) {
   const copy = comparisonText[locale];
+  const workspaceId = usePlatformWorkspaceId();
+  const [quote, setQuote] = useState<{ id: string; totals: [number, number]; ranges: [number, number][] } | null>(null);
+  const t = (ru: string, uz: string, en: string) => ({ ru, uz, en })[locale];
+  const pagesQuoted = quote?.ranges.reduce((sum, [first, last]) => sum + last - first + 1, 0) ?? 0;
+
+  async function process(id: string, pages?: number, pageRange?: string) {
+    const response = await fetch(`/api/platform/document-comparisons/${encodeURIComponent(id)}/process`, {
+      method: "POST",
+      headers: { "x-juro-csrf": "1", "x-juro-locale": locale, "x-juro-workspace-id": workspaceId,
+        ...(pages === undefined ? {} : { "x-juro-confirm-pages": String(pages), "x-juro-page-range": pageRange ?? "" }) },
+    });
+    const body = await response.json() as { totals?: [number, number]; error?: string; code?: string; comparison?: Progress };
+    if (body.comparison) setProgress(body.comparison);
+    if (response.status === 428 && body.totals) {
+      setQuote({ id, totals: body.totals, ranges: body.totals.map(total => [1, total]) });
+      return;
+    }
+    if (!response.ok) throw new Error(body.error || subscriptionError(body.code) || copy.processError);
+    setQuote(null);
+    router.push(`${base}/documents/comparisons/${id}`);
+  }
+
+  function subscriptionError(code?: string) {
+    if (code === "PLAN_LIMIT") return t("Сравнение недоступно на текущем тарифе или лимит исчерпан.", "Joriy tarifda taqqoslash mavjud emas yoki limit tugagan.", "Comparison is unavailable on your plan or your allowance is exhausted.");
+    if (code === "PAGES_PER_RUN_LIMIT") return t("Лимит страниц превышен. Выберите нужные фрагменты.", "Sahifa limiti oshdi. Kerakli parchalarni tanlang.", "The page limit was exceeded. Upload the portions you want to compare.");
+    return "";
+  }
   const router = useRouter();
   const base = usePlatformBasePath();
   const [first, setFirst] = useState<FileSelection>(null);
@@ -160,32 +187,21 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
       setFormSelection(form, "versionTwo", "versionTwoFileId", second);
       const createdResponse = await fetch("/api/platform/document-comparisons", {
         method: "POST",
-        headers: { "x-juro-csrf": "1", "x-juro-locale": locale },
+        headers: { "x-juro-csrf": "1", "x-juro-locale": locale, "x-juro-workspace-id": workspaceId },
         body: form,
       });
       const created = await createdResponse.json() as {
         comparison?: Progress;
         warning?: string | null;
+        code?: string;
         error?: string;
       };
       if (!createdResponse.ok || !created.comparison) {
-        throw new Error(created.error || copy.createError);
+        throw new Error(created.error || subscriptionError(created.code) || copy.createError);
       }
       setProgress(created.comparison);
       if (created.warning) setWarning(created.warning);
-      const processedResponse = await fetch(
-        `/api/platform/document-comparisons/${encodeURIComponent(created.comparison.id)}/process`,
-        { method: "POST", headers: { "x-juro-csrf": "1", "x-juro-locale": locale } },
-      );
-      const processed = await processedResponse.json() as {
-        comparison?: Progress;
-        error?: string;
-      };
-      if (processed.comparison) setProgress(processed.comparison);
-      if (!processedResponse.ok) {
-        throw new Error(processed.error || copy.processError);
-      }
-      router.push(`${base}/documents/comparisons/${created.comparison.id}`);
+      await process(created.comparison.id);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
       await load();
@@ -194,19 +210,13 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
     }
   }
 
-  async function retry(item: RecentComparison) {
+  async function retry(item: { id: string }, pages?: number, pageRange?: string) {
     setError("");
     setWarning("");
     setProgress({ id: item.id, status: "processing", stage: "uploaded" });
     setSubmitting(true);
     try {
-      const response = await fetch(
-        `/api/platform/document-comparisons/${encodeURIComponent(item.id)}/process`,
-        { method: "POST", headers: { "x-juro-csrf": "1", "x-juro-locale": locale } },
-      );
-      const body = await response.json() as { comparison?: Progress; error?: string };
-      if (!response.ok) throw new Error(body.error || copy.retryError);
-      router.push(`${base}/documents/comparisons/${item.id}`);
+      await process(item.id, pages, pageRange);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
       await load();
@@ -220,6 +230,29 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
       {(error || firstLibrary.error || secondLibrary.error) && <div className="comparison-message error" role="alert"><CircleAlert /><span>{error || firstLibrary.error || secondLibrary.error}</span></div>}
       {opening && <div className="comparison-message" role="status"><LoaderCircle className="spin" />{documentTools[locale].loading}</div>}
       {warning && <div className="comparison-message warning" role="status"><AlertTriangle /><span>{warning}</span></div>}
+      {quote && <div className="comparison-message" role="status">
+        <span>{t(`Сравнение использует ${pagesQuoted} стр.`, `Taqqoslash uchun ${pagesQuoted} sahifa sarflanadi.`, `This comparison uses ${pagesQuoted} pages.`)}</span>
+        {quote.ranges.map(([first, last], index) => <fieldset key={index}>
+          <legend>{t(`Версия ${index + 1}`, `${index + 1}-versiya`, `Version ${index + 1}`)}</legend>
+          <label>{t("С учётной страницы", "Hisob sahifasidan", "First accounting page")}
+            <input type="number" min={1} max={last} value={first} onChange={event => {
+              const value = Number(event.target.value);
+              setQuote({ ...quote, ranges: quote.ranges.map((range, i) => i === index ? [value, range[1]] : range) });
+            }} />
+          </label>
+          <label>{t("По учётную страницу", "Hisob sahifasigacha", "Last accounting page")}
+            <input type="number" min={first} max={quote.totals[index]} value={last} onChange={event => {
+              const value = Number(event.target.value);
+              setQuote({ ...quote, ranges: quote.ranges.map((range, i) => i === index ? [range[0], value] : range) });
+            }} />
+          </label>
+        </fieldset>)}
+        <button type="button" disabled={submitting || quote.ranges.some(([first, last], index) =>
+          first < 1 || first > last || last > quote.totals[index])}
+          onClick={() => void retry(quote, pagesQuoted, quote.ranges.map(pair => pair.join("-")).join(","))}>
+          {t("Подтвердить сравнение", "Taqqoslashni tasdiqlash", "Confirm comparison")}
+        </button>
+      </div>}
       <form onSubmit={submit}>
         <div className="comparison-file-grid">
           <ComparisonFileSlot

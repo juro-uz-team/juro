@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, BriefcaseBusiness, CalendarDays, ChevronDown, FileText, House, Layers, ListChecks, MessageSquareText, PencilLine, Receipt, Wallet } from "lucide-react";
 import { homepageCopy } from "../../../content/homepage";
+import { subscriptionPlans } from "../../../../platform/config/pricing";
 import { workspaceCopy } from "../../../content/homepage-workspace";
 import { en } from "../../../content/en";
 import { ru } from "../../../content/ru";
@@ -10,7 +11,7 @@ import type { PublicLanguage } from "../../../content/types";
 import { HomepageFaq } from "./HomepageFaq";
 import { HomepageMotion } from "./HomepageMotion";
 import { HomepageWorkspace } from "./HomepageWorkspace";
-import { platformToolHref } from "./platform-hrefs";
+import { platformPersonalHref, platformToolHref } from "./platform-hrefs";
 import { SiteHeader } from "./SiteChrome";
 import styles from "./juro-home.module.css";
 
@@ -29,6 +30,11 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
   const { chat } = copy;
   const chatHref = platformToolHref(language, "ai-chat");
   const sources = language === "ru" ? labourCode.ru : labourCode.uz;
+  const prices = {
+    ru: { title: "Тарифы JURO", period: "сум в месяц", status: "Покупка тарифов пока недоступна.", action: "Открыть тарифы в JURO" },
+    uz: { title: "JURO tariflari", period: "so‘m oyiga", status: "Tariflarni sotib olish hozircha mavjud emas.", action: "JURO tariflarini ochish" },
+    en: { title: "JURO plans", period: "UZS per month", status: "Plan purchases are currently unavailable.", action: "Open billing in JURO" },
+  }[language];
 
   return (
     <div className={styles.page}>
@@ -203,6 +209,17 @@ export function JuroHomepage({ language }: { language: PublicLanguage }) {
         </div>
 
         <HomepageWorkspace language={language} />
+        <section className={`${styles.wrap} ${styles.planSection}`} id="pricing" aria-labelledby="pricing-title">
+          <h2 id="pricing-title">{prices.title}</h2>
+          <p>{prices.status}</p>
+          <ul className={styles.planGrid}>{subscriptionPlans.map(plan => <li key={plan.code}>
+            <h3>{plan.name[language]}</h3>
+            <p>{plan.audience[language]}</p>
+            <strong>{new Intl.NumberFormat(language).format(plan.priceMinor / 100)}</strong>
+            <span>{prices.period}</span>
+          </li>)}</ul>
+          <a className={styles.textLink} href={platformPersonalHref(language, "billing")}>{prices.action}<ArrowUpRight aria-hidden="true" size={17} /></a>
+        </section>
         <section className={`${styles.wrap} ${styles.faq}`} id="faq" aria-labelledby="faq-title" data-home-reveal>
           <div id="trust">
             <h2 id="faq-title">{copy.faqTitle}</h2>

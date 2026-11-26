@@ -12,6 +12,10 @@ import {
 } from "../../../../lib/document-builder/auth/api";
 import { requireD1, runtimeEnv } from "../../../../lib/document-builder/storage/runtime";
 import { requireSelectedWorkspace } from "../../../../lib/platform/workspace";
+import { canManageTeam } from "../../../../lib/platform/permissions";
+import { companyMemberUsage, workspaceUsage } from "../../../../lib/billing/usage";
+import { publishedDefinitions } from "../../../../lib/document-builder/registry/published";
+import { templateAvailableOnPlan } from "../../../../lib/control-center/template-access";
 
 function response(body: unknown, status = 200) {
   return Response.json(body, {
@@ -33,12 +37,29 @@ export const GET = withApiErrors(async function GET(request: Request) {
       ).bind(workspace.id),
       db.prepare(
         `SELECT id,amount_minor AS amountMinor,currency,status,created_at AS createdAt
-         FROM payments WHERE workspace_id=? ORDER BY created_at DESC LIMIT 30`,
-      ).bind(workspace.id),
+         FROM payments WHERE workspace_id=? AND ?::boolean ORDER BY created_at DESC LIMIT 30`,
+      ).bind(workspace.id, workspace.role === "owner"),
     ]),
     workspaceEntitlements(db, workspace.id),
   ]);
   const [subscription, payments] = records;
+  const [usage, members, professional, definitions] = await Promise.all([
+    workspaceUsage(db, workspace.id, user.id, entitlements),
+    workspace.type === "business" && canManageTeam(workspace.role)
+      ? companyMemberUsage(db, workspace.id, entitlements.periodStart) : [],
+    workspace.type === "individual"
+      ? db.prepare("SELECT marketplace_status AS status FROM lawyer_profiles WHERE user_id=? LIMIT 1").bind(user.id).first()
+      : null,
+    publishedDefinitions(),
+  ]);
+  const templateCounts = Object.fromEntries(pricingConfig.plans.map(plan => {
+    const available = definitions.filter(definition => templateAvailableOnPlan(definition, plan.code));
+    return [plan.code, {
+      ru: available.length, uz: available.length,
+      en: available.filter(definition => definition.generationSchema.paragraphs.every(paragraph =>
+        paragraph.kind === "spacer" || paragraph.text.en)).length,
+    }];
+  }));
   return response({
     provider: paymentFoundationStatus(runtimeEnv()),
     demo: paymentDemoStatus(runtimeEnv()),
@@ -46,6 +67,11 @@ export const GET = withApiErrors(async function GET(request: Request) {
     subscription: subscription.results[0] ?? null,
     payments: payments.results,
     entitlements,
+    workspace,
+    usage,
+    members,
+    professional,
+    templateCounts,
   });
 });
 
@@ -58,13 +84,6 @@ export const POST = withApiErrors(async function POST(request: Request) {
       code: parsed.error.toUpperCase(),
     }, parsed.error === "payload_too_large" ? 413 : 400);
   }
-  if (!pricingConfig.plans.some((plan) => plan.code === parsed.data.planCode)) {
-    return response({
-      code: "PLAN_UNAVAILABLE",
-      error: billingErrorMessage("PLAN_UNAVAILABLE", parsed.data.locale),
-    }, 400);
-  }
-
   const provider = paymentProviderStatus();
   if (!provider.credentialsConfigured) {
     return response({

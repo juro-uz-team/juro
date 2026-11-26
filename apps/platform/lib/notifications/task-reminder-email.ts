@@ -200,7 +200,7 @@ async function emailJob(db: D1Database, jobId: string): Promise<EmailJobRow | nu
        legal_case.locale,reminder.status AS reminderStatus,
        reminder.reminder_at AS reminderAt,reminder.updated_at AS currentReminderUpdatedAt,
        task.status AS taskStatus,legal_case.archived_at AS caseArchivedAt,
-       member.status AS memberStatus
+       CASE WHEN case_visible_to(legal_case.id,task.owner_user_id) THEN member.status END AS memberStatus
      FROM task_reminder_email_jobs job
      JOIN task_reminders reminder ON reminder.id=job.reminder_id
      JOIN tasks task ON task.id=reminder.task_id

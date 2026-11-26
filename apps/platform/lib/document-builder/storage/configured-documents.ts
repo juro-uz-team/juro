@@ -76,9 +76,9 @@ export async function createConfiguredDocument(
   input: CreateConfiguredDocumentInput,
   dependencies: CreateConfiguredDocumentDependencies = {},
 ): Promise<GenericStoredDocument> {
-  await assertTemplatePlan(input.definition,user.id);
   const db = dependencies.db ?? requireD1();
   const workspace = dependencies.workspace ?? await workspaceForUser(user);
+  await assertTemplatePlan(input.definition, workspace.id, db);
   await ensureConfiguredTemplateSeed(input.definition, db);
   const id = crypto.randomUUID();
   const now = isoNow();

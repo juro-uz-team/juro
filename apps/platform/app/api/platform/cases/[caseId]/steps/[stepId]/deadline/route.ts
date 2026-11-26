@@ -36,8 +36,8 @@ export const POST = withApiErrors(async function POST(
 
   const workspace = await workspaceForUser(user);
   const owned = await requireD1().prepare(
-    "SELECT s.id FROM action_plan_steps s JOIN action_plans p ON p.id=s.plan_id JOIN cases c ON c.id=p.case_id WHERE s.id=? AND c.id=? AND c.workspace_id=? AND c.archived_at IS NULL LIMIT 1",
-  ).bind(stepId, caseId, workspace.id).first();
+    "SELECT s.id FROM action_plan_steps s JOIN action_plans p ON p.id=s.plan_id JOIN cases c ON c.id=p.case_id WHERE s.id=? AND c.id=? AND c.workspace_id=? AND case_visible_to(c.id,?) AND c.archived_at IS NULL LIMIT 1",
+  ).bind(stepId, caseId, workspace.id, user.id).first();
   if (!owned) {
     return response({ error: "Дело или шаг недоступны.", code: "CASE_STEP_UNAVAILABLE" }, 404);
   }

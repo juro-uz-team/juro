@@ -39,8 +39,8 @@ export const POST = withApiErrors(async function POST(request: Request) {
     }
     if (intent.caseId) {
       const targetCase = await db.prepare(
-        "SELECT id FROM cases WHERE id=? AND workspace_id=? AND archived_at IS NULL LIMIT 1",
-      ).bind(intent.caseId, workspace.id).first<{ id: string }>();
+        "SELECT id FROM cases WHERE id=? AND workspace_id=? AND case_visible_to(id,?) AND archived_at IS NULL LIMIT 1",
+      ).bind(intent.caseId, workspace.id, user.id).first<{ id: string }>();
       if (!targetCase) {
         throw new DocumentAnalysisUploadError("CASE_UNAVAILABLE", "Дело недоступно.", 404);
       }

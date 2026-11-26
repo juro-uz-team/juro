@@ -73,7 +73,7 @@ export async function WorkspaceShellLayout({
     redirect(`/${profile?.locale ?? locale}/${profile?.accountType ?? "individual"}/dashboard`);
   }
   const practiceRoute = incomingHeaders.get(INTERNAL_REQUEST_PATH_HEADER)?.split("?")[0].endsWith("/practice");
-  if (profile?.accountType === "lawyer" && accountType !== "lawyer" && !practiceRoute) {
+  if (profile?.accountType === "lawyer" && accountType !== "lawyer" && !(accountType === "business" && requestedWorkspaceId) && !practiceRoute) {
     redirect(lawyerLandingDestination(
       profile,
       lawyerHost,
@@ -126,7 +126,7 @@ export async function WorkspaceShellLayout({
       activeWorkspaceId={activeWorkspace.id}
       workspaces={availableWorkspaces}
       profileSetup={profileReadiness({ accountType, lawyerProfileStatus: profile?.lawyerProfileStatus ?? null, lawyerMarketplaceStatus: profile?.lawyerMarketplaceStatus ?? null, hasBusinessWorkspace: availableWorkspaces.some(workspace => workspace.type === "business") })}
-      practiceAvailable={process.env.PRACTICE_ENABLED === "true" && Boolean(await requireD1().prepare("SELECT workspace_id FROM practice_workspaces WHERE workspace_id=?").bind(activeWorkspace.id).first())}
+      practiceAvailable={process.env.PRACTICE_ENABLED !== "false" && Boolean(await requireD1().prepare("SELECT workspace_id FROM practice_workspaces WHERE workspace_id=?").bind(activeWorkspace.id).first())}
     >
       {children}
     </PlatformShell>

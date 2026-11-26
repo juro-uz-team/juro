@@ -2,6 +2,7 @@ import { ApiAuthError } from "./api";
 import { IdentityProtectionError } from "../../auth/identity-protection";
 import { ServiceUnavailableError } from "../storage/runtime";
 import { DocumentVersionError } from "../document-versions";
+import { subscriptionFailure } from "../../billing/usage";
 
 export function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
@@ -11,6 +12,8 @@ export function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
 }
 
 export function apiError(error: unknown): Response {
+  const subscription = subscriptionFailure(error);
+  if (subscription) return jsonResponse({ code: subscription.code }, { status: subscription.status });
   if (error instanceof ApiAuthError) {
     return jsonResponse({
       error: error.message,

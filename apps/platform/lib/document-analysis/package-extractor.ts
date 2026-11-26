@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { accountingPages } from "../billing/usage";
 
 import {
   detectDocumentLanguage,
@@ -284,6 +285,7 @@ export async function extractAnalysisDocument(input: {
     text,
     sections,
     packageContext: buildAnalysisPackageContext(documents),
+    accountingPages: documents.reduce((total, document) => total + accountingPages(document.text), 0),
   };
 }
 

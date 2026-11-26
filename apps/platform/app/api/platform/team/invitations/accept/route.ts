@@ -1,3 +1,4 @@
+import { workspaceEntitlements } from "../../../../../../lib/billing/entitlements";
 import { normalizeEmail, sha256 } from "../../../../../../lib/auth/crypto";
 import { identityEvidenceMatches } from "../../../../../../lib/auth/identity-evidence";
 import { parseJsonRequest } from "../../../../../../lib/auth/input";
@@ -112,6 +113,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
     }, 410);
   }
   const now = isoNow();
+  if ((await workspaceEntitlements(db, invitation.workspaceId)).readOnly) {
+    return response({ code: "WORKSPACE_TERM_EXPIRED" }, 403);
+  }
   const accepted = await acceptWorkspaceInvitation(db, {
     invitationId: invitation.id,
     tokenHash,
