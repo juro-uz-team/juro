@@ -1244,7 +1244,9 @@
 }
 .dbt-preview-propose:hover, .dbt-preview-propose:focus-visible { background: var(--dbt-selected); }
 @media (pointer: coarse) {
-  .dbt-preview-propose { position: fixed; inset: auto 12px max(16px, env(safe-area-inset-bottom)) auto; }
+  .dbt-preview-propose {
+    position: fixed; inset: auto 12px max(16px, calc(8px + var(--platform-mobile-nav-space, env(safe-area-inset-bottom)))) auto;
+  }
 }
 .dbt-preview-editable .dbt-a4 {
   --dbt-document-paper: #fff;
