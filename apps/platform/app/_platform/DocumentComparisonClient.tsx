@@ -1,6 +1,6 @@
 "use client";
 
-import { DocumentToolProgress } from "./DocumentToolProgress";
+import { DocumentComparisonProgress } from "./DocumentToolProgress";
 
 import { Select } from "../_components/Select";
 
@@ -65,16 +65,6 @@ type Progress = {
 };
 
 type ComparisonCopy = (typeof comparisonText)[PlatformLocale];
-
-const stageOrder = [
-  "uploaded",
-  "extracting_version_one",
-  "extracting_version_two",
-  "structuring",
-  "diffing",
-  "legal_analysis",
-  "completed",
-] as const;
 
 export function DocumentComparisonClient({ locale }: { locale: PlatformLocale }) {
   const params = useSearchParams();
@@ -270,7 +260,7 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
       </form>
 
       {progress && submitting && (
-        <ProcessingProgress progress={progress} copy={copy} />
+        <DocumentComparisonProgress stage={progress.stage} locale={locale} />
       )}
 
       <section className="comparison-recent">
@@ -386,18 +376,6 @@ function ComparisonFileSlot({
       </label>
     </fieldset>
   );
-}
-
-function ProcessingProgress({
-  progress,
-  copy,
-}: {
-  progress: Progress;
-  copy: ComparisonCopy;
-}) {
-  const current = Math.max(stageOrder.indexOf(progress.stage as typeof stageOrder[number]), 0);
-  return <DocumentToolProgress title={copy.processing} description={stageLabel(progress.stage, copy)}
-    steps={stageOrder.map(stage => copy.stages[stage])} current={current} />;
 }
 
 function setFormSelection(form: FormData, uploadField: string, storedField: string, selection: Exclude<FileSelection, null>) {

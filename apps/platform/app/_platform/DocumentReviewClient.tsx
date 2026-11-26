@@ -8,7 +8,7 @@ import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated analysis data is hydrated after the first browser render */
 
-import { AlertTriangle, Check, CheckCircle2, CircleAlert, Download, Eye, FileCheck2, FolderOpen, ChevronDown, FileText, Link2, LoaderCircle, RefreshCw, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, CircleAlert, Download, Eye, FileCheck2, FolderOpen, ChevronDown, ClipboardList, FileText, Link2, LoaderCircle, RefreshCw, Scale, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -19,6 +19,7 @@ import type { AnalysisPackageContext, AnalysisPackageMemberRole, AnalysisPackage
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { usePlatformBasePath } from "./PlatformRouteContext";
 import { documentTools, useDocumentToolFile } from "./document-tools";
+import { documentFollowUpQuestions } from "../../lib/document-analysis/follow-up";
 import type { DocumentAnalysisResult } from "../../lib/document-analysis/schema";
 import { documentReviewCopy, reviewText } from "./document-review-localization";
 
@@ -387,26 +388,33 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   const [severity, setSeverity] = useState("");
   const filteredRisks = risks.filter(risk => !severity || risk.level === severity);
   const warnings = reviewWarnings(result?.extractionWarnings ?? [], locale);
+  const questions = documentFollowUpQuestions(summary?.questions ?? []);
+  const sources = result?.sources ?? [];
+  const quality = result?.overallQuality;
+  const corpusAvailable = Boolean(result?.legalDatabaseAsOf && Number.isFinite(Date.parse(result.legalDatabaseAsOf)));
   const tabs = [
     ["overview", copy.summary], ["risks", `${copy.risks} · ${risks.length}`],
-    ["terms", reviewText(locale, "Условия", "Shartlar", "Terms")], ["sources", tools.sources],
+    ["terms", reviewText(locale, "Условия", "Shartlar", "Terms")], ["sources", sources.length ? `${tools.sources} · ${sources.length}` : tools.sources],
     ...(risks.some(risk => risk.proposedWording) ? [["edits", copy.revisionsTitle]] : []),
   ];
   return <div className="review-findings">
     <nav className="review-views" aria-label={copy.resultAria}>
-      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}
+      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => setView(id)}>{label}</button>)}
     </nav>
+    <div className="review-view-content" id="review-active-view">
     {view === "overview" && <>
     <dl className="review-metrics">{metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-    {summary?.summary && <section className="review-overview"><h3>{copy.summary}</h3><p>{summary.summary}</p>
-      {result?.overallQuality && <div className="review-quality">
-        <div className="review-quality-heading"><strong>{tools.quality}</strong><span>{result.overallQuality.score}<small> / 100</small></span></div>
-        <meter aria-label={tools.quality} min={0} max={100} value={result.overallQuality.score} />
-        <p>{result.overallQuality.explanation}</p>
-      </div>}
-    </section>}
-    <ListBlock title={tools.advice} items={result?.recommendations} />
-    <ListBlock title={tools.warnings} items={warnings} />
+    {summary?.summary && <div className="review-overview" data-quality={Boolean(quality)}>
+      <section className="review-overview-text"><h3>{copy.summary}</h3><ReviewProse text={summary.summary} locale={locale} /></section>
+      {quality && <section className="review-quality">
+        <h3>{tools.quality}</h3>
+        <div className="review-quality-heading"><span>{quality.score}<small> / 100</small></span></div>
+        <meter aria-label={tools.quality} min={0} max={100} value={quality.score} />
+        <ReviewProse text={quality.explanation} locale={locale} />
+      </section>}
+    </div>}
+    <ListBlock title={tools.advice} items={result?.recommendations} kind="actions" />
+    <ListBlock title={tools.warnings} items={warnings} kind="warnings" />
     <p className="review-disclaimer"><CheckCircle2 />{copy.disclaimer}</p>
     {warnings.length > 0 && <ReviewAgain analysis={analysis} locale={locale} />}
     </>}
@@ -418,29 +426,48 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
         </Select>
       </label>
       {filteredRisks.length ? <div className="review-risks">{filteredRisks.map((risk, index) => <article key={risk.id || index} data-level={risk.level}>
-      <span>{riskLabel(risk.level, locale)}{risk.page ? ` · ${copy.pageShort} ${risk.page}` : ""}{risk.clause ? " · " + risk.clause : ""}</span>
-      <h4>{risk.title}</h4><p>{risk.description}</p>{risk.excerpt && <blockquote>{risk.excerpt}</blockquote>}
-      {risk.recommendation && <p><strong>{tools.advice}</strong><br />{risk.recommendation}</p>}
-      {risk.confidencePercent != null && <small>{copy.confidence} · {risk.confidencePercent}%</small>}
-      {result?.sources?.filter(source => risk.legalBasisSourceIds?.includes(source.sourceId)).map(source =>
-        /^https:\/\//i.test(source.originalUrl) && <p key={source.sourceId}><a href={source.originalUrl} target="_blank" rel="noreferrer">{[source.actTitle, source.article].filter(Boolean).join(" · ")}</a></p>)}
+      <header>
+        <div className="review-risk-meta"><span>{riskLabel(risk.level, locale)}</span>
+          {(risk.page || risk.clause) && <small>{[risk.page ? `${copy.pageShort} ${risk.page}` : "", risk.clause].filter(Boolean).join(" · ")}</small>}
+        </div>
+        <h3>{risk.title}</h3>
+      </header>
+      <ReviewProse text={descriptionWithoutRepeatedAdvice(risk.description, risk.recommendation)} locale={locale} />
+      {risk.excerpt && <details className="review-risk-evidence">
+        <summary><FileText aria-hidden="true" />{reviewText(locale, "Фрагмент документа", "Hujjat parchasi", "Document excerpt")}<ChevronDown aria-hidden="true" /></summary>
+        <blockquote>{risk.excerpt}</blockquote>
+      </details>}
+      {risk.recommendation && <div className="review-risk-advice"><strong>{tools.advice}</strong><ReviewProse text={risk.recommendation} locale={locale} /></div>}
+      <footer className="review-risk-footer">
+        {risk.confidencePercent != null && <small>{copy.confidence} · {risk.confidencePercent}%</small>}
+        {sources.filter(source => risk.legalBasisSourceIds?.includes(source.sourceId)).map(source =>
+          /^https:\/\//i.test(source.originalUrl) && <a key={source.sourceId} href={source.originalUrl} target="_blank" rel="noreferrer"><Link2 aria-hidden="true" />{[source.actTitle, source.article].filter(Boolean).join(" · ")}</a>)}
+      </footer>
     </article>)}</div> : <p>{copy.noRisks}</p>}</section>}
     {view === "terms" && <>
     {result?.deadlines?.length ? <section><h3>{tools.deadlines}</h3><dl className="review-deadlines">{result.deadlines.map((item, index) => <div key={index}><dt>{item.value}</dt><dd><strong>{item.title}</strong>{item.clause && <small>{item.clause}</small>}{item.consequence && <p>{item.consequence}</p>}</dd></div>)}</dl></section> : null}
     <div className="review-summary-grid">
       <ListBlock title={copy.parties} items={summary?.parties} /><ListBlock title={copy.dates} items={summary?.dates} />
-      <ListBlock title={copy.obligations} items={summary?.obligations} /><ListBlock title={copy.payments} items={summary?.payments} />
+      <ListBlock title={copy.payments} items={summary?.payments} /><ListBlock title={copy.obligations} items={summary?.obligations} kind="obligations" />
       <ListBlock title={tools.disputes} items={summary?.disputedTerms} /><ListBlock title={copy.missing} items={result?.missingClauses?.length ? result.missingClauses.map(item => `${item.title} — ${item.reason}`) : summary?.missingItems} />
-      <ListBlock title={copy.questions} items={summary?.questions} />
+      <ListBlock title={reviewText(locale, "Что стоит уточнить", "Aniqlashtirish kerak", "What to verify")} items={questions} kind="questions" />
     </div>
     {summary?.extraction?.packageContext?.members.length ? <PackageContextView context={summary.extraction.packageContext} locale={locale} /> : null}
     </>}
-    {view === "sources" && (result?.sources?.length ? <section><h3>{tools.sources}</h3>
-      {result.legalDatabaseAsOf && !Number.isNaN(Date.parse(result.legalDatabaseAsOf)) && <p>{reviewText(locale, "Дата среза корпуса", "Korpus holati sanasi", "Corpus snapshot date")} · {result.legalDatabaseAsOf.slice(0, 10)}</p>}<ul className="review-source-list">{result.sources.map(source => <li key={source.sourceId}>
-      {/^https?:\/\//i.test(source.originalUrl) ? <a href={source.originalUrl} target="_blank" rel="noreferrer">{source.actTitle}<Link2 /></a> : <strong>{source.actTitle}</strong>}
-      <small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ")}</small>{source.excerpt && <blockquote>{source.excerpt}</blockquote>}
-    </li>)}</ul></section> : <p>{reviewText(locale, "Для этого отчёта не подтверждены применимые правовые источники.", "Bu hisobot uchun tegishli huquqiy manbalar tasdiqlanmadi.", "No applicable legal sources were confirmed for this report.")}</p>)}
+    {view === "sources" && <section className="review-sources">
+      <header><BookOpen aria-hidden="true" /><div><h3>{tools.sources}</h3>{corpusAvailable && <small>{reviewText(locale, "Дата среза корпуса", "Korpus holati sanasi", "Corpus snapshot date")} · {result?.legalDatabaseAsOf?.slice(0, 10)}</small>}</div></header>
+      {sources.length ? <ul className="review-source-list">{sources.map(source => <li key={source.sourceId}>
+        {/^https:\/\//i.test(source.originalUrl) ? <a href={source.originalUrl} target="_blank" rel="noreferrer">{source.actTitle}<Link2 aria-hidden="true" /></a> : <strong>{source.actTitle}</strong>}
+        <small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ")}</small>{source.excerpt && <blockquote>{source.excerpt}</blockquote>}
+      </li>)}</ul> : <div className="review-source-empty">
+        <p>{corpusAvailable
+          ? reviewText(locale, "В отчёте нет подтверждённых ссылок на применимые нормы.", "Hisobotda qo‘llanadigan normalarga tasdiqlangan havolalar yo‘q.", "This report has no confirmed citations to applicable law.")
+          : reviewText(locale, "Во время проверки не удалось получить подтверждённые правовые источники.", "Tekshiruv vaqtida tasdiqlangan huquqiy manbalar olinmadi.", "The check could not retrieve verified legal sources.")}</p>
+        <ReviewAgain analysis={analysis} locale={locale} />
+      </div>}
+    </section>}
     {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} locale={locale} onAnalysisChanged={onChanged} />}
+    </div>
   </div>;
 }
 
@@ -661,9 +688,35 @@ function RevisionPanel({ analysisId, exports, locale, onAnalysisChanged }: { ana
   </section>;
 }
 
-function ListBlock({ title, items }: { title: string; items?: string[] }) {
+function ReviewProse({ text, locale }: { text: string; locale: PlatformLocale }) {
+  const paragraphs = text.trim().split(/\n\s*\n/).flatMap(paragraph => {
+    if (paragraph.length <= 260 || typeof Intl.Segmenter !== "function") return [paragraph];
+    const blocks: string[] = [];
+    let block = "";
+    for (const { segment } of new Intl.Segmenter(locale, { granularity: "sentence" }).segment(paragraph)) {
+      block += segment;
+      if (block.length >= 170) { blocks.push(block.trim()); block = ""; }
+    }
+    if (block.trim()) blocks.push(block.trim());
+    return blocks;
+  });
+  return <div className="review-prose">{paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>;
+}
+
+function descriptionWithoutRepeatedAdvice(description: string, recommendation?: string | null) {
+  const text = description.trim();
+  const advice = recommendation?.trim();
+  return advice && text.endsWith(advice) && text.length > advice.length ? text.slice(0, -advice.length).trimEnd() : text;
+}
+
+function ListBlock({ title, items, kind }: { title: string; items?: string[]; kind?: "actions" | "obligations" | "questions" | "warnings" }) {
   if (!items?.length) return null;
-  return <section><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section>;
+  const List = kind === "actions" || kind === "questions" ? "ol" : "ul";
+  const Icon = kind === "warnings" ? AlertTriangle : kind === "questions" ? CircleAlert : kind === "obligations" ? Scale : ClipboardList;
+  return <section className="review-list-block" data-kind={kind}>
+    <h3><Icon aria-hidden="true" />{title}</h3>
+    <List>{items.map((item, index) => <li key={index}>{item}</li>)}</List>
+  </section>;
 }
 
 function PackageContextView({ context, locale }: { context: AnalysisPackageContext; locale: PlatformLocale }) {

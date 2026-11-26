@@ -516,7 +516,7 @@ async function analyzeObject(
     const request = parseRequestMetadata(row.summaryJson);
     const retrieval = await deps.retrieve(
       env.DB,
-      extracted.text.slice(0, 12_000),
+      extracted.text,
       request.locale,
       request.mode === "quick" ? 3 : 5,
       { id: row.analysisId, workspaceId: row.workspaceId, userId: row.ownerUserId },

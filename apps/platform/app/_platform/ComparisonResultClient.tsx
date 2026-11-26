@@ -1,5 +1,7 @@
 "use client";
 
+import { DocumentComparisonProgress } from "./DocumentToolProgress";
+
 import { WorkspaceTitle } from "./WorkspaceTitle";
 
 import { Select } from "../_components/Select";
@@ -52,6 +54,8 @@ type Source = {
   sourceType: string;
   status: string;
   lastCheckedAt: string;
+  article?: string | null;
+  excerpt?: string | null;
 };
 
 type ComparisonDetail = {
@@ -450,15 +454,14 @@ export function ComparisonResultClient({
     return (
       <div className="comparison-result-shell">
         <Link className="comparison-result-back" href={`${base}/documents/comparisons`}><ArrowLeft />{copy.back}</Link>
-        <section className="comparison-result-state" aria-live="polite">
-          {detail.status === "failed" ? <AlertTriangle /> : <LoaderCircle className="spin" />}
-          <h1>{detail.status === "failed" ? (error || errorLabel(detail.errorCode, locale)) : copy.processing}</h1>
+        {(detail.status !== "failed" || processing) && <DocumentComparisonProgress stage={detail.stage} locale={locale} />}
+        {(detail.status === "failed" && !processing) && <section className="comparison-result-state">
+          <AlertTriangle />
+          <h1>{error || errorLabel(detail.errorCode, locale)}</h1>
           <p>{stageCopy.stages[detail.stage]}</p>
-          <ProcessingSteps current={detail.stage} locale={locale} />
-          <button type="button" onClick={() => void retry()} disabled={processing}>
-            {processing ? <LoaderCircle className="spin" /> : <RefreshCcw />}{copy.retry}
-          </button>
-        </section>
+          <button type="button" onClick={() => void retry()}><RefreshCcw />{copy.retry}</button>
+        </section>}
+        {detail.status === "queued" && !processing && <button className="btn btn-primary" type="button" onClick={() => void retry()}><RefreshCcw size={16} />{copy.retry}</button>}
       </div>
     );
   }
@@ -921,8 +924,9 @@ function SourcesView({
     <div className="comparison-sources">
       {sources.map((source) => (
         <article key={source.id}>
-          <header><span><CheckCircle2 />{copy.verified}</span><small>{source.actIdentifier || copy.officialSource}</small></header>
+          <header><span><CheckCircle2 />{copy.verified}</span><small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ") || copy.officialSource}</small></header>
           <h2>{source.actTitle}</h2>
+          {source.excerpt && <blockquote>{source.excerpt}</blockquote>}
           <dl>
             <div><dt>{copy.currentAsOf}</dt><dd>{formatDate(source.revisionDate || source.lastCheckedAt, locale)}</dd></div>
             <div><dt>{copy.originalLanguage}</dt><dd>{source.locale.toUpperCase()}</dd></div>
@@ -932,19 +936,6 @@ function SourcesView({
         </article>
       ))}
     </div>
-  );
-}
-
-function ProcessingSteps({ current, locale }: { current: ComparisonStage; locale: PlatformLocale }) {
-  const copy = comparisonText[locale];
-  const stages = [
-    "uploaded", "extracting_version_one", "extracting_version_two", "structuring", "diffing", "legal_analysis", "completed",
-  ] as const;
-  const active = Math.max(stages.indexOf(current as typeof stages[number]), 0);
-  return (
-    <ol className="comparison-result-progress">
-      {stages.map((stage, index) => <li key={stage} className={index < active ? "done" : index === active ? "active" : ""}><span>{index < active ? <Check /> : index + 1}</span><strong>{copy.stages[stage]}</strong></li>)}
-    </ol>
   );
 }
 

@@ -1,7 +1,7 @@
 .document-tool-progress {
   display: grid;
   gap: 16px;
-  padding: clamp(14px, 2vw, 22px);
+  padding: clamp(16px, 2vw, 24px);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   background: var(--surface-raised);
@@ -10,7 +10,6 @@
 .document-tool-progress > header { display: flex; align-items: center; gap: 12px; }
 .document-tool-progress > header > div { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .document-tool-progress small { color: var(--text-secondary); font-size: 13px; }
-.document-progress-count { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
 .document-progress-icon {
   display: grid;
   place-items: center;

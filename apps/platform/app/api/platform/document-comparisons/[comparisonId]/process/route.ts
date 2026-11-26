@@ -193,7 +193,7 @@ export const POST = withApiErrors(async function POST(
       await updateStage(db, comparisonId, workspace.id, "legal_analysis");
       const research = await retrieveDocumentLegalSources(db, result.changes
         .filter(change => !["unchanged", "formatting"].includes(change.changeType))
-        .slice(0, 12).map(change => change.afterText || change.beforeText).join("\n"), locale === "uz" ? "uz" : "ru", 8,
+        .slice(0, 12).map(change => [change.beforeText, change.afterText].filter(Boolean).join("\n")).join("\n\n"), locale, 8,
         { id: comparisonId, workspaceId: workspace.id, userId: user.id });
       legalSources = research.freshness.status === "fresh" ? research.sources : [];
       try {

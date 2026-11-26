@@ -135,6 +135,8 @@ export async function callOpenAiJson<T>(options: {
   /** Absolute request deadline shared with caller orchestration. */
   deadlineAt?: number;
   rawInput?: boolean;
+  model?: string;
+  reasoningEffort?: "low" | "medium";
 }): Promise<T> {
   const result = await callOpenAiStructured<T>({
     ...options,

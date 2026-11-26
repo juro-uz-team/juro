@@ -37,22 +37,6 @@
 .comparison-message svg{width:20px;flex:none}
 .comparison-message.error{border:1px solid var(--border-danger);background:var(--da);color:var(--d-err)}
 .comparison-message.warning{border:1px solid var(--border-accent);background:var(--d9);color:var(--d-warn)}
-.comparison-progress{display:grid;gap:18px;padding:22px;border:1px solid var(--d4);border-radius:16px;background:var(--d0)}
-.comparison-progress>header{display:flex;align-items:center;gap:11px}
-.comparison-progress>header>svg{width:24px;color:var(--d5)}
-.comparison-progress>header div{display:flex;flex-direction:column}
-.comparison-progress>header strong{color:var(--d2);font-size:16px}
-.comparison-progress>header small{margin-top:3px;color:var(--d3);font-size:13px}
-.comparison-progress ol{display:grid;margin:0;padding:0;grid-template-columns:repeat(7,1fr);list-style:none}
-.comparison-progress li{position:relative;display:flex;min-width:0;flex-direction:column;align-items:center;gap:8px;color:var(--d3);text-align:center}
-.comparison-progress li::before{position:absolute;z-index:0;top:15px;right:50%;width:100%;height:2px;background:var(--d4);content:""}
-.comparison-progress li:first-child::before{display:none}
-.comparison-progress li.done::before,.comparison-progress li.active::before{background:var(--surface-brand)}
-.comparison-progress li>span{position:relative;z-index:1;display:grid;width:32px;height:32px;place-items:center;border:1px solid var(--d4);border-radius:50%;background:var(--d0);font-size:12px;font-weight:800}
-.comparison-progress li.done>span{border-color:var(--border-success);background:var(--d8);color:var(--d-ok)}
-.comparison-progress li.active>span{border-color:var(--border-accent);background:var(--d9);color:var(--d-warn)}
-.comparison-progress li svg{width:15px}
-.comparison-progress li strong{max-width:120px;font-size:11px;line-height:1.35}
 .comparison-recent{overflow:hidden;border:1px solid var(--d4);border-radius:17px;background:var(--d0)}
 .comparison-recent>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:19px 20px;background:var(--d1)}
 .comparison-recent h2{margin:0;color:var(--d2);font-size:20px}
@@ -73,9 +57,9 @@
 .comparison-list-loading,.comparison-empty{display:flex;min-height:180px;align-items:center;justify-content:center;color:var(--d3)}
 .comparison-empty{flex-direction:column;gap:10px}
 .comparison-empty svg{width:30px;color:var(--d5)}
-@media(max-width:900px){.comparison-file-grid{grid-template-columns:1fr}.comparison-swap{position:static;width:max-content;height:44px;margin:-3px auto;padding:0 14px;gap:8px;border-radius:10px;transform:none}.comparison-swap:active{transform:scale(.98)}.comparison-swap span{position:static;width:auto;height:auto;overflow:visible;clip:auto}.comparison-progress ol{display:flex;overflow-x:auto;justify-content:flex-start;padding-bottom:5px}.comparison-progress li{min-width:120px}.comparison-progress li::before{display:none}}
+@media(max-width:900px){.comparison-file-grid{grid-template-columns:1fr}.comparison-swap{position:static;width:max-content;height:44px;margin:-3px auto;padding:0 14px;gap:8px;border-radius:10px;transform:none}.comparison-swap:active{transform:scale(.98)}.comparison-swap span{position:static;width:auto;height:auto;overflow:visible;clip:auto}}
 @media(max-width:620px){.comparison-create>form{padding:15px}.comparison-drop{min-height:160px;grid-template-columns:auto minmax(0,1fr)}.comparison-file-actions{grid-column:1/-1;width:100%}.comparison-file-actions button:first-child{flex:1}.comparison-submit{width:100%}.comparison-recent-list article{grid-template-columns:auto minmax(0,1fr)}.comparison-recent-list article>a,.comparison-recent-list article>button,.comparison-processing-label{grid-column:1/-1;width:100%}}
-@media(prefers-reduced-motion:reduce){.comparison-drop,.comparison-progress li>span{transition-duration:120ms}}
+@media(prefers-reduced-motion:reduce){.comparison-drop{transition-duration:120ms}}
 
 .comparison-result-shell{display:grid;max-width:1600px;margin:0 auto;padding:clamp(22px,3vw,44px);gap:18px}
 .comparison-result-back{display:inline-flex;width:max-content;min-height:44px;align-items:center;gap:8px;color:var(--d3);font-size:14px;font-weight:780}
@@ -209,13 +193,6 @@
 .comparison-result-state>button,.comparison-result-state>div a,.comparison-result-state>div button{display:inline-flex;min-height:44px;align-items:center;gap:7px;margin-top:8px;padding:0 14px;border:1px solid var(--d4);border-radius:10px;background:var(--d0);color:var(--d2);font-weight:600}
 .comparison-result-state>button svg,.comparison-result-state>div svg{width:17px}
 .comparison-result-state>div{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.comparison-result-progress{display:flex;width:min(900px,100%);margin:16px 0 0;padding:0;overflow-x:auto;list-style:none}
-.comparison-result-progress li{display:flex;min-width:120px;flex:1;flex-direction:column;align-items:center;gap:7px;color:var(--d3);font-size:11px;text-align:center}
-.comparison-result-progress li span{display:grid;width:30px;height:30px;place-items:center;border:1px solid var(--d4);border-radius:50%;background:var(--d0);font-weight:850}
-.comparison-result-progress li.done span{border-color:var(--border-success);background:var(--d8);color:var(--d-ok)}
-.comparison-result-progress li.active span{border-color:var(--border-accent);background:var(--d9);color:var(--d-warn)}
-.comparison-result-progress li svg{width:14px}
-.comparison-result-progress li strong{line-height:1.35}
 .comparison-side{display:grid;height:calc(100vh - 190px);min-height:650px;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden;border:1px solid var(--d4);border-radius:16px;background:var(--d0)}
 .comparison-side>header{display:flex;min-height:52px;align-items:center;justify-content:flex-end;padding:0 14px;border-bottom:1px solid var(--d4)}
 .comparison-side>header>label{display:flex;align-items:center;gap:8px;color:var(--d3);font-size:12px;font-weight:750}
@@ -283,7 +260,6 @@
 .comparison-sources a{font-size:14px}
 .comparison-supported,
 .comparison-consent,
-.comparison-progress>header small,
 .comparison-recent header p,
 .comparison-recent-list article>div>span,
 .comparison-processing-label,
@@ -309,8 +285,16 @@
 
 .comparison-page { display: grid; gap: 18px; }
 .comparison-page .comparison-recent-list strong, .comparison-page .comparison-drop strong { overflow-wrap: anywhere; }
-.comparison-progress li.active svg { height: 16px; }
-@media (max-width: 900px) {
-  .comparison-create .comparison-progress ol { display: grid; grid-template-columns: repeat(auto-fit,minmax(84px,1fr)); gap: 12px 4px; overflow: visible; }
-  .comparison-create .comparison-progress li { min-width: 0; }
+.comparison-sources blockquote {
+  max-width: 70ch;
+  margin: 0;
+  padding: 12px 14px;
+  border-inline-start: 2px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+  line-height: 1.65;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
+.comparison-legal-details dd { max-width: 70ch; line-height: 1.65; overflow-wrap: anywhere; }

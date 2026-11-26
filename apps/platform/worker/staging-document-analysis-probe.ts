@@ -152,13 +152,11 @@ export function stagingDocumentAnalysisProbeProviderOptions(startedAt: number): 
   providerTimeoutMs: number;
   providerMaxAttempts: 1;
   deadlineAt: number;
-  fallbackEnabled: false;
 } {
   return {
     providerTimeoutMs: stagingDocumentAnalysisProbeDeadlineMs,
     providerMaxAttempts: 1,
     deadlineAt: startedAt + stagingDocumentAnalysisProbeDeadlineMs,
-    fallbackEnabled: false,
   };
 }
 

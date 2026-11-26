@@ -1,5 +1,5 @@
 import { callOpenAiJson } from "../document-builder/ai/openai";
-import { runtimeEnv } from "../document-builder/storage/runtime";
+import { OPENAI_DOCUMENT_MODEL } from "../ai/provider-models";
 import type {
   ComparisonChange,
   ComparisonLocale,
@@ -92,7 +92,9 @@ export async function enrichComparisonChanges(input: {
   const result = await callOpenAiJson<{ assessments: LegalAssessment[] }>({
     schemaName: "juro_document_comparison_assessment",
     schema: assessmentSchema as unknown as Record<string, unknown>,
-    timeoutMs: 45_000,
+    timeoutMs: 90_000,
+    model: OPENAI_DOCUMENT_MODEL,
+    reasoningEffort: "low",
     instructions: [
       "Ты анализируешь уже вычисленные детерминированным алгоритмом изменения двух версий юридического документа для юрисдикции Республики Узбекистан.",
       "Не меняй тип изменения, исходный текст или границы пунктов.",
@@ -137,7 +139,7 @@ export async function enrichComparisonChanges(input: {
         confidencePercent: assessment.confidencePercent,
       } : change;
     }),
-    model: runtimeEnv().OPENAI_MODEL || "gpt-5.6-sol",
+    model: OPENAI_DOCUMENT_MODEL,
     assessedCount: validAssessments.size,
   };
 }

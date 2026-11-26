@@ -21,7 +21,6 @@ test("document analysis probe shares one bounded deadline and intentionally has 
     providerTimeoutMs: 60_000,
     providerMaxAttempts: 1,
     deadlineAt: 70_000,
-    fallbackEnabled: false,
   });
 });
 
