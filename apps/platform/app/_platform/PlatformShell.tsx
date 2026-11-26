@@ -14,6 +14,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Archive,
   Bell,
+  BookUser,
   Bot,
   BriefcaseBusiness,
   CalendarCheck2,
@@ -22,6 +23,7 @@ import {
   Ellipsis,
   FileCheck2,
   FilePenLine,
+  Fingerprint,
   Files,
   HelpCircle,
   History,
@@ -77,6 +79,7 @@ type Props = {
   workspaces: WorkspaceOption[];
   profileSetup?: ProfileReadiness | null;
   practiceAvailable?: boolean;
+  paymentDemoAvailable?: boolean;
   children: React.ReactNode;
 };
 
@@ -115,7 +118,7 @@ const lawyerPracticeNav = [
 ] as const;
 
 const documentNav = [
-  ["document-builder", FilePenLine, "Создать документ", "Hujjat yaratish", "Create a document"],
+  ["document-builder", FilePenLine, "Библиотека шаблонов", "Andozalar kutubxonasi", "Template library", "Создать документ Hujjat yaratish Create a document"],
   ["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"],
   ["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"],
   [
@@ -125,9 +128,11 @@ const documentNav = [
     "Versiyalarni solishtirish",
     "Compare versions",
   ],
+  ["contacts", BookUser, "Контакты", "Kontaktlar", "Contacts", "Адресная книга Manzillar Address book"],
 ] as const;
 
 const caseworkNav = [
+  ["cases/new", BriefcaseBusiness, "Новое дело", "Yangi ish", "New matter", "Создать дело Create a case"],
   ["action-plan", CalendarCheck2, "Планы действий", "Harakatlar rejalari", "Action plans"],
   ["calendar", CalendarDays, "Календарь", "Kalendar", "Calendar"],
   ["archive", Archive, "Архив", "Arxiv", "Archive"],
@@ -135,6 +140,7 @@ const caseworkNav = [
 ] as const;
 
 const helpNav = [
+  ["help", HelpCircle, "Справка", "Yordam markazi", "Help center", "Помощь Support"],
   ["consultations", ReceiptText, "Консультации", "Maslahatlar", "Consultations"],
   ["lawyers", UsersRound, "Юристы", "Yuristlar", "Lawyers"],
   [
@@ -149,7 +155,15 @@ const helpNav = [
 const managementNav = [
   ["team", UsersRound, "Команда", "Jamoa", "Team"],
   ["notifications", Bell, "Уведомления", "Bildirishnomalar", "Notifications"],
-  ["billing", CreditCard, "Тариф", "Tarif", "Plan"],
+  ["billing", CreditCard, "Тариф и оплата", "Tarif va to‘lov", "Plan and billing", "Подписка Obuna Subscription"],
+  ["demo-payments", ReceiptText, "Демонстрация платежей", "To‘lovlar namoyishi", "Payment demonstration"],
+] as const;
+
+const accountNav = [
+  ["profile", UserRound, "Профиль", "Profil", "Profile"],
+  ["settings", Settings, "Настройки", "Sozlamalar", "Settings", "Параметры Preferences"],
+  ["security", ShieldCheck, "Безопасность", "Xavfsizlik", "Security", "Вход и устройства Sign-in and devices"],
+  ["settings/privacy", Fingerprint, "Приватность", "Maxfiylik", "Privacy", "Конфиденциальность Персональные данные Personal data"],
 ] as const;
 
 export function PlatformShell({
@@ -160,6 +174,7 @@ export function PlatformShell({
   workspaces,
   profileSetup = null,
   practiceAvailable = false,
+  paymentDemoAvailable = false,
   children,
 }: Props) {
   const pathname = usePathname();
@@ -200,7 +215,7 @@ export function PlatformShell({
     ? [lawyerPrimaryNav[0], lawyerPracticeNav[1], lawyerPracticeNav[2]]
     : lawyer ? lawyerPrimaryNav : primaryNav;
   const mobileItems = primaryItems.filter(([slug]) => !lawyer || slug !== "consultations?view=schedule");
-  const toolGroups = lawyer
+  const groupedTools = lawyer
     ? ([
         {
           key: "clients",
@@ -232,9 +247,23 @@ export function PlatformShell({
           ru: "Управление",
           uz: "Boshqaruv",
           en: "Management",
-          items: managementNav.filter(([slug]) => slug !== "team" || business),
+          items: managementNav.filter(([slug]) => (slug !== "team" || business) && (slug !== "demo-payments" || paymentDemoAvailable)),
         },
       ] as const).filter(group => group.items.length > 0);
+  const toolGroups = [
+    { key: "workspace", ru: "Рабочее пространство", uz: "Ish maydoni", en: "Workspace", items: [
+      ...primaryItems,
+      ...(practiceAvailable ? [["practice", BriefcaseBusiness, "JURO Practice", "JURO Practice", "JURO Practice"] as const] : []),
+    ] },
+    ...groupedTools,
+    { key: "account", ru: "Аккаунт", uz: "Hisob", en: "Account", items: [
+      ...accountNav.filter(([slug]) => !lawyer || (slug !== "settings" && slug !== "profile")),
+      ...(lawyer ? [managementNav[1], managementNav[2], helpNav[0], ...(paymentDemoAvailable ? [managementNav[3]] : [])] : []),
+    ] },
+  ].map(group => ({
+    ...group,
+    items: group.items.filter(([slug]) => group.key === "workspace" || !primaryItems.some(([primary]) => primary === slug)),
+  }));
   const routeIsActive = (slug: string) => {
     const [route, query] = slug.split("?");
     const href = `${base}/${route}`;

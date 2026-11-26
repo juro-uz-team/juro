@@ -7,7 +7,7 @@ import { platformLocaleValue } from "../../content/platform-ui";
 import type { PlatformLocale } from "../../lib/platform/routing";
 import { activateDialogFocus } from "../../lib/platform/dialog-focus";
 
-type Tool = readonly [string, LucideIcon, string, string, string];
+type Tool = readonly [string, LucideIcon, string, string, string, string?];
 type Group = {
   key: string;
   ru: string;
@@ -15,6 +15,10 @@ type Group = {
   en: string;
   items: readonly Tool[];
 };
+
+function searchText(value: string) {
+  return value.toLowerCase().replaceAll("ё", "е").replace(/['’‘ʻʼ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
 
 export function WorkspaceTools({
   locale,
@@ -55,14 +59,14 @@ export function WorkspaceTools({
       document.body.style.overflow = overflow;
     };
   }, []);
+  const words = searchText(query).split(/\s+/).filter(Boolean);
   const filtered = groups
     .map((group) => ({
       ...group,
-      items: group.items.filter(([, , ru, uz, en]) =>
-        `${text(group)} ${ru} ${uz} ${en}`
-          .toLocaleLowerCase()
-          .includes(query.trim().toLocaleLowerCase()),
-      ),
+      items: group.items.filter(([slug, , ru, uz, en, keywords = ""]) => {
+        const index = searchText(`${slug} ${group.ru} ${group.uz} ${group.en} ${ru} ${uz} ${en} ${keywords}`);
+        return words.every(word => index.includes(word));
+      }),
     }))
     .filter((group) => group.items.length);
   return (
@@ -89,7 +93,6 @@ export function WorkspaceTools({
     >
       <header>
         <div>
-          <small>JURO</small>
           <h2 id="workspace-tools-title">
             {text({
               ru: "Все инструменты",
@@ -118,9 +121,9 @@ export function WorkspaceTools({
             en: "What would you like to do?",
           })}
           aria-label={text({
-            ru: "Найти инструмент",
-            uz: "Vosita qidirish",
-            en: "Find a tool",
+            ru: "Найти инструмент или страницу",
+            uz: "Vosita yoki sahifani qidirish",
+            en: "Find a tool or page",
           })}
         />
       </label>

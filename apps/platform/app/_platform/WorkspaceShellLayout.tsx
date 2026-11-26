@@ -30,7 +30,8 @@ import {
 } from "../../lib/platform/lawyer-entry-routing";
 
 import { profileReadiness } from "../../lib/platform/profile-readiness";
-import { requireD1 } from "../../lib/document-builder/storage/runtime";
+import { requireD1, runtimeEnv } from "../../lib/document-builder/storage/runtime";
+import { paymentDemoStatus } from "../../lib/billing/foundation";
 
 export async function WorkspaceShellLayout({
   children,
@@ -127,6 +128,7 @@ export async function WorkspaceShellLayout({
       workspaces={availableWorkspaces}
       profileSetup={profileReadiness({ accountType, lawyerProfileStatus: profile?.lawyerProfileStatus ?? null, lawyerMarketplaceStatus: profile?.lawyerMarketplaceStatus ?? null, hasBusinessWorkspace: availableWorkspaces.some(workspace => workspace.type === "business") })}
       practiceAvailable={process.env.PRACTICE_ENABLED !== "false" && Boolean(await requireD1().prepare("SELECT workspace_id FROM practice_workspaces WHERE workspace_id=?").bind(activeWorkspace.id).first())}
+      paymentDemoAvailable={paymentDemoStatus(runtimeEnv()).enabled}
     >
       {children}
     </PlatformShell>

@@ -246,7 +246,6 @@ html[data-theme=dark] .platform-shell .platform-collapse { background: transpare
 .workspace-tools { width: min(720px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 48px)); margin: auto; padding: 24px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface-raised); color: var(--ink); overflow: auto; overscroll-behavior: contain; }
 .workspace-tools::backdrop { background: color-mix(in srgb, var(--p-navy) 55%, transparent); }
 .workspace-tools header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-.workspace-tools header small { color: var(--brand-gold-text); letter-spacing: .12em; font-size: 11px; font-weight: 700; }
 .workspace-tools h2 { margin: 4px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -.03em; }
 .workspace-tools header button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: var(--surface-subtle); color: var(--ink); cursor: pointer; }
 .workspace-tools svg { width: 18px; height: 18px; flex: none; }
@@ -305,7 +304,7 @@ html:has(.platform-shell) {
   --platform-topbar-surface:#f1f0ec;
   --platform-topbar-border:color-mix(in srgb, #102333 10%, var(--platform-topbar-surface));
   --platform-scrollbar-bottom-border:var(--platform-topbar-border);
-  --platform-header-stack:calc(var(--platform-topbar-height) + var(--platform-tool-header-height, 0px));
+  --platform-header-stack:var(--platform-topbar-height);
   scroll-padding-top:calc(var(--platform-header-stack) + 16px);
 }
 html[data-theme=dark]:has(.platform-shell) { --platform-topbar-surface:var(--surface-subtle); --platform-topbar-border:color-mix(in srgb, #dce8f0 9%, var(--platform-topbar-surface)); }

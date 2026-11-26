@@ -16,6 +16,7 @@ const inputSchema = z.object({
   operationId: z.uuid(),
   assignmentId: z.uuid().nullable(),
   instruction: z.string().trim().min(6).max(8_000),
+  revision: z.number().int().positive().optional(),
   pages: z.number().int().min(1).max(40),
   units: z.number().int().min(0).max(4),
 }).strict();
@@ -81,8 +82,15 @@ export const POST = withApiErrors(async (request: Request, { params }: Context) 
   if (input.assignmentId && !original) return conflict();
   const units = original?.eligible && original.used < 2 && input.pages <= original.pages ? 0 : Math.ceil(input.pages / 10);
   if (units !== input.units) return conflict();
-  const content = original?.draft ?? (await db.prepare("SELECT final_content AS text FROM document_current_content WHERE document_id=?")
-    .bind(id).first<{ text: string }>())?.text ?? "";
+  const current = original?.draft == null
+    ? await db.prepare(`SELECT c.final_content AS text,d.revision
+        FROM document_current_content c JOIN documents d ON d.id=c.document_id WHERE d.id=?`)
+      .bind(id).first<{ text: string; revision: number }>()
+    : null;
+  if (!original && input.revision !== undefined && input.revision !== current?.revision) {
+    return Response.json({ code: "REVISION_CONFLICT" }, { status: 409, ...options });
+  }
+  const content = original?.draft ?? current?.text ?? "";
   if (accountingPages(content) > 40) return Response.json({ code: "PAGES_PER_RUN_LIMIT" }, { status: 422, ...options });
   const usage = { workspaceId: workspace.id, userId: user.id, metric: "drafts", operationId: input.operationId } as const;
   await db.batch([

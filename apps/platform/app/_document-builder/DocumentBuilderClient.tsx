@@ -752,13 +752,13 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     {initialConsultation && <div className="dbt-handoff-banner" role="status"><Sparkles size={18}/><span><strong>{initialConsultation.type === "ai" ? copy.aiCreated : copy.lawyerCreated}</strong><small>{copy.handoffDetail} {initialConsultation.requestId.slice(0, 8)}</small></span></div>}
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span>{!user && <button type="button" onClick={signIn}>{copy.signIn}</button>}<button type="button" aria-label={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
     <div className="dbt-tool-strip">
-      <BuilderToolDialog icon={PenLine} label={copy.showEditor} locale={uiLocale}>
-        {() => <ManualEditor value={finalText || autoText} onChange={editFinalText} onUndo={undo} onRedo={redo} onReset={resetText} canUndo={undoStack.length > 0} canRedo={redoStack.length > 0} locked={!user} locale={uiLocale}/>}
+      <BuilderToolDialog icon={PenLine} label={copy.showEditor} locale={uiLocale} paperEditor>
+        {() => <ManualEditor document={visibleReceipt} value={finalText || autoText} onChange={editFinalText} onUndo={undo} onRedo={redo} onReset={resetText} canUndo={undoStack.length > 0} canRedo={redoStack.length > 0} locked={!user} locale={uiLocale}/>}
       </BuilderToolDialog>
       {documentId && user && <>
         <CollaborationPanel documentId={documentId} accessRole="owner" finalText={finalText || autoText} revision={revision} locale={uiLocale}
           beforeChange={() => persist(documentId)} onApplied={reloadDocument}/>
-        <BuilderAiDrafts id={documentId} locale={uiLocale} apply={editFinalText}/>
+        <BuilderAiDrafts id={documentId} locale={uiLocale} prepare={async () => { await persist(documentId); return revisionRef.current; }} apply={editFinalText}/>
         <Suspense fallback={<span role="status">{copy.historyLoading}</span>}>
           <BuilderVersionHistory documentId={documentId} locale={uiLocale} refreshKey={revision}
             onPrepare={async () => { await persist(documentId); return { documentId, revision: revisionRef.current }; }}

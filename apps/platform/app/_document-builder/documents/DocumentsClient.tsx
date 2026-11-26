@@ -13,7 +13,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useOptionalPlatformWorkspaceId } from "../../_platform/PlatformRouteContext";
-import { ArrowUpRight, FileDiff, X, Archive, ArchiveRestore, Copy, Download, Eye, FileCheck2, FilePlus2, Files, FolderArchive, Heart, Link2, LoaderCircle, MoreHorizontal, Pencil, Search, Star, Trash2, Paperclip } from "lucide-react";
+import { ArrowUpRight, BookUser, FileDiff, X, Archive, ArchiveRestore, Copy, Download, Eye, FileCheck2, FilePlus2, Files, FolderArchive, Heart, Link2, LoaderCircle, MoreHorizontal, Pencil, Search, Star, Trash2, Paperclip } from "lucide-react";
 import { BuilderToolDialog } from "../_components/BuilderToolDialog";
 import { DocumentAssetsPanel } from "../_components/DocumentAssetsPanel";
 import type { ChatGPTUser } from "../../chatgpt-auth";
@@ -232,7 +232,8 @@ export function DocumentsClient({
   }
 
   return <div className="dbt-root dbt-library-root"><BuilderHeader user={user} signInPath={signInPath} variant={embedded ? "embedded" : "standalone"}/><div className="dbt-documents-page workspace-page">
-    <WorkspaceTitle icon={<Files />} title={copy.title} description={<>{total} {total === 1 ? copy.countOne : copy.countMany}</>} />
+    <WorkspaceTitle icon={<Files />} title={copy.title} description={<>{total} {total === 1 ? copy.countOne : copy.countMany}</>}
+      actions={<Link className="dbt-tool-button" href={paths.contacts}><BookUser size={17} aria-hidden="true"/>{{ ru: "Контакты", uz: "Kontaktlar", en: "Contacts" }[locale]}</Link>} />
     <nav className="dbt-tool-shelf" aria-label={tools.library}>
       {([{ href: paths.library, title: tools.create, hint: tools.createHint, Icon: FilePlus2 }, { href: checkPath, title: tools.check, hint: tools.checkHint, Icon: FileCheck2 }, { href: comparePath, title: tools.compare, hint: tools.compareHint, Icon: FileDiff }]).map(({ href, title, hint, Icon }) =>
         <Link href={href} key={href}><span className="dbt-tool-symbol"><Icon /></span><span><strong>{title}</strong><small>{hint}</small></span><ArrowUpRight /></Link>)}

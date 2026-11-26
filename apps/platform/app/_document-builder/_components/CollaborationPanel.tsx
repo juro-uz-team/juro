@@ -191,6 +191,7 @@ function CollaborationContent({
       {accessRole === "collaborator" && allowed("approve_document") && <button type="button" className="dbt-tool-button" disabled={busy} onClick={() => void act({ action: "confirm_data" })}><Check size={17}/>{copy.confirmData}</button>}
     </div>}
     {snapshot && view === "comments" && <div className="dbt-collab-content">
+      <p className="dbt-collab-context">{{ ru: "Обсуждайте этот документ с участниками.", uz: "Hujjatni ishtirokchilar bilan muhokama qiling.", en: "Discuss this document with its collaborators." }[locale]}</p>
       {allowed("add_comment") && <form className="dbt-comment-input" onSubmit={(event) => {
         event.preventDefault();
         void act({ action: "comment", body: comment }).then(ok => { if (ok) setComment(""); });
@@ -210,6 +211,7 @@ function CollaborationContent({
       </div>
     </div>}
     {snapshot && view === "changes" && <div className="dbt-collab-content">
+      <p className="dbt-collab-context">{{ ru: "Предложение меняет текст после согласования обеими сторонами.", uz: "Taklif ikki tomon tasdiqlaganidan keyin matnga qo‘llanadi.", en: "A proposed change updates the text once both sides agree." }[locale]}</p>
       {snapshot.canEditDraft && (edit ? <form className="dbt-collab-editor" onSubmit={(event) => {
         event.preventDefault();
         void act({ action: "edit_draft", ...edit }).then(ok => { if (ok) setEdit(undefined); });

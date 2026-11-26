@@ -19,7 +19,8 @@ test("comparison has a dedicated authenticated entry in each workspace", async (
 
   assert.match(shell, /const documentNav = \[/);
   assert.match(shell, /\["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"\]/);
-  assert.match(shell, /\["document-builder", FilePenLine, "Создать документ", "Hujjat yaratish", "Create a document"\]/);
+  assert.match(shell, /\["document-builder", FilePenLine, "Библиотека шаблонов"/);
+  assert.match(shell, /\["contacts", BookUser, "Контакты"/);
   assert.match(shell, /\["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"\]/);
   assert.ok(shell.includes('"documents/comparisons"'));
   assert.doesNotMatch(shell, /document-review\?mode=compare/);

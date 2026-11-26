@@ -15,13 +15,24 @@ export function DocumentPreview({ document, locale = "ru", mobileOpen = false, o
   return <aside className={`dbt-preview ${mobileOpen ? "mobile-open" : ""}`} aria-label={example ? copy.exampleLabel : copy.previewLabel}>
     <div className="dbt-preview-toolbar"><div><strong>{example ? copy.example : copy.preview}</strong><span>{copy.automatic}</span></div>{onClose && <button type="button" onClick={onClose} aria-label={copy.close}><X size={20}/></button>}</div>
     <div className="dbt-preview-scroll">
-      <article className="dbt-a4">
-        {example && <div className="dbt-example-ribbon">{copy.ribbon}</div>}
-        {document.paragraphs.map((paragraph) => paragraph.kind === "spacer"
-          ? <div className="dbt-doc-spacer" key={paragraph.id}/>
-          : <p id={paragraph.id} className={`dbt-doc-${paragraph.kind}`} key={paragraph.id}>{paragraph.kind === "list" && <span aria-hidden="true">• </span>}{paragraph.text}</p>)}
-        <footer><BrandImage mark alt="" width={18} height={18}/><span>{copy.created}</span><span>{copy.page} 1 / ~{Math.max(1, Math.ceil(document.plainText.length / 3_500))}</span></footer>
-      </article>
+      <DocumentPaper document={document} locale={locale} ribbon={example ? copy.ribbon : undefined} includeAnchors/>
     </div>
   </aside>;
+}
+
+export function DocumentPaper({ document, locale, ribbon, includeAnchors = false }: {
+  document: RenderedReceipt; locale: PlatformLocale; ribbon?: string; includeAnchors?: boolean;
+}) {
+  const labels = {
+    ru: { created: "Создано в JURO", page: "Страница" },
+    uz: { created: "JURO’da yaratilgan", page: "Sahifa" },
+    en: { created: "Created in JURO", page: "Page" },
+  }[locale];
+  return <article className="dbt-a4">
+    {ribbon && <div className="dbt-example-ribbon">{ribbon}</div>}
+    {document.paragraphs.map((paragraph) => paragraph.kind === "spacer"
+      ? <div className="dbt-doc-spacer" key={paragraph.id}/>
+      : <p id={includeAnchors ? paragraph.id : undefined} className={`dbt-doc-${paragraph.kind}`} key={paragraph.id}>{paragraph.kind === "list" && <span aria-hidden="true">• </span>}{paragraph.text}</p>)}
+    <footer><BrandImage mark alt="" width={18} height={18}/><span>{labels.created}</span><span>{labels.page} 1 / ~{Math.max(1, Math.ceil(document.plainText.length / 3_500))}</span></footer>
+  </article>;
 }
