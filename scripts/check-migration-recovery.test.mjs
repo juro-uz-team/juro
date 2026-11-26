@@ -13,11 +13,11 @@ test("code-only deployment needs no new backup; missing or altered applied histo
 
 test("recovery evidence cannot authorize another environment, release, migration set or expired backup", () => {
   const revision = "c".repeat(40), now = Date.parse("2026-09-29T00:00:00Z");
-  const receipt = { environment: "production", revision, restoreVerified: true, offServerCopy: true,
+  const receipt = { environment: "production", revision, restoreVerified: true, backupIdentity: "1:22:333:4444",
     expiresAt: "2026-09-29T01:00:00Z", pendingMigrations: [added] };
   verifyRecoveryReceipt(receipt, "production", revision, [added], now);
   for (const change of [{ environment: "staging" }, { revision: "d".repeat(40) }, { restoreVerified: false },
-    { offServerCopy: false }, { pendingMigrations: [] }, { expiresAt: "invalid" }, { expiresAt: "2026-09-28T00:00:00Z" }]) {
+    { backupIdentity: "" }, { pendingMigrations: [] }, { expiresAt: "invalid" }, { expiresAt: "2026-09-28T00:00:00Z" }]) {
     assert.throws(() => verifyRecoveryReceipt({ ...receipt, ...change }, "production", revision, [added], now));
   }
 });

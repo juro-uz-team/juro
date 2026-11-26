@@ -16,10 +16,10 @@ export function pendingMigrations(files, applied) {
 
 export function verifyRecoveryReceipt(receipt, environment, revision, pending, now = Date.now()) {
   if (receipt.environment !== environment || receipt.revision !== revision
-    || receipt.restoreVerified !== true || receipt.offServerCopy !== true
+    || receipt.restoreVerified !== true || !/^\d+:\d+:\d+:\d+$/.test(receipt.backupIdentity ?? "")
     || !Number.isFinite(Date.parse(receipt.expiresAt)) || Date.parse(receipt.expiresAt) <= now
     || JSON.stringify(receipt.pendingMigrations) !== JSON.stringify(pending)) {
-    throw new Error("Critical migration requires a current verified off-server recovery receipt for this release");
+    throw new Error("Critical migration requires a current verified on-server recovery receipt for this release");
   }
 }
 
@@ -42,7 +42,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const path = `/etc/juro/recovery/${environment}/${revision}.json`;
       const stat = await lstat(path).catch(() => { throw new Error("New migrations require an operator-created recovery receipt after backup and restore verification"); });
       if (!stat.isFile() || stat.uid !== 0 || (stat.mode & 0o022)) throw new Error("Recovery receipt must be a root-owned file without group/other write access");
-      verifyRecoveryReceipt(JSON.parse(await readFile(path, "utf8")), environment, revision, pending);
+      const receipt = JSON.parse(await readFile(path, "utf8"));
+      verifyRecoveryReceipt(receipt, environment, revision, pending);
+      const backup = await lstat("/var/backups/juro/migration-postgres.tar", { bigint: true });
+      const identity = [backup.dev, backup.ino, backup.size, backup.mtimeNs].join(":");
+      if (!backup.isFile() || backup.uid !== 0n || (backup.mode & 0o077n) || backup.size === 0n
+        || receipt.backupIdentity !== identity) throw new Error("The verified on-server backup is missing or has been replaced");
     }
     console.log(JSON.stringify({ recoveryCheckPassed: true, pendingMigrations: pending.length, routineCodeDeployment: pending.length === 0 }));
   } finally { await client.end(); }
