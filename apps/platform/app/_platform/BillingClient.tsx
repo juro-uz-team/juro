@@ -1,6 +1,9 @@
 "use client";
 
-import { BriefcaseBusiness, Building2, FileCheck2, Layers3, Sparkles, WalletCards } from "lucide-react";
+import {
+  ArrowUpRight, BriefcaseBusiness, Building2, CalendarDays, Check, CircleAlert, FileChartColumn,
+  FileCheck2, Files, HardDrive, Layers3, LockKeyhole, MessagesSquare, PanelsTopLeft, Sparkles, WalletCards,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { subscriptionExtras, subscriptionPlans } from "../../config/pricing";
@@ -34,13 +37,17 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   const load = result?.workspaceId === workspaceId ? result : undefined;
   const data = load?.data;
   const terms = data?.entitlements;
-  const active = subscriptionPlans.find(plan => plan.code === terms?.planCode);
-  const planName = active?.name[locale] ?? text("Действующий тариф", "Amaldagi tarif", "Existing plan");
+  const active = terms?.readOnly ? undefined : subscriptionPlans.find(plan => plan.code === terms?.planCode);
+  const displayedPlan = terms?.readOnly ? subscriptionPlans.find(plan => plan.code === "company") : active;
+  const PlanIcon = displayedPlan ? icons[displayedPlan.code] : WalletCards;
+  const planName = displayedPlan?.name[locale] ?? text("Действующий тариф", "Amaldagi tarif", "Existing plan");
   const answers = text("Ответы ИИ", "AI javoblari", "AI answers");
   const drafts = text("Подготовка документов", "Hujjat tayyorlash", "AI document drafts");
   const pages = text("Страницы анализа", "Tahlil sahifalari", "Analysis pages");
   const cases = text("Активные дела", "Faol ishlar", "Active cases");
   const storage = text("Хранилище", "Xotira", "Storage");
+  const currentPlanLabel = text("Ваш тариф", "Joriy tarif", "Your plan");
+  const monthlyLabel = text("В месяц", "Oyiga", "Per month");
   const byteLabel = (value: number) => value >= 1_000_000_000
     ? number.format(value / 1_000_000_000) + " GB"
     : number.format(Math.round(value / 100_000) / 10) + " MB";
@@ -60,45 +67,72 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
   }, [workspaceId, attempt]);
 
   const usage = data && terms ? [
-    [answers, data.usage.answers, terms.limits.answers],
-    [drafts, data.usage.drafts, terms.limits.drafts],
-    [pages, data.usage.pages, terms.limits.pages],
-    [cases, data.usage.cases, terms.limits.activeCases],
-    [storage, data.usage.bytes, terms.limits.storageBytes],
+    ["answers", MessagesSquare, answers, data.usage.answers, terms.limits.answers, number.format],
+    ["drafts", FileCheck2, drafts, data.usage.drafts, terms.limits.drafts, number.format],
+    ["pages", FileChartColumn, pages, data.usage.pages, terms.limits.pages, number.format],
+    ["cases", BriefcaseBusiness, cases, data.usage.cases, terms.limits.activeCases, number.format],
+    ["storage", HardDrive, storage, data.usage.bytes, terms.limits.storageBytes, byteLabel],
   ] as const : [];
+  const extras = [
+    ["answers", MessagesSquare, answers],
+    ["drafts", FileCheck2, drafts],
+    ["pages", FileChartColumn, pages],
+    ["handoff", BriefcaseBusiness, text("Передача дела юристу", "Ishni yuristga topshirish", "Case handoff to a lawyer")],
+  ] as const;
 
   return <div className="workspace-page subscription-page">
     <WorkspaceTitle icon={<WalletCards />} title={text("Тариф и оплата", "Tarif va to‘lov", "Plan and billing")} />
-    {!load && <p role="status">{text("Загружаем данные пространства…", "Makon ma’lumotlari yuklanmoqda…", "Loading workspace usage…")}</p>}
-    {load && !data && <div role="alert" className="subscription-notice">
-      {text("Не удалось загрузить использование.", "Foydalanish ma’lumotlari yuklanmadi.", "We could not load workspace usage.")}
+    {!load && <p role="status" className="billing-loading">{text("Загружаем данные пространства…", "Makon ma’lumotlari yuklanmoqda…", "Loading workspace usage…")}</p>}
+    {load && !data && <div role="alert" className="billing-error">
+      <CircleAlert aria-hidden="true" />
+      <span>{text("Не удалось загрузить использование.", "Foydalanish ma’lumotlari yuklanmadi.", "We could not load workspace usage.")}</span>
       <button type="button" onClick={() => { setResult(undefined); setAttempt(value => value + 1); }}>{text("Повторить", "Qayta urinish", "Retry")}</button>
     </div>}
     {data && terms && <section className="subscription-summary" aria-labelledby="active-plan">
       <div className="subscription-summary-heading">
-        <div><p>{data.workspace.name}</p><h2 id="active-plan">{planName}</h2></div>
-        <div>
-          {terms.readOnly
-            ? text("Срок тарифа истёк · чтение и экспорт", "Tarif tugadi · o‘qish va eksport", "Term expired · read and export")
-            : text("Лимиты обновятся ", "Limitlar yangilanadi ", "Allowances reset ") + date.format(new Date(terms.periodEnd))}
-          {data.workspace.type === "business" && <Link href={base + "/team"}>{text("Команда", "Jamoa", "Team")}</Link>}
+        <div className="subscription-current">
+          <span className="subscription-current-icon"><PlanIcon aria-hidden="true" /></span>
+          <div>
+            <p className="subscription-current-label">{terms.readOnly ? text("Истёкший тариф", "Muddati tugagan tarif", "Expired plan") : currentPlanLabel}</p>
+            <h2 id="active-plan">{planName}</h2>
+            <p className="subscription-workspace">{data.workspace.name}</p>
+          </div>
+        </div>
+        <div className="subscription-summary-meta">
+          {terms.readOnly ? <p className="subscription-cycle"><LockKeyhole aria-hidden="true" />{text("Доступны чтение и экспорт", "O‘qish va eksport qilish mumkin", "Read and export access")}</p>
+            : <p className="subscription-cycle">
+              <CalendarDays aria-hidden="true" />
+              <span>{text("Лимиты обновятся", "Limitlar yangilanadi", "Allowances reset")}</span>
+              <time dateTime={terms.periodEnd}>{date.format(new Date(terms.periodEnd))}</time>
+            </p>}
+          {data.workspace.type === "business" && <Link href={base + "/team"}>{text("Команда", "Jamoa", "Team")}<ArrowUpRight aria-hidden="true" /></Link>}
         </div>
       </div>
-      <dl className="subscription-meters">{usage.map(([label, used, limit], index) => {
-        const format = index === 4 ? byteLabel : (value: number) => number.format(value);
-        const showLimit = terms.version !== null || index === 0;
-        return <div key={label}>
-          <dt>{label}</dt><dd><b>{format(used)}</b>{showLimit && <> / {format(limit)}</>}</dd>
-          {showLimit && <progress aria-label={label} max={limit} value={Math.min(used, limit)} />}
+      <dl className="subscription-meters">{usage.map(([key, Icon, label, used, limit, format]) => {
+        const showLimit = !terms.readOnly && (terms.version !== null || key === "answers") && limit > 0;
+        const usedLabel = format(used);
+        const limitLabel = format(limit);
+        const percentage = Math.round(used / limit * 100);
+        return <div key={key} data-tone={key} data-limit={showLimit && used >= limit ? "reached" : undefined}>
+          <dt><Icon aria-hidden="true" />{label}</dt>
+          <dd>
+            <div className="subscription-meter-value"><strong>{usedLabel}</strong>{showLimit && <span> / {limitLabel}</span>}</div>
+            {showLimit && <div className="subscription-meter-track">
+              <progress aria-label={label} aria-valuetext={text(`${usedLabel} из ${limitLabel}`, `${usedLabel} / ${limitLabel}`, `${usedLabel} of ${limitLabel}`)} max={limit} value={Math.min(used, limit)} />
+              <span aria-hidden="true">{number.format(percentage)}%</span>
+            </div>}
+          </dd>
         </div>;
       })}</dl>
-      {data.professional && <p>{data.professional.status === "public_approved"
+      {data.professional && <p className="subscription-profile"><BriefcaseBusiness aria-hidden="true" />{data.professional.status === "public_approved"
         ? text("Профиль опубликован", "Profil e’lon qilingan", "Professional profile published")
         : text("Профиль ещё не опубликован", "Profil hali e’lon qilinmagan", "Professional profile awaiting publication")}</p>}
     </section>}
-    <p className="subscription-notice">{text("Оформление и продление пока недоступны. Действующие тарифы и бесплатный доступ продолжают работать.", "Tarif sotib olish va uzaytirish hozircha mavjud emas. Amaldagi tariflar va bepul kirish ishlashda davom etadi.", "Plan purchases and renewals are currently unavailable. Existing plans and Free access remain active.")}</p>
     <section aria-labelledby="plan-catalogue" className="subscription-catalogue">
-      <h2 id="plan-catalogue">{text("Сравнить тарифы", "Tariflarni solishtirish", "Compare plans")}</h2>
+      <div className="subscription-section-heading">
+        <h2 id="plan-catalogue">{text("Сравнить тарифы", "Tariflarni solishtirish", "Compare plans")}</h2>
+        <p className="subscription-notice"><LockKeyhole aria-hidden="true" />{text("Покупка и продление пока недоступны", "Sotib olish va uzaytirish hozircha mavjud emas", "Purchases and renewals are currently unavailable")}</p>
+      </div>
       <div className="subscription-grid">
         {subscriptionPlans.map(plan => {
           const Icon = icons[plan.code];
@@ -106,27 +140,38 @@ export function BillingClient({ locale }: { locale: PlatformLocale; accountType:
           const labels = [answers, drafts, pages, text("Страниц за запуск", "Bir tahlilda sahifalar", "Pages per run"), cases, storage, text("Размер файла", "Fayl hajmi", "Per file")];
           const quantities = [plan.limits.answers, plan.limits.drafts, plan.limits.pages, plan.limits.pagesPerRun,
             plan.limits.activeCases, byteLabel(plan.limits.storageBytes), byteLabel(plan.limits.fileBytes)];
-          return <article key={plan.code} className={selected ? "subscription-card selected" : "subscription-card"} data-plan={plan.code}>
-            <header><Icon aria-hidden="true" />{selected && <span>{text("Ваш тариф", "Joriy tarif", "Your plan")}</span>}</header>
-            <h3>{plan.name[locale]}</h3><p>{plan.audience[locale]}</p>
-            <strong>{money(plan.priceMinor)}</strong><small>{text("в месяц", "oyiga", "per month")}</small>
-            <p>{plan.benefit[locale]}</p>
-            <dl>{labels.map((label, index) => <div key={label}><dt>{label}</dt><dd>{quantities[index]}</dd></div>)}
-              {data && <div><dt>{text("Шаблоны на русском", "O‘zbekcha andozalar", "English templates")}</dt>
-                <dd>{data.templateCounts[plan.code][locale]}</dd></div>}
-            </dl>
+          return <article key={plan.code} className={selected ? "subscription-card selected" : "subscription-card"} data-plan={plan.code} data-tone={plan.code}>
+            <header className="subscription-card-cover">
+              <Icon className="subscription-card-watermark" aria-hidden="true" />
+              <div className="subscription-card-mark">
+                <span><Icon aria-hidden="true" /></span>
+                {selected && <small><Check aria-hidden="true" />{currentPlanLabel}</small>}
+              </div>
+              <h3>{plan.name[locale]}</h3>
+              <p>{plan.audience[locale]}</p>
+              <div className="subscription-card-price"><strong>{money(plan.priceMinor)}</strong><small>{monthlyLabel}</small></div>
+            </header>
+            <div className="subscription-card-body">
+              <p className="subscription-card-benefit"><Check aria-hidden="true" />{plan.benefit[locale]}</p>
+              <dl className="subscription-card-limits">{labels.map((label, index) => <div key={label}><dt>{label}</dt><dd>{quantities[index]}</dd></div>)}</dl>
+              {data && <dl className="subscription-card-templates"><div>
+                <dt><PanelsTopLeft aria-hidden="true" />{text("Шаблоны на русском", "O‘zbekcha andozalar", "English templates")}</dt>
+                <dd>{number.format(data.templateCounts[plan.code][locale])}</dd>
+              </div></dl>}
+            </div>
           </article>;
         })}
       </div>
     </section>
     <section className="subscription-extras" aria-labelledby="extras-title">
-      <h2 id="extras-title">{text("Дополнительные услуги", "Qo‘shimcha xizmatlar", "Optional services")}</h2>
-      <dl>{([
-        [answers + " · +100", subscriptionExtras.answers.priceMinor],
-        [drafts + " · +5", subscriptionExtras.drafts.priceMinor],
-        [pages + " · +50", subscriptionExtras.pages.priceMinor],
-        [text("Передача дела юристу", "Ishni yuristga topshirish", "Case handoff to a lawyer"), subscriptionExtras.handoff.priceMinor],
-      ] as const).map(([label, amount]) => <div key={label}><dt>{label}</dt><dd>{money(amount)}</dd></div>)}</dl>
+      <div className="subscription-section-heading">
+        <h2 id="extras-title"><Files aria-hidden="true" />{text("Дополнительные услуги", "Qo‘shimcha xizmatlar", "Optional services")}</h2>
+        <p className="subscription-notice"><LockKeyhole aria-hidden="true" />{text("Покупка пока недоступна", "Sotib olish hozircha mavjud emas", "Currently unavailable to purchase")}</p>
+      </div>
+      <dl className="subscription-extra-grid">{extras.map(([key, Icon, label]) => <div key={key} data-tone={key}>
+        <dt><span className="subscription-extra-icon"><Icon aria-hidden="true" /></span><span>{label}</span></dt>
+        <dd><strong>{money(subscriptionExtras[key].priceMinor)}</strong>{key !== "handoff" && <span>+{number.format(subscriptionExtras[key].units)}</span>}</dd>
+      </div>)}</dl>
     </section>
     {!!data?.members.length && <details className="subscription-details">
       <summary>{text("Использование по участникам", "A’zolar bo‘yicha foydalanish", "Usage by member")}</summary>
