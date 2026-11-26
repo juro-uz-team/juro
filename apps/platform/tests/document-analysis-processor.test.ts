@@ -555,6 +555,7 @@ async function databaseFixture(status: string, fileKind: string) {
     CREATE TABLE workspace_audit_events (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,actor_user_id TEXT,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,action TEXT NOT NULL,metadata_json TEXT NOT NULL,created_at TEXT NOT NULL);
     INSERT INTO document_files VALUES ('file-a','workspace-a','user-a','${fileKind}','safe/workspace-a/analysis-a/file-a','contract.pdf','application/pdf',1,'${"0".repeat(64)}',NULL,'2026-07-30T00:00:00.000Z','2026-07-30T00:00:00.000Z');
     INSERT INTO document_analyses VALUES ('analysis-a','workspace-a','user-a','file-a','${status}','{"mode":"quick","locale":"ru"}',NULL,NULL,'2026-07-30','2026-07-30T00:00:00.000Z','2026-07-30T00:00:00.000Z');
+    ALTER TABLE document_analyses ADD COLUMN progress_stage TEXT;
   `);
   return { sqlite, db: sqliteD1(sqlite) };
 }

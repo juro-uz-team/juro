@@ -79,9 +79,9 @@ test("dashboard and review surfaces use the secure upload client", () => {
   const review = source("app/_platform/DocumentReviewClient.tsx");
   const uploadClient = source("lib/document-analysis/client-upload.ts");
   assert.match(dashboard, /uploadDocumentForAnalysis\(file, locale, setUploadProgress\)/);
-  assert.match(review, /uploadDocumentForAnalysis\(file, locale, setUploadProgress, uploadCaseId \|\| null, analysisLocale\)/);
+  assert.match(review, /uploadDocumentForAnalysis\(file, locale, setUploadProgress, uploadCaseId \|\| null, analysisLocale, undefined, \{ mode/);
   assert.match(dashboard, /role="progressbar"/);
-  assert.match(review, /role="progressbar"/);
+  assert.match(review, /<DocumentToolProgress/);
   assert.match(uploadClient, /new XMLHttpRequest\(\)/);
   assert.match(uploadClient, /request\.upload\.addEventListener\("progress"/);
   assert.match(uploadClient, /x-juro-file-sha256/);
@@ -108,7 +108,7 @@ test("review surface polls actual background analysis states and makes retry exh
   assert.match(reviewRoute, /retryExhausted: Number\(retryExhausted\) === 1/);
   assert.match(review, /Автоматические попытки остановлены/);
   assert.match(review, /Qayta ishga tushirish kerak/);
-  assert.match(review, /window\.setInterval\(\(\) => \{ void load\(\); \}, 5_000\)/);
+  assert.match(review, /window\.setInterval\(\(\) => \{ void load\(\); \}, analysisPending \? 1_500 : 5_000\)/);
 });
 
 test("analysis revision routes preserve auth, tenant, idempotency, and object-integrity boundaries", () => {

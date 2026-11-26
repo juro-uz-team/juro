@@ -1073,3 +1073,38 @@
   .dbt-tool-shelf a > svg { display: block; }
   .dbt-document-card > .dbt-document-actions { overflow: visible; }
 }
+
+.platform-shell .dbt-library-root {
+  height: calc(100dvh - var(--platform-topbar-height, 76px) - var(--platform-mobile-nav-space, 0px));
+  min-height: 0;
+}
+.dbt-library-root .dbt-documents-page {
+  height: 100%; display: flex; flex-direction: column; min-height: 0;
+  padding-block: clamp(12px, 2vh, 22px);
+}
+.dbt-library-root .dbt-documents-page > .workspace-title { margin-block-end: 0; }
+.dbt-library-root .dbt-tool-shelf { flex: none; margin-block: 12px; }
+.dbt-library-root .dbt-tool-shelf > a { padding: clamp(10px, 1.3vw, 16px); }
+.dbt-library-root .dbt-docs-layout { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.dbt-library-root .dbt-docs-content { min-height: 0; display: flex; flex-direction: column; }
+.dbt-library-root .dbt-doc-filters, .dbt-library-root .dbt-selection-bar { flex: none; }
+.dbt-library-viewport { overflow-y: auto; overscroll-behavior: contain; min-height: 0; flex: 1; padding: 3px; }
+.dbt-library-viewport > :is(.dbt-list-loading, .dbt-empty-state) { min-height: min(100%, 250px); padding: 16px; }
+.dbt-tool-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.dbt-tool-results a { display: inline-flex; gap: 6px; align-items: center; padding-inline: 8px; border: 1px solid var(--border-accent); border-radius: 8px; color: var(--brand-gold-text); font-size: 13px; }
+.dbt-tool-results svg { width: 16px; }
+@media (max-width: 920px) {
+  .dbt-library-root .dbt-docs-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); gap: 6px; }
+  .dbt-library-root .dbt-folders { display: flex; overflow-x: auto; white-space: nowrap; padding: 3px; }
+}
+@media (max-width: 700px) {
+  .dbt-library-root .dbt-tool-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dbt-library-root .dbt-tool-shelf > a { grid-template-columns: 1fr; gap: 5px; justify-items: start; }
+  .dbt-library-root .dbt-tool-shelf :is(small, a > svg) { display: none; }
+  .dbt-library-root .dbt-tool-shelf strong { font-size: 13px; }
+}
+@media (max-height: 660px) {
+  .dbt-library-root .dbt-tool-shelf small { display: none; }
+  .platform-shell .dbt-library-root { overflow-y: auto; }
+  .dbt-library-root .dbt-documents-page { min-height: 420px; }
+}

@@ -36,6 +36,7 @@ export const documentAnalysisUploadIntentSchema = z.object({
   mode: z.enum(["quick", "full", "expert"]).default("quick"),
   caseId: z.string().uuid().nullable().optional().default(null),
   consent: z.literal(true),
+  sourceDocumentId: z.string().uuid().optional(),
 }).strict();
 
 export type DocumentAnalysisUploadIntent = z.infer<typeof documentAnalysisUploadIntentSchema>;
@@ -134,6 +135,7 @@ export async function hashUploadIntent(intent: DocumentAnalysisUploadIntent): Pr
     sha256: intent.sha256,
     locale: intent.locale,
     mode: intent.mode,
+    sourceDocumentId: intent.sourceDocumentId,
     caseId: intent.caseId,
     consent: intent.consent,
   });
@@ -215,6 +217,8 @@ export async function initializeDocumentAnalysisUpload(input: {
         now,
         now,
       ),
+      ...(input.intent.sourceDocumentId ? [input.db.prepare("UPDATE document_files SET tool_source_document_id=? WHERE id=?")
+        .bind(input.intent.sourceDocumentId, fileId)] : []),
       input.db.prepare(
         `INSERT INTO document_analyses
          (id,workspace_id,owner_user_id,uploaded_file_id,status,summary_json,error_code,consent_version,resource_scope,abandoned_after,created_at,updated_at)

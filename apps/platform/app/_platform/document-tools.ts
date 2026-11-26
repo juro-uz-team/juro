@@ -10,7 +10,7 @@ export const documentTools = {
     clear: "Снять выбор", choose: "Выбрать из моих документов", file: "Файл", link: "По ссылке", chooseFile: "Выберите или перетащите файл",
     loading: "Открываем выбранные документы…", unavailable: "Не удалось открыть документ. Проверьте доступ к скачиванию или выберите другой файл.",
     emptyText: "В документе пока нет текста. Добавьте текст в конструкторе и повторите проверку.",
-    intake: "Новая проверка", queued: "Документ принят на проверку.", stages: ["Подготовка", "Извлечение текста", "Анализ условий", "Сохранение отчёта"],
+    intake: "Новая проверка", queued: "Документ принят на проверку.", stages: ["Подготовка", "Извлечение текста", "Поиск правовых норм", "Анализ условий", "Сохранение"],
     quality: "Оценка документа", deadlines: "Сроки", sources: "Правовые источники", advice: "Рекомендации", disputes: "Противоречия",
     warnings: "Ограничения извлечения", emptyHistory: "После первой проверки здесь появится отчёт.", actions: "Действия с отчётом",
   },
@@ -22,7 +22,7 @@ export const documentTools = {
     clear: "Tanlovni bekor qilish", choose: "Hujjatlarimdan tanlash", file: "Fayl", link: "Havola", chooseFile: "Faylni tanlang yoki shu yerga tashlang",
     loading: "Tanlangan hujjatlar ochilmoqda…", unavailable: "Hujjatni ochib bo‘lmadi. Yuklab olish ruxsatini tekshiring yoki boshqa fayl tanlang.",
     emptyText: "Hujjat matni bo‘sh. Konstruktorda matn qo‘shib, qayta urinib ko‘ring.",
-    intake: "Yangi tekshiruv", queued: "Hujjat tekshiruvga qabul qilindi.", stages: ["Tayyorlash", "Matnni ajratish", "Shartlarni tahlil qilish", "Hisobotni saqlash"],
+    intake: "Yangi tekshiruv", queued: "Hujjat tekshiruvga qabul qilindi.", stages: ["Tayyorlash", "Matnni ajratish", "Huquqiy izlanish", "Shartlarni tekshirish", "Saqlash"],
     quality: "Hujjat bahosi", deadlines: "Muddatlar", sources: "Huquqiy manbalar", advice: "Tavsiyalar", disputes: "Ziddiyatlar",
     warnings: "Matnni ajratishdagi cheklovlar", emptyHistory: "Birinchi tekshiruvdan so‘ng hisobot shu yerda ko‘rinadi.", actions: "Hisobot amallari",
   },
@@ -34,7 +34,7 @@ export const documentTools = {
     clear: "Clear selection", choose: "Choose from my documents", file: "File", link: "Public link", chooseFile: "Choose a file or drop it here",
     loading: "Opening selected documents…", unavailable: "This document could not be opened. Check your download access or choose another file.",
     emptyText: "This draft has no text yet. Add text in the builder and try again.",
-    intake: "New check", queued: "Document submitted for review.", stages: ["Prepare file", "Extract text", "Review terms", "Save report"],
+    intake: "New check", queued: "Document submitted for review.", stages: ["Prepare file", "Extract text", "Research the law", "Review terms", "Save report"],
     quality: "Document quality", deadlines: "Deadlines", sources: "Legal sources", advice: "Recommendations", disputes: "Conflicting terms",
     warnings: "Extraction limitations", emptyHistory: "Your first report will appear here after you check a document.", actions: "Report actions",
   },
@@ -54,9 +54,10 @@ export function useDocumentToolFile(source: string | null, locale: PlatformLocal
       let path: string;
       if (kind === "doc" && parts.length === 2) path = `documents/${id}/tool-file`;
       else if (kind === "file" && parts.length === 2) path = `standalone-files/${id}`;
+      else if (kind === "tool" && parts.length === 2) path = `/api/platform/document-review/files/${id}`;
       else if (kind === "signed" && parts.length === 3) path = `documents/${id}/files/${fileId}`;
       else throw new Error(copy.unavailable);
-      const response = await fetch(`/api/document-builder/${path}`, { cache: "no-store", signal: controller.signal });
+      const response = await fetch(path.startsWith("/") ? path : `/api/document-builder/${path}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error(response.status === 400 && kind === "doc" ? copy.emptyText : copy.unavailable);
       const name = response.headers.get("content-disposition")?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
       if (!name) throw new Error(copy.unavailable);

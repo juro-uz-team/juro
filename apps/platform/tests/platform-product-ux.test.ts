@@ -6,7 +6,7 @@ const source = (path: string) => readFile(new URL(path, import.meta.url), "utf8"
 
 test("document review keeps a single main landmark", async () => {
   const client = await source("../app/_platform/DocumentReviewClient.tsx");
-  assert.match(client, /<section className="review-result-pane" aria-label=/);
+  assert.match(client, /<section id="review-report" className="review-result-pane" aria-label=/);
   assert.doesNotMatch(client, /<main(?:\s|>)/);
 });
 

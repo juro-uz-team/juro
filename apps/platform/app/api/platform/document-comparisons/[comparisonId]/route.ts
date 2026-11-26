@@ -57,7 +57,7 @@ export const GET = withApiErrors(async function GET(
   const [versionOne, versionTwo, sources, exportsResult] = await Promise.all([
     loadExtractedDocument(comparison.versionOneJsonKey),
     loadExtractedDocument(comparison.versionTwoJsonKey),
-    verifiedSourcesForChanges(db, changes),
+    verifiedSourcesForChanges(db, changes, parsedSummary(comparison.summaryJson)?.sources),
     db.prepare(
       `SELECT id,comparison_id AS comparisonId,format,status,file_name AS fileName,mime_type AS mimeType,
         size_bytes AS sizeBytes,error_code AS errorCode,completed_at AS completedAt,created_at AS createdAt

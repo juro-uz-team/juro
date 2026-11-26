@@ -1,3 +1,4 @@
+import { getDocumentAccess } from "../../../../lib/document-builder/permissions";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../lib/document-builder/auth/api";
 import { isoNow } from "../../../../lib/document-builder/storage/db";
 import {
@@ -33,6 +34,7 @@ type PreparedFile = Omit<ExistingFile, "sha256"> & {
   created: boolean;
   bytes: Uint8Array | null;
   sourceFileId: string | null;
+  sourceDocumentId: string | null;
 };
 
 function response(body: unknown, status = 200) {
@@ -100,9 +102,13 @@ async function prepareFile(input: {
       created: true,
       bytes,
       sourceFileId: existing.id,
+      sourceDocumentId: null,
     };
   }
 
+  const sourceDocumentId = input.form.get(input.fileField + "DocumentId");
+  if (sourceDocumentId !== null && (typeof sourceDocumentId !== "string" || sourceDocumentId.length > 128
+    || !(await getDocumentAccess(sourceDocumentId, input.userId))?.canDownload)) throw new Error("COMPARISON_FILE_ACCESS_DENIED");
   const file = input.form.get(input.fileField);
   if (!(file instanceof File)) throw new Error(`COMPARISON_${input.version.toLocaleUpperCase()}_FILE_REQUIRED`);
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -122,6 +128,7 @@ async function prepareFile(input: {
     created: true,
     bytes,
     sourceFileId: null,
+    sourceDocumentId,
   };
 }
 
@@ -231,6 +238,7 @@ export const POST = withApiErrors(async function POST(request: Request) {
         file.id, workspace.id, user.id, file.r2Key, file.fileName, file.mimeType,
         file.sizeBytes, file.sha256, now, now,
       ));
+      if (file.sourceDocumentId) statements.push(db.prepare("UPDATE document_files SET tool_source_document_id=? WHERE id=?").bind(file.sourceDocumentId, file.id));
     }
     statements.push(
       db.prepare(

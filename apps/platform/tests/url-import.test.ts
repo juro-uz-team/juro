@@ -130,7 +130,7 @@ test("URL import route and RU/UZ/EN UI expose no credential forwarding or fake s
   assert.match(copy, /Ommaviy havolani import qilish/);
   assert.match(copy, /Import a public link/);
   assert.match(ui, /type="url"/);
-  assert.match(ui, /uploadDocumentForAnalysis\(file, locale, setUploadProgress, uploadCaseId \|\| null, analysisLocale\)/);
+  assert.match(ui, /uploadDocumentForAnalysis\(file, locale, setUploadProgress, uploadCaseId \|\| null, analysisLocale, undefined, \{ mode/);
   assert.match(ui, /!publicUrlImportEnabled \|\| !publicUrl\.trim\(\)/);
   assert.match(await readFile(new URL("../lib/document-analysis/client-upload.ts", import.meta.url), "utf8"), /"x-juro-locale": locale/);
 

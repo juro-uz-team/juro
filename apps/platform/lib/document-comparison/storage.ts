@@ -136,10 +136,14 @@ export async function comparisonChanges(
 export async function verifiedSourcesForChanges(
   db: D1Database,
   changes: ComparisonChange[],
+  stored: VerifiedLegalSource[] = [],
 ): Promise<VerifiedLegalSource[]> {
   const ids = Array.from(new Set(changes.flatMap((change) => change.sourceIds))).slice(0, 100);
   if (!ids.length) return [];
-  const placeholders = ids.map(() => "?").join(",");
+  const current = filterVerifiedLexSources(stored).filter(source => ids.includes(source.id));
+  const legacyIds = ids.filter(id => !current.some(source => source.id === id));
+  if (!legacyIds.length) return current;
+  const placeholders = legacyIds.map(() => "?").join(",");
   const rows = await db.prepare(
     `SELECT id,official_url AS officialUrl,act_title AS actTitle,act_identifier AS actIdentifier,
       published_at AS publishedAt,revision_date AS revisionDate,locale,source_type AS sourceType,
@@ -147,10 +151,8 @@ export async function verifiedSourcesForChanges(
       content_sha256 AS contentSha256,last_checked_at AS lastCheckedAt
      FROM legal_sources WHERE status='verified' AND verification_state='verified'
        AND verified_at IS NOT NULL AND content_sha256 IS NOT NULL AND id IN (${placeholders})`,
-  ).bind(...ids).all();
-  return filterVerifiedLexSources(
-    rows.results as unknown as VerifiedLegalSource[],
-  );
+  ).bind(...legacyIds).all();
+  return [...current, ...filterVerifiedLexSources(rows.results as unknown as VerifiedLegalSource[])];
 }
 
 export function parsedSummary(value: string | null): ComparisonSummary | null {

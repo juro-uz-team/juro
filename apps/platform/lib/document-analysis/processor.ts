@@ -14,7 +14,7 @@ import {
   legalDatabaseFreshnessFromAsOf,
   type LegalDatabaseFreshness,
 } from "../legal/verified-retrieval";
-import { retrieveLiveLexSourcesForDocument } from "../legal/live-lex-retrieval";
+import { retrieveDocumentLegalSources } from "./corpus-sources";
 import {
   documentAnalysisResultSchema,
   enforceDocumentAnalysisFreshness,
@@ -279,6 +279,7 @@ export type DocumentAnalysisProcessorDependencies = {
     query: string,
     locale: "ru" | "uz",
     limit?: number,
+    owner?: { id: string; workspaceId: string; userId: string },
   ) => Promise<{
     sources: import("../legal/source-context").LegalSourceContext[];
     freshness: LegalDatabaseFreshness;
@@ -364,7 +365,7 @@ function withSequentialAnalysisSession(
 
 const defaultDependencies: DocumentAnalysisProcessorDependencies = {
   extract: extractAnalysisDocument,
-  retrieve: retrieveLiveLexSourcesForDocument,
+  retrieve: retrieveDocumentLegalSources,
   analyze: async (input) => {
     const { runDocumentAnalysis } = await import("./provider");
     return runDocumentAnalysis(input, {
@@ -394,7 +395,7 @@ export async function executeDocumentAnalysisJob(
   } else {
     assertSafeReadyState(row);
     const claimed = await scopedEnv.DB.prepare(
-      "UPDATE document_analyses SET status='processing',error_code=NULL,updated_at=? WHERE id=? AND workspace_id=? AND status IN ('ready','retrying')",
+      "UPDATE document_analyses SET status='processing',progress_stage='extracting',error_code=NULL,updated_at=? WHERE id=? AND workspace_id=? AND status IN ('ready','retrying')",
     ).bind(new Date().toISOString(), analysisId, workspaceId).run();
     if (Number(claimed.meta.changes ?? 0) !== 1 && row.status !== "processing") {
       throw new DocumentAnalysisProcessingError("DOCUMENT_ANALYSIS_FILE_UNSAFE", false);
@@ -510,15 +511,15 @@ async function analyzeObject(
     });
 
     diagnosticStage = "retrieval";
+    await env.DB.prepare("UPDATE document_analyses SET progress_stage='researching' WHERE id=? AND workspace_id=? AND status='processing'")
+      .bind(row.analysisId, row.workspaceId).run();
     const request = parseRequestMetadata(row.summaryJson);
-    // The full document never becomes a Lex query. A bounded structural
-    // sample gives live retrieval the document's subject without handing it a
-    // local corpus or building any document-to-law embedding index.
     const retrieval = await deps.retrieve(
       env.DB,
       extracted.text.slice(0, 12_000),
       request.locale,
       request.mode === "quick" ? 3 : 5,
+      { id: row.analysisId, workspaceId: row.workspaceId, userId: row.ownerUserId },
     );
     diagnosticStage = "runtime";
     const providerEnvironment = parseProviderEnvironment(env.APP_ENV);
@@ -532,6 +533,8 @@ async function analyzeObject(
     let ai: AiStructuredResult<DocumentAnalysisResult>;
     try {
       diagnosticStage = "provider";
+      await env.DB.prepare("UPDATE document_analyses SET progress_stage='reviewing' WHERE id=? AND workspace_id=? AND status='processing'")
+        .bind(row.analysisId, row.workspaceId).run();
       const analysisPlan = planDocumentAnalysis(extracted.text, request.mode);
       const chunks = analysisPlan.chunks;
       const chunkResults: AiStructuredResult<DocumentAnalysisResult>[] = [];
@@ -1097,9 +1100,6 @@ function legacyCompatibleSummary(persisted: PersistedAnalysis) {
     disputedTerms: result.contradictions,
     missingItems: result.missingClauses.map((item) => item.title),
     questions: result.questions,
-    disclaimer: result.legalComplianceStatus === "unverified"
-      ? "Правовые основания не подтверждены проверенными источниками; показан структурный анализ документа."
-      : "Правовые выводы привязаны к проверенным источникам, но результат требует профессиональной проверки.",
     result,
     technical: persisted.technical,
     extraction: persisted.extraction,

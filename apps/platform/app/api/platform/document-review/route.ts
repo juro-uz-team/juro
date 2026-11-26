@@ -7,13 +7,14 @@ function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "private, no-store", pragma: "no-cache" } });
 }
 
-export const GET = withApiErrors(async function GET() {
+export const GET = withApiErrors(async function GET(request: Request) {
   const user = await requireApiUser();
   const workspace = await workspaceForUser(user);
   const db = requireD1();
+  const requestedId = new URL(request.url).searchParams.get("analysisId");
   const [analysisRows, caseRows] = await db.batch([
     db.prepare(
-    `SELECT a.id,a.status,a.case_id AS caseId,a.summary_json AS summaryJson,a.error_code AS errorCode,a.created_at AS createdAt,a.updated_at AS updatedAt,
+    `SELECT a.id,a.status,a.progress_stage AS progressStage,a.case_id AS caseId,a.summary_json AS summaryJson,a.error_code AS errorCode,a.created_at AS createdAt,a.updated_at AS updatedAt,
       CASE WHEN a.status <> 'completed' AND EXISTS (
         SELECT 1 FROM job_runs AS job
         WHERE job.job_type IN ('document.analyze','ocr.process')
@@ -38,8 +39,8 @@ export const GET = withApiErrors(async function GET() {
           FROM document_analysis_lawyer_verifications v WHERE v.analysis_id=a.id) AS lawyerVerificationsJson
      FROM document_analyses a JOIN document_files f ON f.id=a.uploaded_file_id
      WHERE a.workspace_id=? AND a.owner_user_id=? AND a.deletion_requested_at IS NULL
-     ORDER BY a.created_at DESC LIMIT 50`,
-    ).bind(workspace.id, user.id),
+     ORDER BY CASE WHEN a.id=? THEN 0 ELSE 1 END,a.created_at DESC LIMIT 50`,
+    ).bind(workspace.id, user.id, requestedId),
     db.prepare(
       `SELECT id,title,status,updated_at AS updatedAt
        FROM cases WHERE workspace_id=? AND archived_at IS NULL

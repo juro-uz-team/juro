@@ -134,3 +134,9 @@ html[data-theme=dark] .review-workspace{--review-success:color-mix(in srgb,var(-
   .review-job ol { grid-template-columns: repeat(2, 1fr); }
   .review-deadlines > div { grid-template-columns: 1fr; }
 }
+
+.review-views { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); padding-block-end: 8px; }
+.review-views button { min-height: 44px; padding-inline: 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 650; cursor: pointer; }
+.review-views button[aria-pressed=true] { background: var(--surface-selected); color: var(--brand-gold-text); border-color: var(--border-accent); }
+.review-risk-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.review-result-pane { scroll-margin-top: calc(var(--platform-topbar-height, 76px) + 12px); }

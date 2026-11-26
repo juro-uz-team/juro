@@ -1,5 +1,7 @@
 "use client";
 
+import { DocumentToolProgress } from "./DocumentToolProgress";
+
 import { Select } from "../_components/Select";
 
 import { usePlatformBasePath } from "./PlatformRouteContext";
@@ -11,7 +13,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
-  Check,
   CircleAlert,
   FileDiff,
   FileText,
@@ -52,7 +53,7 @@ type RecentComparison = {
 };
 
 type FileSelection =
-  | { kind: "upload"; file: File; fromLibrary?: boolean }
+  | { kind: "upload"; file: File; librarySource?: string }
   | { kind: "stored"; file: ReusableFile }
   | null;
 
@@ -92,8 +93,8 @@ function ComparisonForm({ locale, firstSource, secondSource }: { locale: Platfor
   const base = usePlatformBasePath();
   const [first, setFirst] = useState<FileSelection>(null);
   const [second, setSecond] = useState<FileSelection>(null);
-  const chooseFirst = useCallback((file: File) => setFirst({ kind: "upload", file, fromLibrary: true }), []);
-  const chooseSecond = useCallback((file: File) => setSecond({ kind: "upload", file, fromLibrary: true }), []);
+  const chooseFirst = useCallback((file: File) => setFirst({ kind: "upload", file, librarySource: firstSource ?? undefined }), [firstSource]);
+  const chooseSecond = useCallback((file: File) => setSecond({ kind: "upload", file, librarySource: secondSource ?? undefined }), [secondSource]);
   const firstLibrary = useDocumentToolFile(firstSource, locale, chooseFirst);
   const secondLibrary = useDocumentToolFile(secondSource, locale, chooseSecond);
   const opening = firstLibrary.loading || secondLibrary.loading;
@@ -355,7 +356,7 @@ function ComparisonFileSlot({
         {selection ? (
           <>
             <span className="comparison-file-icon"><FileText /></span>
-            <div><strong>{selectedName}</strong><small>{formatSize(selectedSize || 0)} · {(selection.kind === "stored" || selection.fromLibrary) ? copy.fromStorage : copy.fromDevice}</small></div>
+            <div><strong>{selectedName}</strong><small>{formatSize(selectedSize || 0)} · {(selection.kind === "stored" || selection.librarySource) ? copy.fromStorage : copy.fromDevice}</small></div>
             <span className="comparison-file-actions">
               <button type="button" onClick={() => inputRef.current?.click()}><Upload /><span>{copy.replace}</span></button>
               <button type="button" onClick={() => onChange(null)} aria-label={copy.remove}><X /></button>
@@ -395,23 +396,17 @@ function ProcessingProgress({
   copy: ComparisonCopy;
 }) {
   const current = Math.max(stageOrder.indexOf(progress.stage as typeof stageOrder[number]), 0);
-  return (
-    <section className="comparison-progress" aria-live="polite">
-      <header><FileDiff aria-hidden="true" /><div><strong>{copy.processing}</strong><small>{stageLabel(progress.stage, copy)}</small></div></header>
-      <ol>
-        {stageOrder.map((stage, index) => (
-          <li key={stage} aria-current={index === current ? "step" : undefined} className={index < current ? "done" : index === current ? "active" : ""}>
-            <span>{index < current ? <Check /> : index === current ? <LoaderCircle className="spin" /> : index + 1}</span>
-            <strong>{copy.stages[stage]}</strong>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
+  return <DocumentToolProgress title={copy.processing} description={stageLabel(progress.stage, copy)}
+    steps={stageOrder.map(stage => copy.stages[stage])} current={current} />;
 }
 
 function setFormSelection(form: FormData, uploadField: string, storedField: string, selection: Exclude<FileSelection, null>) {
-  if (selection.kind === "upload") form.set(uploadField, selection.file);
+  if (selection.kind === "upload") {
+    form.set(uploadField, selection.file);
+    if (selection.librarySource?.startsWith("doc:")) {
+      form.set(uploadField + "DocumentId", selection.librarySource.slice(4));
+    }
+  }
   else form.set(storedField, selection.file.id);
 }
 

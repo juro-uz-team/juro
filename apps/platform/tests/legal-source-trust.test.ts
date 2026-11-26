@@ -396,9 +396,8 @@ test("document analysis removes legal-compliance claims when corpus freshness is
   assert.deepEqual(unavailable.risks.map((risk) => risk.riskType), ["document_internal"]);
   assert.deepEqual(unavailable.risks[0]?.legalBasisSourceIds, []);
   assert.equal(unavailable.missingClauses.length, 0);
-  assert.equal(unavailable.recommendations.length, 1);
-  assert.match(unavailable.recommendations[0] || "", /не подтверждена/);
-  assert.ok(unavailable.extractionWarnings.includes("LEGAL_DATABASE_UNAVAILABLE"));
+  assert.deepEqual(unavailable.recommendations, []);
+  assert.ok(unavailable.extractionWarnings.includes("DOCUMENT_LEGAL_RESEARCH_UNAVAILABLE"));
 
   const stale = enforceDocumentAnalysisFreshness(analysis, {
     status: "stale",

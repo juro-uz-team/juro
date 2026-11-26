@@ -1,3 +1,4 @@
+import { retrieveDocumentLegalSources } from "../../../../../../lib/document-analysis/corpus-sources";
 import { authLocaleFromRequest } from "../../../../../../lib/auth/request-locale";
 import { AiUnavailableError } from "../../../../../../lib/document-builder/ai/openai";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
@@ -16,7 +17,6 @@ import {
   assertComparisonSourceFilesClean,
   type ComparisonFileRecord,
 } from "../../../../../../lib/document-comparison/scan-evidence";
-import { filterVerifiedLexSources } from "../../../../../../lib/legal/source-trust";
 import {
   comparisonForUser,
   loadExtractedDocument,
@@ -188,25 +188,16 @@ export const POST = withApiErrors(async function POST(
     let aiStatus: "completed" | "unavailable" | "not_required" | "failed" =
       result.summary.totalChanges ? "unavailable" : "not_required";
     let model: string | null = null;
+    let legalSources: Awaited<ReturnType<typeof retrieveDocumentLegalSources>>["sources"] = [];
     if (result.summary.totalChanges) {
       await updateStage(db, comparisonId, workspace.id, "legal_analysis");
-      const sourceRows = await db.prepare(
-        `SELECT id,act_title AS actTitle,act_identifier AS actIdentifier,official_url AS officialUrl,
-          revision_date AS revisionDate,last_checked_at AS lastCheckedAt,locale,
-          source_type AS sourceType,status,verification_state AS verificationState,
-          verified_at AS verifiedAt,content_sha256 AS contentSha256
-         FROM legal_sources WHERE status='verified' AND verification_state='verified'
-           AND verified_at IS NOT NULL AND content_sha256 IS NOT NULL
-         ORDER BY last_checked_at DESC LIMIT 80`,
-      ).all();
+      const research = await retrieveDocumentLegalSources(db, result.changes
+        .filter(change => !["unchanged", "formatting"].includes(change.changeType))
+        .slice(0, 12).map(change => change.afterText || change.beforeText).join("\n"), locale === "uz" ? "uz" : "ru", 8,
+        { id: comparisonId, workspaceId: workspace.id, userId: user.id });
+      legalSources = research.freshness.status === "fresh" ? research.sources : [];
       try {
-        const enriched = await enrichComparisonChanges({
-          changes: result.changes,
-          locale,
-          sources: filterVerifiedLexSources(
-            sourceRows.results as unknown as ComparisonLegalSource[],
-          ),
-        });
+        const enriched = await enrichComparisonChanges({ changes: result.changes, locale, sources: legalSources });
         result = { ...result, changes: enriched.changes };
         model = enriched.model;
         aiStatus = "completed";
@@ -218,6 +209,7 @@ export const POST = withApiErrors(async function POST(
     const summary = summarizeChanges(result.changes, result.summary.similarityPercent, isoNow());
     summary.aiStatus = aiStatus;
     summary.model = model;
+    summary.sources = legalSources.filter(source => result.changes.some(change => change.sourceIds.includes(source.id)));
     summary.sourceStatus = result.changes.some((change) => change.sourceIds.length)
       ? (result.changes.every((change) => change.riskLevel === "information" || change.sourceIds.length) ? "verified" : "partial")
       : "unverified";

@@ -207,7 +207,7 @@ export async function executeComparisonExportJob(
   }
 
   const changes = await comparisonChanges(env.DB, row.comparisonId);
-  const sources = await verifiedSourcesForChanges(env.DB, changes);
+  const sources = await verifiedSourcesForChanges(env.DB, changes, parsedSummary(row.summaryJson)?.sources);
   const paragraphs = comparisonReportParagraphs({ comparison: row, summary: parsedSummary(row.summaryJson), changes, sources });
   const locale = comparisonExportLocale(row.locale);
   const copy = exportCopy[locale];

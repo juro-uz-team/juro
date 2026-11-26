@@ -1,0 +1,18 @@
+.document-tool-progress { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-raised); }
+.review-intake > .document-tool-progress { margin-top: 18px; }
+.document-tool-progress > header { display: flex; gap: 12px; align-items: flex-start; }
+.document-tool-progress > header > svg { flex: none; width: 22px; color: var(--brand-gold-text); }
+.document-tool-progress > header > div { display: grid; gap: 4px; }
+.document-tool-progress small { color: var(--text-secondary); font-size: 13px; }
+.document-tool-progress ol { display: grid; list-style: none; padding: 0; margin: 0; gap: 8px; }
+.document-tool-progress li { display: grid; align-content: start; justify-items: center; gap: 8px; text-align: center; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.document-tool-progress li span { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 50%; font-variant-numeric: tabular-nums; }
+.document-tool-progress li span svg { width: 15px; }
+.document-tool-progress li[data-state=done] span { color: var(--success); background: var(--green-bg); }
+.document-tool-progress li[data-state=active] { color: var(--brand-gold-text); }
+.document-tool-progress li[data-state=active] span { background: var(--amber-bg); border-color: var(--border-accent); }
+.document-tool-progress progress { width: 100%; block-size: 8px; accent-color: var(--brand-gold-text); }
+@media (max-width: 660px) {
+  .document-tool-progress ol { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .document-tool-progress li { grid-template-columns: auto 1fr; align-items: center; justify-items: start; text-align: start; }
+}

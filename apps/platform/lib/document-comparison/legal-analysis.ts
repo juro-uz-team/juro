@@ -20,6 +20,8 @@ export type ComparisonLegalSource = {
   verificationState: string;
   verifiedAt: string;
   contentSha256: string;
+  excerpt?: string | null;
+  article?: string | null;
 };
 
 type LegalAssessment = {

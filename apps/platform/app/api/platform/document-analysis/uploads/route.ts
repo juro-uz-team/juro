@@ -1,3 +1,4 @@
+import { getDocumentAccess } from "../../../../../lib/document-builder/permissions";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../lib/document-builder/auth/api";
 import { requireD1, runtimeEnv } from "../../../../../lib/document-builder/storage/runtime";
 import {
@@ -27,6 +28,9 @@ export const POST = withApiErrors(async function POST(request: Request) {
     }
     const intent = parseDocumentAnalysisUploadIntent(await request.json());
     const db = requireD1();
+    if (intent.sourceDocumentId && !(await getDocumentAccess(intent.sourceDocumentId, user.id))?.canDownload) {
+      return response({ code: "DOCUMENT_INPUT_UNAVAILABLE" }, 404);
+    }
     try {
       await assertOperationalFeatureEnabled({ db, environment: operationalEnvironment(runtimeEnv().APP_ENV), key: "document_analysis_upload" });
     } catch (error) {

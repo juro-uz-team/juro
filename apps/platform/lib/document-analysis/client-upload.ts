@@ -29,6 +29,7 @@ export async function uploadDocumentForAnalysis(
   caseId?: string | null,
   analysisLocale: SupportedDocumentAnalysisLocale = defaultDocumentAnalysisLocale(locale),
   workspaceId?: string,
+  options?: { sourceDocumentId?: string; mode?: "quick" | "full" },
 ): Promise<SecureDocumentUploadResult> {
   if (file.size <= 0 || file.size > 50 * 1024 * 1024) {
     throw new Error(locale === "ru"
@@ -57,7 +58,8 @@ export async function uploadDocumentForAnalysis(
         sizeBytes: file.size,
         sha256,
         locale: analysisLocale,
-        mode: "quick",
+        mode: options?.mode ?? "quick",
+        sourceDocumentId: options?.sourceDocumentId,
         caseId: caseId || null,
         consent: true,
       }),
