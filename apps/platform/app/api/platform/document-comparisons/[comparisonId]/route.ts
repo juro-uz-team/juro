@@ -7,7 +7,7 @@ import {
   comparisonForUser,
   loadExtractedDocument,
   parsedSummary,
-  verifiedSourcesForChanges,
+  verifiedComparisonSources,
 } from "../../../../../lib/document-comparison/storage";
 import { assertComparisonSourceFilesClean } from "../../../../../lib/document-comparison/scan-evidence";
 import { ComparisonProcessingError } from "../../../../../lib/document-comparison/types";
@@ -54,10 +54,11 @@ export const GET = withApiErrors(async function GET(
     throw error;
   }
   const changes = await comparisonChanges(db, comparisonId);
+  const summary = parsedSummary(comparison.summaryJson);
   const [versionOne, versionTwo, sources, exportsResult] = await Promise.all([
     loadExtractedDocument(comparison.versionOneJsonKey),
     loadExtractedDocument(comparison.versionTwoJsonKey),
-    verifiedSourcesForChanges(db, changes, parsedSummary(comparison.summaryJson)?.sources),
+    verifiedComparisonSources(db, changes, summary),
     db.prepare(
       `SELECT id,comparison_id AS comparisonId,format,status,file_name AS fileName,mime_type AS mimeType,
         size_bytes AS sizeBytes,error_code AS errorCode,completed_at AS completedAt,created_at AS createdAt
@@ -68,7 +69,7 @@ export const GET = withApiErrors(async function GET(
   return response({
     comparison: {
       ...comparison,
-      summary: parsedSummary(comparison.summaryJson),
+      summary,
       versionOne: versionOne ?? {
         fileName: comparison.versionOneName,
         mimeType: comparison.versionOneMimeType,

@@ -138,6 +138,7 @@ export type ComparisonChange = {
 
 export type ComparisonSummary = {
   sources?: import("./storage").VerifiedLegalSource[];
+  legalResearchScope?: "document" | "changes";
   totalChanges: number;
   materialChanges: number;
   riskIncreased: number;

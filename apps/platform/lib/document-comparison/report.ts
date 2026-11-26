@@ -208,6 +208,17 @@ export function comparisonReportParagraphs(input: {
     }
   }
 
+  if (summary?.legalResearchScope === "document" && input.sources.length) {
+    push({
+      ru: "Правовые источники по документу",
+      uz: "Hujjatga oid huquqiy manbalar",
+      en: "Legal context for the document",
+    }[locale], "heading", true);
+    for (const source of input.sources) {
+      push([source.actTitle, source.officialUrl].filter(Boolean).join(" · "), "list");
+    }
+  }
+
   push(copy.disclaimerHeading, "heading", true);
   push(copy.disclaimer);
   return paragraphs;

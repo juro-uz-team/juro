@@ -8,6 +8,7 @@ import {definePDFJSModule,getResolvedPDFJS} from "unpdf";
 
 import { compareDocuments, MAX_FUZZY_SECTION_COMPARISONS } from "../lib/document-comparison/diff";
 import { extractDocument, structureDocument } from "../lib/document-comparison/extract";
+import { verifiedComparisonSources } from "../lib/document-comparison/storage";
 import type { ExtractedDocument } from "../lib/document-comparison/types";
 import { ArchiveInspectionError } from "../lib/document-analysis/archive-inspector";
 import {
@@ -60,6 +61,22 @@ function extracted(text: string, fileName = "contract.docx"): ExtractedDocument 
 function xmlEscape(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
+
+test("matching text retains verified document citations without adding change citations", async () => {
+  const version = extracted("Договор о конфиденциальности.\n\n1. Сторона хранит коммерческую тайну.");
+  const { summary, changes } = compareDocuments(version, version, "ru");
+  const source = {
+    id: "fixture-source", actTitle: "Закон", actIdentifier: null, article: "8",
+    officialUrl: "https://lex.uz/docs/123", publishedAt: null, revisionDate: null,
+    locale: "ru", sourceType: "lex", status: "verified", verificationState: "verified",
+    verifiedAt: "2026-01-01T00:00:00Z", lastCheckedAt: "2026-01-01T00:00:00Z", contentSha256: "a".repeat(64),
+  };
+  const db = { prepare() { assert.fail("Document citations should be present in the saved report"); } } as unknown as D1Database;
+  const sources = [source, { ...source, id: "unverified", verificationState: "pending" }];
+  assert.equal(summary.totalChanges, 0);
+  assert.deepEqual(await verifiedComparisonSources(db, changes, { ...summary, sources }), []);
+  assert.deepEqual(await verifiedComparisonSources(db, changes, { ...summary, sources, legalResearchScope: "document" }), [source]);
+});
 
 function docxBytes(paragraphs: string[]) {
   const zip = new PizZip();

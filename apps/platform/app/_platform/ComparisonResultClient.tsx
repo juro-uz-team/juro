@@ -1,5 +1,7 @@
 "use client";
 
+import { DocumentCitationList } from "./DocumentCitationList";
+import { reviewText } from "./document-review-localization";
 import { DocumentComparisonProgress } from "./DocumentToolProgress";
 
 import { WorkspaceTitle } from "./WorkspaceTitle";
@@ -66,6 +68,8 @@ type ComparisonDetail = {
   createdAt: string;
   updatedAt: string;
   versionOneName: string;
+  versionOneFileId: string;
+  versionTwoFileId: string;
   versionTwoName: string;
   caseId: string | null;
   summary: ComparisonSummary | null;
@@ -470,6 +474,9 @@ export function ComparisonResultClient({
   const latestExports = new Map<"pdf" | "docx", ComparisonExport>();
   for (const item of detail.exports) if (!latestExports.has(item.format)) latestExports.set(item.format, item);
   const safeSources = detail.sources.filter((source) => safeOfficialUrl(source.officialUrl));
+  const compareAgain = detail.versionOneFileId && detail.versionTwoFileId
+    ? `${base}/documents/comparisons?${new URLSearchParams({ first: "tool:" + detail.versionOneFileId, second: "tool:" + detail.versionTwoFileId })}`
+    : null;
   return (
     <div className="comparison-result-shell workspace-page">
       <WorkspaceTitle icon={<FileDiff />}
@@ -492,25 +499,25 @@ export function ComparisonResultClient({
             return (
               <span className="comparison-export-action" key={format}>
                 {completed ? (
-                  <a href={`/api/platform/document-comparisons/exports/${encodeURIComponent(item.id)}/file?locale=${locale}`}>
+                  <a className="juro-record-action" href={`/api/platform/document-comparisons/exports/${encodeURIComponent(item.id)}/file?locale=${locale}`}>
                     {format === "pdf" ? <Download /> : <FileText />}{label}
                   </a>
                 ) : (
-                  <button type="button" onClick={() => void requestExport(format)} disabled={Boolean(pending) || exporting === format}>
+                  <button type="button" className="juro-record-action" onClick={() => void requestExport(format)} disabled={Boolean(pending) || exporting === format}>
                     {pending || exporting === format ? <LoaderCircle className="spin" /> : format === "pdf" ? <Download /> : <FileText />}{label}
                   </button>
                 )}
                 {item && ["completed", "failed"].includes(item.status) && (
-                  <button type="button" className="comparison-export-delete" aria-label={copy.exportDelete} title={copy.exportDelete} onClick={() => void removeExport(item.id)}>
+                  <button type="button" className="juro-record-action comparison-export-delete" aria-label={copy.exportDelete} title={copy.exportDelete} onClick={() => void removeExport(item.id)}>
                     <Trash2 />
                   </button>
                 )}
               </span>
             );
           })}
-          <Link href={`${base}/consultations?comparisonId=${encodeURIComponent(comparisonId)}`}><UserRoundSearch />{copy.consult}</Link>
-          <Link href={`${base}/document-builder`}><FileText />{copy.edit}</Link>
-          <button type="button" className="danger" onClick={() => void removeComparison()}><Trash2 /><span>{copy.delete}</span></button>
+          <Link className="juro-record-action" href={`${base}/consultations?comparisonId=${encodeURIComponent(comparisonId)}`}><UserRoundSearch />{copy.consult}</Link>
+          <Link className="juro-record-action" href={`${base}/document-builder`}><FileText />{copy.edit}</Link>
+          <button type="button" className="juro-record-action danger" onClick={() => void removeComparison()}><Trash2 /><span>{copy.delete}</span></button>
         </div>
         <details className="comparison-version-disclosure">
           <summary className="juro-disclosure-summary">{copy.versionMetadataAria}</summary>
@@ -525,16 +532,17 @@ export function ComparisonResultClient({
               <dl>
                 <div><dt>{copy.uploaded}</dt><dd>{formatDate(detail.createdAt, locale)}</dd></div>
                 <div><dt>{copy.pages}</dt><dd>{version.pageCount ?? "—"}</dd></div>
-                <div><dt>{copy.documentLanguage}</dt><dd>{version.detectedLanguage?.toUpperCase() || "—"}</dd></div>
+                <div><dt>{copy.documentLanguage}</dt><dd>{version.detectedLanguage === "mixed" ? reviewText(locale, "Несколько языков", "Bir necha til", "Multiple languages") : version.detectedLanguage?.toUpperCase() || "—"}</dd></div>
                 <div><dt>{copy.recognition}</dt><dd>{version.textQuality === "good" ? copy.qualityGood : version.textQuality === "limited" ? copy.qualityLimited : copy.qualityOcr}</dd></div>
                 <div><dt>{copy.size}</dt><dd>{formatSize(version.sizeBytes)}</dd></div>
               </dl>
               <a
+                className="juro-record-action"
                 href={`/api/platform/document-comparisons/${encodeURIComponent(comparisonId)}/files/${index === 0 ? "one" : "two"}?locale=${locale}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                <ExternalLink />{copy.openVersion}
+                {copy.openVersion}<ExternalLink aria-hidden="true" />
               </a>
             </article>
           ))}
@@ -587,7 +595,7 @@ export function ComparisonResultClient({
         {tab === "summary" ? (
           <SummaryView summary={summary} copy={copy} />
         ) : tab === "sources" ? (
-          <SourcesView sources={safeSources} copy={copy} locale={locale} />
+          <SourcesView sources={safeSources} copy={copy} locale={locale} summary={summary} compareAgain={compareAgain} />
         ) : (
           <div className="comparison-result-layout">
           {tab !== "side" && (
@@ -908,35 +916,28 @@ function RedlineRow({
   );
 }
 
-function SourcesView({
-  sources,
-  copy,
-  locale,
-}: {
-  sources: Source[];
-  copy: ComparisonResultCopy;
-  locale: PlatformLocale;
+function SourcesView({ sources, copy, locale, summary, compareAgain }: {
+  sources: Source[]; copy: ComparisonResultCopy; locale: PlatformLocale;
+  summary: ComparisonSummary; compareAgain: string | null;
 }) {
-  if (!sources.length) {
-    return <div className="comparison-no-sources"><ShieldAlert /><h2>{copy.noSources}</h2><p>{copy.sourceUnavailableDetail}</p></div>;
-  }
-  return (
-    <div className="comparison-sources">
-      {sources.map((source) => (
-        <article key={source.id}>
-          <header><span><CheckCircle2 />{copy.verified}</span><small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ") || copy.officialSource}</small></header>
-          <h2>{source.actTitle}</h2>
-          {source.excerpt && <blockquote>{source.excerpt}</blockquote>}
-          <dl>
-            <div><dt>{copy.currentAsOf}</dt><dd>{formatDate(source.revisionDate || source.lastCheckedAt, locale)}</dd></div>
-            <div><dt>{copy.originalLanguage}</dt><dd>{source.locale.toUpperCase()}</dd></div>
-            <div><dt>{copy.status}</dt><dd>{source.status}</dd></div>
-          </dl>
-          <a href={source.officialUrl} target="_blank" rel="noreferrer"><ExternalLink />{copy.officialSource}</a>
-        </article>
-      ))}
-    </div>
-  );
+  const context = summary.legalResearchScope === "document" || summary.aiStatus === "not_required";
+  const researched = summary.legalResearchScope !== undefined;
+  return <section className="comparison-source-panel">
+    <header><h2>{copy.tabs.sources}</h2>{context && <p>{reviewText(locale,
+      "Для совпадающих условий источники относятся к самому документу.",
+      "Mos keladigan shartlar uchun manbalar hujjatning o‘ziga taalluqli.",
+      "For matching terms, sources provide legal context for the document.")}</p>}</header>
+    {sources.length ? <DocumentCitationList locale={locale} citations={sources.map(source => ({
+      id: source.id, title: source.actTitle, identifier: source.actIdentifier, article: source.article,
+      url: source.officialUrl, excerpt: source.excerpt,
+    }))} /> : <div className="comparison-source-empty">
+      <ShieldAlert aria-hidden="true" />
+      <div><strong>{copy.noSources}</strong><p>{!researched && context
+        ? reviewText(locale, "В этом отчёте сравнивался текст. Повторите сравнение, чтобы найти источники по документу.", "Bu hisobotda matn solishtirilgan. Hujjat manbalarini topish uchun solishtirishni takrorlang.", "This report compared the text. Compare again to research sources for the document.")
+        : copy.sourceUnavailableDetail}</p></div>
+      {compareAgain && <Link className="juro-record-action" href={compareAgain}><RefreshCcw aria-hidden="true" />{reviewText(locale, "Сравнить снова", "Qayta solishtirish", "Compare again")}</Link>}
+    </div>}
+  </section>;
 }
 
 function safeOfficialUrl(value: string) {

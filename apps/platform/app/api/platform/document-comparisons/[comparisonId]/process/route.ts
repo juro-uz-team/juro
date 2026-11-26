@@ -1,4 +1,6 @@
 import { retrieveDocumentLegalSources } from "../../../../../../lib/document-analysis/corpus-sources";
+import { planDocumentAnalysis } from "../../../../../../lib/document-analysis/chunking";
+import { runDocumentAnalysis } from "../../../../../../lib/document-analysis/provider";
 import { authLocaleFromRequest } from "../../../../../../lib/auth/request-locale";
 import { AiUnavailableError } from "../../../../../../lib/document-builder/ai/openai";
 import { assertSafeWrite, requireApiUser, withApiErrors } from "../../../../../../lib/document-builder/auth/api";
@@ -7,7 +9,7 @@ import { getPrivateObject, putPrivateObject } from "../../../../../../lib/docume
 import { requireD1 } from "../../../../../../lib/document-builder/storage/runtime";
 import { compareDocuments, summarizeChanges } from "../../../../../../lib/document-comparison/diff";
 import { extractDocument } from "../../../../../../lib/document-comparison/extract";
-import { enrichComparisonChanges, type ComparisonLegalSource } from "../../../../../../lib/document-comparison/legal-analysis";
+import { enrichComparisonChanges } from "../../../../../../lib/document-comparison/legal-analysis";
 import {
   comparisonProcessingErrorMessage,
   comparisonRouteErrorMessage,
@@ -131,7 +133,7 @@ export const POST = withApiErrors(async function POST(
     }, 422);
   }
   if (comparison.status === "completed") return response({ comparison: { id: comparisonId, status: comparison.status, stage: comparison.stage } });
-  const staleBefore = new Date(Date.now() - 2 * 60_000).toISOString();
+  const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
   const lock = await db.prepare(
     `UPDATE document_comparisons SET status='processing',error_code=NULL,updated_at=?
      WHERE id=? AND workspace_id=? AND owner_user_id=? AND deleted_at IS NULL
@@ -185,33 +187,54 @@ export const POST = withApiErrors(async function POST(
       })),
     };
 
-    let aiStatus: "completed" | "unavailable" | "not_required" | "failed" =
-      result.summary.totalChanges ? "unavailable" : "not_required";
+    const changed = result.changes.filter(change => !["unchanged", "formatting"].includes(change.changeType));
+    let aiStatus: "completed" | "unavailable" | "not_required" | "failed" = "not_required";
     let model: string | null = null;
-    let legalSources: Awaited<ReturnType<typeof retrieveDocumentLegalSources>>["sources"] = [];
-    if (result.summary.totalChanges) {
-      await updateStage(db, comparisonId, workspace.id, "legal_analysis");
-      const research = await retrieveDocumentLegalSources(db, result.changes
-        .filter(change => !["unchanged", "formatting"].includes(change.changeType))
-        .slice(0, 12).map(change => [change.beforeText, change.afterText].filter(Boolean).join("\n")).join("\n\n"), locale, 8,
-        { id: comparisonId, workspaceId: workspace.id, userId: user.id });
-      legalSources = research.freshness.status === "fresh" ? research.sources : [];
-      try {
+    const citedIds = new Set<string>();
+    await updateStage(db, comparisonId, workspace.id, "legal_analysis");
+    const research = await retrieveDocumentLegalSources(
+      db,
+      changed.length
+        ? changed.slice(0, 12).map(change => [change.beforeText, change.afterText].filter(Boolean).join("\n")).join("\n\n")
+        : versionTwo.text,
+      locale, changed.length ? 8 : 5,
+      { id: comparisonId, workspaceId: workspace.id, userId: user.id },
+    );
+    const legalSources = research.freshness.status === "fresh" ? research.sources : [];
+    try {
+      if (changed.length) {
         const enriched = await enrichComparisonChanges({ changes: result.changes, locale, sources: legalSources });
         result = { ...result, changes: enriched.changes };
         model = enriched.model;
         aiStatus = "completed";
-      } catch (error) {
-        aiStatus = error instanceof AiUnavailableError ? "unavailable" : "failed";
+        for (const change of result.changes) for (const sourceId of change.sourceIds) citedIds.add(sourceId);
+      } else if (legalSources.length) {
+        const plan = planDocumentAnalysis(versionTwo.text, "quick");
+        const context = await runDocumentAnalysis({
+          fileName: versionTwo.fileName, mimeType: versionTwo.mimeType, extractedText: plan.chunks[0].text,
+          detectedLanguage: versionTwo.detectedLanguage,
+          extractionWarnings: plan.representativeSample ? ["DOCUMENT_QUICK_REPRESENTATIVE_SAMPLE"] : [],
+          packageContext: null, locale: ({ ru: "ru", uz: "uz", en: "ru" } as const)[locale], mode: "quick", userSide: null,
+          sources: legalSources, legalDatabaseAsOf: research.legalDatabaseAsOf,
+          requestId: `comparison-legal-context-${comparisonId}`,
+        });
+        for (const source of context.data.sources) citedIds.add(source.sourceId);
+        model = context.model;
+        aiStatus = "completed";
+      } else if (research.freshness.status !== "fresh") {
+        aiStatus = "unavailable";
       }
+    } catch (error) {
+      aiStatus = error instanceof AiUnavailableError ? "unavailable" : "failed";
     }
 
     const summary = summarizeChanges(result.changes, result.summary.similarityPercent, isoNow());
     summary.aiStatus = aiStatus;
     summary.model = model;
-    summary.sources = legalSources.filter(source => result.changes.some(change => change.sourceIds.includes(source.id)));
-    summary.sourceStatus = result.changes.some((change) => change.sourceIds.length)
-      ? (result.changes.every((change) => change.riskLevel === "information" || change.sourceIds.length) ? "verified" : "partial")
+    summary.legalResearchScope = changed.length ? "changes" : "document";
+    summary.sources = legalSources.filter(source => citedIds.has(source.id));
+    summary.sourceStatus = summary.sources.length
+      ? (changed.length && result.changes.every((change) => change.riskLevel === "information" || change.sourceIds.length) ? "verified" : "partial")
       : "unverified";
     result = { ...result, summary };
     await storeChanges(db, comparisonId, result.changes);

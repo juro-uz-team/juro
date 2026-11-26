@@ -17,6 +17,8 @@ export type VerifiedLegalSource = {
   verifiedAt: string;
   contentSha256: string;
   lastCheckedAt: string;
+  article?: string | null;
+  excerpt?: string | null;
 };
 
 export type ComparisonAccessRow = {
@@ -133,14 +135,16 @@ export async function comparisonChanges(
   });
 }
 
-export async function verifiedSourcesForChanges(
+export async function verifiedComparisonSources(
   db: D1Database,
   changes: ComparisonChange[],
-  stored: VerifiedLegalSource[] = [],
+  summary?: ComparisonSummary | null,
 ): Promise<VerifiedLegalSource[]> {
+  const stored = filterVerifiedLexSources(summary?.sources ?? []);
+  if (summary?.legalResearchScope === "document") return stored.slice(0, 12);
   const ids = Array.from(new Set(changes.flatMap((change) => change.sourceIds))).slice(0, 100);
   if (!ids.length) return [];
-  const current = filterVerifiedLexSources(stored).filter(source => ids.includes(source.id));
+  const current = stored.filter(source => ids.includes(source.id));
   const legacyIds = ids.filter(id => !current.some(source => source.id === id));
   if (!legacyIds.length) return current;
   const placeholders = legacyIds.map(() => "?").join(",");

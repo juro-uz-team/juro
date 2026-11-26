@@ -1,0 +1,17 @@
+.document-citations { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.document-citation { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-subtle); }
+.document-citation-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.document-citation-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--surface-selected); color: var(--brand-gold-text); }
+.document-citation-icon svg { width: 18px; }
+.document-citation-heading h4 { margin: 0; font: 700 16px/1.4 var(--sans); color: var(--text-primary); overflow-wrap: anywhere; }
+.document-citation-meta { display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; margin-top: 5px; }
+.document-citation-meta span { border: 1px solid var(--border-subtle); border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 650; color: var(--text-secondary); }
+.document-citation-meta small { color: var(--text-secondary); }
+.document-citation-excerpt { margin-top: 10px; border-radius: 10px; background: var(--surface-raised); }
+.document-citation-excerpt blockquote { display: grid; gap: .7em; margin: 0; padding: 4px 14px 14px; }
+.document-citation-excerpt blockquote p { max-width: 72ch; margin: 0; color: var(--text-primary); line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+.document-citation-excerpt-title { font-weight: 700; }
+@media (max-width: 620px) {
+  .document-citation-heading { grid-template-columns: auto minmax(0, 1fr); }
+  .document-citation-heading a { grid-column: 2; justify-self: start; }
+}

@@ -3,7 +3,7 @@ import { generatePdf } from "../document-builder/generation/pdf";
 import { AnalysisExportError } from "../document-analysis/exporter";
 import { comparisonReportParagraphs } from "./report";
 import { assertComparisonSourceFilesClean } from "./scan-evidence";
-import { comparisonChanges, parsedSummary, verifiedSourcesForChanges } from "./storage";
+import { comparisonChanges, parsedSummary, verifiedComparisonSources } from "./storage";
 import { ComparisonProcessingError, type ComparisonLocale } from "./types";
 
 export type ComparisonExportFormat = "pdf" | "docx";
@@ -207,8 +207,9 @@ export async function executeComparisonExportJob(
   }
 
   const changes = await comparisonChanges(env.DB, row.comparisonId);
-  const sources = await verifiedSourcesForChanges(env.DB, changes, parsedSummary(row.summaryJson)?.sources);
-  const paragraphs = comparisonReportParagraphs({ comparison: row, summary: parsedSummary(row.summaryJson), changes, sources });
+  const summary = parsedSummary(row.summaryJson);
+  const sources = await verifiedComparisonSources(env.DB, changes, summary);
+  const paragraphs = comparisonReportParagraphs({ comparison: row, summary, changes, sources });
   const locale = comparisonExportLocale(row.locale);
   const copy = exportCopy[locale];
   const bytes = row.format === "pdf"

@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentCitationList } from "./DocumentCitationList";
 import { DocumentToolProgress } from "./DocumentToolProgress";
 
 import { WorkspaceTitle } from "./WorkspaceTitle";
@@ -345,9 +346,9 @@ function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analys
       <small>{statusLabel(analysis.status, locale, retryExhausted)}</small>
       <h2>{analysis.fileName}</h2><span>{[summary?.result?.documentType, formatFileSize(analysis.sizeBytes, locale), analysis.updatedAt && new Date(analysis.updatedAt).toLocaleDateString(locale)].filter(Boolean).join(" · ")}</span>
     </div></div>
-    {canOpen && <details className="review-management"><summary><span><FileText aria-hidden="true" />{tools.actions}</span><ChevronDown aria-hidden="true" /></summary><div className="review-result-actions" aria-live="polite">{analysis.sourceAvailable && <a href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div>
-    <div className="review-case-link"><label><span>{copy.case}</span><Select value={caseId} onChange={event => { setCaseId(event.target.value); setCaseMessage(""); }} disabled={caseBusy}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><button type="button" disabled={caseBusy || caseId === (analysis.caseId ?? "")} aria-busy={caseBusy} onClick={() => void saveCaseLink()}>{caseBusy ? <LoaderCircle className="spin" /> : <FileText />}{copy.saveCaseLink}</button><span role="status" aria-live="polite">{caseMessage}</span></div>
-    </details>}
+    {canOpen && <details className="review-management"><summary className="juro-disclosure-summary"><FileText aria-hidden="true" />{tools.actions}</summary><div className="review-management-body"><div className="review-result-actions" aria-live="polite">{analysis.sourceAvailable && <a className="juro-record-action" href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a className="juro-record-action" href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" className="juro-record-action" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" className="juro-record-action" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="juro-record-action danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div>
+    <div className="review-case-link"><label><span>{copy.case}</span><Select value={caseId} onChange={event => { setCaseId(event.target.value); setCaseMessage(""); }} disabled={caseBusy}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><button type="button" className="juro-record-action" disabled={caseBusy || caseId === (analysis.caseId ?? "")} aria-busy={caseBusy} onClick={() => void saveCaseLink()}>{caseBusy ? <LoaderCircle className="spin" /> : <FileText />}{copy.saveCaseLink}</button><span role="status" aria-live="polite">{caseMessage}</span></div>
+    </div></details>}
     {exportError && <p className="review-message error" role="alert"><CircleAlert />{exportError}</p>}
     {analysisDeleteError && <p className="review-message error" role="alert"><CircleAlert />{analysisDeleteError}</p>}
     {exportNotice && <p className="review-message success" role="status"><ShieldCheck />{exportNotice}</p>}
@@ -395,7 +396,7 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   const tabs = [
     ["overview", copy.summary], ["risks", `${copy.risks} · ${risks.length}`],
     ["terms", reviewText(locale, "Условия", "Shartlar", "Terms")], ["sources", sources.length ? `${tools.sources} · ${sources.length}` : tools.sources],
-    ...(risks.some(risk => risk.proposedWording) ? [["edits", copy.revisionsTitle]] : []),
+    ...(risks.some(risk => risk.proposedWording || risk.recommendation) || result?.missingClauses?.some(item => item.proposedWording) ? [["edits", copy.revisionsTitle]] : []),
   ];
   return <div className="review-findings">
     <nav className="review-views" aria-label={copy.resultAria}>
@@ -456,17 +457,17 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
     </>}
     {view === "sources" && <section className="review-sources">
       <header><BookOpen aria-hidden="true" /><div><h3>{tools.sources}</h3>{corpusAvailable && <small>{reviewText(locale, "Дата среза корпуса", "Korpus holati sanasi", "Corpus snapshot date")} · {result?.legalDatabaseAsOf?.slice(0, 10)}</small>}</div></header>
-      {sources.length ? <ul className="review-source-list">{sources.map(source => <li key={source.sourceId}>
-        {/^https:\/\//i.test(source.originalUrl) ? <a href={source.originalUrl} target="_blank" rel="noreferrer">{source.actTitle}<Link2 aria-hidden="true" /></a> : <strong>{source.actTitle}</strong>}
-        <small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ")}</small>{source.excerpt && <blockquote>{source.excerpt}</blockquote>}
-      </li>)}</ul> : <div className="review-source-empty">
+      {sources.length ? <DocumentCitationList locale={locale} citations={sources.map(source => ({
+        id: source.sourceId, title: source.actTitle, identifier: source.actIdentifier,
+        article: source.article, url: source.originalUrl, excerpt: source.excerpt,
+      }))} /> : <div className="review-source-empty">
         <p>{corpusAvailable
           ? reviewText(locale, "В отчёте нет подтверждённых ссылок на применимые нормы.", "Hisobotda qo‘llanadigan normalarga tasdiqlangan havolalar yo‘q.", "This report has no confirmed citations to applicable law.")
           : reviewText(locale, "Во время проверки не удалось получить подтверждённые правовые источники.", "Tekshiruv vaqtida tasdiqlangan huquqiy manbalar olinmadi.", "The check could not retrieve verified legal sources.")}</p>
         <ReviewAgain analysis={analysis} locale={locale} />
       </div>}
     </section>}
-    {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} locale={locale} onAnalysisChanged={onChanged} />}
+    {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} risks={risks} result={result} locale={locale} onAnalysisChanged={onChanged} />}
     </div>
   </div>;
 }
@@ -501,7 +502,10 @@ function reviewWarnings(warnings: string[], locale: PlatformLocale) {
   return [...new Set(labels.flatMap(label => label ? [reviewText(locale, label[0], label[1], label[2])] : []))];
 }
 
-function RevisionPanel({ analysisId, exports, locale, onAnalysisChanged }: { analysisId: string; exports: AnalysisExport[]; locale: PlatformLocale; onAnalysisChanged: () => Promise<void> }) {
+function RevisionPanel({ analysisId, exports, risks, result, locale, onAnalysisChanged }: {
+  analysisId: string; exports: AnalysisExport[]; risks: Risk[]; result?: Partial<DocumentAnalysisResult>;
+  locale: PlatformLocale; onAnalysisChanged: () => Promise<void>;
+}) {
   const copy = documentReviewCopy[locale];
   const [revisions, setRevisions] = useState<SuggestedRevision[]>([]);
   const [versions, setVersions] = useState<AnalysisDocumentVersion[]>([]);
@@ -654,32 +658,67 @@ function RevisionPanel({ analysisId, exports, locale, onAnalysisChanged }: { ana
   const accepted = revisions.filter((item) => item.status === "accepted");
   const available = revisions.filter((item) => item.status === "pending" || item.status === "accepted");
   const correctedVersions = versions.filter((item) => item.sourceKind === "corrected");
+  const editable = new Set(revisions.map(item => item.riskId));
+  const manual = [
+    ...risks.filter(risk => !editable.has(risk.id ?? "") && (risk.proposedWording || risk.recommendation))
+      .map(risk => ({ title: risk.title, wording: risk.proposedWording, note: risk.recommendation, clause: risk.clause })),
+    ...(result?.missingClauses ?? []).filter(item => item.proposedWording)
+      .map(item => ({ title: item.title, wording: item.proposedWording, note: item.reason, clause: null })),
+  ];
+  const sources = new Map(result?.sources?.map(source => [source.sourceId, source]));
+  const count = revisions.length + manual.length;
   return <section className="review-revisions" aria-labelledby={`revision-title-${analysisId}`}>
     <div className="review-revisions-heading">
       <div><h3 id={`revision-title-${analysisId}`}>{copy.revisionsTitle}</h3><p>{copy.revisionsDescription}</p></div>
-      {correctedVersions.length > 0 && <div className="review-version-downloads" aria-label={copy.correctedVersions}>{correctedVersions.map((version) => <div className="review-version-export" key={version.id}><strong>{reviewText(locale, `Версия ${version.version}`, `${version.version}-nusxa`, `Version ${version.version}`)}</strong><a href={`/api/platform/document-analysis/${encodeURIComponent(analysisId)}/versions/${encodeURIComponent(version.id)}/file`}><Download />MD</a>{builderSource && <button type="button" disabled={applyingBuilderVersionId !== null || builderSource.currentRevision !== builderSource.sourceRevision} aria-busy={applyingBuilderVersionId === version.id} title={builderSource.currentRevision !== builderSource.sourceRevision ? copy.builderStale : undefined} onClick={() => void applyVersionToBuilder(version)}>{applyingBuilderVersionId === version.id ? <LoaderCircle className="spin" /> : <FileCheck2 />}{copy.toBuilder}</button>}{(["corrected_clean", "corrected_redline"] as const).flatMap((variant) => (["docx", "pdf"] as const).map((format) => {
+      {correctedVersions.length > 0 && <div className="review-version-downloads" aria-label={copy.correctedVersions}>{correctedVersions.map((version) => <div className="review-version-export" key={version.id}><strong>{reviewText(locale, `Версия ${version.version}`, `${version.version}-nusxa`, `Version ${version.version}`)}</strong><a className="juro-record-action" href={`/api/platform/document-analysis/${encodeURIComponent(analysisId)}/versions/${encodeURIComponent(version.id)}/file`}><Download />MD</a>{builderSource && <button type="button" className="juro-record-action" disabled={applyingBuilderVersionId !== null || builderSource.currentRevision !== builderSource.sourceRevision} aria-busy={applyingBuilderVersionId === version.id} title={builderSource.currentRevision !== builderSource.sourceRevision ? copy.builderStale : undefined} onClick={() => void applyVersionToBuilder(version)}>{applyingBuilderVersionId === version.id ? <LoaderCircle className="spin" /> : <FileCheck2 />}{copy.toBuilder}</button>}{(["corrected_clean", "corrected_redline"] as const).flatMap((variant) => (["docx", "pdf"] as const).map((format) => {
         const record = [...exports].filter((item) => item.sourceVersionId === version.id && item.variant === variant && item.format === format).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
         const keyName = `${version.id}:${variant}:${format}`;
         const pending = ["queued", "processing", "retrying"].includes(record?.status ?? "");
         const label = `${variant === "corrected_clean" ? copy.clean : copy.redline} ${format.toUpperCase()}`;
-        return <span key={`${variant}-${format}`}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{label}</a> : <button type="button" disabled={pending || exportingKey !== null || deletingExportId !== null} aria-busy={pending || exportingKey === keyName} onClick={() => void requestVersionExport(version, variant, format)}>{pending || exportingKey === keyName ? <LoaderCircle className="spin" /> : record?.status === "failed" ? <RefreshCw /> : <Download />}{label}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" className="icon" aria-label={reviewText(locale, `Удалить ${label}`, `${label}ni o‘chirish`, `Delete ${label}`)} disabled={deletingExportId !== null || exportingKey !== null} onClick={() => void removeVersionExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>;
+        return <span key={`${variant}-${format}`}>{record?.status === "completed" ? <a className="juro-record-action" href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{label}</a> : <button type="button" className="juro-record-action" disabled={pending || exportingKey !== null || deletingExportId !== null} aria-busy={pending || exportingKey === keyName} onClick={() => void requestVersionExport(version, variant, format)}>{pending || exportingKey === keyName ? <LoaderCircle className="spin" /> : record?.status === "failed" ? <RefreshCw /> : <Download />}{label}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" className="juro-record-action icon" aria-label={reviewText(locale, `Удалить ${label}`, `${label}ni o‘chirish`, `Delete ${label}`)} disabled={deletingExportId !== null || exportingKey !== null} onClick={() => void removeVersionExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>;
       }))}</div>)}</div>}
     </div>
-    <p className="review-normalized-note"><FileText />{copy.normalizedNote}</p>
+    {(revisions.length > 0 || correctedVersions.length > 0) && <p className="review-normalized-note"><FileText />{copy.normalizedNote}</p>}
     {error && <p className="review-message error" role="alert"><CircleAlert />{error}<button type="button" onClick={() => void load()}>{copy.retry}</button></p>}
     {notice && <p className="review-message success" role="status"><CheckCircle2 />{notice}</p>}
-    {loading ? <div className="review-revision-skeleton" aria-label={copy.loadingRevisions}><i /><i /><i /></div> : revisions.length === 0 ? <div className="review-revision-empty"><FileText /><h4>{copy.noRevisions}</h4><p>{copy.noRevisionsHint}</p></div> : <div className="review-revision-list">{revisions.map((revision) => {
+    {loading ? <div className="review-revision-skeleton" aria-label={copy.loadingRevisions}><i /><i /><i /></div> : count === 0 ? <div className="review-revision-empty"><FileText /><h4>{copy.noRevisions}</h4><p>{copy.noRevisionsHint}</p></div> : <div className="review-revision-list">
+      <p className="review-edit-count">{reviewText(locale, `Всего предложений · ${count}`, `Jami takliflar · ${count}`, `Suggestions · ${count}`)}</p>
+      {revisions.map((revision) => {
       const terminal = ["applied", "stale", "ambiguous"].includes(revision.status);
       const busy = busyId === revision.id;
       const selected = selectedIds.includes(revision.id);
       return <article key={revision.id} data-status={revision.status}>
-        <header><div><span>{riskLabel(revision.riskLevel, locale)}</span><h4>{revision.riskTitle}</h4>{revision.clause && <small>{revision.clause}{revision.page ? ` · ${copy.pageShort} ${revision.page}` : ""}</small>}</div><strong>{revisionStatusLabel(revision.status, locale)}</strong></header>
+        <details open={count === 1 || undefined}>
+        <summary className="juro-disclosure-summary review-edit-header">
+          <span><strong>{revision.riskTitle}</strong><small>{[riskLabel(revision.riskLevel, locale), revision.clause, revision.page ? `${copy.pageShort} ${revision.page}` : ""].filter(Boolean).join(" · ")}</small></span>
+          <span className="review-edit-status">{revisionStatusLabel(revision.status, locale)}</span>
+        </summary>
+        <div className="review-edit-body">
         <div className="review-revision-diff"><div><small>{copy.originalText}</small><p>{revision.originalText}</p></div><div><small>{copy.proposedText}</small><p>{revision.proposedText}</p></div></div>
         {revision.recommendation && <p><b>{copy.rationale}</b> {revision.recommendation}</p>}
-        {revision.legalBasisSourceIds.length > 0 && <p className="review-revision-sources"><b>{copy.relatedSources}</b> {revision.legalBasisSourceIds.join(", ")}</p>}
+        {revision.legalBasisSourceIds.some(id => sources.has(id)) && <ul className="review-edit-sources" aria-label={copy.relatedSources}>{revision.legalBasisSourceIds.flatMap(id => {
+          const source = sources.get(id);
+          return source && /^https:\/\//.test(source.originalUrl)
+            ? [<li key={id}><a href={source.originalUrl} target="_blank" rel="noreferrer">{[source.actTitle, source.article].filter(Boolean).join(" · ")}</a></li>] : [];
+        })}</ul>}
         {!terminal && <footer><label><input type="checkbox" checked={selected} disabled={revision.status !== "accepted" || busy} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...new Set([...current, revision.id])] : current.filter((id) => id !== revision.id))} /><span>{copy.includeSelected}</span></label><div><button type="button" disabled={busy} aria-busy={busy} aria-pressed={revision.status === "rejected"} className={revision.status === "rejected" ? "active" : ""} onClick={() => void decide(revision, "rejected")}>{busy ? <LoaderCircle className="spin" /> : <X />}{copy.reject}</button><button type="button" disabled={busy} aria-busy={busy} aria-pressed={revision.status === "accepted"} className={revision.status === "accepted" ? "active primary" : "primary"} onClick={() => void decide(revision, "accepted")}>{busy ? <LoaderCircle className="spin" /> : <Check />}{copy.accept}</button></div></footer>}
+        </div></details>
       </article>;
-    })}</div>}
+    })}
+    {manual.map((item, index) => <article key={index}>
+      <details open={count === 1 || undefined}>
+        <summary className="juro-disclosure-summary review-edit-header">
+          <span><strong>{item.title}</strong>{item.clause && <small>{item.clause}</small>}</span>
+          <span className="review-edit-status">{item.wording
+            ? reviewText(locale, "Правка вручную", "Qo‘lda tahrirlash", "Manual edit")
+            : reviewText(locale, "Рекомендация", "Tavsiya", "Recommendation")}</span>
+        </summary>
+        <div className="review-edit-body">
+          {item.wording && <div className="review-edit-wording"><strong>{copy.proposedText}</strong><ReviewProse text={item.wording} locale={locale} /></div>}
+          {item.note && item.note !== item.wording && <ReviewProse text={item.note} locale={locale} />}
+        </div>
+      </details>
+    </article>)}</div>}
     {!loading && revisions.length > 0 && <div className="review-revision-apply">
       <div><strong>{copy.acceptedCount(accepted.length, selectedIds.length)}</strong><span>{copy.immutableVersion}</span></div>
       <div><button type="button" disabled={selectedIds.length === 0 || applying !== null} onClick={() => setConfirmMode("selected")}>{applying === "selected" ? <LoaderCircle className="spin" /> : <Check />}{copy.applySelected}</button><button type="button" className="primary" disabled={available.length === 0 || applying !== null} onClick={() => setConfirmMode("all")}>{applying === "all" ? <LoaderCircle className="spin" /> : <FileCheck2 />}{copy.applyAll}</button></div>
