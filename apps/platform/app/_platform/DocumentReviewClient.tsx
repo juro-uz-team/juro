@@ -383,7 +383,13 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
   risks.sort((a, b) => (rank[a.level] ?? 4) - (rank[b.level] ?? 4));
   const [view, setView] = useState("overview");
+  const [openedEdits, setOpenedEdits] = useState(false);
   const [selectedCitation, setSelectedCitation] = useState<string | null>(null);
+  function selectView(id: string) {
+    setSelectedCitation(null);
+    setView(id);
+    if (id === "edits") setOpenedEdits(true);
+  }
   function openCitation(id: string) {
     setSelectedCitation(id);
     setView("sources");
@@ -415,7 +421,7 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
   ];
   return <div className="review-findings">
     <nav className="review-views" aria-label={copy.resultAria}>
-      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => { setSelectedCitation(null); setView(id); }}>{label}</button>)}
+      {tabs.map(([id, label]) => <button key={id} type="button" aria-pressed={view === id} aria-controls="review-active-view" onClick={() => selectView(id)}>{label}</button>)}
     </nav>
     <div className="review-view-content" id="review-active-view">
     {view === "overview" && <>
@@ -486,7 +492,9 @@ function ReviewFindings({ analysis, locale, onChanged }: { analysis: Analysis; l
         <ReviewAgain analysis={analysis} locale={locale} />
       </div>}
     </section>}
-    {view === "edits" && <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} risks={risks} result={result} citations={citations} onOpenCitation={openCitation} locale={locale} onAnalysisChanged={onChanged} />}
+    {openedEdits && <div hidden={view !== "edits"}>
+      <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} risks={risks} result={result} citations={citations} onOpenCitation={openCitation} locale={locale} onAnalysisChanged={onChanged} />
+    </div>}
     </div>
   </div>;
 }
