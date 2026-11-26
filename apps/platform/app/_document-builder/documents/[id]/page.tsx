@@ -1,10 +1,11 @@
 import { resolvedDocument } from "../../../../lib/document-builder/registry/published";
 import { requireChatGPTUser } from "../../../chatgpt-auth";
-import { getDocumentByCode } from "../../../../lib/document-builder/registry";
+import { getDocumentAccess, loadStoredDocument } from "../../../../lib/document-builder/permissions";
+import { notFound } from "next/navigation";
 import { getOrCreateUserProfile } from "../../../../lib/document-builder/storage/db";
-import { requireD1 } from "../../../../lib/document-builder/storage/runtime";
 import { ConfigurableDocumentBuilder } from "../../_components/ConfigurableDocumentBuilder";
 import { BuilderHeader } from "../../_components/BuilderHeader";
+import { SharedDocumentClient } from "../../_components/SharedDocumentClient";
 import { DocumentBuilderClient } from "../../DocumentBuilderClient";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,16 @@ export default async function DocumentPage({ params, searchParams }: { params: P
   const query = await searchParams;
   const user = await requireChatGPTUser(`/document-builder/documents/${id}${query.print === "1" ? "?print=1" : ""}`);
   const profile = await getOrCreateUserProfile(user);
-  const stored = await requireD1().prepare("SELECT template_code AS templateCode,template_version AS templateVersion FROM documents WHERE id = ? AND owner_user_id = ? LIMIT 1")
-    .bind(id, profile.id).first<{ templateCode: string | null;templateVersion:string }>();
-  const configured = stored?.templateCode ? await resolvedDocument(stored.templateCode,stored.templateVersion) : undefined;
+  const access = await getDocumentAccess(id, profile.id);
+  if (!access?.canView) notFound();
+  const { templateCode, templateVersion } = access.document;
+  if (access.role === "collaborator") {
+    const shared = await loadStoredDocument(id, profile.id);
+    if (!shared) notFound();
+    const { id: documentId, title, revision, finalContent, signedFileId } = shared;
+    return <div className="dbt-root"><BuilderHeader user={user}/><SharedDocumentClient initial={{ id: documentId, title, revision, finalContent, signedFileId }}/></div>;
+  }
+  const configured = templateCode ? await resolvedDocument(templateCode, templateVersion ?? undefined) : undefined;
   if (configured) {
     return <div className="dbt-root"><BuilderHeader user={user}/><ConfigurableDocumentBuilder definition={configured} initialUser={user} signInPath="" initialDocumentId={id}/></div>;
   }

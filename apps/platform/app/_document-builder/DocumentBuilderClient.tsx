@@ -30,7 +30,9 @@ import { CollaborationPanel } from "./_components/CollaborationPanel";
 import { DocumentPreview } from "./_components/DocumentPreview";
 import { FinalSuccess, type GeneratedFile } from "./_components/FinalSuccess";
 import { ManualEditor } from "./_components/ManualEditor";
-import { apiFetch, downloadAuthenticatedFile } from "./_components/api-client";
+import { apiFetch, ApiClientError, downloadAuthenticatedFile } from "./_components/api-client";
+import { BuilderToolDialog } from "./_components/BuilderToolDialog";
+import { BuilderRevisionNotice } from "./_components/BuilderRevisionNotice";
 import { useDebouncedEffect } from "./_hooks/useDebouncedEffect";
 import { useModalFocus } from "./_hooks/useModalFocus";
 import { builderNavigationPaths } from "../../lib/platform/builder-paths";
@@ -40,8 +42,6 @@ const BuilderVersionHistory = lazy(() => import("./_components/BuilderVersionHis
   .then((module) => ({ default: module.BuilderVersionHistory })));
 const BuilderAnalysisLauncher = lazy(() => import("./_components/BuilderAnalysisLauncher")
   .then((module) => ({ default: module.BuilderAnalysisLauncher })));
-const DocumentAssetsPanel = lazy(() => import("./_components/DocumentAssetsPanel")
-  .then((module) => ({ default: module.DocumentAssetsPanel })));
 
 const GUEST_KEY = "juro-document-builder-draft-v1";
 const LEGACY_GUEST_KEY = ["juro", "document", "builder", "test", "draft"].join("-");
@@ -350,7 +350,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const [revision, setRevision] = useState(1);
   const revisionRef = useRef(1);
   const [status, setStatus] = useState("Черновик");
-  const [signedFileId, setSignedFileId] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [finalText, setFinalText] = useState("");
@@ -360,7 +359,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState("");
   const [mobilePreview, setMobilePreview] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(Boolean(initialUser));
   const [generating, setGenerating] = useState(false);
   const [files, setFiles] = useState<GenerationResult["files"] | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -379,7 +377,8 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const createPromise = useRef<Promise<string> | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const agreementWarningShown = useRef(false);
-  const skipNextAutosave = useRef(false);
+  const savedContent = useRef("");
+  const [revisionConflict, setRevisionConflict] = useState(false);
 
   const rendered = useMemo(() => renderReceipt(answers), [answers]);
   const autoText = rendered.plainText;
@@ -388,6 +387,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   const progress = calculateProgress(answers);
 
   const hydrateDocument = useCallback((stored: StoredDocument) => {
+    savedContent.current = JSON.stringify({ title: stored.title, answers: stored.answers, finalContent: stored.finalContent, manuallyEdited: stored.manuallyEdited });
     setAnswers(stored.answers);
     setTitle(stored.title);
     setFinalText(stored.finalContent);
@@ -395,18 +395,20 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
     setRevision(stored.revision);
     revisionRef.current = stored.revision;
     setStatus(stored.status);
-    setSignedFileId(stored.signedFileId);
     setAccessRole(stored.accessRole ?? "owner");
     setPhase("builder");
-    setEditorOpen(true);
+    setUndoStack([]);
+    setRedoStack([]);
   }, []);
 
-  const syncDocumentMetadata = useCallback((stored: StoredDocument) => {
-    setStatus(stored.status);
-    setSignedFileId(stored.signedFileId);
-    setRevision(stored.revision);
-    revisionRef.current = stored.revision;
-  }, []);
+  const reloadDocument = async () => {
+    await saveQueue.current.catch(() => undefined);
+    const { document } = await apiFetch<{ document: StoredDocument }>(`/api/document-builder/documents/${documentId}`, { cache: "no-store" });
+    hydrateDocument(document);
+    setRevisionConflict(false);
+    setError("");
+    setSaveState("saved");
+  };
 
   useEffect(() => {
     if (initialDocumentId && user) {
@@ -450,7 +452,6 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
           setTitle(guest.title);
           setFinalText(guest.finalText || renderReceipt(guest.answers).plainText);
           setManuallyEdited(guest.manuallyEdited);
-          setEditorOpen(true);
           setHydrated(true);
           return;
         }
@@ -502,20 +503,24 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
   }, [hydrated, user, phase, step, title, answers, finalText, autoText], 250);
 
   const persist = useCallback((id: string): Promise<void> => {
-    const snapshot = { title: title || suggestedDocumentTitle(answers), answers, autoContent: autoText, finalContent: finalText || autoText, manuallyEdited };
+    const snapshot = { title: title || suggestedDocumentTitle(answers), answers, finalContent: finalText || autoText, manuallyEdited };
+    const content = JSON.stringify(snapshot);
     const run = async () => {
+      if (content === savedContent.current) return;
       setSaveState("saving");
       try {
         const result = await apiFetch<{ revision: number; status: string }>(`/api/document-builder/documents/${id}`, {
           method: "PUT",
-          body: JSON.stringify({ ...snapshot, revision: revisionRef.current }),
+          body: JSON.stringify({ ...snapshot, autoContent: autoText, revision: revisionRef.current }),
         });
+        savedContent.current = content;
         revisionRef.current = result.revision;
         setRevision(result.revision);
         setStatus(result.status);
         setSaveState("saved");
       } catch (caught) {
         setSaveState("error");
+        setRevisionConflict(caught instanceof ApiClientError && caught.code === "REVISION_CONFLICT");
         setError(builderError(uiLocale, caught, copy.autosaveError));
         throw caught;
       }
@@ -526,8 +531,7 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
 
   useDebouncedEffect(() => {
     if (!hydrated || !user || !documentId || accessRole !== "owner" || phase !== "builder") return;
-    if (skipNextAutosave.current) { skipNextAutosave.current = false; return; }
-    void persist(documentId);
+    void persist(documentId).catch(() => undefined);
   }, [hydrated, user, documentId, accessRole, phase, title, answers, autoText, finalText, manuallyEdited], 900);
 
   useEffect(() => {
@@ -740,20 +744,33 @@ export function DocumentBuilderClient({ initialUser, signInPath, initialDocument
 
   if (phase === "success" && files) return <div className="dbt-root"><BuilderHeader user={user} signInPath={signInPath}/><div className="dbt-success-wrap">{error && <div className="dbt-global-error" role="alert">{error}</div>}<FinalSuccess files={files} libraryPath={paths.library} onDownload={(file) => void download(file)} onPrint={() => window.open(`${paths.document(documentId)}?print=1`, "_blank", "noopener,noreferrer")} onConsultation={() => setConsultationOpen(true)} locale={uiLocale}/>{consultationOpen && <div className="dbt-modal-backdrop" role="presentation" onMouseDown={closeConsultation}><section ref={consultationDialogRef} className="dbt-consultation-modal" role="dialog" aria-modal="true" aria-labelledby="consultation-title" aria-describedby="consultation-description" onMouseDown={(event) => event.stopPropagation()}><h2 id="consultation-title">{consultationCopy.title}</h2><p id="consultation-description">{consultationCopy.description}</p><button type="button" onClick={() => void requestConsultation("ai")}><Sparkles size={20}/><span><strong>{consultationCopy.aiTitle}</strong><small>{consultationCopy.aiDescription}</small></span></button><button type="button" onClick={() => void requestConsultation("lawyer")}><PenLine size={20}/><span><strong>{consultationCopy.lawyerTitle}</strong><small>{consultationCopy.lawyerDescription}</small></span></button><button type="button" className="dbt-modal-close" onClick={closeConsultation}>{consultationCopy.close}</button></section></div>}</div></div>;
 
-  if (accessRole === "collaborator") return <div className="dbt-root"><BuilderHeader user={user} signInPath={signInPath}/><div className="dbt-collaborator-page">{error && <div className="dbt-global-error" role="alert">{error}</div>}<div className="dbt-collaborator-document"><DocumentPreview document={printableReceipt(finalText, copy.document)} locale={uiLocale} mobileOpen/></div>{documentId && <CollaborationPanel documentId={documentId} accessRole="collaborator" finalText={finalText} currentUserEmail={user?.email} signedFileId={signedFileId} locale={uiLocale} onApplied={() => window.location.reload()}/>}</div></div>;
+  if (accessRole === "collaborator") return null;
 
   return <div className="dbt-root"><BuilderHeader user={user} signInPath={signInPath}/><div className="dbt-builder workspace-page">
     <WorkspaceTitle icon={<FileCheck2 />} title={copy.receiptTitle} />
     <div className="dbt-builder-top"><div><Link href={paths.builder} className="dbt-back"><ArrowLeft size={16}/>{copy.newDocument}</Link><div className="dbt-status-line"><span className={`dbt-save-state ${saveState}`}>{!user ? <><LockKeyhole size={14}/>{copy.guestMode}</> : saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "error" ? copy.saveError : <><Save size={14}/>{copy.saved}</>}</span>{documentId && <span>ID: {documentId.slice(0, 8)}</span>}<span>{copy.revision}: {revision}</span><span>{copy.status}: {localizedReceiptStatus(status, uiLocale)}</span></div></div><div className="dbt-title-edit"><label><span>{copy.documentTitle}</span><input value={title} onChange={(event) => changeTitle(event.target.value)} placeholder={suggestedDocumentTitle(answers)}/></label><small>{copy.category}</small></div></div>
     {initialConsultation && <div className="dbt-handoff-banner" role="status"><Sparkles size={18}/><span><strong>{initialConsultation.type === "ai" ? copy.aiCreated : copy.lawyerCreated}</strong><small>{copy.handoffDetail} {initialConsultation.requestId.slice(0, 8)}</small></span></div>}
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span>{!user && <button type="button" onClick={signIn}>{copy.signIn}</button>}<button type="button" aria-label={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
+    <div className="dbt-tool-strip">
+      <BuilderToolDialog icon={PenLine} label={copy.showEditor} locale={uiLocale}>
+        {() => <ManualEditor value={finalText || autoText} onChange={editFinalText} onUndo={undo} onRedo={redo} onReset={resetText} canUndo={undoStack.length > 0} canRedo={redoStack.length > 0} locked={!user} locale={uiLocale}/>}
+      </BuilderToolDialog>
+      {documentId && user && <>
+        <CollaborationPanel documentId={documentId} accessRole="owner" finalText={finalText || autoText} revision={revision} locale={uiLocale}
+          beforeChange={() => persist(documentId)} onApplied={reloadDocument}/>
+        <BuilderAiDrafts id={documentId} locale={uiLocale} apply={editFinalText}/>
+        <Suspense fallback={<span role="status">{copy.historyLoading}</span>}>
+          <BuilderVersionHistory documentId={documentId} locale={uiLocale} refreshKey={revision}
+            onPrepare={async () => { await persist(documentId); return { documentId, revision: revisionRef.current }; }}
+            onRestored={reloadDocument}/>
+        </Suspense>
+      </>}
+    </div>
+    {documentId && user && <BuilderRevisionNotice key={documentId} documentId={documentId} revision={revision} conflict={revisionConflict} locale={uiLocale} reload={reloadDocument}/>}
     <div className="dbt-progress"><div><span style={{ "--progress": progress / 100 } as CSSProperties}/></div><strong>{progress}%</strong></div>
     <nav className="dbt-steps" aria-label={copy.sections}>{builderSteps(uiLocale).map((label, index) => <button type="button" className={step === index ? "active" : index < step ? "visited" : ""} onClick={() => setStep(index)} key={label}><span>{index < step ? <Check size={15}/> : index + 1}</span><small>{label}</small></button>)}</nav>
     <button type="button" className="dbt-mobile-preview-button" onClick={() => setMobilePreview(true)}><Eye size={18}/>{copy.preview}</button>
     <div className="dbt-workspace"><div className="dbt-form-column"><BuilderQuestionnaire answers={answers} onChange={changeAnswers} step={step} profile={profile} contacts={contacts} onSaveProfile={saveProfile} onUpdateContact={updateContact} locale={uiLocale}/><div className="dbt-form-nav"><button type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}><ArrowLeft size={17}/>{copy.back}</button>{step < 4 ? <button type="button" className="primary" onClick={() => setStep(Math.min(4, step + 1))}>{copy.continue}<ArrowRight size={17}/></button> : <button type="button" className="primary" onClick={() => void generate()} disabled={generating}>{generating ? <><LoaderCircle className="spin" size={18}/>{copy.generating}</> : user ? <>{copy.createFiles}<FileCheck2 size={18}/></> : <>{copy.signInCreate}<LockKeyhole size={18}/></>}</button>}</div>{user && step === 4 && <Suspense fallback={<section className="dbt-builder-analysis" aria-busy="true"><p className="dbt-version-loading">{copy.toolsLoading}</p></section>}><BuilderAnalysisLauncher documentLocale={answers.language === "ru" ? "ru" : "uz"} uiLocale={uiLocale} reviewPath={paths.documentReview} onPrepare={async () => { const id = await createDraft(); await persist(id); return id; }}/></Suspense>}</div><DocumentPreview document={visibleReceipt} locale={uiLocale} mobileOpen={mobilePreview} onClose={() => setMobilePreview(false)}/></div>
-    <div className="dbt-editor-wrap"><div className="dbt-editor-heading"><button type="button" onClick={() => setEditorOpen(!editorOpen)}><PenLine size={17}/>{editorOpen ? copy.hideEditor : copy.showEditor}</button>{!user && <span>{copy.afterSignIn}</span>}</div>{editorOpen && <ManualEditor value={finalText || autoText} onChange={editFinalText} onUndo={undo} onRedo={redo} onReset={resetText} canUndo={undoStack.length > 0} canRedo={redoStack.length > 0} locked={!user} locale={uiLocale}/>}</div>
-    {documentId && user && <BuilderAiDrafts id={documentId} locale={uiLocale} apply={text => { editFinalText(text); setEditorOpen(true); }} />}
-    {documentId && user && <><Suspense fallback={<section className="dbt-versions" aria-busy="true"><p className="dbt-version-loading">{copy.historyLoading}</p></section>}><BuilderVersionHistory documentId={documentId} locale={uiLocale} refreshKey={revision} onPrepare={async () => { await persist(documentId); return { documentId, revision: revisionRef.current }; }} onRestored={async () => { const result = await apiFetch<{ document: StoredDocument }>(`/api/document-builder/documents/${documentId}`); skipNextAutosave.current = true; hydrateDocument(result.document); }}/></Suspense><Suspense fallback={<section className="dbt-assets" aria-busy="true"><p className="dbt-version-loading">{copy.toolsLoading}</p></section>}><DocumentAssetsPanel documentId={documentId} onDocumentChange={syncDocumentMetadata} locale={uiLocale}/></Suspense><CollaborationPanel documentId={documentId} accessRole="owner" finalText={finalText || autoText} currentUserEmail={user.email} signedFileId={signedFileId} locale={uiLocale} onApplied={() => window.location.reload()}/></>}
     {confirmationDecision && <div className="dbt-modal-backdrop" role="presentation" onMouseDown={closeConfirmation}><section ref={confirmationDialogRef} className="dbt-delete-choice dbt-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="builder-confirmation-title" aria-describedby="builder-confirmation-description" onMouseDown={(event) => event.stopPropagation()}><h2 id="builder-confirmation-title">{confirmationCopy[confirmationDecision.kind].title}</h2><p id="builder-confirmation-description">{confirmationCopy[confirmationDecision.kind].description}</p><button type="button" className="cancel" data-dialog-initial-focus onClick={closeConfirmation}>{confirmationCopy[confirmationDecision.kind].cancel}</button><button type="button" className="confirm" onClick={confirmDecision}>{confirmationCopy[confirmationDecision.kind].confirm}</button></section></div>}
   </div></div>;
 }

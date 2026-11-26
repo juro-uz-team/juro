@@ -20,9 +20,23 @@ import {
   createDocumentVersion,
 } from "../../../../../../lib/document-builder/document-versions";
 import { addDays, randomToken, sha256 } from "../../../../../../lib/document-builder/share-links/crypto";
+import { resolvedDocument } from "../../../../../../lib/document-builder/registry/published";
+import { workspaceEntitlements } from "../../../../../../lib/billing/entitlements";
+import { ACCEPTED_COLLABORATOR_JOIN_SQL } from "../../../../../../lib/document-builder/permissions/collaboration-policy";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
+
+async function canEditSharedDraft(access: NonNullable<Awaited<ReturnType<typeof getDocumentAccess>>>) {
+  const { document, workspaceId } = access;
+  if (access.participantRole !== "editor" || !hasDocumentPermission(access, "edit_all_fields")
+    || !workspaceId || document.status === "Архив" || document.status === "Подписан" || document.signedFileId) return false;
+  if (document.templateCode) {
+    const definition = await resolvedDocument(document.templateCode, document.templateVersion ?? undefined);
+    if (definition && (!definition.collaboration.enabled || !definition.collaboration.allowDirectEditing)) return false;
+  }
+  return !(await workspaceEntitlements(requireD1(), workspaceId)).readOnly;
+}
 
 async function snapshot(documentId: string): Promise<Record<string, unknown>> {
   const db = requireD1();
@@ -146,7 +160,8 @@ export async function GET(_request: Request, context: Context): Promise<Response
     const { id } = await context.params;
     const access = await getDocumentAccess(id, user.id);
     if (!access?.canView) return forbidden();
-    return jsonResponse(await snapshot(id));
+    const [details, canEditDraft] = await Promise.all([snapshot(id), canEditSharedDraft(access)]);
+    return jsonResponse({ ...details, permissions: access.permissions, canEditDraft, viewerId: user.id, revision: access.document.revision });
   } catch (error) {
     return apiError(error);
   }
@@ -165,6 +180,28 @@ export async function POST(request: Request, context: Context): Promise<Response
     const action = typeof body.action === "string" ? body.action : "";
     const db = requireD1();
     const now = isoNow();
+
+    if (action === "edit_draft") {
+      if (!(await canEditSharedDraft(access))) return forbidden();
+      const text = typeof body.text === "string" ? body.text : "";
+      if (!text.trim() || text.length > 500_000 || typeof body.revision !== "number" || !Number.isSafeInteger(body.revision) || body.revision < 1) {
+        return badRequest("Введите текст документа и укажите его версию.");
+      }
+      const [updated] = await db.batch([
+        db.prepare(`UPDATE documents SET revision=revision+1, updated_at=?,
+          status=CASE WHEN status='Согласован' THEN 'Готов' ELSE status END
+          WHERE id=? AND revision=? AND status NOT IN ('Архив','Подписан') AND signed_file_id IS NULL
+          AND EXISTS (SELECT 1 FROM document_collaborators c WHERE c.document_id=documents.id AND c.user_id=?
+            AND c.role='editor' AND ${ACCEPTED_COLLABORATOR_JOIN_SQL})`)
+          .bind(now, id, body.revision, user.id),
+        db.prepare(`UPDATE document_current_content SET final_content=?, manually_edited=1, updated_at=?
+          WHERE document_id=? AND changes()=1`).bind(text, now, id),
+        db.prepare(`INSERT INTO document_revisions (id,document_id,revision,actor_user_id,source,changes_json,created_at)
+          SELECT ?,?,CAST(? AS BIGINT),?,'collaborator_edit','{}',? WHERE changes()=1`).bind(crypto.randomUUID(), id, body.revision + 1, user.id, now),
+      ]);
+      if (!updated.meta.changes) return jsonResponse({ error: "Документ был изменён. Загрузите последнюю версию.", code: "REVISION_CONFLICT" }, { status: 409 });
+      return jsonResponse({ applied: true });
+    }
 
     if (action === "invite") {
       if (!hasDocumentPermission(access, "invite_participant")) return forbidden();
@@ -337,7 +374,10 @@ export async function POST(request: Request, context: Context): Promise<Response
       const oldText = typeof body.oldText === "string" ? body.oldText.trim() : "";
       const newText = typeof body.newText === "string" ? body.newText.trim() : "";
       if (!oldText || !newText || oldText === newText) return badRequest("Укажите различающиеся исходный и предложенный тексты.");
-      if (!document.finalContent.includes(oldText)) return badRequest("Исходный фрагмент не найден в актуальном документе.", "STALE_PROPOSAL");
+      const match = document.finalContent.indexOf(oldText);
+      if (match === -1 || match !== document.finalContent.lastIndexOf(oldText)) {
+        return badRequest("Укажите фрагмент, который встречается в актуальном документе ровно один раз.", "STALE_PROPOSAL");
+      }
       const proposalId = crypto.randomUUID();
       await db.prepare(
         "INSERT INTO document_change_proposals (id, document_id, author_user_id, old_text, new_text, anchor, owner_accepted, collaborator_accepted, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
@@ -353,6 +393,7 @@ export async function POST(request: Request, context: Context): Promise<Response
 
     if (action === "accept_proposal") {
       if (!hasDocumentPermission(access, "accept_suggestion")) return forbidden();
+      if (document.status === "Архив" || document.status === "Подписан" || document.signedFileId) return forbidden();
       const proposalId = typeof body.proposalId === "string" ? body.proposalId : "";
       const proposal = await db.prepare(
         "SELECT id, old_text AS oldText, new_text AS newText, owner_accepted AS ownerAccepted, collaborator_accepted AS collaboratorAccepted, status FROM document_change_proposals WHERE id = ? AND document_id = ? LIMIT 1",
@@ -363,8 +404,11 @@ export async function POST(request: Request, context: Context): Promise<Response
       if (ownerAccepted && collaboratorAccepted) {
         if (!access.workspaceId) return forbidden();
         const current = await db.prepare("SELECT final_content AS finalContent FROM document_current_content WHERE document_id = ?").bind(id).first<{ finalContent: string }>();
-        if (!current?.finalContent.includes(proposal.oldText)) return jsonResponse({ error: "Документ уже изменён; предложение устарело.", code: "STALE_PROPOSAL" }, { status: 409 });
-        const nextText = current.finalContent.replace(proposal.oldText, proposal.newText);
+        const match = current?.finalContent.indexOf(proposal.oldText) ?? -1;
+        if (!current || match === -1 || match !== current.finalContent.lastIndexOf(proposal.oldText)) {
+          return jsonResponse({ error: "Документ уже изменён; предложение устарело.", code: "STALE_PROPOSAL" }, { status: 409 });
+        }
+        const nextText = current.finalContent.replace(proposal.oldText, () => proposal.newText);
         await applyProjectedDocumentContentVersion({
           db,
           bucket: requireR2(),

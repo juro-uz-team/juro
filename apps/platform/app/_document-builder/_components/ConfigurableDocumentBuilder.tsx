@@ -8,7 +8,7 @@ import { Select } from "../../_components/Select";
 /* eslint-disable react-hooks/set-state-in-effect -- drafts and saved documents intentionally hydrate after mount */
 
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, Download, Eye, FileCheck2, LoaderCircle, Info, LockKeyhole, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, Eye, FileCheck2, LoaderCircle, Info, LockKeyhole, PenLine, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { DocumentDefinition, QuestionnaireAnswers, QuestionnaireField, AnswerScalar } from "../../../lib/document-builder/registry";
@@ -20,9 +20,11 @@ import { useOptionalPlatformWorkspaceId } from "../../_platform/PlatformRouteCon
 import { DocumentPreview } from "./DocumentPreview";
 import { BuilderAnalysisLauncher } from "./BuilderAnalysisLauncher";
 import { BuilderVersionHistory } from "./BuilderVersionHistory";
+import { BuilderToolDialog } from "./BuilderToolDialog";
+import { BuilderRevisionNotice } from "./BuilderRevisionNotice";
 import { CollaborationPanel } from "./CollaborationPanel";
 import type { BuilderUser } from "./BuilderHeader";
-import { apiFetch, downloadAuthenticatedFile } from "./api-client";
+import { apiFetch, ApiClientError, downloadAuthenticatedFile } from "./api-client";
 import { useDebouncedEffect } from "../_hooks/useDebouncedEffect";
 import { builderError, builderUiLocale, defaultBuilderDocumentLanguage } from "../builder-localization";
 
@@ -118,6 +120,8 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const [title, setTitle] = useState("");
   const [documentId, setDocumentId] = useState(initialDocumentId ?? "");
   const revisionRef = useRef(1);
+  const [revision, setRevision] = useState(1);
+  const [revisionConflict, setRevisionConflict] = useState(false);
   const [finalText, setFinalText] = useState("");
   const [manuallyEdited, setManuallyEdited] = useState(false);
   const [mobilePreview, setMobilePreview] = useState(false);
@@ -129,16 +133,27 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
   const [hydrated, setHydrated] = useState(false);
   const createPromise = useRef<Promise<string> | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
-  const skipNextAutosave = useRef(false);
+  const savedContent = useRef("");
   const rendered = useMemo(() => renderConfiguredDocument(definition, answers, language), [definition, answers, language]);
   const visibleDocument = useMemo(() => manuallyEdited ? { ...rendered, paragraphs: finalText.split(/\n{2,}/).map((text, index) => ({ id: `manual-${index}`, kind: index === 0 ? "title" as const : "body" as const, text })), plainText: finalText } : rendered, [rendered, manuallyEdited, finalText]);
   const progress = calculateQuestionnaireProgress(definition, answers);
   const currentStep = definition.questionnaire[step];
 
   const hydrate = useCallback((stored: GenericStoredDocument) => {
-    setLanguage(stored.language === "uz" ? "uz" : "ru"); setAnswers(stored.answers); setTitle(stored.title); setFinalText(stored.finalContent);
-    setManuallyEdited(stored.manuallyEdited); setDocumentId(stored.id); revisionRef.current = stored.revision; setPhase("builder");
+    const language = stored.language === "uz" ? "uz" : "ru";
+    savedContent.current = JSON.stringify({ language, title: stored.title, answers: stored.answers, finalContent: stored.finalContent, manuallyEdited: stored.manuallyEdited });
+    setLanguage(language); setAnswers(stored.answers); setTitle(stored.title); setFinalText(stored.finalContent);
+    setManuallyEdited(stored.manuallyEdited); setDocumentId(stored.id); revisionRef.current = stored.revision; setRevision(stored.revision); setPhase("builder");
   }, []);
+
+  const reloadDocument = async () => {
+    await saveQueue.current.catch(() => undefined);
+    const { document } = await apiFetch<{ document: GenericStoredDocument }>(`/api/document-builder/configured-documents/${documentId}`, { cache: "no-store" });
+    hydrate(document);
+    setRevisionConflict(false);
+    setError("");
+    setSaveState("saved");
+  };
 
   useEffect(() => {
     if (initialDocumentId && initialUser) {
@@ -178,13 +193,18 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
 
   const save = useCallback((targetDocumentId = documentId): Promise<void> => {
     if (!initialUser || !targetDocumentId || !hydrated) return Promise.resolve();
+    const snapshot = { language, title, answers, finalContent: finalText, manuallyEdited };
+    const content = JSON.stringify(snapshot);
     const run = async () => {
+      if (content === savedContent.current) return;
       setSaveState("saving");
       try {
-        const result = await apiFetch<{ revision: number }>(`/api/document-builder/configured-documents/${targetDocumentId}`, { method: "PUT", body: JSON.stringify({ language, title, answers, autoContent: rendered.plainText, finalContent: finalText, manuallyEdited, revision: revisionRef.current }) });
-        revisionRef.current = result.revision; setSaveState("saved");
+        const result = await apiFetch<{ revision: number }>(`/api/document-builder/configured-documents/${targetDocumentId}`, { method: "PUT", body: JSON.stringify({ ...snapshot, autoContent: rendered.plainText, revision: revisionRef.current }) });
+        savedContent.current = content;
+        revisionRef.current = result.revision; setRevision(result.revision); setSaveState("saved");
       } catch (caught) {
         setSaveState("error");
+        setRevisionConflict(caught instanceof ApiClientError && caught.code === "REVISION_CONFLICT");
         setError(builderError(uiLocale, caught, copy.saveError));
         throw caught;
       }
@@ -192,7 +212,7 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
     saveQueue.current = saveQueue.current.catch(() => undefined).then(run);
     return saveQueue.current;
   }, [answers, copy.saveError, documentId, finalText, hydrated, initialUser, language, manuallyEdited, rendered.plainText, title, uiLocale]);
-  useDebouncedEffect(() => { if (skipNextAutosave.current) { skipNextAutosave.current = false; return; } void save().catch(() => undefined); }, [answers, language, title, finalText, manuallyEdited, documentId], 700);
+  useDebouncedEffect(() => { void save().catch(() => undefined); }, [answers, language, title, finalText, manuallyEdited, documentId], 700);
 
   const start = async () => { setPhase("builder"); if (initialUser) { try { await ensureDocument(); } catch (caught) { setError(builderError(uiLocale, caught, copy.draftError)); } } };
   const update = (field: QuestionnaireField, value: unknown) => { setAnswers((current) => setAnswer(current, field.id, value as never)); setErrors((current) => { const next = { ...current }; delete next[field.id]; return next; }); };
@@ -221,6 +241,24 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
 
   return <div className="dbt-config-builder workspace-page"><WorkspaceTitle icon={<FileCheck2 />} title={language === "uz" ? definition.titleUz : definition.titleRu} /><header className="dbt-config-builder-head"><div><Link href={paths.category(definition.categorySlug)}><ArrowLeft size={16}/>{copy.category}</Link><span>№ {definition.code}</span><span className={`dbt-save-indicator ${saveState}`}>{saveState === "saving" ? <><LoaderCircle size={14}/>{copy.saving}</> : saveState === "saved" ? <><Save size={14}/>{copy.saved}</> : !initialUser ? copy.temporary : ""}</span></div>{languageControl}<div className="dbt-config-progress"><span style={{ "--progress": progress / 100 } as React.CSSProperties}/><b>{progress}%</b></div></header>
     {error && <div className="dbt-global-error" role="alert"><span>{error}</span><button type="button" aria-label={copy.closeMessage} title={copy.closeMessage} onClick={() => setError("")}>×</button></div>}
+    {initialUser && <div className="dbt-tool-strip">
+      <BuilderToolDialog icon={PenLine} label={copy.editText} locale={uiLocale}>
+        {() => <div className="dbt-tool-form">
+          <p>{copy.editTextDescription}</p>
+          <label className="dbt-field"><span className="sr-only">{copy.editText}</span><textarea rows={16} value={finalText} onChange={event => { setFinalText(event.target.value); setManuallyEdited(true); }}/></label>
+          <button type="button" className="dbt-tool-button" onClick={() => { setFinalText(rendered.plainText); setManuallyEdited(false); }}><RotateCcw size={16}/>{copy.restoreText}</button>
+        </div>}
+      </BuilderToolDialog>
+      {documentId && <>
+        {definition.collaboration.enabled && <CollaborationPanel documentId={documentId} accessRole="owner" finalText={visibleDocument.plainText} revision={revision} locale={uiLocale}
+          beforeChange={() => save(documentId)} onApplied={reloadDocument}/>}
+        <BuilderAiDrafts id={documentId} locale={uiLocale} apply={text => { setFinalText(text); setManuallyEdited(true); }}/>
+        <BuilderVersionHistory documentId={documentId} locale={uiLocale}
+          onPrepare={async () => { await save(documentId); return { documentId, revision: revisionRef.current }; }}
+          onRestored={reloadDocument}/>
+      </>}
+    </div>}
+    {documentId && initialUser && <BuilderRevisionNotice key={documentId} documentId={documentId} revision={revision} conflict={revisionConflict} locale={uiLocale} reload={reloadDocument}/>}
     <nav className="dbt-config-steps" aria-label={copy.sections}>{definition.questionnaire.map((item, index) => <button type="button" className={index === step ? "active" : index < step ? "done" : ""} onClick={() => setStep(index)} key={item.id}><span>{index < step ? <Check size={14}/> : index + 1}</span>{localize(item.title, language)}</button>)}</nav>
     <div className="dbt-config-layout"><section className="dbt-config-form"><div className="dbt-config-step-title"><span>{copy.step(step + 1, definition.questionnaire.length)}</span><h2>{localize(currentStep.title, language)}</h2>{currentStep.description && <p>{localize(currentStep.description, language)}</p>}</div><div className="dbt-config-fields">{currentStep.fields.filter((field) => conditionMatches(field.condition, answers)).map((field) => <div key={field.id} className={field.type === "company-name" ? "dbt-company-field" : "dbt-config-field-slot"}>
         <FieldControl field={field} language={language} uiLocale={uiLocale} value={answers[field.id]} error={errors[field.id] ?? ""} onChange={value => update(field, value)} />
@@ -229,8 +267,6 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
           {({ ru: "Подставить название компании", uz: "Kompaniya nomini qo‘yish", en: "Use company name" })[uiLocale]} · {company.name}
         </button>}
       </div>)}</div>
-      {initialUser && <details className="dbt-config-editor"><summary className="juro-disclosure-summary">{copy.editText}</summary><p>{copy.editTextDescription}</p><textarea rows={18} value={finalText} onChange={(event) => { setFinalText(event.target.value); setManuallyEdited(true); }}/><button type="button" onClick={() => { setFinalText(rendered.plainText); setManuallyEdited(false); }}><RotateCcw size={16}/>{copy.restoreText}</button></details>}
-      {documentId && initialUser && <BuilderAiDrafts id={documentId} locale={uiLocale} apply={text => { setFinalText(text); setManuallyEdited(true); }} />}
       {!initialUser && <div className="dbt-privacy-note"><LockKeyhole size={18}/><p>{copy.privacy}</p></div>}
       <div className="dbt-config-navigation"><button type="button" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}><ArrowLeft size={17}/>{copy.back}</button>{step < definition.questionnaire.length - 1 ? <button type="button" className="primary" onClick={goNext}>{copy.continue}<ArrowRight size={17}/></button> : <button type="button" className="primary" disabled={generating} onClick={() => void generate()}>{generating ? <LoaderCircle size={17}/> : <FileCheck2 size={17}/>} {initialUser ? copy.createFiles : copy.signInCreate}</button>}</div>
       {initialUser && step === definition.questionnaire.length - 1 && <BuilderAnalysisLauncher
@@ -243,5 +279,5 @@ export function ConfigurableDocumentBuilder({ definition, initialUser, signInPat
           return id;
         }}
       />}
-    </section><DocumentPreview document={visibleDocument} locale={uiLocale}/></div>{documentId && initialUser && <><BuilderVersionHistory documentId={documentId} locale={uiLocale} onPrepare={async () => { await save(documentId); return { documentId, revision: revisionRef.current }; }} onRestored={async () => { const result = await apiFetch<{ document: GenericStoredDocument }>(`/api/document-builder/configured-documents/${documentId}`); skipNextAutosave.current = true; hydrate(result.document); }}/>{definition.collaboration.enabled && <CollaborationPanel documentId={documentId} accessRole="owner" finalText={visibleDocument.plainText} currentUserEmail={initialUser.email} locale={uiLocale} onApplied={() => window.location.reload()}/>}</>}<button type="button" className="dbt-mobile-preview-button" onClick={() => setMobilePreview(true)}><Eye size={18}/>{copy.preview}</button>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
+    </section><DocumentPreview document={visibleDocument} locale={uiLocale}/></div><button type="button" className="dbt-mobile-preview-button" onClick={() => setMobilePreview(true)}><Eye size={18}/>{copy.preview}</button>{mobilePreview && <DocumentPreview document={visibleDocument} locale={uiLocale} mobileOpen onClose={() => setMobilePreview(false)}/>}</div>;
 }

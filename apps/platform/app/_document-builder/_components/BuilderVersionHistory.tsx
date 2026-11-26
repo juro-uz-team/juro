@@ -9,6 +9,7 @@ import { formatPlatformDateTime } from "../../../lib/platform/date-time";
 import type { PlatformLocale } from "../../../lib/platform/routing";
 import { builderError } from "../builder-localization";
 import { apiFetch } from "./api-client";
+import { BuilderToolDialog } from "./BuilderToolDialog";
 
 type Version = { id: string; version: number; documentRevision: number; source: string; status: "pending" | "ready"; attemptCount: number; lastErrorCode: string | null; sizeBytes: number; sha256: string; createdAt: string };
 
@@ -24,19 +25,27 @@ const versionCopy = {
   en: { title: "Version history", description: "Save an important state as an immutable snapshot and restore it when needed.", save: "Save version", empty: "No saved versions yet.", restore: "Restore", confirm: "Restore the text and answers from this version? The current state will remain in the revision log.", confirmTitle: "Restore version", cancel: "Cancel", confirmAction: "Restore", saved: "Version saved securely.", restored: "Version restored.", pending: "Saving", loadError: "We could not load version history.", saveError: "We could not save this version.", restoreError: "We could not restore this version." },
 } as const;
 
-export function BuilderVersionHistory({
-  documentId,
-  locale,
-  refreshKey,
-  onPrepare,
-  onRestored,
-}: {
+type HistoryProps = {
   documentId: string;
   locale: PlatformLocale;
   refreshKey?: number;
   onPrepare: () => Promise<{ documentId: string; revision: number }>;
   onRestored: () => Promise<void>;
-}) {
+};
+
+export function BuilderVersionHistory(props: HistoryProps) {
+  return <BuilderToolDialog icon={History} locale={props.locale} label={versionCopy[props.locale].title}>
+    {() => <VersionHistoryContent {...props} />}
+  </BuilderToolDialog>;
+}
+
+function VersionHistoryContent({
+  documentId,
+  locale,
+  refreshKey,
+  onPrepare,
+  onRestored,
+}: HistoryProps) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,8 +102,8 @@ export function BuilderVersionHistory({
     }
   };
 
-  return <section className="dbt-versions" aria-labelledby={`builder-versions-${documentId}`}>
-    <header><History size={20}/><div><h2 id={`builder-versions-${documentId}`}>{copy.title}</h2><p>{copy.description}</p></div><button type="button" onClick={() => void saveVersion()} disabled={Boolean(busy)}>{busy === "save" ? <LoaderCircle className="spin" size={16}/> : <Save size={16}/>}<span>{copy.save}</span></button></header>
+  return <section className="dbt-versions">
+    <header><p>{copy.description}</p><button type="button" onClick={() => void saveVersion()} disabled={Boolean(busy)}>{busy === "save" ? <LoaderCircle className="spin" size={16}/> : <Save size={16}/>}<span>{copy.save}</span></button></header>
     <div className="dbt-version-status" aria-live="polite">{message && <span className="success"><Check size={15}/>{message}</span>}{error && <span className="error" role="alert">{error}</span>}</div>
     {loading ? <div className="dbt-version-loading"><LoaderCircle className="spin" size={18}/></div> : versions.length === 0 ? <p className="dbt-version-empty">{copy.empty}</p> : <ol className="dbt-version-list">{versions.map((version) => <li key={version.id}><div><strong>v{version.version}</strong><span>{sourceLabels[locale][version.source] ?? version.source.replaceAll("_", " ")}</span><small><Clock3 size={13}/>{formatPlatformDateTime(version.createdAt, locale)} · r{version.documentRevision}</small></div>{version.status === "ready" ? <button type="button" onClick={() => setRestoreCandidate(version)} disabled={Boolean(busy)}>{busy === version.id ? <LoaderCircle className="spin" size={15}/> : <RotateCcw size={15}/>} {copy.restore}</button> : <span className="pending"><LoaderCircle className="spin" size={14}/>{copy.pending}</span>}</li>)}</ol>}
     {restoreCandidate && <dialog ref={restoreDialogRef} className="dbt-version-confirm-dialog" aria-labelledby={`restore-version-title-${restoreCandidate.id}`} onCancel={(event) => { event.preventDefault(); restoreDialogRef.current?.close(); setRestoreCandidate(null); }} onClose={() => setRestoreCandidate(null)}><h3 id={`restore-version-title-${restoreCandidate.id}`}>{copy.confirmTitle}</h3><p>{copy.confirm}</p><div><button type="button" onClick={() => { restoreDialogRef.current?.close(); setRestoreCandidate(null); }}>{copy.cancel}</button><button type="button" className="primary" onClick={() => { const selected = restoreCandidate; restoreDialogRef.current?.close(); setRestoreCandidate(null); void restore(selected); }}>{copy.confirmAction}</button></div></dialog>}

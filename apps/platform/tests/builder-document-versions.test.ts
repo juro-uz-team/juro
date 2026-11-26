@@ -193,7 +193,7 @@ test("Builder version routes and RU/UZ UI retain owner, CSRF and recovery contra
   assert.match(component, /onCancel=/);
   assert.doesNotMatch(component, /window\.confirm/);
   assert.match(configured, /saveQueue/);
-  assert.match(configured, /skipNextAutosave/);
+  assert.match(configured, /if \(content === savedContent\.current\) return/);
   assert.ok(statusRoute.indexOf('source: "approval"') < statusRoute.indexOf("SET status = 'Согласован'"));
   assert.ok(statusRoute.indexOf('source: "signature"') < statusRoute.indexOf("SET status = 'Подписан'"));
   for (const route of [receiptGenerate, configuredGenerate]) {

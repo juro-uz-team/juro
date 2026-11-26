@@ -57,13 +57,14 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     const nextStatus = current.status === "Согласован" ? "Готов" : current.status;
     const primary = firstText(parsed.data.answers, ["claimant.fullName", "employee.fullName", "creditor.fullName"]);
     const secondary = firstText(parsed.data.answers, ["respondent.fullName", "employer.name", "debtor.fullName"]);
-    await requireD1().batch([
-      requireD1().prepare("UPDATE documents SET title = ?, language = ?, lender_name = ?, borrower_name = ?, status = ?, revision = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?")
-        .bind(parsed.data.title, parsed.data.language, primary, secondary, nextStatus, nextRevision, now, id, user.id),
-      requireD1().prepare("UPDATE document_answers SET answers_json = ?, updated_at = ? WHERE document_id = ?").bind(JSON.stringify(parsed.data.answers), now, id),
-      requireD1().prepare("UPDATE document_current_content SET auto_content = ?, final_content = ?, manually_edited = ?, updated_at = ? WHERE document_id = ?")
+    const [updated] = await requireD1().batch([
+      requireD1().prepare("UPDATE documents SET title = ?, language = ?, lender_name = ?, borrower_name = ?, status = ?, revision = ?, updated_at = ? WHERE id = ? AND owner_user_id = ? AND revision = ?")
+        .bind(parsed.data.title, parsed.data.language, primary, secondary, nextStatus, nextRevision, now, id, user.id, current.revision),
+      requireD1().prepare("UPDATE document_answers SET answers_json = ?, updated_at = ? WHERE document_id = ? AND changes() = 1").bind(JSON.stringify(parsed.data.answers), now, id),
+      requireD1().prepare("UPDATE document_current_content SET auto_content = ?, final_content = ?, manually_edited = ?, updated_at = ? WHERE document_id = ? AND changes() = 1")
         .bind(rendered.plainText, parsed.data.finalContent, parsed.data.manuallyEdited ? 1 : 0, now, id),
     ]);
+    if (!updated.meta.changes) return jsonResponse({ error: "Документ был изменён. Загрузите последнюю версию.", code: "REVISION_CONFLICT" }, { status: 409 });
     return jsonResponse({ saved: true, revision: nextRevision, status: nextStatus, updatedAt: now, autoContent: rendered.plainText });
   } catch (error) {
     return apiError(error);

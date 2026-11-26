@@ -2,7 +2,9 @@ import { assertSafeWrite, requireApiUser } from "../../../../../lib/document-bui
 import { apiError, badRequest, forbidden, jsonResponse, notFound } from "../../../../../lib/document-builder/auth/responses";
 import { addActivity, addNotification, isoNow } from "../../../../../lib/document-builder/storage/db";
 import { requireR2 } from "../../../../../lib/document-builder/storage/runtime";
-import { loadStoredDocument, requireOwner } from "../../../../../lib/document-builder/permissions";
+import { getDocumentAccess, loadStoredDocument, requireOwner } from "../../../../../lib/document-builder/permissions";
+import { ACCEPTED_COLLABORATOR_JOIN_SQL } from "../../../../../lib/document-builder/permissions/collaboration-policy";
+import { workspaceForContentEditor } from "../../../../../lib/platform/workspace";
 import { requireD1 } from "../../../../../lib/document-builder/storage/runtime";
 import { saveDocumentSchema } from "../../../../../lib/document-builder/validation/schema";
 import { createDocumentVersion } from "../../../../../lib/document-builder/document-versions";
@@ -11,10 +13,14 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, context: Context): Promise<Response> {
+export async function GET(request: Request, context: Context): Promise<Response> {
   try {
     const user = await requireApiUser();
     const { id } = await context.params;
+    if (new URL(request.url).searchParams.has("revisionOnly")) {
+      const access = await getDocumentAccess(id, user.id);
+      return access?.canView ? jsonResponse({ revision: access.document.revision }) : notFound();
+    }
     const document = await loadStoredDocument(id, user.id);
     if (!document) return notFound();
     const db = requireD1();
@@ -24,11 +30,14 @@ export async function GET(_request: Request, context: Context): Promise<Response
       ).bind(id, user.id).first<{ id: string; openedAt: string | null }>();
       if (collaboration && !collaboration.openedAt) {
         const now = isoNow();
-        await db.prepare("UPDATE document_collaborators SET opened_at = ?, status = 'opened', updated_at = ? WHERE id = ?")
+        const opened = await db.prepare(`UPDATE document_collaborators AS c SET opened_at = ?, status = 'opened', updated_at = ?
+          WHERE id = ? AND opened_at IS NULL AND ${ACCEPTED_COLLABORATOR_JOIN_SQL}`)
           .bind(now, now, collaboration.id).run();
-        await addActivity(id, user.id, "invitation_opened");
-        await addActivity(id, user.id, "document_viewed");
-        await addNotification(document.ownerUserId, id, "invitation_opened", "Приглашение открыто", `${user.fullName || user.email} открыл(а) документ.`);
+        if (opened.meta.changes) {
+          await addActivity(id, user.id, "invitation_opened");
+          await addActivity(id, user.id, "document_viewed");
+          await addNotification(document.ownerUserId, id, "invitation_opened", "Приглашение открыто", `${user.fullName || user.email} открыл(а) документ.`);
+        }
       }
     }
     const files = document.accessRole === "owner"
@@ -57,6 +66,7 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     const access = await requireOwner(id, user.id);
     if (!access) return forbidden();
     if (access.document.status === "Архив") return badRequest("Сначала восстановите документ из архива.", "ARCHIVED");
+    if (access.workspaceId) await workspaceForContentEditor(user, access.workspaceId);
     const parsed = saveDocumentSchema.safeParse(await request.json());
     if (!parsed.success) return badRequest("Не удалось проверить данные документа.", "INVALID_DOCUMENT");
     const db = requireD1();
@@ -66,18 +76,19 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     const now = isoNow();
     const nextRevision = access.document.revision + 1;
     const nextStatus = access.document.status === "Согласован" ? "Готов" : access.document.status;
-    await db.batch([
+    const [updated] = await db.batch([
       db.prepare(
-        "UPDATE documents SET title = ?, language = ?, participant_mode = ?, acting_side = ?, lender_name = ?, borrower_name = ?, status = ?, revision = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
-      ).bind(parsed.data.title, parsed.data.answers.language, parsed.data.answers.participantMode, parsed.data.answers.actingSide, parsed.data.answers.lender.fullName || null, parsed.data.answers.borrower.fullName || null, nextStatus, nextRevision, now, id, user.id),
-      db.prepare("UPDATE document_answers SET answers_json = ?, updated_at = ? WHERE document_id = ?")
+        "UPDATE documents SET title = ?, language = ?, participant_mode = ?, acting_side = ?, lender_name = ?, borrower_name = ?, status = ?, revision = ?, updated_at = ? WHERE id = ? AND owner_user_id = ? AND revision = ?",
+      ).bind(parsed.data.title, parsed.data.answers.language, parsed.data.answers.participantMode, parsed.data.answers.actingSide, parsed.data.answers.lender.fullName || null, parsed.data.answers.borrower.fullName || null, nextStatus, nextRevision, now, id, user.id, access.document.revision),
+      db.prepare("UPDATE document_answers SET answers_json = ?, updated_at = ? WHERE document_id = ? AND changes() = 1")
         .bind(JSON.stringify(parsed.data.answers), now, id),
-      db.prepare("UPDATE document_current_content SET auto_content = ?, final_content = ?, manually_edited = ?, updated_at = ? WHERE document_id = ?")
+      db.prepare("UPDATE document_current_content SET auto_content = ?, final_content = ?, manually_edited = ?, updated_at = ? WHERE document_id = ? AND changes() = 1")
         .bind(parsed.data.autoContent, parsed.data.finalContent, parsed.data.manuallyEdited ? 1 : 0, now, id),
       ...(access.document.status === "Согласован"
-        ? [db.prepare("UPDATE document_collaborators SET confirmed_at = NULL, status = 'opened', updated_at = ? WHERE document_id = ?").bind(now, id)]
+        ? [db.prepare("UPDATE document_collaborators SET confirmed_at = NULL, status = 'opened', updated_at = ? WHERE document_id = ? AND status = 'confirmed' AND changes() = 1").bind(now, id)]
         : []),
     ]);
+    if (!updated.meta.changes) return jsonResponse({ error: "Документ был изменён. Загрузите последнюю версию.", code: "REVISION_CONFLICT" }, { status: 409 });
     return jsonResponse({ saved: true, revision: nextRevision, status: nextStatus, updatedAt: now });
   } catch (error) {
     return apiError(error);
