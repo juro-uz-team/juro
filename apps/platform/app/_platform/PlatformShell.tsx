@@ -119,7 +119,7 @@ const documentNav = [
   ["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"],
   ["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"],
   [
-    "document-review?mode=compare",
+    "documents/comparisons",
     Files,
     "Сравнить версии",
     "Versiyalarni solishtirish",
@@ -240,23 +240,14 @@ export function PlatformShell({
     const href = `${base}/${route}`;
     const matchesRoute = pathname === href || pathname.startsWith(`${href}/`);
     if (!matchesRoute) return false;
-    if (!query) return route !== "document-review" || searchParams.get("mode") !== "compare";
+    if (!query) return route !== "documents" || !pathname.startsWith(`${href}/comparisons`);
     const expectedParams = new URLSearchParams(query);
     return Array.from(expectedParams.entries()).every(
       ([key, value]) => searchParams.get(key) === value,
     );
   };
-  const documentRouteIsActive = (slug: string) => {
-    if (slug !== "documents") return routeIsActive(slug);
-    const href = `${base}/${slug}`;
-    return (
-      pathname === href ||
-      (pathname.startsWith(`${href}/`) &&
-        !pathname.startsWith(`${href}/comparisons`))
-    );
-  };
   const moreHasActiveRoute = !primaryItems.some(([slug]) => routeIsActive(slug)) && toolGroups.some((group) =>
-    group.items.some(([slug]) => documentRouteIsActive(slug)),
+    group.items.some(([slug]) => routeIsActive(slug)),
   );
   useEffect(() => {
     setCollapsed(localStorage.getItem("juro-sidebar-collapsed") === "1");
@@ -554,7 +545,7 @@ export function PlatformShell({
             onClick={closeMobileMenu}
           />
         )}
-        {moreOpen && <WorkspaceTools locale={locale} base={base} groups={toolGroups} isActive={documentRouteIsActive} onClose={() => {
+        {moreOpen && <WorkspaceTools locale={locale} base={base} groups={toolGroups} isActive={routeIsActive} onClose={() => {
           setMoreOpen(false);
           if (mobile) window.requestAnimationFrame(() => openButtonRef.current?.focus());
         }} />}

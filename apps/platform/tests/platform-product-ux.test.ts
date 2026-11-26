@@ -119,11 +119,9 @@ test("dashboard changes composition before the hero controls are squeezed", asyn
   assert.match(styles, /\.dashboard-quick-grid\s*\{[^}]*grid-template-columns:\s*1fr;/);
 });
 
-test("document review mode tabs remain usable at the narrowest supported width", async () => {
-  const styles = await source("../app/_platform/document-comparison.css");
-  assert.match(styles, /@media\(max-width:620px\)[\s\S]*?\.review-mode-tabs button\{min-width:0;flex:1;/);
-  assert.match(styles, /white-space:normal/);
-  assert.match(styles, /\.review-mode-tabs button svg\{flex:none\}/);
+test("document checks expose a single-column intake on narrow screens", async () => {
+  const styles = await source("../app/_platform/document-review.css");
+  assert.match(styles, /@media \(max-width: 760px\)\s*\{\s*\.review-intake-body \{ grid-template-columns: 1fr/);
 });
 
 test("document workspace search fields expose localized accessible names", async () => {

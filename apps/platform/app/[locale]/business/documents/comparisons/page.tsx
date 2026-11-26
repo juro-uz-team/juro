@@ -6,11 +6,12 @@ import { isLocale } from "../../../../../lib/platform/routing";
 export const dynamic = "force-dynamic";
 
 export default async function LegacyBusinessComparisonEntry({
-  params,
+  params, searchParams,
 }: {
+  searchParams: Promise<{ first?: string; second?: string }>;
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-  return redirectLegacyBusinessRoute(locale, ["document-review"], { mode: "compare" });
+  return redirectLegacyBusinessRoute(locale, ["documents", "comparisons"], await searchParams);
 }

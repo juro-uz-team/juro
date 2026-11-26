@@ -12,7 +12,7 @@ const destinations = new Map([
   ["ai-chat", "ai-chat"],
   ["document-analysis", "document-review"],
   ["document-builder", "document-builder"],
-  ["document-comparison", "document-review?mode=compare"],
+  ["document-comparison", "documents/comparisons"],
   ["action-plan", "action-plan"],
   ["cases", "cases"],
   ["lawyers", "lawyers"],

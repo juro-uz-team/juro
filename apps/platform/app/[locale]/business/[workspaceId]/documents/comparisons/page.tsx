@@ -1,4 +1,6 @@
-import { notFound, redirect } from "next/navigation";
+import { DocumentComparisonClient } from "../../../../../_platform/DocumentComparisonClient";
+import { requireChatGPTUser } from "../../../../../chatgpt-auth";
+import { notFound } from "next/navigation";
 
 import { isLocale, isWorkspaceId, platformBasePath } from "../../../../../../lib/platform/routing";
 
@@ -11,5 +13,6 @@ export default async function BusinessComparisonEntry({
 }) {
   const { locale, workspaceId } = await params;
   if (!isLocale(locale) || !isWorkspaceId(workspaceId)) notFound();
-  redirect(`${platformBasePath(locale, "business", workspaceId)}/document-review?mode=compare`);
+  await requireChatGPTUser(`${platformBasePath(locale, "business", workspaceId)}/documents/comparisons`);
+  return <DocumentComparisonClient locale={locale} />;
 }

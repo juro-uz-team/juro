@@ -304,7 +304,7 @@ export function ComparisonResultClient({
       setError(body.error || copy.deleteError);
       return;
     }
-    router.replace(`${base}/document-review?mode=compare`);
+    router.replace(`${base}/documents/comparisons`);
   }
 
   async function saveToCase() {
@@ -440,7 +440,7 @@ export function ComparisonResultClient({
       <div className="comparison-result-state error" role="alert">
         <ShieldAlert />
         <h1>{error || copy.unavailableTitle}</h1>
-        <div><button type="button" onClick={() => void load()}><RefreshCcw />{copy.retry}</button><Link href={`${base}/document-review?mode=compare`}><ArrowLeft />{copy.back}</Link></div>
+        <div><button type="button" onClick={() => void load()}><RefreshCcw />{copy.retry}</button><Link href={`${base}/documents/comparisons`}><ArrowLeft />{copy.back}</Link></div>
       </div>
     );
   }
@@ -449,7 +449,7 @@ export function ComparisonResultClient({
   if (!complete) {
     return (
       <div className="comparison-result-shell">
-        <Link className="comparison-result-back" href={`${base}/document-review?mode=compare`}><ArrowLeft />{copy.back}</Link>
+        <Link className="comparison-result-back" href={`${base}/documents/comparisons`}><ArrowLeft />{copy.back}</Link>
         <section className="comparison-result-state" aria-live="polite">
           {detail.status === "failed" ? <AlertTriangle /> : <LoaderCircle className="spin" />}
           <h1>{detail.status === "failed" ? (error || errorLabel(detail.errorCode, locale)) : copy.processing}</h1>
@@ -472,7 +472,7 @@ export function ComparisonResultClient({
       <WorkspaceTitle icon={<FileDiff />}
         title={<>{detail.versionOneName} <span aria-hidden="true">→</span> {detail.versionTwoName}</>}
         description={<>{copy.generated} · {formatDate(summary.generatedAt, locale)} · {detail.status === "completed_partial" ? copy.partial : `${summary.totalChanges} ${copy.metrics.changes}`}</>}
-        actions={<Link className="comparison-result-back" href={`${base}/document-review?mode=compare`}><ArrowLeft aria-hidden="true" />{copy.back}</Link>} />
+        actions={<Link className="comparison-result-back" href={`${base}/documents/comparisons`}><ArrowLeft aria-hidden="true" />{copy.back}</Link>} />
       <div className="comparison-result-hero">
         <div className="comparison-result-actions">
           {(["pdf", "docx"] as const).map((format) => {

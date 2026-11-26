@@ -6,15 +6,18 @@ import { Select } from "../_components/Select";
 
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated analysis data is hydrated after the first browser render */
 
-import { AlertTriangle, Check, CheckCircle2, CircleAlert, Download, Eye, FileCheck2, FileDiff, FileText, Link2, LoaderCircle, RefreshCw, ShieldCheck, Trash2, Upload, X } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, Check, CheckCircle2, CircleAlert, Download, Eye, FileCheck2, FolderOpen, ChevronDown, FileText, Link2, LoaderCircle, RefreshCw, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { comparisonText, platformApiError } from "../../content/platform-ui";
+import { platformApiError } from "../../content/platform-ui";
 import { importDocumentUrlForAnalysis, uploadDocumentForAnalysis } from "../../lib/document-analysis/client-upload";
 import { defaultDocumentAnalysisLocale, type SupportedDocumentAnalysisLocale } from "../../lib/document-analysis/language";
 import type { AnalysisPackageContext, AnalysisPackageMemberRole, AnalysisPackageRelationshipKind } from "../../lib/document-comparison/types";
-import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
-import { DocumentComparisonClient } from "./DocumentComparisonClient";
+import type { PlatformLocale } from "../../lib/platform/routing";
+import { usePlatformBasePath } from "./PlatformRouteContext";
+import { documentTools, useDocumentToolFile } from "./document-tools";
+import type { DocumentAnalysisResult } from "../../lib/document-analysis/schema";
 import { documentReviewCopy, reviewText } from "./document-review-localization";
 
 type Risk = { id?: string; level: string; title: string; description: string; excerpt: string | null; confidencePercent: number | null; riskType?: "document_internal" | "legal_compliance"; clause?: string | null; page?: number | null; recommendation?: string | null; proposedWording?: string | null; legalBasisSourceIds?: string[] };
@@ -24,6 +27,7 @@ type AnalysisExport = { id: string; status: string; format: AnalysisExportFormat
 type Summary = {
   summary?: string; parties?: string[]; dates?: string[]; obligations?: string[]; payments?: string[];
   disputedTerms?: string[]; missingItems?: string[]; questions?: string[]; disclaimer?: string;
+  result?: Partial<DocumentAnalysisResult>;
   extraction?: { packageContext?: AnalysisPackageContext | null };
 };
 type Analysis = {
@@ -61,46 +65,23 @@ function hasRetryExhausted(analysis: Pick<Analysis, "retryExhausted">): boolean 
   return analysis.retryExhausted === true;
 }
 
-export function DocumentReviewClient({ locale, accountType, publicUrlImportEnabled }: { locale: PlatformLocale; accountType: AccountType; publicUrlImportEnabled: boolean }) {
+export function DocumentReviewClient({ locale, publicUrlImportEnabled }: { locale: PlatformLocale; publicUrlImportEnabled: boolean }) {
   const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-  const [mode, setMode] = useState<"review" | "compare">(() => searchParams.get("mode") === "compare" ? "compare" : "review");
-  const copy = comparisonText[locale];
-  const reviewCopy = documentReviewCopy[locale];
-  function selectMode(next: "review" | "compare") {
-    setMode(next);
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "compare") params.set("mode", "compare");
-    else params.delete("mode");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-  function moveModeFocus(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "ArrowRight" || event.key === "End" ? "compare" : "review";
-    selectMode(next);
-    document.getElementById(`review-mode-${next}`)?.focus();
-  }
-  return (
-    <section className="review-workspace workspace-page">
-      <WorkspaceTitle icon={mode === "compare" ? <FileDiff /> : <FileCheck2 />} title={copy.title} description={copy.description} />
-      <div className="review-mode-tabs" role="tablist" aria-label={reviewCopy.modeAria}>
-        <button id="review-mode-review" role="tab" aria-controls="review-mode-panel" aria-selected={mode === "review"} tabIndex={mode === "review" ? 0 : -1} className={mode === "review" ? "active" : ""} onKeyDown={moveModeFocus} onClick={() => selectMode("review")}><FileCheck2 />{copy.singleMode}</button>
-        <button id="review-mode-compare" role="tab" aria-controls="review-mode-panel" aria-selected={mode === "compare"} tabIndex={mode === "compare" ? 0 : -1} className={mode === "compare" ? "active" : ""} onKeyDown={moveModeFocus} onClick={() => selectMode("compare")}><FileDiff />{copy.compareMode}</button>
-      </div>
-      <div id="review-mode-panel" role="tabpanel" aria-labelledby={`review-mode-${mode}`}>
-        {mode === "review"
-          ? <SingleDocumentReview locale={locale} initialCaseId={searchParams.get("caseId")} initialAnalysisId={searchParams.get("analysisId")} publicUrlImportEnabled={publicUrlImportEnabled} />
-          : <DocumentComparisonClient locale={locale} accountType={accountType} />}
-      </div>
-    </section>
-  );
+  const base = usePlatformBasePath();
+  const tools = documentTools[locale];
+  return <section className="review-workspace workspace-page">
+    <WorkspaceTitle icon={<FileCheck2 />} title={tools.check} description={tools.checkHint}
+      actions={<Link href={`${base}/documents`}><FolderOpen />{tools.library}</Link>} />
+    <SingleDocumentReview key={searchParams.toString()} locale={locale} source={searchParams.get("source")} initialCaseId={searchParams.get("caseId")} initialAnalysisId={searchParams.get("analysisId")} publicUrlImportEnabled={publicUrlImportEnabled} />
+  </section>;
 }
 
-function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, publicUrlImportEnabled }: { locale: PlatformLocale; initialCaseId: string | null; initialAnalysisId: string | null; publicUrlImportEnabled: boolean }) {
+function SingleDocumentReview({ locale, source, initialCaseId, initialAnalysisId, publicUrlImportEnabled }: { locale: PlatformLocale; source: string | null; initialCaseId: string | null; initialAnalysisId: string | null; publicUrlImportEnabled: boolean }) {
   const copy = documentReviewCopy[locale];
+  const tools = documentTools[locale];
+  const base = usePlatformBasePath();
+  const reportRef = useRef<HTMLElement>(null);
+  const [inputKind, setInputKind] = useState<"file" | "url">("file");
   const [analysisLocale, setAnalysisLocale] = useState<SupportedDocumentAnalysisLocale>(() => defaultDocumentAnalysisLocale(locale));
   const inputRef = useRef<HTMLInputElement>(null);
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
@@ -108,6 +89,7 @@ function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, public
   const [uploadCaseId, setUploadCaseId] = useState(initialCaseId ?? "");
   const [selected, setSelected] = useState<Analysis | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const libraryFile = useDocumentToolFile(source, locale, setFile);
   const [publicUrl, setPublicUrl] = useState("");
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -145,26 +127,30 @@ function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, public
 
   async function upload(event: FormEvent) {
     event.preventDefault();
-    if (!file || !consent) return;
+    if (!file || !consent || uploading) return;
     setUploading(true);
     setUploadProgress({ phase: "hashing", loaded: 0, total: file.size });
     setError("");
     setNotice("");
     try {
       const body = await uploadDocumentForAnalysis(file, locale, setUploadProgress, uploadCaseId || null, analysisLocale);
-      setNotice(platformApiError(locale, body.message, copy.completed));
+      setNotice(platformApiError(locale, body.message, body.analysis.status === "completed" ? copy.completed : tools.queued));
       setFile(null);
       setConsent(false);
       if (inputRef.current) inputRef.current.value = "";
+      setSelected(body.analysis);
       await load();
-      if (body.analysis) setSelected(body.analysis);
+      if (body.analysis) {
+        reportRef.current?.focus({ preventScroll: true });
+        reportRef.current?.scrollIntoView({ block: "start" });
+      }
     } catch (value) { setError(value instanceof Error ? value.message : String(value)); }
     finally { setUploading(false); setUploadProgress(null); }
   }
 
   async function importUrl(event: FormEvent) {
     event.preventDefault();
-    if (!publicUrlImportEnabled || !publicUrl.trim() || !consent) return;
+    if (!publicUrlImportEnabled || !publicUrl.trim() || !consent || uploading) return;
     setUploading(true);
     setUploadProgress(null);
     setError("");
@@ -174,8 +160,12 @@ function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, public
       setNotice(platformApiError(locale, body.message, copy.imported));
       setPublicUrl("");
       setConsent(false);
+      setSelected(body.analysis);
       await load();
-      if (body.analysis) setSelected(body.analysis);
+      if (body.analysis) {
+        reportRef.current?.focus({ preventScroll: true });
+        reportRef.current?.scrollIntoView({ block: "start" });
+      }
     } catch (value) { setError(value instanceof Error ? value.message : String(value)); }
     finally { setUploading(false); }
   }
@@ -193,36 +183,53 @@ function SingleDocumentReview({ locale, initialCaseId, initialAnalysisId, public
   const consentCopy = publicUrlImportEnabled ? copy.consentUrl : copy.consentFile;
 
   return <>
-    {error && <p className="review-message error" role="alert"><CircleAlert />{error}</p>}
+    {(error || libraryFile.error) && <p className="review-message error" role="alert"><CircleAlert />{error || libraryFile.error}</p>}
     {notice && <p className="review-message success" role="status"><ShieldCheck />{notice}</p>}
-    <form className="review-upload" onSubmit={upload}>
-      <label className="review-drop" data-focus-field htmlFor="document-review-file">
-        <Upload />
-        <div>
-          <strong>{file?.name || copy.supportedFiles}</strong>
-          <span id="document-review-file-hint">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : copy.fileHint}</span>
+    <form className="review-intake" onSubmit={inputKind === "url" ? importUrl : upload}>
+      <header><h2>{tools.intake}</h2>{publicUrlImportEnabled && <div className="review-source-switch">
+        <button type="button" disabled={uploading} aria-pressed={inputKind === "file"} onClick={() => setInputKind("file")}><Upload />{tools.file}</button>
+        <button type="button" disabled={uploading} aria-pressed={inputKind === "url"} onClick={() => setInputKind("url")}><Link2 />{tools.link}</button>
+      </div>}</header>
+      <div className="review-intake-body">
+        <div className="review-input-source">
+          {inputKind === "file" ? <>
+            <label className="review-file-target" data-focus-field htmlFor="document-review-file">
+              <span className="review-source-icon">{libraryFile.loading ? <LoaderCircle className="spin" /> : file ? <FileCheck2 /> : <Upload />}</span>
+              <strong>{libraryFile.loading ? tools.loading : file?.name || tools.chooseFile}</strong>
+              <span id="document-review-file-hint">{file ? formatFileSize(file.size, locale) : copy.supportedFiles + " · " + copy.fileHint}</span>
+              <input id="document-review-file" ref={inputRef} type="file" aria-label={copy.chooseFileAria} aria-describedby="document-review-file-hint" accept=".pdf,.docx,.jpg,.jpeg,.png,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,application/zip" disabled={uploading || libraryFile.loading} onChange={event => setFile(event.target.files?.[0] ?? null)} />
+            </label>
+            {!uploading && <Link className="review-library-link" href={`${base}/documents?pick=check`}><FolderOpen />{tools.choose}</Link>}
+          </> : <label className="review-link-source" htmlFor="review-public-url"><Link2 /><strong>{copy.importTitle}</strong>
+            <input id="review-public-url" type="url" required inputMode="url" autoComplete="url" maxLength={2048} placeholder="https://example.uz/document.pdf" value={publicUrl} onChange={event => setPublicUrl(event.target.value)} disabled={uploading} /><small>{copy.importHint}</small>
+          </label>}
         </div>
-        <input id="document-review-file" ref={inputRef} type="file" aria-label={copy.chooseFileAria} aria-describedby="document-review-file-hint" accept=".pdf,.docx,.jpg,.jpeg,.png,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,application/zip" disabled={uploading} onChange={event => setFile(event.target.files?.[0] ?? null)} />
-      </label>
-      {locale === "en" && <label className="review-upload-case review-analysis-language"><span>{copy.analysisLanguage}</span><Select value={analysisLocale} onChange={event => setAnalysisLocale(event.target.value as SupportedDocumentAnalysisLocale)} disabled={uploading} aria-describedby="document-review-language-hint"><option value="ru">{copy.russian}</option><option value="uz">{copy.uzbek}</option></Select><small id="document-review-language-hint">{copy.analysisLanguageHint}</small></label>}
-      <label className="review-upload-case"><span>{copy.addToCase}</span><Select value={uploadCaseId} onChange={event => setUploadCaseId(event.target.value)} disabled={uploading}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>{uploadProgress && <div className="review-upload-progress" role="progressbar" aria-label={copy.uploadProgressAria} aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadPercent ?? undefined} aria-valuetext={uploadStatus}><span style={{ transform: `scaleX(${uploadPercent === null ? .08 : Math.max(.08, uploadPercent / 100)})` }} /></div>}<p className="review-upload-status" aria-live="polite">{uploadStatus}</p><label><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} /><span>{consentCopy}</span></label><button disabled={!file || !consent || uploading}>{uploading ? <LoaderCircle className="spin" /> : <FileCheck2 />}{copy.uploadAndReview}</button>
+        <div className="review-settings">
+          <label><span>{copy.addToCase}</span><Select value={uploadCaseId} onChange={event => setUploadCaseId(event.target.value)} disabled={uploading}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label>
+          {locale === "en" && <label><span>{copy.analysisLanguage}</span><Select value={analysisLocale} onChange={event => setAnalysisLocale(event.target.value as SupportedDocumentAnalysisLocale)} disabled={uploading} aria-describedby="document-review-language-hint"><option value="ru">{copy.russian}</option><option value="uz">{copy.uzbek}</option></Select><small id="document-review-language-hint">{copy.analysisLanguageHint}</small></label>}
+          <label className="review-consent"><input type="checkbox" checked={consent} disabled={uploading} onChange={event => setConsent(event.target.checked)} /><span>{consentCopy}</span></label>
+          <button className="review-start" disabled={!consent || uploading || (inputKind === "file" ? !file || libraryFile.loading : !publicUrl.trim())}>{uploading ? <LoaderCircle className="spin" /> : <FileCheck2 />}{inputKind === "url" ? copy.importAction : tools.check}</button>
+        </div>
+      </div>
+      {uploading && <div className="review-transfer"><span role="status">{uploadStatus || copy.importAction}</span><progress aria-label={copy.uploadProgressAria} role="progressbar" max={100} value={uploadPercent ?? undefined} /></div>}
     </form>
-    {publicUrlImportEnabled ? <form className="review-url-import" onSubmit={importUrl}>
-      <div><Link2 /><label htmlFor="review-public-url"><strong>{copy.importTitle}</strong><span>{copy.importHint}</span></label></div>
-      <input id="review-public-url" type="url" inputMode="url" autoComplete="url" maxLength={2048} placeholder="https://example.uz/document.pdf" value={publicUrl} onChange={event => setPublicUrl(event.target.value)} disabled={uploading} />
-      <button type="submit" disabled={!publicUrl.trim() || !consent || uploading}>{uploading ? <LoaderCircle className="spin" /> : <Link2 />}{copy.importAction}</button>
-    </form> : <aside className="review-url-import-disabled" aria-label={copy.importUnavailableAria}>
-      <Link2 aria-hidden="true" />
-      <div><strong>{copy.importUnavailable}</strong><span>{copy.importUnavailableHint}</span></div>
-    </aside>}
-    {locale === "en" && <p className="review-normalized-note"><FileText />{copy.outputLanguageNote}</p>}
-    {loading ? <div className="review-loading"><LoaderCircle className="spin" /></div> : <div className="review-layout"><aside><h2>{copy.recentFiles}</h2>{analyses.length ? analyses.map(item => <button className={selected?.id === item.id ? "active" : ""} key={item.id} onClick={() => setSelected(item)}><FileCheck2 /><span><strong>{item.fileName}</strong><small>{statusLabel(item.status, locale, hasRetryExhausted(item))}</small></span></button>) : <p>{copy.noFiles}</p>}</aside><section className="review-result-pane" aria-label={copy.resultAria}>{selected ? <AnalysisView analysis={selected} cases={cases} locale={locale} onChanged={load} /> : <div className="review-empty"><FileCheck2 /><h2>{copy.selectFile}</h2></div>}</section></div>}
+    {loading ? <div className="review-loading" role="status" aria-label={tools.loading}><LoaderCircle className="spin" /></div> :
+      <section className="review-result-pane" aria-label={copy.resultAria} ref={reportRef} tabIndex={-1}>
+        {analyses.length > 0 && <div className="review-history"><label><FolderOpen />{copy.recentFiles}
+          <Select value={selected?.id ?? ""} onChange={event => setSelected(analyses.find(item => item.id === event.target.value) ?? null)}>
+            {analyses.map(item => <option key={item.id} value={item.id}>{item.fileName} · {statusLabel(item.status, locale, hasRetryExhausted(item))}{item.createdAt ? " · " + new Date(item.createdAt).toLocaleDateString(locale) : ""}</option>)}
+          </Select>
+        </label></div>}
+        {selected ? <AnalysisView key={selected.id} analysis={selected} cases={cases} locale={locale} onChanged={load} /> :
+          <div className="review-history-empty"><FileText /><div><h2>{copy.recentFiles}</h2><p>{tools.emptyHistory}</p></div></div>}
+      </section>}
   </>;
 }
 
 function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analysis; cases: AnalysisCaseOption[]; locale: PlatformLocale; onChanged: () => Promise<void> }) {
   const copy = documentReviewCopy[locale];
   const summary = analysis.summary;
+  const tools = documentTools[locale];
   const [exportAttemptKeys, setExportAttemptKeys] = useState<Record<string, string>>({});
   const canOpen = analysis.status === "completed";
   const retryExhausted = hasRetryExhausted(analysis);
@@ -313,14 +320,71 @@ function AnalysisView({ analysis, cases, locale, onChanged }: { analysis: Analys
     }
   }
   return <article className="review-result">
-    <div className="review-result-head"><div><small>{statusLabel(analysis.status, locale, retryExhausted)}</small><h2>{analysis.fileName}</h2><span>{(analysis.sizeBytes / 1024 / 1024).toFixed(2)} MB · {analysis.mimeType}</span></div><div className="review-result-actions" aria-live="polite">{canOpen && <a href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{canOpen && formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div></div>
+    <div className="review-result-head"><div>
+      <small>{statusLabel(analysis.status, locale, retryExhausted)}</small>
+      <h2>{analysis.fileName}</h2><span>{[summary?.result?.documentType, formatFileSize(analysis.sizeBytes, locale), analysis.updatedAt && new Date(analysis.updatedAt).toLocaleDateString(locale)].filter(Boolean).join(" · ")}</span>
+    </div></div>
+    <details className="review-management"><summary>{tools.actions}<ChevronDown /></summary><div className="review-result-actions" aria-live="polite">{canOpen && <a href={`/api/platform/document-review/files/${encodeURIComponent(analysis.fileId)}`} target="_blank" rel="noreferrer"><Eye />{copy.openFile}</a>}{canOpen && formats.map(format => { const record = exportsByFormat.get(format); const pending = ["queued", "processing", "retrying"].includes(record?.status ?? ""); const failed = record?.status === "failed"; const busy = exportingFormat === format || pending; const upperFormat = format.toUpperCase(); return <span className="review-export-action" key={format}>{record?.status === "completed" ? <a href={`/api/platform/document-analysis/exports/${encodeURIComponent(record.id)}/file`}><Download />{upperFormat}</a> : <button type="button" disabled={busy || deletingExportId !== null} aria-busy={busy} onClick={() => void requestExport(format)}>{busy ? <LoaderCircle className="spin" /> : failed ? <RefreshCw /> : <Download />}{busy ? reviewText(locale, `${upperFormat} готовится`, `${upperFormat} tayyorlanmoqda`, `Preparing ${upperFormat}`) : failed ? reviewText(locale, `Повторить ${upperFormat}`, `${upperFormat}ni takrorlash`, `Retry ${upperFormat}`) : reviewText(locale, `Экспорт ${upperFormat}`, `${upperFormat} eksport`, `Export ${upperFormat}`)}</button>}{record && ["completed", "failed"].includes(record.status) && <button type="button" aria-label={reviewText(locale, `Удалить ${upperFormat}`, `${upperFormat}ni o‘chirish`, `Delete ${upperFormat}`)} disabled={deletingExportId !== null || exportingFormat !== null} aria-busy={deletingExportId === record.id} onClick={() => void removeExport(record)}>{deletingExportId === record.id ? <LoaderCircle className="spin" /> : <Trash2 />}</button>}</span>; })}<button type="button" className="danger" disabled={deletingAnalysis || deletingExportId !== null || exportingFormat !== null} aria-busy={deletingAnalysis} onClick={() => void removeAnalysis()}>{deletingAnalysis ? <LoaderCircle className="spin" /> : <Trash2 />}{copy.deleteAnalysis}</button></div>
     <div className="review-case-link"><label><span>{copy.case}</span><Select value={caseId} onChange={event => { setCaseId(event.target.value); setCaseMessage(""); }} disabled={caseBusy}><option value="">{copy.noCase}</option>{cases.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</Select></label><button type="button" disabled={caseBusy || caseId === (analysis.caseId ?? "")} aria-busy={caseBusy} onClick={() => void saveCaseLink()}>{caseBusy ? <LoaderCircle className="spin" /> : <FileText />}{copy.saveCaseLink}</button><span role="status" aria-live="polite">{caseMessage}</span></div>
+    </details>
     {exportError && <p className="review-message error" role="alert"><CircleAlert />{exportError}</p>}
     {analysisDeleteError && <p className="review-message error" role="alert"><CircleAlert />{analysisDeleteError}</p>}
     {exportNotice && <p className="review-message success" role="status"><ShieldCheck />{exportNotice}</p>}
-    {analysis.status !== "completed" ? <div className="review-awaiting" aria-live="polite"><AlertTriangle /><div><h3>{state.heading}</h3><p>{state.message}</p></div></div> : <><section><h3>{copy.summary}</h3><p>{summary?.summary}</p></section>{summary?.extraction?.packageContext?.members.length ? <PackageContextView context={summary.extraction.packageContext} locale={locale} /> : null}<div className="review-summary-grid"><ListBlock title={copy.parties} items={summary?.parties} /><ListBlock title={copy.dates} items={summary?.dates} /><ListBlock title={copy.obligations} items={summary?.obligations} /><ListBlock title={copy.payments} items={summary?.payments} /></div><section><h3>{copy.risks}</h3>{analysis.risks?.length ? <div className="review-risks">{analysis.risks.map((risk, index) => <article key={risk.id || `${risk.title}-${index}`} data-level={risk.level}><span>{riskLabel(risk.level, locale)}</span><h4>{risk.title}</h4><p>{risk.description}</p>{risk.excerpt && <blockquote>{risk.excerpt}</blockquote>}{risk.confidencePercent !== null && <small>{copy.confidence}: {risk.confidencePercent}%</small>}</article>)}</div> : <p>{copy.noRisks}</p>}</section><div className="review-summary-grid"><ListBlock title={copy.missing} items={summary?.missingItems} /><ListBlock title={copy.questions} items={summary?.questions} /></div><p className="review-disclaimer"><CheckCircle2 />{summary?.disclaimer || copy.disclaimer}</p></>}
+    {analysis.status !== "completed" ? <div className="review-job" role="status">
+      <div>{activeAnalysisStatuses.has(analysis.status) && !retryExhausted ? <LoaderCircle className="spin" /> : <AlertTriangle />}<div><h3>{state.heading}</h3><p>{state.message}</p></div></div>
+      {activeAnalysisStatuses.has(analysis.status) && !retryExhausted && <ol>{tools.stages.map((label, index) => {
+        const current = analysis.status === "persisting" ? 3 : ["processing", "retrying"].includes(analysis.status) ? 2 : ["awaiting_ocr", "ocr_processing"].includes(analysis.status) ? 1 : 0;
+        return <li key={label} data-reached={index <= current} aria-current={index === current ? "step" : undefined}>{label}</li>;
+      })}</ol>}
+    </div> : <ReviewFindings analysis={analysis} locale={locale} />}
     {analysis.status === "completed" && analysis.risks?.some((risk) => risk.proposedWording) ? <RevisionPanel analysisId={analysis.id} exports={analysis.exports ?? []} locale={locale} onAnalysisChanged={onChanged} /> : null}
   </article>;
+}
+
+function formatFileSize(bytes: number, locale: PlatformLocale) {
+  const mb = bytes >= 1024 * 1024;
+  return new Intl.NumberFormat(locale, { style: "unit", unit: mb ? "megabyte" : "kilobyte", maximumFractionDigits: 1 }).format(bytes / (mb ? 1024 * 1024 : 1024));
+}
+
+function ReviewFindings({ analysis, locale }: { analysis: Analysis; locale: PlatformLocale }) {
+  const copy = documentReviewCopy[locale];
+  const tools = documentTools[locale];
+  const summary = analysis.summary;
+  const result = summary?.result;
+  const risks = [...(analysis.risks ?? [])];
+  const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  risks.sort((a, b) => (rank[a.level] ?? 4) - (rank[b.level] ?? 4));
+  const metrics = [
+    [copy.risks, risks.length], [copy.obligations, summary?.obligations?.length ?? 0],
+    ...(result?.deadlines ? [[tools.deadlines, result.deadlines.length]] : []),
+    ...(result?.sources ? [[tools.sources, result.sources.length]] : []),
+  ];
+  return <div className="review-findings">
+    <dl className="review-metrics">{metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    {summary?.summary && <section className="review-overview"><h3>{copy.summary}</h3><p>{summary.summary}</p>
+      {result?.overallQuality && <div className="review-quality"><strong>{tools.quality} · {result.overallQuality.score}/100</strong><meter aria-label={tools.quality} min={0} max={100} value={result.overallQuality.score} /><p>{result.overallQuality.explanation}</p></div>}
+    </section>}
+    <section><h3>{copy.risks}</h3>{risks.length ? <div className="review-risks">{risks.map((risk, index) => <article key={risk.id || index} data-level={risk.level}>
+      <span>{riskLabel(risk.level, locale)}{risk.page ? ` · ${copy.pageShort} ${risk.page}` : ""}{risk.clause ? " · " + risk.clause : ""}</span>
+      <h4>{risk.title}</h4><p>{risk.description}</p>{risk.excerpt && <blockquote>{risk.excerpt}</blockquote>}
+      {risk.recommendation && <p><strong>{tools.advice}</strong><br />{risk.recommendation}</p>}
+      {risk.confidencePercent != null && <small>{copy.confidence} · {risk.confidencePercent}%</small>}
+    </article>)}</div> : <p>{copy.noRisks}</p>}</section>
+    {result?.deadlines?.length ? <section><h3>{tools.deadlines}</h3><dl className="review-deadlines">{result.deadlines.map((item, index) => <div key={index}><dt>{item.value}</dt><dd><strong>{item.title}</strong>{item.clause && <small>{item.clause}</small>}{item.consequence && <p>{item.consequence}</p>}</dd></div>)}</dl></section> : null}
+    <div className="review-summary-grid">
+      <ListBlock title={copy.parties} items={summary?.parties} /><ListBlock title={copy.dates} items={summary?.dates} />
+      <ListBlock title={copy.obligations} items={summary?.obligations} /><ListBlock title={copy.payments} items={summary?.payments} />
+      <ListBlock title={tools.disputes} items={summary?.disputedTerms} /><ListBlock title={copy.missing} items={result?.missingClauses?.length ? result.missingClauses.map(item => `${item.title} — ${item.reason}`) : summary?.missingItems} />
+      <ListBlock title={copy.questions} items={summary?.questions} /><ListBlock title={tools.advice} items={result?.recommendations} />
+    </div>
+    {result?.sources?.length ? <section><h3>{tools.sources}</h3><ul className="review-source-list">{result.sources.map(source => <li key={source.sourceId}>
+      {/^https?:\/\//i.test(source.originalUrl) ? <a href={source.originalUrl} target="_blank" rel="noreferrer">{source.actTitle}<Link2 /></a> : <strong>{source.actTitle}</strong>}
+      <small>{[source.actIdentifier, source.article].filter(Boolean).join(" · ")}</small>{source.excerpt && <blockquote>{source.excerpt}</blockquote>}
+    </li>)}</ul></section> : null}
+    <ListBlock title={tools.warnings} items={result?.extractionWarnings} />
+    {summary?.extraction?.packageContext?.members.length ? <PackageContextView context={summary.extraction.packageContext} locale={locale} /> : null}
+    <p className="review-disclaimer"><CheckCircle2 />{summary?.disclaimer || copy.disclaimer}</p>
+  </div>;
 }
 
 function RevisionPanel({ analysisId, exports, locale, onAnalysisChanged }: { analysisId: string; exports: AnalysisExport[]; locale: PlatformLocale; onAnalysisChanged: () => Promise<void> }) {
@@ -511,7 +575,8 @@ function RevisionPanel({ analysisId, exports, locale, onAnalysisChanged }: { ana
 }
 
 function ListBlock({ title, items }: { title: string; items?: string[] }) {
-  return <section><h3>{title}</h3>{items?.length ? <ul>{items.map(item => <li key={item}>{item}</li>)}</ul> : <p>—</p>}</section>;
+  if (!items?.length) return null;
+  return <section><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section>;
 }
 
 function PackageContextView({ context, locale }: { context: AnalysisPackageContext; locale: PlatformLocale }) {
@@ -672,6 +737,8 @@ function analysisState(status: string, errorCode: string | null, retryExhausted:
 
 function riskLabel(level: string, locale: PlatformLocale) {
   const labels: Record<string, Record<PlatformLocale, string>> = {
+    critical: { ru: "Критический", uz: "Jiddiy", en: "Critical" },
+    informational: { ru: "Информация", uz: "Ma’lumot", en: "Information" },
     high: { ru: "Высокий", uz: "Yuqori", en: "High" },
     medium: { ru: "Средний", uz: "O‘rta", en: "Medium" },
     low: { ru: "Низкий", uz: "Past", en: "Low" },

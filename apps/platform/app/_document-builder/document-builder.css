@@ -1043,3 +1043,33 @@
 .dbt-library-disclosure > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 13px; color: var(--text-primary); font-weight: 650; cursor: pointer; }
 .dbt-library-disclosure > :is(nav, div) { margin: 0; padding: 0 12px 12px; }
 .dbt-all-templates > .workspace-pagination { margin-block-start: 10px; }
+.dbt-tool-shelf { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-block: 16px; }
+.dbt-tool-shelf > a { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-content: start; align-items: start; gap: 12px; padding: clamp(14px, 1.8vw, 24px); border: 1px solid var(--line); border-radius: 14px; background: var(--surface-raised); color: var(--ink); text-decoration: none; transition: background-color .16s, border-color .16s; }
+.dbt-tool-shelf > a:hover, .dbt-tool-shelf > a:focus-visible { border-color: var(--border-accent); background: var(--surface-selected); }
+.dbt-tool-shelf .dbt-tool-symbol { display: grid; place-items: center; width: 38px; height: 38px; color: var(--brand-gold-text); background: var(--amber-bg); border-radius: 10px; }
+.dbt-tool-symbol svg { width: 20px; }
+.dbt-tool-shelf a > svg { width: 15px; color: var(--text-secondary); }
+.dbt-tool-shelf strong, .dbt-tool-shelf small { display: block; overflow-wrap: anywhere; }
+.dbt-tool-shelf strong { font-size: 16px; line-height: 1.3; }
+.dbt-tool-shelf small { margin-top: 5px; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
+.dbt-selection-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin-block: 10px; border-radius: 10px; background: var(--soft); color: var(--text-secondary); font-size: 13px; }
+.dbt-selection-bar ol { margin: 6px 0 0; padding-inline-start: 18px; color: var(--ink); overflow-wrap: anywhere; }
+.dbt-selection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dbt-selection-actions :is(a,button), .dbt-select-signed { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; color: var(--ink); background: var(--surface-raised); text-decoration: none; }
+.dbt-selection-actions a:first-child { border-color: var(--border-accent); background: var(--amber-bg); color: var(--brand-gold-text); }
+.dbt-selection-actions svg { width: 17px; height: 17px; }
+.dbt-select-document { display: grid; align-self: center; place-items: center; min-height: 44px; cursor: pointer; }
+.dbt-select-document input, .dbt-select-signed input { width: 20px; height: 20px; cursor: pointer; accent-color: var(--brand-gold-text); }
+.dbt-document-card:has(label[data-selected=true]) { border-color: var(--border-accent); background: var(--surface-selected); }
+.dbt-select-signed { font-size: 13px; cursor: pointer; }
+.dbt-document-actions { flex-wrap: wrap; }
+@media (max-width: 950px) {
+  .dbt-tool-shelf > a { grid-template-columns: auto 1fr; }
+  .dbt-tool-shelf a > svg { display: none; }
+}
+@media (max-width: 700px) {
+  .dbt-tool-shelf { grid-template-columns: 1fr; gap: 8px; }
+  .dbt-tool-shelf > a { grid-template-columns: auto minmax(0,1fr) auto; align-items: center; padding: 12px; }
+  .dbt-tool-shelf a > svg { display: block; }
+  .dbt-document-card > .dbt-document-actions { overflow: visible; }
+}

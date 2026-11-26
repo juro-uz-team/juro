@@ -7,7 +7,7 @@ import { usePlatformBasePath } from "./PlatformRouteContext";
 /* eslint-disable react-hooks/set-state-in-effect -- authenticated comparison lists are hydrated after mount */
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -23,8 +23,10 @@ import {
   X,
 } from "lucide-react";
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { documentTools, useDocumentToolFile } from "./document-tools";
+import { WorkspaceTitle } from "./WorkspaceTitle";
 import { comparisonText } from "../../content/platform-ui";
-import type { AccountType, PlatformLocale } from "../../lib/platform/routing";
+import type { PlatformLocale } from "../../lib/platform/routing";
 
 type ReusableFile = {
   id: string;
@@ -50,7 +52,7 @@ type RecentComparison = {
 };
 
 type FileSelection =
-  | { kind: "upload"; file: File }
+  | { kind: "upload"; file: File; fromLibrary?: boolean }
   | { kind: "stored"; file: ReusableFile }
   | null;
 
@@ -73,17 +75,28 @@ const stageOrder = [
   "completed",
 ] as const;
 
-export function DocumentComparisonClient({
-  locale,
-}: {
-  locale: PlatformLocale;
-  accountType: AccountType;
-}) {
+export function DocumentComparisonClient({ locale }: { locale: PlatformLocale }) {
+  const params = useSearchParams();
+  const tools = documentTools[locale];
+  const base = usePlatformBasePath();
+  return <section className="comparison-page workspace-page">
+    <WorkspaceTitle icon={<FileDiff />} title={tools.compare} description={tools.compareHint}
+      actions={<Link href={`${base}/documents?pick=compare`}><FolderOpen />{tools.choose}</Link>} />
+    <ComparisonForm key={params.toString()} locale={locale} firstSource={params.get("first")} secondSource={params.get("second")} />
+  </section>;
+}
+
+function ComparisonForm({ locale, firstSource, secondSource }: { locale: PlatformLocale; firstSource: string | null; secondSource: string | null }) {
   const copy = comparisonText[locale];
   const router = useRouter();
   const base = usePlatformBasePath();
   const [first, setFirst] = useState<FileSelection>(null);
   const [second, setSecond] = useState<FileSelection>(null);
+  const chooseFirst = useCallback((file: File) => setFirst({ kind: "upload", file, fromLibrary: true }), []);
+  const chooseSecond = useCallback((file: File) => setSecond({ kind: "upload", file, fromLibrary: true }), []);
+  const firstLibrary = useDocumentToolFile(firstSource, locale, chooseFirst);
+  const secondLibrary = useDocumentToolFile(secondSource, locale, chooseSecond);
+  const opening = firstLibrary.loading || secondLibrary.loading;
   const [consent, setConsent] = useState(false);
   const [reusableFiles, setReusableFiles] = useState<ReusableFile[]>([]);
   const [comparisons, setComparisons] = useState<RecentComparison[]>([]);
@@ -118,26 +131,36 @@ export function DocumentComparisonClient({
     void load();
   }, [load]);
 
-  async function pollComparison(id: string) {
-    try {
-      const response = await fetch(
-        `/api/platform/document-comparisons/${encodeURIComponent(id)}`,
-        { cache: "no-store", headers: { "x-juro-locale": locale } },
-      );
-      const body = await response.json() as { comparison?: Progress; error?: string };
-      if (response.ok && body.comparison) setProgress(body.comparison);
-    } catch {
-      // The processing request remains authoritative. A transient polling failure is retried.
+  const processingId = submitting ? progress?.id : null;
+  useEffect(() => {
+    if (!processingId) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const response = await fetch(`/api/platform/document-comparisons/${encodeURIComponent(processingId!)}`, {
+          cache: "no-store", signal: controller.signal, headers: { "x-juro-locale": locale },
+        });
+        const body = await response.json() as { comparison?: Progress };
+        if (response.ok && body.comparison && !controller.signal.aborted) setProgress(body.comparison);
+      } catch {
+        // The processing request reports terminal errors.
+      }
+      if (!controller.signal.aborted) timer = setTimeout(poll, 900);
     }
-  }
+    timer = setTimeout(poll, 900);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [locale, processingId]);
+
+  const sameStoredFile = first?.kind === "stored" && second?.kind === "stored" && first.file.id === second.file.id;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!first || !second || !consent || submitting) return;
+    if (!first || !second || !consent || submitting || opening || sameStoredFile) return;
     setSubmitting(true);
+    setProgress({ id: "", status: "uploading", stage: "uploaded" });
     setError("");
     setWarning("");
-    let interval: ReturnType<typeof setInterval> | undefined;
     try {
       const form = new FormData();
       form.set("locale", locale);
@@ -159,7 +182,6 @@ export function DocumentComparisonClient({
       }
       setProgress(created.comparison);
       if (created.warning) setWarning(created.warning);
-      interval = setInterval(() => void pollComparison(created.comparison!.id), 900);
       const processedResponse = await fetch(
         `/api/platform/document-comparisons/${encodeURIComponent(created.comparison.id)}/process`,
         { method: "POST", headers: { "x-juro-csrf": "1", "x-juro-locale": locale } },
@@ -177,18 +199,16 @@ export function DocumentComparisonClient({
       setError(value instanceof Error ? value.message : String(value));
       await load();
     } finally {
-      if (interval) clearInterval(interval);
       setSubmitting(false);
     }
   }
 
   async function retry(item: RecentComparison) {
     setError("");
-    setProgress({ id: item.id, status: item.status, stage: item.stage, errorCode: item.errorCode });
+    setWarning("");
+    setProgress({ id: item.id, status: "processing", stage: "uploaded" });
     setSubmitting(true);
-    let interval: ReturnType<typeof setInterval> | undefined;
     try {
-      interval = setInterval(() => void pollComparison(item.id), 900);
       const response = await fetch(
         `/api/platform/document-comparisons/${encodeURIComponent(item.id)}/process`,
         { method: "POST", headers: { "x-juro-csrf": "1", "x-juro-locale": locale } },
@@ -200,36 +220,38 @@ export function DocumentComparisonClient({
       setError(value instanceof Error ? value.message : String(value));
       await load();
     } finally {
-      if (interval) clearInterval(interval);
       setSubmitting(false);
     }
   }
 
   return (
     <div className="comparison-create">
-      {error && <div className="comparison-message error" role="alert"><CircleAlert /><span>{error}</span></div>}
+      {(error || firstLibrary.error || secondLibrary.error) && <div className="comparison-message error" role="alert"><CircleAlert /><span>{error || firstLibrary.error || secondLibrary.error}</span></div>}
+      {opening && <div className="comparison-message" role="status"><LoaderCircle className="spin" />{documentTools[locale].loading}</div>}
       {warning && <div className="comparison-message warning" role="status"><AlertTriangle /><span>{warning}</span></div>}
       <form onSubmit={submit}>
         <div className="comparison-file-grid">
           <ComparisonFileSlot
+            disabled={submitting || opening}
             label={copy.versionOne}
             selection={first}
             onChange={setFirst}
-            reusableFiles={reusableFiles}
+            reusableFiles={reusableFiles.filter(item => second?.kind !== "stored" || second.file.id !== item.id)}
             copy={copy}
           />
           <ComparisonFileSlot
+            disabled={submitting || opening}
             label={copy.versionTwo}
             selection={second}
             onChange={setSecond}
-            reusableFiles={reusableFiles}
+            reusableFiles={reusableFiles.filter(item => first?.kind !== "stored" || first.file.id !== item.id)}
             copy={copy}
           />
           <button
             className="comparison-swap"
             type="button"
             onClick={() => { setFirst(second); setSecond(first); }}
-            disabled={!first && !second}
+            disabled={submitting || opening || (!first && !second)}
           >
             <Replace />
             <span>{copy.swap}</span>
@@ -237,12 +259,12 @@ export function DocumentComparisonClient({
         </div>
         <p className="comparison-supported"><FileText />{copy.supported}</p>
         <label className="comparison-consent">
-          <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+          <input type="checkbox" disabled={submitting || opening} checked={consent} onChange={(event) => setConsent(event.target.checked)} />
           <span>{copy.consent}</span>
         </label>
-        <button className="comparison-submit" disabled={!first || !second || !consent || submitting}>
+        <button className="comparison-submit" disabled={!first || !second || !consent || submitting || opening || sameStoredFile}>
           {submitting ? <LoaderCircle className="spin" /> : <FileDiff />}
-          {copy.start}
+          {submitting ? copy.processing : copy.start}
         </button>
       </form>
 
@@ -271,7 +293,7 @@ export function DocumentComparisonClient({
                     <button onClick={() => void retry(item)} disabled={submitting}><RefreshCcw />{copy.retry}</button>
                   ) : available ? (
                     <Link href={`${base}/documents/comparisons/${item.id}`}>{copy.open}<ArrowRight /></Link>
-                  ) : <span className="comparison-processing-label"><LoaderCircle className="spin" />{copy.processing}</span>}
+                  ) : <Link href={`${base}/documents/comparisons/${item.id}`}><LoaderCircle className="spin" />{copy.processing}<ArrowRight /></Link>}
                 </article>
               );
             })}
@@ -284,12 +306,14 @@ export function DocumentComparisonClient({
 
 function ComparisonFileSlot({
   label,
+  disabled,
   selection,
   onChange,
   reusableFiles,
   copy,
 }: {
   label: string;
+  disabled: boolean;
   selection: FileSelection;
   onChange: (selection: FileSelection) => void;
   reusableFiles: ReusableFile[];
@@ -303,12 +327,13 @@ function ComparisonFileSlot({
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
+    if (disabled) return;
     const file = event.dataTransfer.files?.[0];
     if (file) onChange({ kind: "upload", file });
   }
 
   return (
-    <fieldset className="comparison-file-slot">
+    <fieldset className="comparison-file-slot" disabled={disabled}>
       <legend>{label}</legend>
       <div
         className={`comparison-drop ${dragging ? "dragging" : ""} ${selection ? "selected" : ""}`}
@@ -330,7 +355,7 @@ function ComparisonFileSlot({
         {selection ? (
           <>
             <span className="comparison-file-icon"><FileText /></span>
-            <div><strong>{selectedName}</strong><small>{formatSize(selectedSize || 0)} · {selection.kind === "stored" ? copy.fromStorage : copy.fromDevice}</small></div>
+            <div><strong>{selectedName}</strong><small>{formatSize(selectedSize || 0)} · {(selection.kind === "stored" || selection.fromLibrary) ? copy.fromStorage : copy.fromDevice}</small></div>
             <span className="comparison-file-actions">
               <button type="button" onClick={() => inputRef.current?.click()}><Upload /><span>{copy.replace}</span></button>
               <button type="button" onClick={() => onChange(null)} aria-label={copy.remove}><X /></button>
@@ -347,6 +372,7 @@ function ComparisonFileSlot({
       <label className="comparison-stored-select">
         <span><FolderOpen />{copy.chooseStored}</span>
         <Select
+          disabled={disabled}
           value={selection?.kind === "stored" ? selection.file.id : ""}
           onChange={(event) => {
             const file = reusableFiles.find((item) => item.id === event.target.value);
@@ -371,11 +397,11 @@ function ProcessingProgress({
   const current = Math.max(stageOrder.indexOf(progress.stage as typeof stageOrder[number]), 0);
   return (
     <section className="comparison-progress" aria-live="polite">
-      <header><LoaderCircle className={progress.status === "failed" ? "" : "spin"} /><div><strong>{copy.processing}</strong><small>{stageLabel(progress.stage, copy)}</small></div></header>
+      <header><FileDiff aria-hidden="true" /><div><strong>{copy.processing}</strong><small>{stageLabel(progress.stage, copy)}</small></div></header>
       <ol>
         {stageOrder.map((stage, index) => (
-          <li key={stage} className={index < current ? "done" : index === current ? "active" : ""}>
-            <span>{index < current ? <Check /> : index + 1}</span>
+          <li key={stage} aria-current={index === current ? "step" : undefined} className={index < current ? "done" : index === current ? "active" : ""}>
+            <span>{index < current ? <Check /> : index === current ? <LoaderCircle className="spin" /> : index + 1}</span>
             <strong>{copy.stages[stage]}</strong>
           </li>
         ))}

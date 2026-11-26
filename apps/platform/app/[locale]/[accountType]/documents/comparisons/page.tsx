@@ -1,4 +1,6 @@
-import { notFound, redirect } from "next/navigation";
+import { DocumentComparisonClient } from "../../../../_platform/DocumentComparisonClient";
+import { requireChatGPTUser } from "../../../../chatgpt-auth";
+import { notFound } from "next/navigation";
 
 import { isAccountType, isLocale } from "../../../../../lib/platform/routing";
 
@@ -11,5 +13,6 @@ export default async function ComparisonEntryPage({
 }) {
   const { locale, accountType } = await params;
   if (!isLocale(locale) || !isAccountType(accountType)) notFound();
-  redirect(`/${locale}/${accountType}/document-review?mode=compare`);
+  await requireChatGPTUser(`/${locale}/${accountType}/documents/comparisons`);
+  return <DocumentComparisonClient locale={locale} />;
 }

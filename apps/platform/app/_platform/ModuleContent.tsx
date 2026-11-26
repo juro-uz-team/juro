@@ -201,7 +201,6 @@ export function ModuleContent({
     return (
       <DocumentReviewClient
         locale={locale}
-        accountType={accountType}
         publicUrlImportEnabled={publicUrlImportEnabled}
       />
     );

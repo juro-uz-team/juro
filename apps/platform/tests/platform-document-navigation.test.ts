@@ -8,7 +8,7 @@ const comparisonEntry = new URL("../app/[locale]/[accountType]/documents/compari
 const legacyBusinessComparisonEntry = new URL("../app/[locale]/business/documents/comparisons/page.tsx", import.meta.url);
 const businessComparisonEntry = new URL("../app/[locale]/business/[workspaceId]/documents/comparisons/page.tsx", import.meta.url);
 
-test("comparison entry always opens comparison mode instead of the document route", async () => {
+test("comparison has a dedicated authenticated entry in each workspace", async () => {
   const [shell, css, entry, legacyEntry, businessEntry] = await Promise.all([
     readFile(shellSource, "utf8"),
     readFile(stylesheet, "utf8"),
@@ -21,18 +21,28 @@ test("comparison entry always opens comparison mode instead of the document rout
   assert.match(shell, /\["documents", Files, "Мои документы", "Mening hujjatlarim", "My documents"\]/);
   assert.match(shell, /\["document-builder", FilePenLine, "Создать документ", "Hujjat yaratish", "Create a document"\]/);
   assert.match(shell, /\["document-review", FileCheck2, "Проверить документ", "Hujjatni tekshirish", "Review a document"\]/);
-  assert.match(
-    shell,
-    /\[\s*"document-review\?mode=compare",\s*Files,\s*"Сравнить версии",\s*"Versiyalarni solishtirish",\s*"Compare versions",?\s*\]/,
-  );
-  assert.doesNotMatch(shell, /\["documents\/comparisons", Files, "Сравнить версии", "Versiyalarni solishtirish"\]/);
-  assert.match(shell, /const \[route, query\] = slug\.split\("\?"\)/);
-  assert.match(shell, /new URLSearchParams\(query\)/);
-  assert.match(shell, /searchParams\.get\(key\) === value/);
-  assert.match(entry, /redirect\(`\/\$\{locale\}\/\$\{accountType\}\/document-review\?mode=compare`\)/);
-  assert.match(legacyEntry, /redirectLegacyBusinessRoute\(locale, \["document-review"\], \{ mode: "compare" \}\)/);
-  assert.match(businessEntry, /\/document-review\?mode=compare/);
+  assert.ok(shell.includes('"documents/comparisons"'));
+  assert.doesNotMatch(shell, /document-review\?mode=compare/);
+  for (const page of [entry, businessEntry]) {
+    assert.match(page, /requireChatGPTUser/);
+    assert.match(page, /<DocumentComparisonClient locale=\{locale\}/);
+  }
+  assert.ok(legacyEntry.includes('["documents", "comparisons"]'));
   assert.match(css, /\.platform-nav-documents summary,\.platform-nav-more summary\{display:flex;min-height:44px/);
   assert.match(css, /\.platform-nav-documents\.is-active>summary\{box-shadow:none\}/);
   assert.doesNotMatch(css, /platform-nav-documents[^\n]*transition:/);
+});
+
+test("library selections reach both tools through permission-checked document files", async () => {
+  const [documents, inputs, snapshot] = await Promise.all([
+    readFile(new URL("../app/_document-builder/documents/DocumentsClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/_platform/document-tools.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/document-builder/documents/[id]/tool-file/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.ok(documents.includes("first: selection[0].source"));
+  assert.ok(documents.includes("second: selection[1].source"));
+  assert.ok(documents.includes("?source="));
+  assert.match(inputs, /controller.abort\(\)/);
+  assert.match(snapshot, /!access\?\.canView \|\| !access.canDownload/);
+  assert.ok(snapshot.indexOf("!access.canDownload") < snapshot.indexOf("SELECT final_content"));
 });

@@ -36,6 +36,7 @@ interface DocumentListRow {
   revision: number;
   createdAt: string;
   updatedAt: string;
+  canSelect: number;
   accessRole: "owner" | "collaborator";
 }
 
@@ -84,24 +85,26 @@ export async function GET(request: Request): Promise<Response> {
       d.lender_name AS lenderName, d.borrower_name AS borrowerName, d.is_favorite AS isFavorite,
       d.archived_at AS archivedAt, d.generated_at AS generatedAt, d.signed_file_id AS signedFileId,
       d.revision, d.created_at AS createdAt, d.updated_at AS updatedAt,
+      CASE WHEN d.owner_user_id = ? OR (c.user_id = ? AND c.can_download = 1) THEN 1 ELSE 0 END AS canSelect,
       CASE WHEN d.owner_user_id = ? THEN 'owner' ELSE 'collaborator' END AS accessRole
       FROM documents d LEFT JOIN document_collaborators c
-        ON c.document_id = d.id AND ${ACCEPTED_COLLABORATOR_JOIN_SQL}
+        ON c.document_id = d.id AND c.user_id = ? AND ${ACCEPTED_COLLABORATOR_JOIN_SQL}
       WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 250`;
-    const result = await db.prepare(query).bind(user.id, user.id, user.id, ...binds).all<DocumentListRow>();
-    const documents = result.results.map((row) => ({ ...row, isFavorite: Boolean(row.isFavorite) }));
+    const result = await db.prepare(query).bind(user.id, user.id, user.id, user.id, user.id, user.id, ...binds).all<DocumentListRow>();
+    const documents = result.results.map((row) => ({ ...row, canSelect: Boolean(row.canSelect), isFavorite: Boolean(row.isFavorite) }));
     const casesResult = await db.prepare(
       "SELECT id,title FROM cases WHERE workspace_id=? AND archived_at IS NULL ORDER BY updated_at DESC LIMIT 250",
     ).bind(workspace.id).all<{ id: string; title: string }>();
-    const standaloneResult = scope.includeStandaloneFiles
+    const standaloneResult = scope.includeStandaloneFiles && folder !== "favorite" && folder !== "created" && (!status || status === "Подписан")
       ? await db.prepare(
         `SELECT id, document_id AS documentId, kind, file_name AS fileName, mime_type AS mimeType,
          size_bytes AS sizeBytes, archived_at AS archivedAt, created_at AS createdAt
          FROM document_files
          WHERE owner_user_id = ? AND workspace_id = ? AND kind = 'standalone_signed_pdf'
          ${folder === "archive" ? "AND archived_at IS NOT NULL" : "AND archived_at IS NULL"}
-         ORDER BY created_at DESC`,
-      ).bind(user.id, workspace.id).all<FileRecord>()
+         ${from ? "AND created_at >= ?" : ""} ${search ? "AND lower(file_name) LIKE lower(?)" : ""}
+         ORDER BY ${sort === "oldest" ? "created_at ASC" : sort === "title" ? "file_name COLLATE NOCASE ASC" : "created_at DESC"}`,
+      ).bind(user.id, workspace.id, ...(from ? [from] : []), ...(search ? ["%" + search.replace(/[%_]/g, "") + "%"] : [])).all<FileRecord>()
       : { results: [] as FileRecord[] };
     return jsonResponse({ documents, cases: casesResult.results, standaloneFiles: standaloneResult.results, total: documents.length + standaloneResult.results.length });
   } catch (error) {

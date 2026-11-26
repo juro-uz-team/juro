@@ -435,3 +435,11 @@ html[data-theme=dark] .ask-bar {
   outline: none;
   box-shadow: none;
 }
+
+@keyframes document-tool-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: no-preference) {
+  :is(.review-workspace, .comparison-page, .comparison-result-shell, .comparison-result-state) .spin {
+    animation: document-tool-spin .85s linear infinite;
+    transform-origin: center;
+  }
+}

@@ -176,7 +176,7 @@ test("four main destinations, searchable tools, focus containment and restoratio
   assert.equal(await p.locator("dialog a").count(), 1);
   assert.match(
     await p.locator("dialog a").getAttribute("href"),
-    /document-review\?mode=compare$/,
+    /documents\/comparisons$/,
   );
   await search.fill("no such tool");
   assert.equal(await p.locator("dialog [role=status]").count(), 1);
@@ -206,7 +206,7 @@ test("existing tools retain business workspace destinations", async (t) => {
     "document-builder",
     "document-review",
     "documents",
-    "document-review?mode=compare",
+    "documents/comparisons",
     "action-plan",
     "calendar",
     "archive",

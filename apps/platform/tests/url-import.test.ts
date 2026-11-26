@@ -121,8 +121,8 @@ test("URL import route and RU/UZ/EN UI expose no credential forwarding or fake s
   assert.match(route, /parseJsonRequest\(request, publicDocumentUrlIntentSchema, 4_096\)/);
   assert.match(route, /ANALYSIS_QUEUED/);
   assert.doesNotMatch(route, /requireQuarantineR2|quarantined|MALWARE_SCAN|FILE_SCAN_/);
-  assert.match(ui, /publicUrlImportEnabled \? <form className="review-url-import"/);
-  assert.match(ui, /review-url-import-disabled/);
+  assert.match(ui, /publicUrlImportEnabled && <div className="review-source-switch"/);
+  assert.match(ui, /inputKind === "url" \? importUrl : upload/);
   assert.match(copy, /Контролируемая beta-функция временно недоступна/);
   assert.match(copy, /Nazorat qilinadigan beta-funksiya vaqtincha mavjud emas/);
   assert.match(copy, /This controlled beta feature is temporarily unavailable/);
