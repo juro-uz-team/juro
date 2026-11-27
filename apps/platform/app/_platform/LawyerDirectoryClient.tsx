@@ -11,47 +11,14 @@ import { CircleAlert, Crown, LoaderCircle, Scale, ShieldCheck, Star, UserRound, 
 import { useEffect, useMemo, useState } from "react";
 import { lawyerText } from "../../lib/platform/lawyer-localization";
 import { platformBasePath, type AccountType, type PlatformLocale } from "../../lib/platform/routing";
-import { praeLegalDirectoryProfiles, praeLegalFirm, praeLegalRequestLabel } from "./prae-legal-directory";
-
-type Lawyer = {
-  id: string;
-  displayName: string;
-  specialties: string[];
-  languages: string[];
-  experienceYears: number | null;
-  priceDescription: string | null;
-  consultationDurationMinutes: number;
-  additionalServices: string[];
-  availabilityStatus: "unknown" | "available" | "limited" | "unavailable";
-  nextAvailableAt: string | null;
-  advocateStatus: "not_declared" | "declared" | "verified";
-  firmName: string | null;
-  bio: string | null;
-  marketplaceStatus: "pending_review" | "public_approved";
-  canReceiveRequests: boolean;
-  city: string | null;
-  region: string | null;
-  education: string | null;
-  consultationFormats: string[];
-  profilePhotoUrl: string | null;
-  juroApproved: boolean;
-  topLawyer: boolean;
-  topLawyerCriteria: string | null;
-  rating: { reviewCount: number; overallAverage: number | null };
-};
-
-const availability: Record<Lawyer["availabilityStatus"], [string, string, string]> = {
-  available: ["Доступен", "Mavjud", "Available"],
-  limited: ["Ограниченная доступность", "Cheklangan mavjudlik", "Limited availability"],
-  unavailable: ["Недоступен", "Mavjud emas", "Unavailable"],
-  unknown: ["Доступность не указана", "Mavjudlik ko‘rsatilmagan", "Availability not specified"],
-};
+import { lawyerAvailability as availability, lawyerDuration, lawyerExperience, lawyerRequestLabel, type LawyerDirectoryEntry } from "./lawyer-directory-entry";
+import { praeLegalDirectoryProfiles } from "./prae-legal-directory";
 
 export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { locale: PlatformLocale; accountType: AccountType; workspaceId?: string }) {
   const text = (russian: string, uzbek: string, english: string) => lawyerText(locale, russian, uzbek, english);
   const localized = <T,>(values: [T, T, T]) => lawyerText(locale, values[0], values[1], values[2]);
   const base = platformBasePath(locale, accountType, workspaceId);
-  const [lawyers, setLawyers] = useState<Lawyer[]>([]);
+  const [lawyers, setLawyers] = useState<LawyerDirectoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState("");
@@ -63,7 +30,7 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
     let active = true;
     fetch("/api/platform/lawyers", { cache: "no-store" })
       .then(async (response) => {
-        const body = await response.json() as { lawyers?: Lawyer[] };
+        const body = await response.json() as { lawyers?: LawyerDirectoryEntry[] };
         if (!response.ok) throw new Error(lawyerText(locale, "Не удалось загрузить каталог юристов.", "Yuristlar katalogini yuklab bo‘lmadi.", "We could not load the lawyer directory."));
         if (active) setLawyers(body.lawyers ?? []);
       })
@@ -77,48 +44,25 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
   const results = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return profiles.filter((lawyer) => {
-      const external = "role" in lawyer;
-      const keywords = external
-        ? [lawyer.displayName, praeLegalFirm, lawyer.role, lawyer.bio, ...lawyer.specialties]
-        : [lawyer.displayName, lawyer.firmName, lawyer.bio, ...lawyer.specialties, ...lawyer.languages];
+      const keywords = [lawyer.displayName, lawyer.firmName, lawyer.role, lawyer.bio, ...lawyer.specialties, ...lawyer.languages];
       const searchable = keywords.filter(Boolean).join(" ").toLocaleLowerCase();
       return (!normalized || searchable.includes(normalized))
         && (!specialty || lawyer.specialties.includes(specialty))
-        && (!availabilityFilter || (external ? "unavailable" : lawyer.availabilityStatus) === availabilityFilter)
-        && (!minimumRating || (!external && (lawyer.rating.overallAverage ?? 0) >= Number(minimumRating)));
+        && (!availabilityFilter || lawyer.availabilityStatus === availabilityFilter)
+        && (!minimumRating || (lawyer.rating.overallAverage ?? 0) >= Number(minimumRating));
     });
   }, [availabilityFilter, minimumRating, profiles, query, specialty]);
-  const directory = results.filter((lawyer) => "role" in lawyer || lawyer.canReceiveRequests);
-  const pendingReview = results.filter((lawyer): lawyer is Lawyer => !("role" in lawyer) && !lawyer.canReceiveRequests);
+  const directory = results.filter((lawyer) => lawyer.readOnly || lawyer.canReceiveRequests);
+  const pendingReview = results.filter((lawyer) => !lawyer.readOnly && !lawyer.canReceiveRequests);
   const activeFilter = JSON.stringify([query, specialty, availabilityFilter, minimumRating]);
   const directoryPages = useWorkspacePagination(directory.length, 3, activeFilter);
   const pendingPages = useWorkspacePagination(pendingReview.length, 3, activeFilter);
 
-  function card(lawyer: Lawyer | ReturnType<typeof praeLegalDirectoryProfiles>[number]) {
+  function card(lawyer: LawyerDirectoryEntry) {
     const profileHref = `${base}/lawyers/${encodeURIComponent(lawyer.id)}`;
-    const profileLabel = text("Профиль", "Profil", "View profile");
-    if ("role" in lawyer) {
-      return <article key={lawyer.id} className="lawyer-directory-card lawyer-directory-card-external">
-        <div className="lawyer-directory-card-head">
-          <div className="lawyer-directory-identity">
-            <Image src={lawyer.profilePhotoUrl} alt="" width={48} height={48} unoptimized />
-            <div><h2>{lawyer.displayName}</h2><p>{praeLegalFirm}</p></div>
-          </div>
-        </div>
-        <div>
-          <h3>{lawyer.role}</h3>
-          <p className="lawyer-directory-specialties">{lawyer.specialties.join(" · ")}</p>
-        </div>
-        <div className="lawyer-directory-actions">
-          <Link href={profileHref}>{profileLabel}</Link>
-          <button type="button" className="lawyer-directory-request" disabled>{praeLegalRequestLabel[locale]}</button>
-        </div>
-      </article>;
-    }
-
-    const underReview = !lawyer.canReceiveRequests;
+    const underReview = !lawyer.readOnly && !lawyer.canReceiveRequests;
     return <article key={lawyer.id} className={`lawyer-directory-card${lawyer.juroApproved ? " is-juro-approved" : ""}${lawyer.topLawyer ? " is-top-lawyer" : ""}`}>
-      <div className="lawyer-directory-card-head"><div className="lawyer-directory-identity">{lawyer.profilePhotoUrl ? <Image src={lawyer.profilePhotoUrl} alt={text(`Фото: ${lawyer.displayName}`, `Rasm: ${lawyer.displayName}`, `Photo: ${lawyer.displayName}`)} width={48} height={48} unoptimized /> : <span className="lawyer-avatar-fallback" aria-label={text("Фото не добавлено", "Rasm qo‘shilmagan", "No profile photo")}><UserRound aria-hidden="true" /></span>}<div><h2>{lawyer.displayName}</h2><p>{lawyer.firmName || text("Независимый специалист", "Mustaqil mutaxassis", "Independent legal professional")}</p></div></div></div>
+      <div className="lawyer-directory-card-head"><div className="lawyer-directory-identity">{lawyer.profilePhotoUrl ? <Image src={lawyer.profilePhotoUrl} alt={text(`Фото: ${lawyer.displayName}`, `Rasm: ${lawyer.displayName}`, `Photo: ${lawyer.displayName}`)} width={48} height={48} unoptimized /> : <span className="lawyer-avatar-fallback" aria-label={text("Фото не добавлено", "Rasm qo‘shilmagan", "No profile photo")}><UserRound aria-hidden="true" /></span>}<div><h2>{lawyer.displayName}</h2><p>{lawyer.firmName || text("Независимый специалист", "Mustaqil mutaxassis", "Independent legal professional")}{lawyer.role && ` · ${lawyer.role}`}</p></div></div></div>
       <div className="lawyer-trust-badges">
         {lawyer.juroApproved && <span className="lawyer-juro-approved"><ShieldCheck aria-hidden="true" />{text("Одобрен JURO", "JURO tomonidan ma’qullangan", "Approved by JURO")}</span>}
         {lawyer.topLawyer && <span className="lawyer-top"><Crown aria-hidden="true" />{text("Top Lawyer", "Top yurist", "Top Lawyer")}</span>}
@@ -126,10 +70,22 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
       </div>
       {underReview && <p className="lawyer-pending-review" role="status">{text("Профиль на проверке JURO · запись пока недоступна", "Profil JURO tekshiruvida · hozircha so‘rov yuborib bo‘lmaydi", "Profile under JURO review · requests are not yet available")}</p>}
       <p className="lawyer-directory-specialties">{lawyer.specialties.join(" · ") || text("Специализация уточняется", "Mutaxassislik aniqlashtirilmoqda", "Practice areas to be confirmed")}</p>
-      <dl><div><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(", ") || "—"}</dd></div>{lawyer.city && <div><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}<div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{localized(availability[lawyer.availabilityStatus])}</dd></div>{lawyer.experienceYears !== null && <div><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{text(`${lawyer.experienceYears} лет`, `${lawyer.experienceYears} yil`, `${lawyer.experienceYears} years`)}</dd></div>}{lawyer.priceDescription && <div><dt>{text("Цена", "Narx", "Fees")}</dt><dd>{lawyer.priceDescription}</dd></div>}<div><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{lawyer.consultationDurationMinutes} {text("мин.", "daq.", "min")}</dd></div></dl>
+      <dl>
+        <div><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(", ") || "—"}</dd></div>
+        {lawyer.city && <div><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}
+        <div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{lawyer.readOnly ? "—" : localized(availability[lawyer.availabilityStatus])}</dd></div>
+        {(lawyer.readOnly || lawyer.experienceYears !== null) && <div><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer)}</dd></div>}
+        {(lawyer.readOnly || lawyer.priceDescription) && <div><dt>{text("Цена", "Narx", "Fees")}</dt><dd>{lawyer.priceDescription || "—"}</dd></div>}
+        <div><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{lawyerDuration(locale, lawyer.consultationDurationMinutes)}</dd></div>
+      </dl>
       <p className="lawyer-rating"><Star aria-hidden="true" />{lawyer.rating.reviewCount && lawyer.rating.overallAverage !== null ? `${lawyer.rating.overallAverage.toFixed(1)}/5 · ${lawyer.rating.reviewCount}` : text("Нет одобренных отзывов", "Tasdiqlangan fikrlar yo‘q", "No approved reviews")}</p>
       {lawyer.topLawyer && lawyer.topLawyerCriteria && <p className="lawyer-top-criteria">{lawyer.topLawyerCriteria}</p>}
-      <div className="lawyer-directory-actions"><Link href={profileHref}>{profileLabel}</Link>{underReview ? <span aria-disabled="true">{text("Запись после проверки", "Tekshiruvdan keyin", "Available after review")}</span> : <Link className="primary" href={`${base}/consultations?lawyer=${encodeURIComponent(lawyer.id)}`}>{text("Выбрать для заявки", "So‘rov uchun tanlash", "Select for request")}</Link>}</div>
+      <div className="lawyer-directory-actions">
+        <Link href={profileHref}>{text("Профиль", "Profil", "View profile")}</Link>
+        {lawyer.readOnly ? <button type="button" className="lawyer-directory-request" disabled>{lawyerRequestLabel[locale]}</button>
+          : underReview ? <span aria-disabled="true">{text("Запись после проверки", "Tekshiruvdan keyin", "Available after review")}</span>
+          : <Link className="primary" href={`${base}/consultations?lawyer=${encodeURIComponent(lawyer.id)}`}>{lawyerRequestLabel[locale]}</Link>}
+      </div>
     </article>;
   }
 

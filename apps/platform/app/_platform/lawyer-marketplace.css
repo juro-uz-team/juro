@@ -6,10 +6,8 @@
 .lawyer-directory-card:has([aria-disabled="true"]){border-color:var(--border-accent);background:var(--surface-subtle)}
 .lawyer-directory-actions [aria-disabled="true"]{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border:1px solid var(--border-accent);border-radius:.65rem;padding:0 .8rem;color:var(--brand-gold-text);font-weight:750;background:var(--surface-selected);cursor:not-allowed}
 
-.lawyer-directory-card-external{grid-template-rows:auto 1fr auto}
-.lawyer-directory-card-external h3{margin:0;color:var(--ink);font-size:.9rem;line-height:1.5}
-.lawyer-directory-card-external .lawyer-directory-actions{flex-wrap:wrap}
-.lawyer-directory-request:disabled{min-height:44px;border:1px solid var(--line);border-radius:.65rem;padding:.5rem .8rem;background:var(--surface-subtle);color:var(--muted);font-weight:600;cursor:not-allowed}
+.lawyer-directory-request:disabled{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:44px;border:1px solid var(--line);border-radius:.65rem;padding:.5rem .8rem;background:var(--surface-subtle);color:var(--muted);font-weight:600;cursor:not-allowed}
+.lawyer-directory-request svg{width:1rem;height:1rem;flex:none}
 
 @media (hover:hover) and (pointer:fine){.lawyer-directory-card{transition:transform 180ms ease,box-shadow 180ms ease}.lawyer-directory-card:hover{transform:translateY(-2px);box-shadow:0 .75rem 2rem var(--shadow-color)}}
 @media (prefers-reduced-motion:reduce){.lawyer-directory-card{transition:none}}

@@ -1,8 +1,15 @@
 import type { PlatformLocale } from "../../lib/platform/routing";
+import type { LawyerDirectoryProfile } from "./lawyer-directory-entry";
 
 type Localized = readonly [russian: string, uzbek: string, english: string];
 
-export const praeLegalFirm = "PraeLegal Uzbekistan";
+const city = ["Ташкент", "Toshkent", "Tashkent"] satisfies Localized;
+const languages = {
+  uz: ["Узбекский", "O‘zbek tili", "Uzbek"],
+  ru: ["Русский", "Rus tili", "Russian"],
+  en: ["Английский", "Ingliz tili", "English"],
+  fr: ["Французский", "Fransuz tili", "French"],
+} satisfies Record<string, Localized>;
 
 const areas = {
   arbitration: ["Международный арбитраж", "Xalqaro arbitraj", "International arbitration"],
@@ -22,11 +29,21 @@ const areas = {
 } satisfies Record<string, Localized>;
 
 // Names and portraits follow the firm's team roster. Practice areas and summaries come from the linked bios.
-const profiles: { slug: string; name: readonly [russian: string, latin: string]; role: Localized; areas: (keyof typeof areas)[]; about: Localized }[] = [
+const profiles: {
+  slug: string;
+  name: readonly [russian: string, latin: string];
+  role: Localized;
+  areas: (keyof typeof areas)[];
+  about: Localized;
+  languages?: (keyof typeof languages)[];
+  experience?: Localized;
+  education?: Localized;
+}[] = [
   {
     slug: "shakhnoza-kodirova",
     name: ["Шахноза Кодирова", "Shakhnoza Kodirova"],
     role: ["Старший юридический советник, адвокат", "Katta yuridik maslahatchi, advokat", "Senior counsel, attorney"],
+    experience: ["Более 9 лет", "9 yildan ortiq", "Over 9 years"],
     areas: ["corporate", "trade", "procurement"],
     about: ["Сопровождает сделки M&A и корпоративные реорганизации. Работает над инвестиционными проектами и государственно-частными партнёрствами.",
       "Qo‘shilish va sotib olish bitimlari hamda korporativ qayta tashkil etish jarayonlariga hamrohlik qiladi. Investitsiya va davlat-xususiy sheriklik loyihalarida ishlaydi.",
@@ -36,6 +53,8 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "mushtariy-aripova",
     name: ["Муштарий Арипова", "Mushtariy Aripova"],
     role: ["Старший юрист", "Katta yurist", "Senior associate"],
+    experience: ["Более 10 лет", "10 yildan ortiq", "Over 10 years"],
+    languages: ["fr"],
     areas: ["mining", "arbitration"],
     about: ["Работает с вопросами регулирования, сделками и спорами в горнодобывающей и энергетической отраслях. Имеет опыт коммерческого и инвестиционного арбитража.",
       "Konchilik va energetika sohalaridagi tartibga solish, bitim va nizolar bo‘yicha ishlaydi. Tijorat va investitsiya arbitrajida tajribaga ega.",
@@ -45,6 +64,7 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "jahongir-ismatov",
     name: ["Джахонгир Исматов", "Jahongir Ismatov"],
     role: ["Старший юрист, руководитель отдела LPO", "Katta yurist, LPO bo‘limi rahbari", "Senior associate, head of LPO"],
+    experience: ["Более 5 лет", "5 yildan ortiq", "Over 5 years"],
     areas: ["trade", "employment", "compliance"],
     about: ["Составляет договоры и сопровождает трансграничные сделки. Работает с вопросами аутсорсинга, налогообложения и таможенного регулирования.",
       "Shartnomalar tuzadi va transchegaraviy bitimlarga hamrohlik qiladi. Autsorsing, soliq va bojxona masalalari bo‘yicha ishlaydi.",
@@ -72,6 +92,7 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "diyora-muminova",
     name: ["Диёра Муминова", "Diyora Muminova"],
     role: ["Юрист, руководитель отдела ILO", "Yurist, ILO bo‘limi rahbari", "Associate, head of ILO"],
+    education: ["Университет Сорбонна", "Sorbonna universiteti", "Sorbonne University"],
     areas: ["trade", "contracts", "procurement"],
     about: ["Сопровождает внешнеторговые контракты. Работает с торговым и валютным регулированием и государственными закупками.",
       "Tashqi savdo shartnomalariga hamrohlik qiladi. Savdo va valyutani tartibga solish hamda davlat xaridlari bo‘yicha ishlaydi.",
@@ -90,6 +111,8 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "navruza-yunusova",
     name: ["Навруза Юнусова", "Navruza Yunusova"],
     role: ["Юрист практики международного арбитража", "Xalqaro arbitraj amaliyoti yuristi", "International arbitration associate"],
+    languages: ["uz", "ru", "en"],
+    education: ["Уппсальский университет, LL.M.", "Uppsala universiteti, LL.M.", "Uppsala University, LL.M."],
     areas: ["arbitration"],
     about: ["Работает над трансграничными спорами по регламентам UNCITRAL, LCIA, SCC и TIAC. Готовит процессуальные документы и проводит правовой анализ.",
       "UNCITRAL, LCIA, SCC va TIAC qoidalari bo‘yicha transchegaraviy nizolarda ishlaydi. Protsessual hujjatlar tayyorlaydi va huquqiy tahlil o‘tkazadi.",
@@ -108,6 +131,7 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "kamaliddin-bakhavadinov",
     name: ["Камалиддин Бахавадинов", "Kamaliddin Bakhavadinov"],
     role: ["Адвокат отдела по спорам", "Nizolar bo‘limi advokati", "Attorney, dispute resolution"],
+    experience: ["С 2020 года", "2020-yildan beri", "Since 2020"],
     areas: ["litigation"],
     about: ["Ведёт гражданские, экономические и административные дела. Работает с коммерческими спорами и защитой имущественных прав.",
       "Fuqarolik, iqtisodiy va ma’muriy ishlarni yuritadi. Tijorat nizolari va mulkiy huquqlarni himoya qilish bo‘yicha ishlaydi.",
@@ -117,6 +141,7 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
     slug: "boburbek-makhsudov",
     name: ["Бобурбек Махсудов", "Boburbek Makhsudov"],
     role: ["Младший юрист отдела LPO", "LPO bo‘limi kichik yuristi", "Junior associate, LPO"],
+    languages: ["uz", "ru", "en"],
     areas: ["corporate", "contracts"],
     about: ["Готовит и анализирует юридические документы, участвует в проектах по слияниям и поглощениям и лицензированию.",
       "Yuridik hujjatlarni tayyorlaydi va tahlil qiladi, qo‘shilish va sotib olish hamda litsenziyalash loyihalarida qatnashadi.",
@@ -171,20 +196,35 @@ const profiles: { slug: string; name: readonly [russian: string, latin: string];
 
 const localeIndex = { ru: 0, uz: 1, en: 2 } as const;
 
-export function praeLegalDirectoryProfiles(locale: PlatformLocale) {
+export function praeLegalDirectoryProfiles(locale: PlatformLocale): LawyerDirectoryProfile[] {
   const index = localeIndex[locale];
   return profiles.map((profile) => ({
     id: `praelegal-${profile.slug}`,
     displayName: profile.name[locale === "ru" ? 0 : 1],
+    firmName: "PraeLegal Uzbekistan",
     role: profile.role[index],
     specialties: profile.areas.map((area) => areas[area][index]),
+    languages: profile.languages?.map((language) => languages[language][index]) ?? [],
+    city: city[index],
+    region: null,
+    experienceYears: null,
+    experienceLabel: profile.experience?.[index],
+    education: profile.education?.[index] ?? null,
     bio: profile.about[index],
     profilePhotoUrl: `/lawyer-directory/praelegal/${profile.slug}.webp`,
+    readOnly: true,
+    canReceiveRequests: false,
+    availabilityStatus: "unavailable",
+    priceDescription: null,
+    consultationDurationMinutes: null,
+    consultationFormats: [],
+    nextAvailableAt: null,
+    additionalServices: [],
+    advocateStatus: "not_declared",
+    juroApproved: false,
+    topLawyer: false,
+    topLawyerCriteria: null,
+    rating: { reviewCount: 0, overallAverage: null },
+    reviews: [],
   }));
 }
-
-export const praeLegalRequestLabel = {
-  ru: "Выбрать для заявки",
-  uz: "So‘rov uchun tanlash",
-  en: "Select for request",
-};
