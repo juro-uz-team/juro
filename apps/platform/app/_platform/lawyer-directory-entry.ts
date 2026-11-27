@@ -9,7 +9,6 @@ export type LawyerDirectoryEntry = {
   specialties: string[];
   languages: string[];
   experienceYears: number | null;
-  experienceLabel?: string;
   priceDescription: string | null;
   consultationDurationMinutes: number | null;
   availabilityStatus: "unknown" | "available" | "limited" | "unavailable";
@@ -47,11 +46,8 @@ export const lawyerRequestLabel = {
   en: "Select for request",
 };
 
-export function lawyerExperience(locale: PlatformLocale, entry: LawyerDirectoryEntry) {
-  const { experienceYears: years, experienceLabel } = entry;
-  if (experienceLabel) return experienceLabel;
-  if (years === null) return "—";
-  return lawyerText(locale, `${years} лет`, `${years} yil`, `${years} years`);
+export function lawyerExperience(locale: PlatformLocale, years: number) {
+  return new Intl.NumberFormat(locale, { style: "unit", unit: "year", unitDisplay: "long" }).format(years);
 }
 
 export function lawyerDuration(locale: PlatformLocale, minutes: number | null) {

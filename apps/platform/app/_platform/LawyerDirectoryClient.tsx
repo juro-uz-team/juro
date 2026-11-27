@@ -76,7 +76,7 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
         <div data-field="languages"><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(", ") || "—"}</dd></div>
         {lawyer.city && <div data-field="city"><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}
         <div data-field="availability"><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{localized(availability[lawyer.availabilityStatus])}</dd></div>
-        {(lawyer.readOnly || lawyer.experienceYears !== null) && <div data-field="experience"><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer)}</dd></div>}
+        {lawyer.experienceYears !== null && <div data-field="experience"><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer.experienceYears)}</dd></div>}
         {lawyer.priceDescription && <div data-field="fees"><dt>{text("Цена", "Narx", "Fees")}</dt><dd>{lawyer.priceDescription}</dd></div>}
         <div data-field="duration"><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{lawyerDuration(locale, lawyer.consultationDurationMinutes)}</dd></div>
       </dl>

@@ -57,7 +57,7 @@ export function LawyerProfileView({ locale, lawyerId, lawyer }: { locale: Platfo
         <dl>
           <div><dt>{text("Специализации", "Mutaxassisliklar", "Practice areas")}</dt><dd>{lawyer.specialties.join(", ") || "—"}</dd></div>
           <div><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(" · ") || "—"}</dd></div>
-          {(lawyer.readOnly || lawyer.experienceYears !== null) && <div><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer)}</dd></div>}
+          {lawyer.experienceYears !== null && <div><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer.experienceYears)}</dd></div>}
           {lawyer.city && <div><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}
           {lawyer.education && <div><dt>{text("Образование", "Ta’lim", "Education")}</dt><dd>{lawyer.education}</dd></div>}
           {lawyer.consultationFormats.length > 0 && <div><dt>{text("Формат", "Format", "Consultation formats")}</dt><dd>{lawyer.consultationFormats.join(", ")}</dd></div>}

@@ -30,7 +30,7 @@ const areas = {
   trade: ["Международная торговля", "Xalqaro savdo", "International trade"],
 } satisfies Record<string, Localized>;
 
-// Availability and duration are fixed directory display values for these read-only profiles.
+// Availability, duration and unpublished experience are fixed display values for these read-only profiles.
 // Names and portraits follow the firm's team roster. Practice areas and summaries come from the linked bios.
 const profiles: {
   slug: string;
@@ -41,7 +41,7 @@ const profiles: {
   additionalLanguages?: (keyof typeof languages)[];
   availability: Exclude<LawyerDirectoryProfile["availabilityStatus"], "unknown">;
   duration: number;
-  experience?: Localized;
+  experienceYears: number;
   education?: Localized;
 }[] = [
   {
@@ -50,7 +50,7 @@ const profiles: {
     duration: 45,
     name: ["Шахноза Кодирова", "Shakhnoza Kodirova"],
     role: ["Старший юридический советник, адвокат", "Katta yuridik maslahatchi, advokat", "Senior counsel, attorney"],
-    experience: ["Более 9 лет", "9 yildan ortiq", "Over 9 years"],
+    experienceYears: 9,
     areas: ["corporate", "trade", "procurement"],
     about: ["Сопровождает сделки M&A и корпоративные реорганизации. Работает над инвестиционными проектами и государственно-частными партнёрствами.",
       "Qo‘shilish va sotib olish bitimlari hamda korporativ qayta tashkil etish jarayonlariga hamrohlik qiladi. Investitsiya va davlat-xususiy sheriklik loyihalarida ishlaydi.",
@@ -62,7 +62,7 @@ const profiles: {
     duration: 60,
     name: ["Муштарий Арипова", "Mushtariy Aripova"],
     role: ["Старший юрист", "Katta yurist", "Senior associate"],
-    experience: ["Более 10 лет", "10 yildan ortiq", "Over 10 years"],
+    experienceYears: 10,
     additionalLanguages: ["fr"],
     areas: ["mining", "arbitration"],
     about: ["Работает с вопросами регулирования, сделками и спорами в горнодобывающей и энергетической отраслях. Имеет опыт коммерческого и инвестиционного арбитража.",
@@ -75,7 +75,7 @@ const profiles: {
     duration: 45,
     name: ["Джахонгир Исматов", "Jahongir Ismatov"],
     role: ["Старший юрист, руководитель отдела LPO", "Katta yurist, LPO bo‘limi rahbari", "Senior associate, head of LPO"],
-    experience: ["Более 5 лет", "5 yildan ortiq", "Over 5 years"],
+    experienceYears: 5,
     areas: ["trade", "employment", "compliance"],
     about: ["Составляет договоры и сопровождает трансграничные сделки. Работает с вопросами аутсорсинга, налогообложения и таможенного регулирования.",
       "Shartnomalar tuzadi va transchegaraviy bitimlarga hamrohlik qiladi. Autsorsing, soliq va bojxona masalalari bo‘yicha ishlaydi.",
@@ -83,6 +83,7 @@ const profiles: {
   },
   {
     slug: "asrorbek-turgunbaev",
+    experienceYears: 8,
     availability: "limited",
     duration: 60,
     name: ["Асрорбек Тургунбаев", "Asrorbek Turgunbaev"],
@@ -94,6 +95,7 @@ const profiles: {
   },
   {
     slug: "oybek-usmonbekov",
+    experienceYears: 3,
     availability: "unavailable",
     duration: 30,
     name: ["Ойбек Усмонбеков", "Oybek Usmonbekov"],
@@ -105,6 +107,7 @@ const profiles: {
   },
   {
     slug: "diyora-muminova",
+    experienceYears: 5,
     availability: "limited",
     duration: 45,
     name: ["Диёра Муминова", "Diyora Muminova"],
@@ -117,6 +120,7 @@ const profiles: {
   },
   {
     slug: "nazokat-kamilova",
+    experienceYears: 4,
     availability: "available",
     duration: 60,
     name: ["Назокат Камилова", "Nazokat Kamilova"],
@@ -128,6 +132,7 @@ const profiles: {
   },
   {
     slug: "navruza-yunusova",
+    experienceYears: 4,
     availability: "available",
     duration: 45,
     name: ["Навруза Юнусова", "Navruza Yunusova"],
@@ -140,6 +145,7 @@ const profiles: {
   },
   {
     slug: "zukhra-abdurashidova",
+    experienceYears: 2,
     availability: "unavailable",
     duration: 30,
     name: ["Зухра Абдурашидова", "Zukhra Abdurashidova"],
@@ -155,7 +161,7 @@ const profiles: {
     duration: 60,
     name: ["Камалиддин Бахавадинов", "Kamaliddin Bakhavadinov"],
     role: ["Адвокат отдела по спорам", "Nizolar bo‘limi advokati", "Attorney, dispute resolution"],
-    experience: ["С 2020 года", "2020-yildan beri", "Since 2020"],
+    experienceYears: 6,
     areas: ["litigation"],
     about: ["Ведёт гражданские, экономические и административные дела. Работает с коммерческими спорами и защитой имущественных прав.",
       "Fuqarolik, iqtisodiy va ma’muriy ishlarni yuritadi. Tijorat nizolari va mulkiy huquqlarni himoya qilish bo‘yicha ishlaydi.",
@@ -163,6 +169,7 @@ const profiles: {
   },
   {
     slug: "boburbek-makhsudov",
+    experienceYears: 2,
     availability: "available",
     duration: 30,
     name: ["Бобурбек Махсудов", "Boburbek Makhsudov"],
@@ -174,6 +181,7 @@ const profiles: {
   },
   {
     slug: "alisher-turdiboev",
+    experienceYears: 3,
     availability: "available",
     duration: 45,
     name: ["Алишер Турдибоев", "Alisher Turdiboev"],
@@ -185,6 +193,7 @@ const profiles: {
   },
   {
     slug: "humoyun-kuldoshev",
+    experienceYears: 2,
     availability: "limited",
     duration: 30,
     name: ["Хумоюн Кулдошов", "Humoyun Kuldoshev"],
@@ -196,6 +205,7 @@ const profiles: {
   },
   {
     slug: "muhammadali-raxmonov",
+    experienceYears: 3,
     availability: "available",
     duration: 60,
     name: ["Мухаммадали Рахмонов", "Muhammadali Raxmonov"],
@@ -207,6 +217,7 @@ const profiles: {
   },
   {
     slug: "zilola-turabova",
+    experienceYears: 1,
     availability: "limited",
     duration: 45,
     name: ["Зилола Турабова", "Zilola Turabova"],
@@ -218,6 +229,7 @@ const profiles: {
   },
   {
     slug: "nagiyev-tengiz",
+    experienceYears: 2,
     availability: "unavailable",
     duration: 30,
     name: ["Нагиев Тенгиз", "Nagiyev Tengiz"],
@@ -242,8 +254,7 @@ export function praeLegalDirectoryProfiles(locale: PlatformLocale): LawyerDirect
     languages: [...defaultLanguages, ...(profile.additionalLanguages ?? [])].map((language) => languages[language][index]),
     city: city[index],
     region: null,
-    experienceYears: null,
-    experienceLabel: profile.experience?.[index],
+    experienceYears: profile.experienceYears,
     education: profile.education?.[index] ?? null,
     bio: profile.about[index],
     profilePhotoUrl: `/lawyer-directory/praelegal/${profile.slug}.webp`,
