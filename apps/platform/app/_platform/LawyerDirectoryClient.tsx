@@ -62,27 +62,31 @@ export function LawyerDirectoryClient({ locale, accountType, workspaceId }: { lo
     const profileHref = `${base}/lawyers/${encodeURIComponent(lawyer.id)}`;
     const underReview = !lawyer.readOnly && !lawyer.canReceiveRequests;
     return <article key={lawyer.id} className={`lawyer-directory-card${lawyer.juroApproved ? " is-juro-approved" : ""}${lawyer.topLawyer ? " is-top-lawyer" : ""}`}>
-      <div className="lawyer-directory-card-head"><div className="lawyer-directory-identity">{lawyer.profilePhotoUrl ? <Image src={lawyer.profilePhotoUrl} alt={text(`Фото: ${lawyer.displayName}`, `Rasm: ${lawyer.displayName}`, `Photo: ${lawyer.displayName}`)} width={48} height={48} unoptimized /> : <span className="lawyer-avatar-fallback" aria-label={text("Фото не добавлено", "Rasm qo‘shilmagan", "No profile photo")}><UserRound aria-hidden="true" /></span>}<div><h2>{lawyer.displayName}</h2><p>{lawyer.firmName || text("Независимый специалист", "Mustaqil mutaxassis", "Independent legal professional")}{lawyer.role && ` · ${lawyer.role}`}</p></div></div></div>
-      <div className="lawyer-trust-badges">
-        {lawyer.juroApproved && <span className="lawyer-juro-approved"><ShieldCheck aria-hidden="true" />{text("Одобрен JURO", "JURO tomonidan ma’qullangan", "Approved by JURO")}</span>}
-        {lawyer.topLawyer && <span className="lawyer-top"><Crown aria-hidden="true" />{text("Top Lawyer", "Top yurist", "Top Lawyer")}</span>}
-        {lawyer.advocateStatus === "verified" && <span className="lawyer-verified"><ShieldCheck aria-hidden="true" />{text("Статус адвоката подтверждён", "Advokat maqomi tasdiqlangan", "Advocate status verified")}</span>}
+      <div className="lawyer-directory-heading">
+        <div className="lawyer-directory-card-head"><div className="lawyer-directory-identity">{lawyer.profilePhotoUrl ? <Image src={lawyer.profilePhotoUrl} alt={text(`Фото: ${lawyer.displayName}`, `Rasm: ${lawyer.displayName}`, `Photo: ${lawyer.displayName}`)} width={48} height={48} unoptimized /> : <span className="lawyer-avatar-fallback" aria-label={text("Фото не добавлено", "Rasm qo‘shilmagan", "No profile photo")}><UserRound aria-hidden="true" /></span>}<div><h2>{lawyer.displayName}</h2><p>{lawyer.firmName || text("Независимый специалист", "Mustaqil mutaxassis", "Independent legal professional")}{lawyer.role && ` · ${lawyer.role}`}</p></div></div></div>
+        <div className="lawyer-trust-badges">
+          {lawyer.juroApproved && <span className="lawyer-juro-approved"><ShieldCheck aria-hidden="true" />{text("Одобрен JURO", "JURO tomonidan ma’qullangan", "Approved by JURO")}</span>}
+          {lawyer.topLawyer && <span className="lawyer-top"><Crown aria-hidden="true" />{text("Top Lawyer", "Top yurist", "Top Lawyer")}</span>}
+          {lawyer.advocateStatus === "verified" && <span className="lawyer-verified"><ShieldCheck aria-hidden="true" />{text("Статус адвоката подтверждён", "Advokat maqomi tasdiqlangan", "Advocate status verified")}</span>}
+        </div>
+        {underReview && <p className="lawyer-pending-review" role="status">{text("Профиль на проверке JURO · запись пока недоступна", "Profil JURO tekshiruvida · hozircha so‘rov yuborib bo‘lmaydi", "Profile under JURO review · requests are not yet available")}</p>}
       </div>
-      {underReview && <p className="lawyer-pending-review" role="status">{text("Профиль на проверке JURO · запись пока недоступна", "Profil JURO tekshiruvida · hozircha so‘rov yuborib bo‘lmaydi", "Profile under JURO review · requests are not yet available")}</p>}
       <p className="lawyer-directory-specialties">{lawyer.specialties.join(" · ") || text("Специализация уточняется", "Mutaxassislik aniqlashtirilmoqda", "Practice areas to be confirmed")}</p>
       <dl>
-        <div><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(", ") || "—"}</dd></div>
-        {lawyer.city && <div><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}
-        <div><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{lawyer.readOnly ? "—" : localized(availability[lawyer.availabilityStatus])}</dd></div>
-        {(lawyer.readOnly || lawyer.experienceYears !== null) && <div><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer)}</dd></div>}
-        {(lawyer.readOnly || lawyer.priceDescription) && <div><dt>{text("Цена", "Narx", "Fees")}</dt><dd>{lawyer.priceDescription || "—"}</dd></div>}
-        <div><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{lawyerDuration(locale, lawyer.consultationDurationMinutes)}</dd></div>
+        <div data-field="languages"><dt>{text("Языки", "Tillar", "Languages")}</dt><dd>{lawyer.languages.join(", ") || "—"}</dd></div>
+        {lawyer.city && <div data-field="city"><dt>{text("Город", "Shahar", "Location")}</dt><dd>{[lawyer.city, lawyer.region].filter(Boolean).join(", ")}</dd></div>}
+        <div data-field="availability"><dt>{text("Доступность", "Mavjudlik", "Availability")}</dt><dd>{localized(availability[lawyer.availabilityStatus])}</dd></div>
+        {(lawyer.readOnly || lawyer.experienceYears !== null) && <div data-field="experience"><dt>{text("Опыт", "Tajriba", "Experience")}</dt><dd>{lawyerExperience(locale, lawyer)}</dd></div>}
+        {lawyer.priceDescription && <div data-field="fees"><dt>{text("Цена", "Narx", "Fees")}</dt><dd>{lawyer.priceDescription}</dd></div>}
+        <div data-field="duration"><dt>{text("Длительность", "Davomiyligi", "Duration")}</dt><dd>{lawyerDuration(locale, lawyer.consultationDurationMinutes)}</dd></div>
       </dl>
-      <p className="lawyer-rating"><Star aria-hidden="true" />{lawyer.rating.reviewCount && lawyer.rating.overallAverage !== null ? `${lawyer.rating.overallAverage.toFixed(1)}/5 · ${lawyer.rating.reviewCount}` : text("Нет одобренных отзывов", "Tasdiqlangan fikrlar yo‘q", "No approved reviews")}</p>
-      {lawyer.topLawyer && lawyer.topLawyerCriteria && <p className="lawyer-top-criteria">{lawyer.topLawyerCriteria}</p>}
+      <div className="lawyer-directory-reviews">
+        <p className="lawyer-rating"><Star aria-hidden="true" />{lawyer.rating.reviewCount && lawyer.rating.overallAverage !== null ? `${lawyer.rating.overallAverage.toFixed(1)}/5 · ${lawyer.rating.reviewCount}` : text("Нет одобренных отзывов", "Tasdiqlangan fikrlar yo‘q", "No approved reviews")}</p>
+        {lawyer.topLawyer && lawyer.topLawyerCriteria && <p className="lawyer-top-criteria">{lawyer.topLawyerCriteria}</p>}
+      </div>
       <div className="lawyer-directory-actions">
         <Link href={profileHref}>{text("Профиль", "Profil", "View profile")}</Link>
-        {lawyer.readOnly ? <button type="button" className="lawyer-directory-request" disabled>{lawyerRequestLabel[locale]}</button>
+        {lawyer.readOnly ? <button type="button" className="primary" disabled>{lawyerRequestLabel[locale]}</button>
           : underReview ? <span aria-disabled="true">{text("Запись после проверки", "Tekshiruvdan keyin", "Available after review")}</span>
           : <Link className="primary" href={`${base}/consultations?lawyer=${encodeURIComponent(lawyer.id)}`}>{lawyerRequestLabel[locale]}</Link>}
       </div>

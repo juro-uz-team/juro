@@ -43,11 +43,9 @@ export function LawyerProfileView({ locale, lawyerId, lawyer }: { locale: Platfo
         {pending && <p className="lawyer-pending-review" role="status">{text("Профиль на проверке JURO · запись пока недоступна", "Profil JURO tekshiruvida · hozircha so‘rov yuborib bo‘lmaydi", "Profile under JURO review · requests are not yet available")}</p>}
       </div>
       <aside className="lawyer-public-booking">
-        <strong>{lawyer.priceDescription || (lawyer.readOnly
-          ? text("Стоимость не указана", "Narx ko‘rsatilmagan", "Fees not listed")
-          : text("Стоимость уточняется", "Narx aniqlashtirilmoqda", "Pricing on request"))}</strong>
-        {!lawyer.readOnly && <span>{localized(availability[lawyer.availabilityStatus] ?? availability.unknown)}</span>}
-        {lawyer.readOnly ? <button type="button" className="lawyer-directory-request" disabled><CalendarClock aria-hidden="true" />{lawyerRequestLabel[locale]}</button>
+        <strong>{lawyer.priceDescription || text("Стоимость уточняется", "Narx aniqlashtirilmoqda", "Pricing on request")}</strong>
+        <span>{localized(availability[lawyer.availabilityStatus] ?? availability.unknown)}</span>
+        {lawyer.readOnly ? <button type="button" className="primary" disabled><CalendarClock aria-hidden="true" />{lawyerRequestLabel[locale]}</button>
           : pending ? <span aria-disabled="true">{text("Запись после проверки", "Tekshiruvdan keyin", "Available after review")}</span>
           : <Link className="primary" href={`${base}/consultations?lawyer=${encodeURIComponent(lawyerId)}`}><CalendarClock aria-hidden="true" />{lawyerRequestLabel[locale]}</Link>}
       </aside>

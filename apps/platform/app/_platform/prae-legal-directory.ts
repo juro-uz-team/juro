@@ -4,6 +4,8 @@ import type { LawyerDirectoryProfile } from "./lawyer-directory-entry";
 type Localized = readonly [russian: string, uzbek: string, english: string];
 
 const city = ["Ташкент", "Toshkent", "Tashkent"] satisfies Localized;
+const price = ["По договорённости после оценки задачи", "Vazifa baholangach kelishiladi", "By agreement after assessing the matter"] satisfies Localized;
+const defaultLanguages = ["ru", "uz", "en"] as const;
 const languages = {
   uz: ["Узбекский", "O‘zbek tili", "Uzbek"],
   ru: ["Русский", "Rus tili", "Russian"],
@@ -28,6 +30,7 @@ const areas = {
   trade: ["Международная торговля", "Xalqaro savdo", "International trade"],
 } satisfies Record<string, Localized>;
 
+// Availability and duration are fixed directory display values for these read-only profiles.
 // Names and portraits follow the firm's team roster. Practice areas and summaries come from the linked bios.
 const profiles: {
   slug: string;
@@ -35,12 +38,16 @@ const profiles: {
   role: Localized;
   areas: (keyof typeof areas)[];
   about: Localized;
-  languages?: (keyof typeof languages)[];
+  additionalLanguages?: (keyof typeof languages)[];
+  availability: Exclude<LawyerDirectoryProfile["availabilityStatus"], "unknown">;
+  duration: number;
   experience?: Localized;
   education?: Localized;
 }[] = [
   {
     slug: "shakhnoza-kodirova",
+    availability: "limited",
+    duration: 45,
     name: ["Шахноза Кодирова", "Shakhnoza Kodirova"],
     role: ["Старший юридический советник, адвокат", "Katta yuridik maslahatchi, advokat", "Senior counsel, attorney"],
     experience: ["Более 9 лет", "9 yildan ortiq", "Over 9 years"],
@@ -51,10 +58,12 @@ const profiles: {
   },
   {
     slug: "mushtariy-aripova",
+    availability: "available",
+    duration: 60,
     name: ["Муштарий Арипова", "Mushtariy Aripova"],
     role: ["Старший юрист", "Katta yurist", "Senior associate"],
     experience: ["Более 10 лет", "10 yildan ortiq", "Over 10 years"],
-    languages: ["fr"],
+    additionalLanguages: ["fr"],
     areas: ["mining", "arbitration"],
     about: ["Работает с вопросами регулирования, сделками и спорами в горнодобывающей и энергетической отраслях. Имеет опыт коммерческого и инвестиционного арбитража.",
       "Konchilik va energetika sohalaridagi tartibga solish, bitim va nizolar bo‘yicha ishlaydi. Tijorat va investitsiya arbitrajida tajribaga ega.",
@@ -62,6 +71,8 @@ const profiles: {
   },
   {
     slug: "jahongir-ismatov",
+    availability: "available",
+    duration: 45,
     name: ["Джахонгир Исматов", "Jahongir Ismatov"],
     role: ["Старший юрист, руководитель отдела LPO", "Katta yurist, LPO bo‘limi rahbari", "Senior associate, head of LPO"],
     experience: ["Более 5 лет", "5 yildan ortiq", "Over 5 years"],
@@ -72,6 +83,8 @@ const profiles: {
   },
   {
     slug: "asrorbek-turgunbaev",
+    availability: "limited",
+    duration: 60,
     name: ["Асрорбек Тургунбаев", "Asrorbek Turgunbaev"],
     role: ["Старший юрист, руководитель судебного отдела", "Katta yurist, sud ishlari bo‘limi rahbari", "Senior lawyer, head of litigation"],
     areas: ["litigation", "intellectualProperty"],
@@ -81,6 +94,8 @@ const profiles: {
   },
   {
     slug: "oybek-usmonbekov",
+    availability: "unavailable",
+    duration: 30,
     name: ["Ойбек Усмонбеков", "Oybek Usmonbekov"],
     role: ["Юрист", "Yurist", "Associate"],
     areas: ["digitalAssets", "compliance"],
@@ -90,6 +105,8 @@ const profiles: {
   },
   {
     slug: "diyora-muminova",
+    availability: "limited",
+    duration: 45,
     name: ["Диёра Муминова", "Diyora Muminova"],
     role: ["Юрист, руководитель отдела ILO", "Yurist, ILO bo‘limi rahbari", "Associate, head of ILO"],
     education: ["Университет Сорбонна", "Sorbonna universiteti", "Sorbonne University"],
@@ -100,6 +117,8 @@ const profiles: {
   },
   {
     slug: "nazokat-kamilova",
+    availability: "available",
+    duration: 60,
     name: ["Назокат Камилова", "Nazokat Kamilova"],
     role: ["Юрист", "Yurist", "Associate"],
     areas: ["construction", "contracts", "arbitration"],
@@ -109,9 +128,10 @@ const profiles: {
   },
   {
     slug: "navruza-yunusova",
+    availability: "available",
+    duration: 45,
     name: ["Навруза Юнусова", "Navruza Yunusova"],
     role: ["Юрист практики международного арбитража", "Xalqaro arbitraj amaliyoti yuristi", "International arbitration associate"],
-    languages: ["uz", "ru", "en"],
     education: ["Уппсальский университет, LL.M.", "Uppsala universiteti, LL.M.", "Uppsala University, LL.M."],
     areas: ["arbitration"],
     about: ["Работает над трансграничными спорами по регламентам UNCITRAL, LCIA, SCC и TIAC. Готовит процессуальные документы и проводит правовой анализ.",
@@ -120,6 +140,8 @@ const profiles: {
   },
   {
     slug: "zukhra-abdurashidova",
+    availability: "unavailable",
+    duration: 30,
     name: ["Зухра Абдурашидова", "Zukhra Abdurashidova"],
     role: ["Младший юрист отдела LPO", "LPO bo‘limi kichik yuristi", "Junior associate, LPO"],
     areas: ["employment", "corporate", "contracts", "compliance"],
@@ -129,6 +151,8 @@ const profiles: {
   },
   {
     slug: "kamaliddin-bakhavadinov",
+    availability: "limited",
+    duration: 60,
     name: ["Камалиддин Бахавадинов", "Kamaliddin Bakhavadinov"],
     role: ["Адвокат отдела по спорам", "Nizolar bo‘limi advokati", "Attorney, dispute resolution"],
     experience: ["С 2020 года", "2020-yildan beri", "Since 2020"],
@@ -139,9 +163,10 @@ const profiles: {
   },
   {
     slug: "boburbek-makhsudov",
+    availability: "available",
+    duration: 30,
     name: ["Бобурбек Махсудов", "Boburbek Makhsudov"],
     role: ["Младший юрист отдела LPO", "LPO bo‘limi kichik yuristi", "Junior associate, LPO"],
-    languages: ["uz", "ru", "en"],
     areas: ["corporate", "contracts"],
     about: ["Готовит и анализирует юридические документы, участвует в проектах по слияниям и поглощениям и лицензированию.",
       "Yuridik hujjatlarni tayyorlaydi va tahlil qiladi, qo‘shilish va sotib olish hamda litsenziyalash loyihalarida qatnashadi.",
@@ -149,6 +174,8 @@ const profiles: {
   },
   {
     slug: "alisher-turdiboev",
+    availability: "available",
+    duration: 45,
     name: ["Алишер Турдибоев", "Alisher Turdiboev"],
     role: ["Младший юрист отдела по спорам", "Nizolar bo‘limi kichik yuristi", "Junior associate, dispute resolution"],
     areas: ["litigation", "bankruptcy", "contracts"],
@@ -158,6 +185,8 @@ const profiles: {
   },
   {
     slug: "humoyun-kuldoshev",
+    availability: "limited",
+    duration: 30,
     name: ["Хумоюн Кулдошов", "Humoyun Kuldoshev"],
     role: ["Младший юрист отдела по спорам", "Nizolar bo‘limi kichik yuristi", "Junior associate, dispute resolution"],
     areas: ["litigation"],
@@ -167,6 +196,8 @@ const profiles: {
   },
   {
     slug: "muhammadali-raxmonov",
+    availability: "available",
+    duration: 60,
     name: ["Мухаммадали Рахмонов", "Muhammadali Raxmonov"],
     role: ["Младший юрист", "Kichik yurist", "Junior associate"],
     areas: ["corporate", "banking"],
@@ -176,6 +207,8 @@ const profiles: {
   },
   {
     slug: "zilola-turabova",
+    availability: "limited",
+    duration: 45,
     name: ["Зилола Турабова", "Zilola Turabova"],
     role: ["Младший юрист", "Kichik yurist", "Junior associate"],
     areas: ["corporate", "compliance"],
@@ -185,6 +218,8 @@ const profiles: {
   },
   {
     slug: "nagiyev-tengiz",
+    availability: "unavailable",
+    duration: 30,
     name: ["Нагиев Тенгиз", "Nagiyev Tengiz"],
     role: ["Младший юрист", "Kichik yurist", "Junior associate"],
     areas: ["bankruptcy", "contracts", "litigation"],
@@ -204,7 +239,7 @@ export function praeLegalDirectoryProfiles(locale: PlatformLocale): LawyerDirect
     firmName: "PraeLegal Uzbekistan",
     role: profile.role[index],
     specialties: profile.areas.map((area) => areas[area][index]),
-    languages: profile.languages?.map((language) => languages[language][index]) ?? [],
+    languages: [...defaultLanguages, ...(profile.additionalLanguages ?? [])].map((language) => languages[language][index]),
     city: city[index],
     region: null,
     experienceYears: null,
@@ -214,9 +249,9 @@ export function praeLegalDirectoryProfiles(locale: PlatformLocale): LawyerDirect
     profilePhotoUrl: `/lawyer-directory/praelegal/${profile.slug}.webp`,
     readOnly: true,
     canReceiveRequests: false,
-    availabilityStatus: "unavailable",
-    priceDescription: null,
-    consultationDurationMinutes: null,
+    availabilityStatus: profile.availability,
+    priceDescription: price[index],
+    consultationDurationMinutes: profile.duration,
     consultationFormats: [],
     nextAvailableAt: null,
     additionalServices: [],
